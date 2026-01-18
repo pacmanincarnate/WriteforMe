@@ -1,1014 +1,424 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Book, Layers, Film, Feather, ChevronRight, ChevronDown, 
-  Sparkles, Save, RefreshCw, Edit3, ArrowLeft, FileText, 
-  Settings, AlertCircle, Menu, X, Users, User, Target, 
-  Brain, Globe, PenTool, GitBranch, MessageSquare, Eye,
-  Activity, CheckCircle2, Sliders, TrendingUp, TrendingDown,
-  Minus, Volume2, Copy, History, Scroll
-} from 'lucide-react';
-
-/* ----------------------------------------------------------------------
-  UTILS: AUDIO & MARKDOWN
-  ----------------------------------------------------------------------
-*/
-
-// Helper to convert PCM16 to WAV for browser playback
-const pcmToWav = (pcmData, sampleRate = 24000) => {
-  const buffer = new ArrayBuffer(44 + pcmData.byteLength);
-  const view = new DataView(buffer);
-
-  writeString(view, 0, 'RIFF');
-  view.setUint32(4, 36 + pcmData.byteLength, true);
-  writeString(view, 8, 'WAVE');
-  writeString(view, 12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeString(view, 36, 'data');
-  view.setUint32(40, pcmData.byteLength, true);
-
-  const pcmBytes = new Uint8Array(pcmData);
-  const wavBytes = new Uint8Array(buffer, 44);
-  wavBytes.set(pcmBytes);
-
-  return buffer;
-};
-
-const writeString = (view, offset, string) => {
-  for (let i = 0; i < string.length; i++) {
-    view.setUint8(offset + i, string.charCodeAt(i));
-  }
-};
-
-const parseMarkdown = (text) => {
-  if (!text) return "";
-  let html = text
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br />');
-  return `<p>${html}</p>`;
-};
-
-/* ----------------------------------------------------------------------
-  GEMINI API UTILITIES & PROMPTS
-  ----------------------------------------------------------------------
-*/
-
-const apiKey = ""; 
-
-const PROMPTS = {
-  // 1. INITIAL ARCHITECT (Deep Profile Support)
-  storyArchitect: `You are a Lead Narrative Designer.
-  Input: A concept.
-  Task: Deconstruct this into a Story Bible.
-  Requirements:
-  - Create 3 distinct narrative threads.
-  - Create a Protagonist with deep details:
-    - History: Their backstory before the book.
-    - Story Events: Initialize as "Story Start".
-    - Goals: Abstract and concrete.
-    - Evolution: How they SHOULD change by the end.
-  
-  Output JSON:
-  {
-    "concept": "Refined summary",
-    "threads": [
-      { "id": "t1", "name": "Main Arc", "description": "..." },
-      { "id": "t2", "name": "Relationship Arc", "description": "..." }
-    ],
-    "protagonist": {
-      "name": "Name",
-      "role": "Protagonist",
-      "description": "Physical/Personality",
-      "voice_sample": "Dialogue sample.",
-      "details": {
-        "history": "Detailed backstory...",
-        "story_events": "Current status: At the beginning.",
-        "goals": "Current desires...",
-        "evolution": "Planned character arc..."
-      }
-    },
-    "world_lore": [
-      { "topic": "Setting", "detail": "..." }
-    ]
-  }`,
-
-  // 2. ACT STRUCTURE
-  actStructure: `You are a Pacing Expert. Break story into 3 Acts.
-  Output JSON:
-  {
-    "acts": [
-      { "number": 1, "title": "The Departure", "description": "...", "focus_thread_ids": ["t1"] },
-      { "number": 2, "title": "The Initiation", "description": "...", "focus_thread_ids": ["t1", "t2"] },
-      { "number": 3, "title": "The Return", "description": "...", "focus_thread_ids": ["t1"] }
-    ]
-  }`,
-
-  // 3. SCENE WEAVERS (With Roster Update Support)
-  sceneWeaverAct1: `You are an Act 1 Architect.
-  Task: Create 12-16 scenes for Act 1.
-  Structure: Setup (1-3) -> Inciting Incident (4-5) -> Debate (6-12) -> Crossing Threshold (End).
-  
-  *ROSTER CHECK*: If you introduce NEW major characters to fulfill these scenes, list them in "new_characters".
-  
-  Output JSON:
-  {
-    "scenes": [{ "number": 1, "title": "...", "description": "...", "active_thread_ids": ["t1"], "location": "...", "cast_names": ["Hero"], "valence": 0 }],
-    "new_characters": [ { "name": "...", "role": "...", "description": "...", "voice_sample": "...", "details": { "history": "...", "goals": "...", "evolution": "..." } } ]
-  }`,
-
-  sceneWeaverAct2: `You are an Act 2 Architect.
-  Task: Create 18-24 scenes for Act 2.
-  Structure: Fun&Games -> Midpoint (10-12) -> Bad Guys Close In -> All Hope Lost (End).
-  
-  *ROSTER CHECK*: If you introduce NEW major characters, list them in "new_characters".
-  
-  Output JSON:
-  {
-    "scenes": [...],
-    "new_characters": [...]
-  }`,
-
-  sceneWeaverAct3: `You are an Act 3 Architect.
-  Task: Create 10-14 scenes for Act 3.
-  Structure: Recovery -> Plan -> Climax -> Denouement.
-  Output JSON: { "scenes": [...], "new_characters": [...] }`,
-
-  // 4. BEAT DIRECTOR
-  beatDirector: `You are a Cinematic Director.
-  Task: Break a scene into 6-10 distinct beats.
-  Valence: Assign -10 to +10 score for emotional charge.
-  Output JSON: { "beats": [{ "number": 1, "type": "...", "description": "...", "emotional_shift": "...", "valence": 0 }] }`,
-
-  // 5. WRITER LOOP - DRAFTER
-  drafter: `You are a Literary Draftsman.
-  Task: Write prose for a beat (400-600 words).
-  Context: {subtext}, Pacing: {pacing}, Valence: {valence}.
-  Voices: {voices}. Lore: {lore}.
-  History: {history}.
-  Output: Plain Text (Markdown).`,
-
-  // 6. WRITER LOOP - EDITOR
-  editor: `You are a Ruthless Editor.
-  Task: Polish the draft. Cut exposition, strengthen verbs, fix filter words.
-  Input: {draft}
-  Output: Plain Text.`,
-
-  // 7. WRITER LOOP - ARCHIVIST (NEW)
-  archivist: `You are the Story Archivist.
-  Task: Analyze the just-written text and return UPDATES for the Story Bible.
-  
-  Text Segment: {text}
-  Current Cast: {cast_summary}
-  
-  1. CAST UPDATES: 
-     - Did a character reveal new Backstory (History)?
-     - Did a major Event just happen to them? (Add to Story Events)
-     - Did their Goal change?
-  2. LORE UPDATES:
-     - Was a new location or object described in detail?
-  
-  Output JSON:
-  {
-    "cast_updates": [
-      { "name": "Hero", "append_history": "...", "append_story_events": "...", "update_goals": "..." }
-    ],
-    "lore_updates": [
-      { "topic": "...", "detail": "..." }
-    ]
-  }`
-};
-
-const callGemini = async (prompt, systemPrompt, isJson = true) => {
-  try {
-    const payload = {
-      contents: [{ parts: [{ text: prompt }] }],
-      systemInstruction: { parts: [{ text: systemPrompt }] },
-      generationConfig: {
-        maxOutputTokens: 8192,
-        temperature: 0.8,
-        ...(isJson ? { responseMimeType: "application/json" } : {})
-      }
-    };
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }
-    );
-
-    if (!response.ok) throw new Error(`API Error: ${response.status}`);
-    const data = await response.json();
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!text) throw new Error("No content generated");
-    return isJson ? JSON.parse(text) : text;
-  } catch (error) {
-    console.error("Gemini Error:", error);
-    throw error;
-  }
-};
-
-const callTTS = async (text) => {
-  try {
-    const payload = {
-      contents: [{ parts: [{ text: text }] }],
-      generationConfig: {
-        responseModalities: ["AUDIO"],
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: { voiceName: "Kore" }
-          }
-        }
-      }
-    };
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      }
-    );
-
-    if (!response.ok) throw new Error(`TTS API Error: ${response.status}`);
-    const data = await response.json();
-    const base64Audio = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-    
-    if (!base64Audio) throw new Error("No audio content generated");
-
-    const binaryString = window.atob(base64Audio);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-    }
-    
-    const wavBuffer = pcmToWav(bytes.buffer);
-    const blob = new Blob([wavBuffer], { type: 'audio/wav' });
-    const url = URL.createObjectURL(blob);
-    
-    const audio = new Audio(url);
-    audio.play().catch(e => {
-        console.error("Playback failed:", e);
-        alert("Audio generated but autoplay blocked by browser. Please try again.");
-    });
-
-  } catch (error) {
-    console.error("TTS Error:", error);
-    alert("Failed to play audio. See console for details.");
-  }
-};
-
-/* ----------------------------------------------------------------------
-  HELPER COMPONENTS
-  ----------------------------------------------------------------------
-*/
-
-const ValenceGraph = ({ dataPoints, height = 60 }) => {
-  if (!dataPoints || dataPoints.length < 2) return null;
-
-  const maxVal = 10;
-  const minVal = -10;
-  const range = maxVal - minVal;
-  const stepX = 100 / (dataPoints.length - 1);
-
-  const points = dataPoints.map((val, idx) => {
-    const normalizedY = 100 - ((val - minVal) / range) * 100;
-    return `${idx * stepX},${normalizedY}`;
-  }).join(' ');
-
-  const zeroY = 100 - ((0 - minVal) / range) * 100;
-
-  return (
-    <div className="w-full" style={{ height: `${height}px` }}>
-      <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible">
-        <line x1="0" y1={zeroY} x2="100" y2={zeroY} stroke="#475569" strokeWidth="1" strokeDasharray="4" />
-        <polyline points={points} fill="none" stroke="#6366f1" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-        {dataPoints.map((val, idx) => {
-          const normalizedY = 100 - ((val - minVal) / range) * 100;
-          const color = val > 0 ? '#10b981' : val < 0 ? '#ef4444' : '#94a3b8';
-          return (
-            <circle key={idx} cx={`${idx * stepX}`} cy={normalizedY} r="1.5" fill={color} vectorEffect="non-scaling-stroke" />
-          );
-        })}
-      </svg>
-    </div>
-  );
-};
-
-const ValenceBadge = ({ score }) => {
-  let color = "bg-slate-700 text-slate-300";
-  let Icon = Minus;
-
-  if (score > 0) {
-    color = "bg-emerald-900/40 text-emerald-400 border-emerald-900/50";
-    Icon = TrendingUp;
-  } else if (score < 0) {
-    color = "bg-red-900/40 text-red-400 border-red-900/50";
-    Icon = TrendingDown;
-  }
-
-  return (
-    <div className={`flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border ${color}`}>
-      <Icon className="w-3 h-3" />
-      {score > 0 ? '+' : ''}{score}
-    </div>
-  );
-};
-
-
-/* ----------------------------------------------------------------------
-  MAIN APP COMPONENT
-  ----------------------------------------------------------------------
-*/
-
-export default function NovelCraft() {
-  const [story, setStory] = useState({
-    concept: "",
-    threads: [],     
-    lore: [],        
-    cast: [], // { name, role, description, voice_sample, details: { history, story_events, goals, evolution } }
-    acts: [],
-    scenes: {},      
-    beats: {},       
-    prose: {}        
-  });
-
-  const [view, setView] = useState('setup'); 
-  const [loading, setLoading] = useState(false);
-  const [loadingStep, setLoadingStep] = useState(""); 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [selectedAct, setSelectedAct] = useState(null);
-  const [selectedScene, setSelectedScene] = useState(null);
-  const [inputConcept, setInputConcept] = useState("");
-  const [pacing, setPacing] = useState(50); 
-  
-  // --- HELPERS ---
-  
-  // Logic to merge Archivist updates into the state
-  const handleWorldUpdates = (updates) => {
-    if (!updates) return;
-
-    setStory(prev => {
-      let newCast = [...prev.cast];
-      let newLore = [...prev.lore];
-
-      // 1. Process Cast Updates
-      if (updates.cast_updates) {
-        updates.cast_updates.forEach(up => {
-          const idx = newCast.findIndex(c => c.name === up.name);
-          if (idx !== -1) {
-            const char = newCast[idx];
-            // Initialize details if missing (legacy support)
-            if (!char.details) char.details = { history: "", story_events: "", goals: "", evolution: "" };
-
-            // Append or Update
-            if (up.append_history) char.details.history += `\n[New]: ${up.append_history}`;
-            if (up.append_story_events) char.details.story_events += `\n- ${up.append_story_events}`;
-            if (up.update_goals) char.details.goals = up.update_goals;
-            
-            newCast[idx] = char;
-          }
-        });
-      }
-      
-      // 2. Process New Characters (from Scene Weaver)
-      if (updates.new_characters) {
-        updates.new_characters.forEach(nc => {
-          if (!newCast.find(c => c.name === nc.name)) {
-             newCast.push(nc);
-          }
-        });
-      }
-
-      // 3. Process Lore Updates
-      if (updates.lore_updates) {
-        updates.lore_updates.forEach(up => {
-          const exists = newLore.find(l => l.topic === up.topic);
-          if (!exists) {
-            newLore.push({ topic: up.topic, detail: up.detail });
-          } else {
-             // Optional: Update existing lore?
-             // For now, let's just add new topics
-          }
-        });
-      }
-
-      return {
-        ...prev,
-        cast: newCast,
-        lore: newLore
-      };
-    });
-  };
-
-
-  // --- ACTIONS ---
-
-  const initStory = async () => {
-    if (!inputConcept) return;
-    setLoading(true);
-    setLoadingStep("Architecting Story Bible...");
-    try {
-      const bible = await callGemini(`Concept: ${inputConcept}`, PROMPTS.storyArchitect, true);
-      setStory(prev => ({
-        ...prev,
-        concept: bible.concept,
-        threads: bible.threads,
-        cast: [bible.protagonist], // Protagonist now has deep details
-        lore: bible.world_lore
-      }));
-      setLoadingStep("Structuring Acts...");
-      const actData = await callGemini(
-        `Concept: ${bible.concept}\nThreads: ${JSON.stringify(bible.threads)}`, 
-        PROMPTS.actStructure, 
-        true
-      );
-      setStory(prev => ({ ...prev, acts: actData.acts }));
-      setView('dashboard');
-    } catch (e) {
-      alert("Error creating story: " + e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateScenes = async (actIndex) => {
-    setLoading(true);
-    setLoadingStep(`Weaving Scenes for Act ${actIndex + 1}...`);
-    try {
-      const act = story.acts[actIndex];
-      const actNumber = act.number || actIndex + 1;
-      let systemPrompt = PROMPTS.sceneWeaverAct1;
-      if (actNumber === 2) systemPrompt = PROMPTS.sceneWeaverAct2;
-      if (actNumber >= 3) systemPrompt = PROMPTS.sceneWeaverAct3;
-
-      const prompt = `
-        Act Context: ${JSON.stringify(act)}
-        Threads to Weave: ${JSON.stringify(story.threads)}
-        Cast Available: ${JSON.stringify(story.cast)}
-        Established Lore: ${JSON.stringify(story.lore)}
-      `;
-      const res = await callGemini(prompt, systemPrompt, true);
-      
-      setStory(prev => ({
-        ...prev,
-        scenes: { ...prev.scenes, [actIndex]: res.scenes }
-      }));
-      
-      // Handle potential new characters added by the scene weaver
-      handleWorldUpdates({ new_characters: res.new_characters });
-
-      setSelectedAct(actIndex);
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateBeats = async (actIdx, sceneIdx) => {
-    setLoading(true);
-    setLoadingStep("Directing Scene Beats...");
-    try {
-      const scene = story.scenes[actIdx][sceneIdx];
-      const prompt = `
-        Scene: ${JSON.stringify(scene)}
-        Threads Active in Scene: ${scene.active_thread_ids ? scene.active_thread_ids.join(', ') : 'None'}
-      `;
-      const res = await callGemini(prompt, PROMPTS.beatDirector, true);
-      const sId = `${actIdx}-${sceneIdx}`;
-      setStory(prev => ({
-        ...prev,
-        beats: { ...prev.beats, [sId]: res.beats }
-      }));
-      setSelectedScene(sceneIdx);
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const writeProse = async (actIdx, sceneIdx, beatIdx) => {
-    setLoading(true);
-    const sId = `${actIdx}-${sceneIdx}`;
-    const bId = `${sId}-${beatIdx}`;
-    const beat = story.beats[sId][beatIdx];
-    const scene = story.scenes[actIdx][sceneIdx];
-    
-    const activeThreads = story.threads.filter(t => scene.active_thread_ids?.includes(t.id));
-    const activeCast = story.cast.filter(c => scene.cast_names?.includes(c.name));
-    
-    // Prepare deeper context for the drafter
-    const castContext = activeCast.map(c => `
-      Name: ${c.name}
-      Voice: ${c.voice_sample}
-      Goal: ${c.details?.goals || "Unknown"}
-      Recent History: ${c.details?.story_events || "None"}
-    `).join('\n');
-
-    const prevBeatIdx = beatIdx - 1;
-    const prevText = prevBeatIdx >= 0 ? story.prose[`${sId}-${prevBeatIdx}`]?.final : "Start of scene.";
-    
-    const pacingDesc = pacing < 30 ? "Slow, meditative, focus on sensory details." 
-                   : pacing > 70 ? "Fast, action-oriented, focus on movement."
-                   : "Balanced narrative pacing.";
-
-    try {
-      // 1. DRAFTER
-      setLoadingStep("Agent 1/3: Drafting Narrative...");
-      const drafterPrompt = `
-        PREVIOUS TEXT: ...${prevText?.slice(-500) || "None"}
-        CURRENT BEAT: ${beat.description} (${beat.type})
-        VALENCE SCORE: ${beat.valence}
-        PACING: ${pacingDesc}
-        THREADS: ${JSON.stringify(activeThreads)}
-        CAST CONTEXT: ${castContext}
-        LORE: ${JSON.stringify(story.lore.slice(0, 3))} 
-      `;
-      const draft = await callGemini(drafterPrompt, PROMPTS.drafter.replace('{pacing}', pacingDesc).replace('{valence}', beat.valence), false);
-
-      // 2. EDITOR
-      setLoadingStep("Agent 2/3: Polishing Prose...");
-      const final = await callGemini(
-        `Draft to Polish:\n${draft}\n\nStyle Guide: Literary Fiction, Deep POV. Preserve markdown.`, 
-        PROMPTS.editor, 
-        false
-      );
-
-      // 3. ARCHIVIST (The Update Engine)
-      setLoadingStep("Agent 3/3: Updating Bible...");
-      const castSummary = activeCast.map(c => c.name).join(", ");
-      const updates = await callGemini(
-        `Analyze text:\n${final}`, 
-        PROMPTS.archivist.replace('{cast_summary}', castSummary), 
-        true
-      );
-      
-      handleWorldUpdates(updates);
-
-      setStory(prev => ({
-        ...prev,
-        prose: { 
-          ...prev.prose, 
-          [bId]: { draft, final } 
-        }
-      }));
-    } catch (e) {
-      alert(e.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const copyFullScene = () => {
-    if (selectedAct === null || selectedScene === null) return;
-    const scene = story.scenes[selectedAct][selectedScene];
-    const sId = `${selectedAct}-${selectedScene}`;
-    const beats = story.beats[sId] || [];
-    let text = `SCENE ${scene.number}: ${scene.title.toUpperCase()}\n\n`;
-    beats.forEach((beat, idx) => {
-      const bId = `${sId}-${idx}`;
-      if (story.prose[bId]?.final) text += story.prose[bId].final + "\n\n";
-    });
-
-    const textArea = document.createElement("textarea");
-    textArea.value = text;
-    textArea.style.position = "fixed";
-    textArea.style.left = "-9999px";
-    document.body.appendChild(textArea);
-    textArea.select();
-    try {
-      document.execCommand('copy');
-      alert("Scene text copied!");
-    } catch (err) {
-      console.error(err);
-      alert("Copy failed.");
-    }
-    document.body.removeChild(textArea);
-  };
-
-  // --- RENDERERS ---
-
-  const renderSidebar = () => (
-    <div className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-      <div className="p-4 flex items-center justify-between border-b border-slate-800">
-        <h2 className="font-bold text-slate-100 flex items-center gap-2">
-          <Book className="w-5 h-5 text-indigo-400" /> NovelCraft 2.4
-        </h2>
-        <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-slate-400"><X /></button>
-      </div>
-      
-      <div className="flex-1 overflow-y-auto p-4 space-y-1">
-        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-4">Bible</div>
-        <button onClick={() => setView('dashboard')} className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`}>
-          <Activity className="w-4 h-4" /> Overview
-        </button>
-        <button onClick={() => setView('cast')} className={`nav-btn ${view === 'cast' ? 'active' : ''}`}>
-          <Users className="w-4 h-4" /> Cast & Roster
-        </button>
-        <button onClick={() => setView('lore')} className={`nav-btn ${view === 'lore' ? 'active' : ''}`}>
-          <Globe className="w-4 h-4" /> World Lore
-        </button>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NovelCraft 2.4 - AI Story Studio</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React and ReactDOM -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for JSX Transpilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Merriweather:ital,wght@0,400;0,700;1,400&display=swap');
         
-        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 mt-6">Structure</div>
-        <button onClick={() => setView('structure')} className={`nav-btn ${view === 'structure' ? 'active' : ''}`}>
-          <Layers className="w-4 h-4" /> Act Planner
-        </button>
-
-        {story.acts.map((act, idx) => (
-          <div key={idx} className="ml-2 mt-2">
-            <div className="text-xs text-slate-500 px-3 py-1">Act {act.number}</div>
-            {story.scenes[idx]?.map((scene, sIdx) => (
-              <button 
-                key={sIdx}
-                onClick={() => { setSelectedAct(idx); setSelectedScene(sIdx); setView('writer'); setIsSidebarOpen(false); }}
-                className={`w-full text-left px-4 py-1.5 text-xs rounded-md flex items-center gap-2 truncate ${
-                  view === 'writer' && selectedScene === sIdx && selectedAct === idx 
-                  ? 'text-emerald-400 bg-emerald-400/10' 
-                  : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <span className="truncate">{scene.number}. {scene.title}</span>
-              </button>
-            ))}
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  // --- VIEWS ---
-
-  if (view === 'setup') {
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center p-4">
-        <div className="max-w-xl w-full bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="bg-indigo-600 p-3 rounded-xl"><Sparkles className="w-6 h-6 text-white"/></div>
-            <h1 className="text-2xl font-bold">NovelCraft 2.4</h1>
-          </div>
-          <p className="text-slate-400 mb-6">Enter a concept. The AI Architect will build your deep character profiles, subplots, and 3-Act structure.</p>
-          <textarea 
-            className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 h-32 text-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none resize-none mb-6"
-            placeholder="e.g. A cyberpunk noir where memories are traded as currency..."
-            value={inputConcept}
-            onChange={e => setInputConcept(e.target.value)}
-          />
-          <button 
-            onClick={initStory} 
-            disabled={loading || !inputConcept}
-            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-2 transition-all disabled:opacity-50"
-          >
-            {loading ? <RefreshCw className="animate-spin"/> : <Brain />}
-            {loading ? loadingStep : "Architect Story"}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
-      {renderSidebar()}
-      
-      <div className="flex-1 flex flex-col h-full w-full relative">
-        <header className="h-16 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between px-6 backdrop-blur-sm z-20">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(true)} className="md:hidden"><Menu className="w-6 h-6"/></button>
-            <h2 className="font-bold text-lg text-slate-100 capitalize">{view.replace('-', ' ')}</h2>
-            {loading && (
-              <span className="text-xs text-indigo-400 bg-indigo-400/10 px-3 py-1 rounded-full flex items-center gap-2">
-                <RefreshCw className="w-3 h-3 animate-spin"/> {loadingStep}
-              </span>
-            )}
-          </div>
-        </header>
-
-        <main className="flex-1 overflow-y-auto p-4 md:p-8 relative">
-          
-          {/* DASHBOARD */}
-          {view === 'dashboard' && (
-            <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
-              <section className="p-6 bg-slate-900 rounded-xl border border-slate-800">
-                <h3 className="text-sm font-bold text-indigo-400 uppercase tracking-wider mb-2">High Concept</h3>
-                <p className="text-xl text-slate-200 leading-relaxed">{story.concept}</p>
-              </section>
-              <section className="grid md:grid-cols-2 gap-6">
-                <div className="p-6 bg-slate-900 rounded-xl border border-slate-800">
-                  <h3 className="flex items-center gap-2 font-bold text-slate-100 mb-4">
-                    <GitBranch className="w-5 h-5 text-emerald-400"/> Narrative Threads
-                  </h3>
-                  <div className="space-y-4">
-                    {story.threads.map(t => (
-                      <div key={t.id} className="p-3 bg-slate-950 rounded-lg border border-slate-800/50">
-                        <div className="flex justify-between mb-1">
-                          <span className="font-semibold text-emerald-200">{t.name}</span>
-                          <span className="text-xs bg-slate-800 px-2 py-0.5 rounded text-slate-500 font-mono">{t.id}</span>
-                        </div>
-                        <p className="text-sm text-slate-400">{t.description}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="p-6 bg-slate-900 rounded-xl border border-slate-800">
-                  <h3 className="flex items-center gap-2 font-bold text-slate-100 mb-4">
-                    <Globe className="w-5 h-5 text-blue-400"/> World Lore
-                  </h3>
-                  <div className="space-y-2">
-                    {story.lore.slice(0,4).map((l, i) => (
-                      <div key={i} className="flex gap-2 text-sm">
-                        <span className="font-mono text-blue-400/70 shrink-0">{l.topic}:</span>
-                        <span className="text-slate-400 truncate">{l.detail}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-            </div>
-          )}
-
-          {/* CAST VIEW (UPDATED FOR DEEP DETAILS) */}
-          {view === 'cast' && (
-            <div className="grid lg:grid-cols-2 xl:grid-cols-2 gap-6 max-w-7xl mx-auto animate-fade-in">
-              {story.cast.map((char, i) => (
-                <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden flex flex-col">
-                  <div className="p-5 border-b border-slate-800 bg-slate-800/30 flex justify-between">
-                    <div>
-                      <h3 className="font-bold text-xl text-white">{char.name}</h3>
-                      <span className="text-xs text-indigo-400 font-mono uppercase">{char.role}</span>
-                    </div>
-                    <User className="w-8 h-8 text-slate-700"/>
-                  </div>
-                  
-                  <div className="p-5 space-y-6 flex-1">
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase flex gap-1"><History className="w-3 h-3"/> Current Events</span>
-                        <p className="text-sm text-slate-300 mt-1 whitespace-pre-wrap">{char.details?.story_events || "Starting..."}</p>
-                      </div>
-                      <div className="bg-slate-950 p-3 rounded-lg border border-slate-800">
-                         <span className="text-[10px] font-bold text-slate-500 uppercase flex gap-1"><Target className="w-3 h-3"/> Active Goal</span>
-                         <p className="text-sm text-slate-300 mt-1">{char.details?.goals || "Unclear"}</p>
-                      </div>
-                    </div>
-
-                    <div>
-                      <span className="text-xs font-bold text-slate-500 uppercase flex gap-1"><Scroll className="w-3 h-3"/> Biography</span>
-                      <p className="text-sm text-slate-400 mt-1 leading-relaxed max-h-32 overflow-y-auto">{char.details?.history || char.description}</p>
-                    </div>
-
-                    <div className="bg-indigo-900/10 p-3 rounded-lg border border-indigo-500/20">
-                      <span className="text-xs font-bold text-indigo-400 uppercase flex items-center gap-1 mb-1">
-                        <MessageSquare className="w-3 h-3"/> Voice
-                      </span>
-                      <p className="text-sm italic text-indigo-200/80 font-serif">"{char.voice_sample}"</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* LORE VIEW */}
-          {view === 'lore' && (
-            <div className="max-w-4xl mx-auto animate-fade-in">
-              <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-                <table className="w-full text-left">
-                  <thead className="bg-slate-950 text-slate-500 text-xs uppercase">
-                    <tr><th className="p-4 font-semibold">Topic</th><th className="p-4 font-semibold">Detail</th></tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-800">
-                    {story.lore.map((l, i) => (
-                      <tr key={i} className="hover:bg-slate-800/50">
-                        <td className="p-4 font-mono text-blue-400 text-sm w-1/4">{l.topic}</td>
-                        <td className="p-4 text-slate-300 text-sm">{l.detail}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-
-          {/* STRUCTURE VIEW */}
-          {view === 'structure' && (
-            <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-              {story.acts.map((act, idx) => {
-                const actScenes = story.scenes[idx] || [];
-                const valenceData = actScenes.map(s => s.valence || 0);
-
-                return (
-                  <div key={idx} className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-                    <div className="p-6 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center bg-slate-800/20 gap-4">
-                      <div>
-                        <span className="text-xs font-bold text-slate-500 uppercase">Act {act.number}</span>
-                        <h3 className="text-xl font-bold text-slate-200">{act.title}</h3>
-                        <p className="text-sm text-slate-400 mt-1 max-w-xl">{act.description}</p>
-                      </div>
-                      {!story.scenes[idx] && (
-                        <button 
-                          onClick={() => generateScenes(idx)}
-                          disabled={loading}
-                          className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2"
-                        >
-                          <Film className="w-4 h-4"/> Weave Scenes
-                        </button>
-                      )}
-                    </div>
-                    {actScenes.length > 0 && (
-                      <div className="px-6 py-4 bg-slate-950/50 border-b border-slate-800">
-                        <div className="flex justify-between items-end mb-2">
-                           <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Emotional Arc</span>
-                           <span className="text-[10px] text-slate-600">Positive vs Negative Events</span>
-                        </div>
-                        <ValenceGraph dataPoints={valenceData} />
-                      </div>
-                    )}
-                    {story.scenes[idx] && (
-                      <div className="divide-y divide-slate-800">
-                        {story.scenes[idx].map((scene, sIdx) => (
-                          <div key={sIdx} className="p-4 hover:bg-slate-800/30 transition-colors group flex items-start gap-4">
-                            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">
-                              {scene.number}
-                            </div>
-                            <div className="flex-1">
-                              <div className="flex justify-between items-start">
-                                <h4 className="font-bold text-slate-200">{scene.title}</h4>
-                                <div className="flex items-center gap-3">
-                                  {scene.valence !== undefined && <ValenceBadge score={scene.valence} />}
-                                  <button 
-                                    onClick={() => { setSelectedAct(idx); setSelectedScene(sIdx); setView('writer'); }}
-                                    className="text-xs text-indigo-400 opacity-0 group-hover:opacity-100 flex items-center gap-1 hover:underline"
-                                  >
-                                    Open Writer <ChevronRight className="w-3 h-3"/>
-                                  </button>
-                                </div>
-                              </div>
-                              <p className="text-sm text-slate-400 mt-1">{scene.description}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* WRITER VIEW */}
-          {view === 'writer' && selectedAct !== null && selectedScene !== null && (
-            <div className="h-full flex flex-col max-w-6xl mx-auto animate-fade-in">
-              <div className="mb-6 bg-slate-900 p-6 rounded-xl border border-slate-800 flex justify-between items-start">
-                <div>
-                   <button onClick={() => setView('structure')} className="text-xs text-slate-500 hover:text-white flex items-center gap-1 mb-2">
-                     <ArrowLeft className="w-3 h-3"/> Back to Structure
-                   </button>
-                   <div className="flex items-center gap-3 mb-2">
-                     <h2 className="text-2xl font-bold text-white">{story.scenes[selectedAct][selectedScene].title}</h2>
-                     {story.scenes[selectedAct][selectedScene].valence !== undefined && (
-                       <ValenceBadge score={story.scenes[selectedAct][selectedScene].valence} />
-                     )}
-                   </div>
-                   <p className="text-slate-400 max-w-2xl">{story.scenes[selectedAct][selectedScene].description}</p>
-                </div>
-                <div className="flex flex-col gap-2 items-end">
-                   <button
-                    onClick={copyFullScene}
-                    className="flex items-center gap-2 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-3 py-1.5 rounded transition-colors"
-                   >
-                     <Copy className="w-3 h-3" /> Copy Full Scene
-                   </button>
-                   {!story.beats[`${selectedAct}-${selectedScene}`] && (
-                     <button 
-                       onClick={() => generateBeats(selectedAct, selectedScene)}
-                       disabled={loading}
-                       className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2.5 rounded-lg font-bold flex items-center gap-2 shadow-lg"
-                     >
-                       <Sparkles className="w-4 h-4"/> Direct Beats
-                     </button>
-                   )}
-                </div>
-              </div>
-
-              <div className="flex-1 overflow-y-auto space-y-12 pb-32">
-                {story.beats[`${selectedAct}-${selectedScene}`]?.map((beat, bIdx) => {
-                  const bId = `${selectedAct}-${selectedScene}-${bIdx}`;
-                  const prose = story.prose[bId];
-
-                  return (
-                    <div key={bIdx} className="flex flex-col xl:flex-row gap-8">
-                      <div className="xl:w-80 shrink-0 space-y-4">
-                        <div className={`p-5 rounded-xl border transition-all ${prose ? 'bg-slate-900/30 border-slate-800 text-slate-500' : 'bg-slate-900 border-indigo-500/30 shadow-lg shadow-indigo-900/10'}`}>
-                          <div className="flex justify-between items-center mb-3">
-                            <span className="text-xs font-bold font-mono text-indigo-400">BEAT {beat.number}</span>
-                            <span className="text-[10px] bg-slate-800 px-2 py-1 rounded text-slate-400 uppercase">{beat.type}</span>
-                          </div>
-                          <p className="text-sm font-medium text-slate-200 mb-2">{beat.description}</p>
-                          <div className="flex items-center justify-between mb-4">
-                             <p className="text-xs text-slate-400 italic">{beat.emotional_shift}</p>
-                             {beat.valence !== undefined && <ValenceBadge score={beat.valence} />}
-                          </div>
-
-                          {!prose && (
-                            <div className="space-y-4 pt-4 border-t border-slate-800">
-                              <div>
-                                <div className="flex justify-between text-xs text-slate-400 mb-1">
-                                  <span>Slow/Deep</span>
-                                  <span>Fast/Action</span>
-                                </div>
-                                <input 
-                                  type="range" 
-                                  min="0" max="100" 
-                                  value={pacing} 
-                                  onChange={e => setPacing(e.target.value)}
-                                  className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer"
-                                />
-                              </div>
-                              <button 
-                                onClick={() => writeProse(selectedAct, selectedScene, bIdx)}
-                                disabled={loading}
-                                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-2 rounded-lg text-sm font-bold flex items-center justify-center gap-2"
-                              >
-                                <Feather className="w-4 h-4"/> Write (Agent Loop)
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex-1">
-                        {prose ? (
-                          <div className="relative group">
-                            <div className="absolute -left-3 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500/0 via-indigo-500/20 to-indigo-500/0"/>
-                            <div className="prose prose-invert max-w-none">
-                              <div className="bg-transparent md:bg-slate-900/20 md:p-8 rounded-xl md:border md:border-slate-800/50">
-                                <div 
-                                  className="whitespace-pre-wrap font-serif text-lg leading-loose text-slate-200"
-                                  dangerouslySetInnerHTML={{ __html: parseMarkdown(prose.final) }}
-                                />
-                              </div>
-                            </div>
-                            
-                            <div className="mt-2 flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
-                                onClick={() => callTTS(prose.final)}
-                                title="Read Aloud"
-                                className="text-xs text-emerald-400 flex items-center gap-1 hover:text-white bg-slate-800/50 px-2 py-1 rounded"
-                              >
-                                <Volume2 className="w-4 h-4"/>
-                              </button>
-                              <button 
-                                onClick={() => writeProse(selectedAct, selectedScene, bIdx)}
-                                className="text-xs text-indigo-400 flex items-center gap-1 hover:text-white bg-slate-800/50 px-2 py-1 rounded"
-                              >
-                                <RefreshCw className="w-3 h-3"/> Rerun
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="h-full border-l-2 border-slate-800 ml-4 pl-8 flex flex-col justify-center text-slate-600 space-y-2">
-                             <PenTool className="w-8 h-8 opacity-20"/>
-                             <span className="text-sm italic">Waiting for Director...</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </main>
-      </div>
-      <style>{`
+        body { font-family: 'Inter', sans-serif; }
+        .font-serif { font-family: 'Merriweather', serif; }
+        
         .nav-btn {
-          @apply w-full text-left px-3 py-2 rounded-md flex items-center gap-2 text-sm text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-colors;
+            width: 100%; text-align: left; padding: 0.5rem 0.75rem; border-radius: 0.375rem;
+            display: flex; align-items: center; gap: 0.5rem; font-size: 0.875rem;
+            color: #94a3b8; transition: all 0.2s;
         }
-        .nav-btn.active {
-          @apply bg-indigo-600/20 text-indigo-300 border border-indigo-500/30;
-        }
-        .animate-fade-in {
-          animation: fadeIn 0.3s ease-out forwards;
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
+        .nav-btn:hover { background-color: #1e293b; color: #f1f5f9; }
+        .nav-btn.active { background-color: rgba(79, 70, 229, 0.2); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); }
+        
         strong { color: #e2e8f0; font-weight: 700; }
-        em { color: #94a3b8; }
-      `}</style>
-    </div>
-  );
-}
+        em { color: #94a3b8; font-style: italic; }
+
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px; width: 16px; border-radius: 99px;
+            background: #6366f1; cursor: pointer;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Configuration
+        const apiKey = ""; // Runtime provides this
+
+        // --- ICONS WRAPPER ---
+        const Icon = ({ name, className = "w-4 h-4" }) => {
+            const [svg, setSvg] = useState('');
+            useEffect(() => {
+                if (window.lucide) {
+                    const iconSvg = lucide.createIcons.icons[name];
+                    // Fallback to simple circle if icon not found
+                }
+            }, [name]);
+            // For simplicity in CDN version, we use Lucide's replace method
+            return <i data-lucide={name} className={className}></i>;
+        };
+
+        // Standard Lucide replacement effect
+        const useLucide = () => {
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            });
+        };
+
+        // --- COMPONENTS ---
+
+        const ValenceGraph = ({ dataPoints, height = 60 }) => {
+            if (!dataPoints || dataPoints.length < 2) return null;
+            const maxVal = 10;
+            const minVal = -10;
+            const range = maxVal - minVal;
+            const stepX = 100 / (dataPoints.length - 1);
+            const points = dataPoints.map((val, idx) => {
+                const normalizedY = 100 - ((val - minVal) / range) * 100;
+                return `${idx * stepX},${normalizedY}`;
+            }).join(' ');
+            const zeroY = 100 - ((0 - minVal) / range) * 100;
+
+            return (
+                <div className="w-full" style={{ height: `${height}px` }}>
+                    <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible">
+                        <line x1="0" y1={zeroY} x2="100" y2={zeroY} stroke="#475569" strokeWidth="1" strokeDasharray="4" />
+                        <polyline points={points} fill="none" stroke="#6366f1" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+                    </svg>
+                </div>
+            );
+        };
+
+        const ValenceBadge = ({ score }) => {
+            const isPos = score > 0;
+            const isNeg = score < 0;
+            const color = isPos ? "bg-emerald-900/40 text-emerald-400 border-emerald-900/50" : 
+                          isNeg ? "bg-red-900/40 text-red-400 border-red-900/50" : 
+                          "bg-slate-700 text-slate-300";
+            return (
+                <div className={`flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded border ${color}`}>
+                    {score > 0 ? '+' : ''}{score}
+                </div>
+            );
+        };
+
+        // --- PROMPTS ---
+        const PROMPTS = {
+            storyArchitect: `You are a Lead Narrative Designer. Input: A concept. Task: Story Bible. JSON: { concept, threads: [{id, name, description}], protagonist: { name, role, description, voice_sample, details: { history, story_events, goals, evolution } }, world_lore: [{topic, detail}] }`,
+            actStructure: `Pacing Expert. Break story into 3 Acts. JSON: { acts: [{ number, title, description, focus_thread_ids }] }`,
+            sceneWeaverAct1: `Act 1 Architect. 12-16 scenes. JSON: { scenes: [{ number, title, description, active_thread_ids, location, cast_names, valence }], new_characters: [] }`,
+            sceneWeaverAct2: `Act 2 Architect. 18-24 scenes. JSON: { scenes: [...], new_characters: [] }`,
+            sceneWeaverAct3: `Act 3 Architect. 10-14 scenes. JSON: { scenes: [...], new_characters: [] }`,
+            beatDirector: `Cinematic Director. 6-10 beats. JSON: { beats: [{ number, type, description, emotional_shift, valence }] }`,
+            drafter: `Literary Draftsman. 400-600 words. Focus on Show Don't Tell. Plain text.`,
+            editor: `Ruthless Editor. Polish draft. Plain text.`,
+            archivist: `Story Archivist. Analyze text for Cast Updates and Lore. JSON: { cast_updates: [{ name, append_history, append_story_events, update_goals }], lore_updates: [{ topic, detail }] }`
+        };
+
+        // --- MAIN APP ---
+        function App() {
+            useLucide();
+            const [story, setStory] = useState({ concept: "", threads: [], lore: [], cast: [], acts: [], scenes: {}, beats: {}, prose: {} });
+            const [view, setView] = useState('setup');
+            const [loading, setLoading] = useState(false);
+            const [loadingStep, setLoadingStep] = useState("");
+            const [selectedAct, setSelectedAct] = useState(null);
+            const [selectedScene, setSelectedScene] = useState(null);
+            const [inputConcept, setInputConcept] = useState("");
+            const [pacing, setPacing] = useState(50);
+            const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+            const callGemini = async (prompt, systemPrompt, isJson = true) => {
+                const payload = {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    systemInstruction: { parts: [{ text: systemPrompt }] },
+                    generationConfig: { maxOutputTokens: 8192, temperature: 0.8, ...(isJson ? { responseMimeType: "application/json" } : {}) }
+                };
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                });
+                const data = await res.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+                return isJson ? JSON.parse(text) : text;
+            };
+
+            const callTTS = async (text) => {
+                const payload = { contents: [{ parts: [{ text }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } } };
+                const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`, { method: 'POST', body: JSON.stringify(payload) });
+                const data = await res.json();
+                const b64 = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+                const binary = window.atob(b64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                
+                // WAV Header Construction
+                const wavHeader = new ArrayBuffer(44);
+                const view = new DataView(wavHeader);
+                const writeString = (v, o, s) => { for(let i=0; i<s.length; i++) v.setUint8(o+i, s.charCodeAt(i)); };
+                writeString(view, 0, 'RIFF');
+                view.setUint32(4, 36 + bytes.length, true);
+                writeString(view, 8, 'WAVE');
+                writeString(view, 12, 'fmt ');
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true);
+                view.setUint16(22, 1, true);
+                view.setUint32(24, 24000, true);
+                view.setUint32(28, 48000, true);
+                view.setUint16(32, 2, true);
+                view.setUint16(34, 16, true);
+                writeString(view, 36, 'data');
+                view.setUint32(40, bytes.length, true);
+
+                const blob = new Blob([wavHeader, bytes], { type: 'audio/wav' });
+                new Audio(URL.createObjectURL(blob)).play();
+            };
+
+            const handleWorldUpdates = (updates) => {
+                setStory(prev => {
+                    let newCast = [...prev.cast];
+                    let newLore = [...prev.lore];
+                    if (updates.cast_updates) {
+                        updates.cast_updates.forEach(up => {
+                            const idx = newCast.findIndex(c => c.name === up.name);
+                            if (idx !== -1) {
+                                if (!newCast[idx].details) newCast[idx].details = { history: "", story_events: "", goals: "" };
+                                if (up.append_history) newCast[idx].details.history += "\n" + up.append_history;
+                                if (up.append_story_events) newCast[idx].details.story_events += "\n" + up.append_story_events;
+                                if (up.update_goals) newCast[idx].details.goals = up.update_goals;
+                            }
+                        });
+                    }
+                    if (updates.new_characters) {
+                        updates.new_characters.forEach(nc => { if (!newCast.find(c => c.name === nc.name)) newCast.push(nc); });
+                    }
+                    if (updates.lore_updates) {
+                        updates.lore_updates.forEach(up => { if (!newLore.find(l => l.topic === up.topic)) newLore.push(up); });
+                    }
+                    return { ...prev, cast: newCast, lore: newLore };
+                });
+            };
+
+            const initStory = async () => {
+                setLoading(true); setLoadingStep("Architecting Story...");
+                try {
+                    const bible = await callGemini(`Concept: ${inputConcept}`, PROMPTS.storyArchitect);
+                    const acts = await callGemini(`Concept: ${bible.concept}`, PROMPTS.actStructure);
+                    setStory(s => ({ ...s, ...bible, acts: acts.acts }));
+                    setView('dashboard');
+                } finally { setLoading(false); }
+            };
+
+            const generateScenes = async (idx) => {
+                setLoading(true); setLoadingStep("Weaving Scenes...");
+                try {
+                    const actNum = idx + 1;
+                    const sp = actNum === 1 ? PROMPTS.sceneWeaverAct1 : actNum === 2 ? PROMPTS.sceneWeaverAct2 : PROMPTS.sceneWeaverAct3;
+                    const res = await callGemini(`Act: ${JSON.stringify(story.acts[idx])}`, sp);
+                    setStory(s => ({ ...s, scenes: { ...s.scenes, [idx]: res.scenes } }));
+                    handleWorldUpdates(res);
+                } finally { setLoading(false); }
+            };
+
+            const generateBeats = async (actIdx, sceneIdx) => {
+                setLoading(true); setLoadingStep("Directing Beats...");
+                try {
+                    const res = await callGemini(`Scene: ${JSON.stringify(story.scenes[actIdx][sceneIdx])}`, PROMPTS.beatDirector);
+                    setStory(s => ({ ...s, beats: { ...s.beats, [`${actIdx}-${sceneIdx}`]: res.beats } }));
+                    setSelectedScene(sceneIdx);
+                } finally { setLoading(false); }
+            };
+
+            const writeProse = async (actIdx, sceneIdx, beatIdx) => {
+                setLoading(true);
+                const sId = `${actIdx}-${sceneIdx}`;
+                const bId = `${sId}-${beatIdx}`;
+                try {
+                    setLoadingStep("Drafting...");
+                    const draft = await callGemini(`Beat: ${story.beats[sId][beatIdx].description}`, PROMPTS.drafter, false);
+                    setLoadingStep("Polishing...");
+                    const final = await callGemini(`Text: ${draft}`, PROMPTS.editor, false);
+                    setLoadingStep("Archiving...");
+                    const up = await callGemini(`Text: ${final}`, PROMPTS.archivist);
+                    handleWorldUpdates(up);
+                    setStory(s => ({ ...s, prose: { ...s.prose, [bId]: { final } } }));
+                } finally { setLoading(false); }
+            };
+
+            const copyScene = () => {
+                const sId = `${selectedAct}-${selectedScene}`;
+                const text = story.beats[sId].map((_, i) => story.prose[`${sId}-${i}`]?.final || "").join("\n\n");
+                const el = document.createElement('textarea'); el.value = text; document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);
+                alert("Copied!");
+            };
+
+            return (
+                <div className="flex h-screen overflow-hidden">
+                    {/* Sidebar */}
+                    <div className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                        <div className="p-4 border-b border-slate-800 flex justify-between items-center">
+                            <h1 className="font-bold flex items-center gap-2"><i data-lucide="book" className="text-indigo-400"></i> NovelCraft</h1>
+                            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden"><i data-lucide="x"></i></button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                            <button onClick={() => setView('dashboard')} className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`}><i data-lucide="activity"></i> Overview</button>
+                            <button onClick={() => setView('cast')} className={`nav-btn ${view === 'cast' ? 'active' : ''}`}><i data-lucide="users"></i> Cast</button>
+                            <button onClick={() => setView('structure')} className={`nav-btn ${view === 'structure' ? 'active' : ''}`}><i data-lucide="layers"></i> Structure</button>
+                            <div className="pt-4 border-t border-slate-800">
+                                {story.acts.map((act, idx) => (
+                                    <div key={idx} className="mb-2">
+                                        <div className="text-[10px] uppercase text-slate-500 mb-1 px-2">Act {idx+1}</div>
+                                        {story.scenes[idx]?.map((s, si) => (
+                                            <button key={si} onClick={() => { setSelectedAct(idx); setSelectedScene(si); setView('writer'); setIsSidebarOpen(false); }} className="nav-btn text-xs pl-4 truncate">{s.title}</button>
+                                        ))}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Main */}
+                    <div className="flex-1 flex flex-col min-w-0 md:ml-72">
+                        <header className="h-16 border-b border-slate-800 px-6 flex items-center justify-between">
+                            <button onClick={() => setIsSidebarOpen(true)} className="md:hidden"><i data-lucide="menu"></i></button>
+                            <div className="flex items-center gap-4">
+                                <h2 className="font-bold capitalize">{view}</h2>
+                                {loading && <div className="text-xs text-indigo-400 animate-pulse">{loadingStep}</div>}
+                            </div>
+                        </header>
+
+                        <main className="flex-1 overflow-y-auto p-8 bg-slate-950">
+                            {view === 'setup' && (
+                                <div className="max-w-xl mx-auto py-20 text-center">
+                                    <h2 className="text-3xl font-bold mb-6">Start Your Novel</h2>
+                                    <textarea className="w-full h-40 bg-slate-900 border border-slate-800 p-4 rounded-xl mb-6 outline-none focus:border-indigo-500" placeholder="A world where..." value={inputConcept} onChange={e => setInputConcept(e.target.value)} />
+                                    <button onClick={initStory} className="bg-indigo-600 w-full py-4 rounded-xl font-bold hover:bg-indigo-500">Initialize Studio</button>
+                                </div>
+                            )}
+
+                            {view === 'dashboard' && (
+                                <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
+                                    <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
+                                        <h3 className="text-indigo-400 text-xs font-bold uppercase mb-2">Concept</h3>
+                                        <p className="text-xl leading-relaxed">{story.concept}</p>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-6">
+                                        <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
+                                            <h3 className="text-emerald-400 text-xs font-bold mb-4">Threads</h3>
+                                            {story.threads.map(t => <div key={t.id} className="mb-2 text-sm"><strong>{t.name}:</strong> {t.description}</div>)}
+                                        </div>
+                                        <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
+                                            <h3 className="text-blue-400 text-xs font-bold mb-4">Lore</h3>
+                                            {story.lore.slice(0, 5).map((l, i) => <div key={i} className="text-sm"><strong>{l.topic}:</strong> {l.detail}</div>)}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {view === 'cast' && (
+                                <div className="grid grid-cols-2 gap-6 max-w-6xl mx-auto animate-fade-in">
+                                    {story.cast.map((c, i) => (
+                                        <div key={i} className="bg-slate-900 p-6 rounded-xl border border-slate-800">
+                                            <h3 className="text-xl font-bold text-white">{c.name}</h3>
+                                            <div className="text-xs text-indigo-400 mb-4">{c.role}</div>
+                                            <div className="space-y-4">
+                                                <div className="text-sm"><strong>History:</strong> {c.details?.history}</div>
+                                                <div className="text-sm"><strong>Events:</strong> {c.details?.story_events}</div>
+                                                <div className="text-sm italic">"{c.voice_sample}"</div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {view === 'structure' && (
+                                <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+                                    {story.acts.map((act, i) => (
+                                        <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                                            <div className="p-6 bg-slate-800/30 flex justify-between items-center">
+                                                <div>
+                                                    <div className="text-xs text-slate-500 uppercase">Act {i+1}</div>
+                                                    <h3 className="text-xl font-bold">{act.title}</h3>
+                                                </div>
+                                                {!story.scenes[i] && <button onClick={() => generateScenes(i)} className="bg-indigo-600 px-4 py-2 rounded-lg text-sm">Weave Scenes</button>}
+                                            </div>
+                                            {story.scenes[i] && (
+                                                <div className="divide-y divide-slate-800">
+                                                    {story.scenes[i].map((s, si) => (
+                                                        <div key={si} className="p-4 flex items-center justify-between hover:bg-slate-800/20">
+                                                            <div>
+                                                                <h4 className="font-bold">{s.number}. {s.title}</h4>
+                                                                <p className="text-xs text-slate-500">{s.description}</p>
+                                                            </div>
+                                                            <div className="flex gap-2">
+                                                                <ValenceBadge score={s.valence} />
+                                                                <button onClick={() => { setSelectedAct(i); setSelectedScene(si); setView('writer'); }} className="text-indigo-400 hover:text-white"><i data-lucide="edit-3" className="w-4 h-4"></i></button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {view === 'writer' && selectedAct !== null && selectedScene !== null && (
+                                <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h2 className="text-2xl font-bold">{story.scenes[selectedAct][selectedScene].title}</h2>
+                                            <p className="text-slate-500">{story.scenes[selectedAct][selectedScene].description}</p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button onClick={copyScene} className="bg-slate-800 p-2 rounded"><i data-lucide="copy" className="w-4 h-4"></i></button>
+                                            {!story.beats[`${selectedAct}-${selectedScene}`] && <button onClick={() => generateBeats(selectedAct, selectedScene)} className="bg-emerald-600 px-4 py-2 rounded-lg font-bold">Direct Beats</button>}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-12">
+                                        {story.beats[`${selectedAct}-${selectedScene}`]?.map((beat, bi) => {
+                                            const bId = `${selectedAct}-${selectedScene}-${bi}`;
+                                            const prose = story.prose[bId];
+                                            return (
+                                                <div key={bi} className="flex gap-8">
+                                                    <div className="w-80 shrink-0">
+                                                        <div className={`p-4 rounded-xl border ${prose ? 'bg-slate-900/40 border-slate-800 opacity-60' : 'bg-slate-900 border-indigo-500/30'}`}>
+                                                            <div className="text-[10px] font-mono mb-2">BEAT {bi+1} - {beat.type}</div>
+                                                            <p className="text-sm mb-4">{beat.description}</p>
+                                                            {!prose && <button onClick={() => writeProse(selectedAct, selectedScene, bi)} className="bg-indigo-600 w-full py-2 rounded-lg text-sm font-bold">Write Beat</button>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        {prose ? (
+                                                            <div className="relative group">
+                                                                <div className="font-serif text-lg leading-loose space-y-4" dangerouslySetInnerHTML={{ __html: parseMarkdown(prose.final) }} />
+                                                                <button onClick={() => callTTS(prose.final)} className="absolute top-0 -right-8 opacity-0 group-hover:opacity-100 transition-opacity text-emerald-400"><i data-lucide="volume-2"></i></button>
+                                                            </div>
+                                                        ) : <div className="h-full border-l border-slate-800 pl-8 flex items-center text-slate-700 italic">Waiting...</div>}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </main>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
