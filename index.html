@@ -198,6 +198,7 @@
         const Download = (p) => <Icon name="download" {...p} />;
         const Upload = (p) => <Icon name="upload" {...p} />;
         const Square = (p) => <Icon name="square" {...p} />;
+        const Play = (p) => <Icon name="play" {...p} />;
         const Loader2 = (p) => <Icon name="loader-2" {...p} />;
 
 
@@ -520,6 +521,9 @@ Output JSON:
             drafter: `You are an award-winning author working on your next novel. Given the information below, write the prose for the CURRENT BEAT in 400-600 words. It is essential that the text flow smoothly from the previous beat and end just before the next beat.
 
 # CONTEXT
+## Scene Description
+{scene_description}
+
 ## Mood & Pacing
 - Subtext: {subtext}
 - {pacing}
@@ -598,6 +602,22 @@ REWRITE the remaining beats for this scene to accommodate the new reality while 
     "reason": "Why it is invalid...",
     "rectified_beats": [ 
        { "number": N, "type": "...", "description": "...", "emotional_shift": "...", "valence": 0 }
+    ]
+  }`,
+
+            characterExtractor: `You are a Casting Director.
+  Task: Identify all distinct characters mentioned in the provided Story Bible text.
+  Input: Story Bible JSON.
+  
+  Rules:
+  1. Include the Protagonist (if not already redundant).
+  2. Identify Antagonists, Sidekicks, Mentors, or significant figures mentioned in threads/history.
+  3. Extract a brief description and their role for each.
+  
+  Output JSON:
+  {
+    "characters": [
+      { "name": "Name", "role": "Role (e.g. Antagonist)", "description": "Brief summary", "context": "Mentioned in..." }
     ]
   }`,
 
@@ -704,8 +724,7 @@ Output Format: Just the raw text of the character speaking.`
                 const wavBuffer = pcmToWav(bytes.buffer);
                 const blob = new Blob([wavBuffer], { type: 'audio/wav' });
                 const url = URL.createObjectURL(blob);
-                const audio = new Audio(url);
-                return audio; // Return audio object instead of playing
+                return url;
             } catch (error) {
                 console.error("TTS Error:", error);
                 throw error;
@@ -950,6 +969,7 @@ Output Format: Just the raw text of the character speaking.`
 
             // TTS State
             const [audioState, setAudioState] = useState({ id: null, status: 'idle', player: null });
+            const [audioCache, setAudioCache] = useState({});
 
             const [inputConcept, setInputConcept] = useState("");
             const [pacing, setPacing] = useState(1);
@@ -985,7 +1005,7 @@ Output Format: Just the raw text of the character speaking.`
 
 
             const handlePlayTTS = async (id, text) => {
-                // If currently playing THIS track, stop it
+                // 1. If currently playing THIS track, stop it
                 if (audioState.id === id && audioState.status === 'playing') {
                     audioState.player.pause();
                     audioState.player.currentTime = 0;
@@ -993,23 +1013,40 @@ Output Format: Just the raw text of the character speaking.`
                     return;
                 }
 
-                // If playing ANOTHER track, stop it first
+                // 2. If playing ANOTHER track, stop it first
                 if (audioState.player) {
                     audioState.player.pause();
                     audioState.player.currentTime = 0;
+                    // We don't return here, we proceed to play the new one
                 }
 
+                // 3. CHECK CACHE
+                if (audioCache[id]) {
+                    // Play from cache
+                    try {
+                        const audio = new Audio(audioCache[id]);
+                        audio.onended = () => setAudioState({ id: null, status: 'idle', player: null });
+
+                        setAudioState({ id, status: 'playing', player: audio });
+
+                        await audio.play();
+                    } catch (e) {
+                        console.error("Playback failed:", e);
+                        setAudioState({ id: null, status: 'idle', player: null });
+                        alert("Playback failed. Please try again.");
+                    }
+                    return;
+                }
+
+                // 4. GENERATE NEW
                 setAudioState({ id, status: 'loading', player: null });
 
                 try {
-                    const audio = await callTTS(apiKey, text);
-                    audio.onended = () => setAudioState({ id: null, status: 'idle', player: null });
-                    audio.play().catch(e => {
-                        console.error("Playback failed:", e);
-                        alert("Autoplay blocked. Please try again.");
-                        setAudioState({ id: null, status: 'idle', player: null });
-                    });
-                    setAudioState({ id, status: 'playing', player: audio });
+                    const url = await callTTS(apiKey, text);
+                    setAudioCache(prev => ({ ...prev, [id]: url }));
+                    // We do NOT auto-play here to avoid iOS issues. 
+                    // User sees Play button -> clicks it -> plays from cache (Step 3).
+                    setAudioState({ id: null, status: 'idle', player: null });
                 } catch (e) {
                     alert("TTS Failed: " + e.message);
                     setAudioState({ id: null, status: 'idle', player: null });
@@ -1096,9 +1133,37 @@ Output Format: Just the raw text of the character speaking.`
                 }
             };
 
+            const generateCharacterProfile = async (charName, charRole, context) => {
+                const prompt = `Interviewer: Tell me about yourself. Who are you really?\n\nContext: ${context}\nName: ${charName}\nRole: ${charRole}`;
+                return await callAI(prompt, PROMPTS.characterGenerator, false, "Character Profiler");
+            };
+
+            const getCharacterDetails = async (charName, mutableCastList) => {
+                const charIdx = mutableCastList.findIndex(c => c.name === charName);
+                if (charIdx === -1) {
+                    console.log(`Character ${charName} not found in cast.`);
+                    return "Character details unavailable.";
+                }
+                const char = mutableCastList[charIdx];
+                if (char.details?.deep_profile) return char.details.deep_profile;
+
+                setLoadingStep(`Interviewing ${char.name}...`);
+                const context = `Goals: ${char.details?.goals}, History: ${char.details?.history}, Events: ${char.details?.story_events}`;
+                const profile = await generateCharacterProfile(char.name, char.role, context);
+
+                if (!mutableCastList[charIdx].details) mutableCastList[charIdx].details = {};
+                mutableCastList[charIdx].details.deep_profile = profile;
+                return profile;
+            };
+
             const initStory = async () => {
                 if (!inputConcept) return;
                 setLoading(true); setLoadingStep("Architecting Story Bible...");
+
+                // Flush Audio Cache
+                Object.values(audioCache).forEach(url => URL.revokeObjectURL(url));
+                setAudioCache({});
+                setAudioState({ id: null, status: 'idle', player: null });
 
                 // Reset selection state
                 setSelectedAct(null);
@@ -1106,6 +1171,50 @@ Output Format: Just the raw text of the character speaking.`
 
                 try {
                     const bible = await callAI(`Concept: ${inputConcept}`, PROMPTS.storyArchitect, true, "Story Architect");
+
+                    // 1. Identify All Characters
+                    setLoadingStep("Identifying Cast...");
+                    const extractionPrompt = `Analyze this Story Bible and list all characters mentioned.\n\n${JSON.stringify(bible)}`;
+                    const extracted = await callAI(extractionPrompt, PROMPTS.characterExtractor, true, "Cast Scanner");
+
+                    // 2. Prepare Cast List (Merge Protagonist + Extracted)
+                    let finalCast = [bible.protagonist];
+
+                    if (extracted.characters) {
+                        extracted.characters.forEach(c => {
+                            // If not already in list (check by name, loosely)
+                            if (!finalCast.find(existing => existing.name.toLowerCase() === c.name.toLowerCase())) {
+                                finalCast.push({
+                                    name: c.name,
+                                    role: c.role,
+                                    voice_sample: "TBD", // Will be profiled
+                                    details: {
+                                        history: c.context || c.description,
+                                        story_events: "Identified in Story Bible",
+                                        goals: "Unknown (To be revealed)",
+                                        deep_profile: null
+                                    }
+                                });
+                            }
+                        });
+                    }
+
+                    // 3. Generate Deep Profiles for EVERYONE
+                    setLoadingStep("Interviewing Cast...");
+                    for (let i = 0; i < finalCast.length; i++) {
+                        const char = finalCast[i];
+                        if (!char.details?.deep_profile) {
+                            setLoadingStep(`Interviewing ${char.name}...`);
+                            const context = `Role: ${char.role}\nDescription: ${char.details?.history || char.details?.story_events}`;
+                            const profile = await generateCharacterProfile(char.name, char.role, context);
+                            if (!char.details) char.details = {};
+                            char.details.deep_profile = profile;
+                            // Also set voice_sample to a snippet if "TBD"
+                            if (char.voice_sample === "TBD") {
+                                char.voice_sample = profile.split('.')[0].substring(0, 50) + "...";
+                            }
+                        }
+                    }
 
                     // Reset story state completely
                     const newStory = {
@@ -1115,7 +1224,7 @@ Output Format: Just the raw text of the character speaking.`
                         themes: bible.themes,
                         style: bible.style,
                         threads: bible.threads,
-                        cast: [bible.protagonist],
+                        cast: finalCast,
                         lore: bible.world_lore,
                         acts: [],
                         scenes: {},
@@ -1156,41 +1265,7 @@ Output Format: Just the raw text of the character speaking.`
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
 
-            const generateCharacterProfile = async (charName, charRole, context) => {
-                const prompt = `Interviewer: Tell me about yourself. Who are you really?\n\nContext: ${context}\nName: ${charName}\nRole: ${charRole}`;
-                // Use callAI directly. Note: We're inside the component so we can use callAI.
-                // However, we need to ensure this is treated as a text output, not JSON.
-                // The prompt says "Output Format: Just the raw text".
-                return await callAI(prompt, PROMPTS.characterGenerator, false, "Character Profiler");
-            };
 
-            const getCharacterDetails = async (charName, mutableCastList) => {
-                // Find in the provided mutable list to ensure we are working with latest data in the loop
-                const charIdx = mutableCastList.findIndex(c => c.name === charName);
-
-                if (charIdx === -1) {
-                    console.log(`Character ${charName} not found in cast.`);
-                    return "Character details unavailable.";
-                }
-
-                const char = mutableCastList[charIdx];
-
-                // If we already have a deep profile, return it
-                if (char.details?.deep_profile) {
-                    return char.details.deep_profile;
-                }
-
-                // Otherwise, GENERATE it
-                setLoadingStep(`Interviewing ${char.name}...`);
-                const context = `Goals: ${char.details?.goals}, History: ${char.details?.history}, Events: ${char.details?.story_events}`;
-                const profile = await generateCharacterProfile(char.name, char.role, context);
-
-                // Store result in the mutable list
-                if (!mutableCastList[charIdx].details) mutableCastList[charIdx].details = {};
-                mutableCastList[charIdx].details.deep_profile = profile;
-
-                return profile;
-            };
 
             const writeProse = async (actIdx, sceneIdx, beatIdx) => {
                 setLoading(true);
@@ -1296,6 +1371,7 @@ FORBIDDEN:
                 try {
                     setLoadingStep("Agent 1/3: Drafting...");
                     const drafterSystemPrompt = PROMPTS.drafter
+                        .replace("{scene_description}", scene.description)
                         .replace("{subtext}", beat.emotional_shift || "None")
                         .replace("{pacing}", pacingDesc)
                         .replace("{voices}", castContext)
@@ -1451,7 +1527,7 @@ Write ONLY the content for the CURRENT BEAT.
                 <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden">
                     <div className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="p-4 flex justify-between border-b border-slate-800">
-                            <h2 className="font-bold flex gap-2"><Book className="text-indigo-400" /> EllipsisProse 0.3</h2>
+                            <h2 className="font-bold flex gap-2"><Book className="text-indigo-400" /> EllipsisProse o.32</h2>
                             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden"><X /></button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-1">
@@ -1491,7 +1567,7 @@ Write ONLY the content for the CURRENT BEAT.
                             {view === 'setup' && (
                                 <div className="max-w-xl mx-auto py-20 text-center animate-fade-in">
                                     <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"><Sparkles size={32} color="white" /></div>
-                                    <h1 className="text-2xl font-bold mb-4">EllipsisProse 0.3</h1>
+                                    <h1 className="text-2xl font-bold mb-4">EllipsisProse o.32</h1>
                                     <p className="text-slate-400 mb-6">Enter a concept. The AI Architect will build your story bible.</p>
                                     <textarea className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 h-32 mb-6 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g. A fantasy world where magic costs memories..." value={inputConcept} onChange={e => setInputConcept(e.target.value)} />
                                     <button onClick={initStory} disabled={loading || !inputConcept} className="w-full bg-indigo-600 hover:bg-indigo-500 py-4 rounded-xl font-bold transition-all disabled:opacity-50">Initialize Story</button>
@@ -1625,7 +1701,8 @@ Write ONLY the content for the CURRENT BEAT.
                                                                     <button onClick={() => handlePlayTTS(bId, prose.final)} className={`p-2 rounded border transition-colors ${audioState.id === bId && audioState.status !== 'idle' ? 'bg-indigo-900 border-indigo-500 text-indigo-200' : 'bg-slate-900 border-slate-800 text-emerald-400 hover:text-emerald-300'}`}>
                                                                         {audioState.id === bId && audioState.status === 'loading' ? <Loader2 size={16} className="animate-spin" /> :
                                                                             audioState.id === bId && audioState.status === 'playing' ? <Square size={16} fill="currentColor" /> :
-                                                                                <Volume2 size={16} />}
+                                                                                audioCache[bId] ? <Play size={16} fill="currentColor" /> :
+                                                                                    <Volume2 size={16} />}
                                                                     </button>
                                                                     <button onClick={() => writeProse(selectedAct, selectedScene, bi)} className="p-2 bg-slate-900 rounded text-indigo-400 border border-slate-800 hover:text-indigo-300"><RefreshCw size={16} /></button>
                                                                 </div>
