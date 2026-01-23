@@ -662,7 +662,38 @@ REQUIREMENTS:
 3.  **Mannerisms**: Include non-verbal cues in the text (e.g., he sips his drink, she pauses, deep in thought, he laughs nervously).
 4.  **No Meta-Commentary**: Do not write "Here is the profile." Just START talking as the character.
 
-Output Format: Just the raw text of the character speaking.`
+Output Format: Just the raw text of the character speaking.`,
+
+            loreScheduler: `You are a Continuity Manager.
+Task: Assign a "Revelation Point" (Act & Scene) to each item of World Lore.
+Input: Story Concept, Act Outline, and List of Lore Items.
+
+Rules:
+1.  **Spoilers**: If a piece of lore is a plot twist or secret discovered later, set its Act/Scene to when it is revealed.
+2.  **Background**: If a piece of lore is general knowledge or background history, set it to Act 1, Scene 1.
+3.  **Progression**: Ensure lore is distributed logically. Not everything should be known at the start.
+
+Output JSON:
+{
+  "lore_schedule": [
+    { "topic": "Name of Lore Topic", "valid_from_act": 1, "valid_from_scene": 1 },
+    { "topic": "Secret Weapon", "valid_from_act": 3, "valid_from_scene": 5 }
+  ]
+}`,
+
+            loreSelector: `You are a Narrative Context Engine.
+Task: Select the MOST RELEVANT lore items for the current scene beat.
+Input: Current Scene Description, Current Beat Description, List of Available Lore.
+
+Rules:
+1.  **Relevance**: Only select lore that is directly actionable or thematically relevant to *this specific beat*.
+2.  **Limit**: Select a maximum of 3-5 items. If nothing is relevant, return an empty list.
+3.  **Context**: Consider the location, characters present, and the action occurring.
+
+Output JSON:
+{
+  "selected_lore_topics": ["Topic A", "Topic B"]
+}`
         };
 
         const cleanJson = (text) => {
@@ -952,7 +983,7 @@ Output Format: Just the raw text of the character speaking.`
           MAIN APP COMPONENT
           ----------------------------------------------------------------------
         */
-        function NovelCraft() {
+        function EllipsisProsef() {
             const [story, setStory] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_story");
                 return saved ? JSON.parse(saved) : {
@@ -1266,7 +1297,23 @@ Output Format: Just the raw text of the character speaking.`
 
                     setLoadingStep("Structuring Acts...");
                     const actData = await callAI(`Concept: ${bible.concept}\nThreads: ${JSON.stringify(bible.threads)}`, PROMPTS.actStructure, true, "Act Structure");
-                    setStory(prev => ({ ...prev, acts: actData.acts }));
+
+                    // 4. Schedule Lore (Avoid Spoilers)
+                    setLoadingStep("Scheduling Lore Reveals...");
+                    const schedPrompt = `Story Concept: ${bible.concept}\n\nAct Outline: ${JSON.stringify(actData.acts)}\n\nWorld Lore: ${JSON.stringify(bible.world_lore)}`;
+                    const loreSchedule = await callAI(schedPrompt, PROMPTS.loreScheduler, true, "Lore Scheduler");
+
+                    // Merge schedule into lore
+                    const scheduledLore = bible.world_lore.map(l => {
+                        const sched = loreSchedule.lore_schedule?.find(s => s.topic === l.topic);
+                        return {
+                            ...l,
+                            valid_from_act: sched?.valid_from_act || 1,
+                            valid_from_scene: sched?.valid_from_scene || 1
+                        };
+                    });
+
+                    setStory(prev => ({ ...prev, lore: scheduledLore, acts: actData.acts }));
                     setView('dashboard');
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
@@ -1346,7 +1393,43 @@ Output Format: Just the raw text of the character speaking.`
                 ).join('\n\n');
 
                 // 3. Lore Formatting (Markdown Headers)
-                const loreContext = story.lore.slice(0, 3).map(l => `### ${l.topic}\n${l.detail}`).join('\n\n');
+                // 3. Lore Selection (Time-Aware + Agentic)
+                // Filter 1: Temporal Validity
+                // Note: actIdx and sceneIdx are 0-based, but our data uses 1-based for users
+                const currentActNum = story.acts[actIdx].number;
+                const currentSceneNum = scene.number;
+
+                const availableLore = story.lore.filter(l => {
+                    const validAct = l.valid_from_act || 1;
+                    const validScene = l.valid_from_scene || 1;
+                    if (currentActNum > validAct) return true;
+                    if (currentActNum === validAct && currentSceneNum >= validScene) return true;
+                    return false;
+                });
+
+                // Filter 2: Relevance Agent
+                let selectedLore = availableLore;
+                // Only invoke the agent if we have a lot of lore > 5 items
+                if (availableLore.length > 5) {
+                    setLoadingStep("Consulting Archive...");
+                    const selectorPrompt = `
+Scene: ${scene.description}
+Beat Focus: ${beat.description}
+Characters: ${scene.cast_names?.join(', ') || "None"}
+
+Available Lore:
+${availableLore.map((l, i) => `${i}. ${l.topic}`).join('\n')}
+`;
+                    const selection = await callAI(selectorPrompt, PROMPTS.loreSelector, true, "Lore Selector");
+                    if (selection.selected_lore_topics && selection.selected_lore_topics.length > 0) {
+                        selectedLore = availableLore.filter(l => selection.selected_lore_topics.includes(l.topic));
+                    } else {
+                        // Fallback: take top 5
+                        selectedLore = availableLore.slice(0, 5);
+                    }
+                }
+
+                const loreContext = selectedLore.map(l => `### ${l.topic}\n${l.detail}`).join('\n\n');
 
                 const getPacingDescription = (val) => {
                     if (Number(val) === 0) {
@@ -1666,6 +1749,53 @@ Write ONLY the content for the CURRENT BEAT.
                                 </div>
                             )}
 
+                            {view === 'lore' && (
+                                <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+                                    <div className="flex justify-between items-center mb-6">
+                                        <h2 className="text-2xl font-bold flex items-center gap-2"><Globe className="text-blue-400" /> World Lore</h2>
+                                        {/* Future: Add 'New Lore' button */}
+                                    </div>
+                                    <div className="grid gap-4">
+                                        {story.lore.map((l, i) => (
+                                            <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 p-6 transition-all hover:border-slate-700">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <h3 className="font-bold text-lg text-blue-300">{l.topic}</h3>
+                                                    <div className="flex items-center gap-2 text-xs bg-slate-950 p-1 rounded border border-slate-800">
+                                                        <span className="text-slate-500 font-bold uppercase px-1">Reveal:</span>
+                                                        <select
+                                                            className="bg-transparent text-slate-300 outline-none"
+                                                            value={l.valid_from_act || 1}
+                                                            onChange={(e) => {
+                                                                const val = parseInt(e.target.value);
+                                                                const newLore = [...story.lore];
+                                                                newLore[i].valid_from_act = val;
+                                                                setStory(prev => ({ ...prev, lore: newLore }));
+                                                            }}
+                                                        >
+                                                            {story.acts.map(a => <option key={a.number} value={a.number}>Act {a.number}</option>)}
+                                                        </select>
+                                                        <span className="text-slate-600">/</span>
+                                                        <input
+                                                            type="number"
+                                                            min="1"
+                                                            className="w-12 bg-transparent text-slate-300 outline-none"
+                                                            value={l.valid_from_scene || 1}
+                                                            onChange={(e) => {
+                                                                const val = parseInt(e.target.value);
+                                                                const newLore = [...story.lore];
+                                                                newLore[i].valid_from_scene = val;
+                                                                setStory(prev => ({ ...prev, lore: newLore }));
+                                                            }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                                <p className="text-slate-400 leading-relaxed">{l.detail}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {view === 'structure' && (
                                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
                                     {story.acts.map((act, idx) => (
@@ -1900,8 +2030,8 @@ Write ONLY the content for the CURRENT BEAT.
                                 </div>
                             )}
                         </main>
-                    </div>
-                </div>
+                    </div >
+                </div >
             );
         }
 
@@ -1909,7 +2039,7 @@ Write ONLY the content for the CURRENT BEAT.
         if (!window.reactRoot) {
             window.reactRoot = ReactDOM.createRoot(container);
         }
-        window.reactRoot.render(<NovelCraft />);
+        window.reactRoot.render(<EllipsisProsef />);
     </script>
 </body>
 
