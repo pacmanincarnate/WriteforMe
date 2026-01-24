@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EllipsisProse 0.33 - AI Story Architect</title>
+    <title>EllipsisProse 0.34 - AI Story Architect</title>
 
     <!-- 1. Tailwind CSS (Styling) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -198,6 +198,7 @@
         const Download = (p) => <Icon name="download" {...p} />;
         const Upload = (p) => <Icon name="upload" {...p} />;
         const Square = (p) => <Icon name="square" {...p} />;
+        const Trash2 = (p) => <Icon name="trash-2" {...p} />;
         const Play = (p) => <Icon name="play" {...p} />;
         const Loader2 = (p) => <Icon name="loader-2" {...p} />;
 
@@ -553,7 +554,7 @@ Rules:
 2. Strengthen verbs.
 3. Ensure character voice matches the samples.
 4. Fix "filter words" (e.g., change "He saw the box" to "The box sat on the table").
-5. Check for and remove continuity errors such as a character referncinf future events.
+5. Check for and remove continuity errors, such as a character referencing future events.
 6. The dialogue needs to be written to give each character a *very* distinct voice.
 7. Ensure that characters are actively pursuing their own goals.
 8. Refine subtext: Ensure that there is a tension between what characters say and what they feel.
@@ -600,7 +601,7 @@ Current Cast: {cast_summary}
 - Did their Goal change?
 2. LORE UPDATES:
 - Was a new location or object described in detail?
-- Look for 'Chekhov's Gun'; the seemingly inconsequential detail that may become important' later.
+- Look for 'Chekhov's Gun'; the seemingly inconsequential detail that may become important later.
   
   Output JSON:
   {
@@ -623,7 +624,7 @@ The Author just wrote: "{prose_summary}"
 TASK:
 Does the Prose logically allow the Next Beat to happen as written?
 - If YES: Return valid: true.
-- If NO (e.g. Character A left the room, but Next Beat requires them to speak): 
+- If NO (e.g., Character A left the room, but Next Beat requires them to speak): 
 Return valid: false.
 REWRITE the remaining beats for this scene to accommodate the new reality while still steering toward the Scene Goal.
   
@@ -654,13 +655,18 @@ REWRITE the remaining beats for this scene to accommodate the new reality while 
 
             characterGenerator: `You are an expert Character Profiler and Method Actor.
 Task: Generate a deep, first-person character profile that sounds exactly like a transcript of an interview with the character from **before** the story takes place.
-Input: Basic character details (name, role, context).
+Input: Basic character details (name, role, context) AND Global Story Context.
 
 REQUIREMENTS:
-1.  **Voice & Tone**: The entire output must be in the character's unique voice. If they are a rough space pirate, use slang, sentence fragments, and attitude. If they are a refined elven scholar, use elevated vocabulary and perfect grammar.
-2.  **Content**: Cover their Backstory, Motivations, Fears, Relationships, and Secrets.
-3.  **Mannerisms**: Include non-verbal cues in the text (e.g., he sips his drink, she pauses, deep in thought, he laughs nervously).
-4.  **No Meta-Commentary**: Do not write "Here is the profile." Just START talking as the character.
+1.  **Context Integration (CRITICAL)**: You MUST integrate the Story Concept, Themes, and Style into the character's voice and worldview.
+    - If the theme is "Loss of Humanity," the character should speak with detachment or obsession about what they've lost.
+    - If the setting is "Cyberpunk," use appropriate slang and reference technology/corporations.
+    - The character must feel like they grew up in THIS specific world, not a generic one.
+2.  **Voice & Tone**: The entire output must be in the character's unique voice. 
+3.  **Content**: Cover their Backstory, Motivations, Fears, Relationships, and Secrets.
+    - *Specifics*: Avoid generic tropes. Give them a specific, weird habit or a very specific memory.
+4.  **Mannerisms**: Include non-verbal cues in the text (e.g., he sips his drink, she pauses, deep in thought, he laughs nervously).
+5.  **No Meta-Commentary**: Do not write "Here is the profile." Just START talking as the character.
 
 Output Format: Just the raw text of the character speaking.`,
 
@@ -1115,7 +1121,7 @@ Output JSON:
                 }
             };
 
-            const handleWorldUpdates = (updates) => {
+            const handleWorldUpdates = (updates, activeActNum = 1, activeSceneNum = 1) => {
                 if (!updates) return;
                 setStory(prev => {
                     let newCast = [...prev.cast];
@@ -1140,11 +1146,28 @@ Output JSON:
                     }
                     if (updates.lore_updates) {
                         updates.lore_updates.forEach(up => {
-                            if (!newLore.find(l => l.topic === up.topic)) newLore.push({ topic: up.topic, detail: up.detail });
+                            if (!newLore.find(l => l.topic === up.topic)) {
+                                newLore.push({
+                                    topic: up.topic,
+                                    detail: up.detail,
+                                    valid_from_act: activeActNum,
+                                    valid_from_scene: activeSceneNum
+                                });
+                            }
                         });
                     }
                     return { ...prev, cast: newCast, lore: newLore };
                 });
+            };
+
+            const handleDeleteLore = (index) => {
+                if (window.confirm("Are you sure you want to delete this lore item?")) {
+                    setStory(prev => {
+                        const newLore = [...prev.lore];
+                        newLore.splice(index, 1);
+                        return { ...prev, lore: newLore };
+                    });
+                }
             };
 
             const handleExport = () => {
@@ -1195,8 +1218,14 @@ Output JSON:
                 }
             };
 
-            const generateCharacterProfile = async (charName, charRole, context) => {
-                const prompt = `Interviewer: Tell me about yourself. Who are you really?\n\nContext: ${context}\nName: ${charName}\nRole: ${charRole}`;
+            const generateCharacterProfile = async (charName, charRole, context, storyContext) => {
+                const contextBlock = `
+STORY CONCEPT: ${storyContext?.concept || "Standard Narrative"}
+THEMES: ${storyContext?.themes || "General"}
+STYLE/TONE: ${JSON.stringify(storyContext?.style || {})}
+CHARACTER CONTEXT: ${context}
+`;
+                const prompt = `${contextBlock}\n\nInterviewer: "Tell me about yourself. Who are you really, ${charName}?" We know you're ${charRole}`;
                 return await callAI(prompt, PROMPTS.characterGenerator, false, "Character Profiler");
             };
 
@@ -1211,11 +1240,57 @@ Output JSON:
 
                 setLoadingStep(`Interviewing ${char.name}...`);
                 const context = `Goals: ${char.details?.goals}, History: ${char.details?.history}, Events: ${char.details?.story_events}`;
-                const profile = await generateCharacterProfile(char.name, char.role, context);
+
+                // Pass story context (concept, themes, style)
+                const storyContext = {
+                    concept: story.concept,
+                    themes: story.themes,
+                    style: story.style
+                };
+
+                const profile = await generateCharacterProfile(char.name, char.role, context, storyContext);
 
                 if (!mutableCastList[charIdx].details) mutableCastList[charIdx].details = {};
                 mutableCastList[charIdx].details.deep_profile = profile;
                 return profile;
+            };
+
+            const isSceneComplete = (actIdx, sceneIdx) => {
+                const sId = `${actIdx}-${sceneIdx}`;
+                const beats = story.beats[sId];
+                if (!beats || beats.length === 0) return false;
+                // Check if ALL beats have final prose
+                return beats.every((b, i) => story.prose[`${sId}-${i}`]?.final);
+            };
+
+            const handleBeatChange = (actIdx, sceneIdx, beatIdx, newText) => {
+                const sId = `${actIdx}-${sceneIdx}`;
+                setStory(prev => {
+                    const newBeats = [...prev.beats[sId]];
+                    newBeats[beatIdx] = { ...newBeats[beatIdx], description: newText };
+                    return {
+                        ...prev,
+                        beats: {
+                            ...prev.beats,
+                            [sId]: newBeats
+                        }
+                    };
+                });
+            };
+
+            const requestSceneWeaving = (actIdx) => {
+                if (story.scenes[actIdx]?.length > 0) {
+                    if (!window.confirm("WARNING: Rerunning the Scene Weaver will overwrite ALL existing scenes and beats for this Act. This cannot be undone. Are you sure?")) return;
+                }
+                generateScenes(actIdx);
+            };
+
+            const requestBeatGeneration = (actIdx, sceneIdx) => {
+                const sId = `${actIdx}-${sceneIdx}`;
+                if (story.beats[sId]?.length > 0) {
+                    if (!window.confirm("WARNING: Rerunning the Beat Director will overwrite ALL existing beats and prose for this scene. This cannot be undone. Are you sure?")) return;
+                }
+                generateBeats(actIdx, sceneIdx);
             };
 
             const initStory = async () => {
@@ -1268,7 +1343,15 @@ Output JSON:
                         if (!char.details?.deep_profile) {
                             setLoadingStep(`Interviewing ${char.name}...`);
                             const context = `Role: ${char.role}\nDescription: ${char.details?.history || char.details?.story_events}`;
-                            const profile = await generateCharacterProfile(char.name, char.role, context);
+
+                            // Pass bible context
+                            const storyContext = {
+                                concept: bible.concept,
+                                themes: bible.themes,
+                                style: bible.style
+                            };
+
+                            const profile = await generateCharacterProfile(char.name, char.role, context, storyContext);
                             if (!char.details) char.details = {};
                             char.details.deep_profile = profile;
                             // Also set voice_sample to a snippet if "TBD"
@@ -1328,7 +1411,7 @@ Output JSON:
                     if (actNumber >= 3) systemPrompt = PROMPTS.sceneWeaverAct3;
                     const res = await callAI(`Act Context: ${JSON.stringify(act)}\nThreads: ${JSON.stringify(story.threads)}\nCast: ${JSON.stringify(story.cast)}\nLore: ${JSON.stringify(story.lore)}`, systemPrompt, true, "Scene Weaver");
                     setStory(prev => ({ ...prev, scenes: { ...prev.scenes, [actIndex]: res.scenes } }));
-                    handleWorldUpdates({ new_characters: res.new_characters });
+                    handleWorldUpdates({ new_characters: res.new_characters }, actNumber, 1);
                     setSelectedAct(actIndex);
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
@@ -1572,7 +1655,7 @@ Write ONLY the content for the CURRENT BEAT.
                         .replace("{cast_summary}", activeCast.map(c => c.name).join(', '));
 
                     const updates = await callAI("Analyze the text for updates.", archivistSystemPrompt, true, "Archivist");
-                    handleWorldUpdates(updates);
+                    handleWorldUpdates(updates, currentActNum, currentSceneNum);
                     setStory(prev => ({ ...prev, prose: { ...prev.prose, [bId]: { draft, final } } }));
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
@@ -1653,7 +1736,7 @@ Write ONLY the content for the CURRENT BEAT.
                                 <div key={idx} className="ml-2 mt-2">
                                     <div className="text-[10px] text-slate-500 font-bold uppercase px-3 mb-1">Act {act.number}</div>
                                     {story.scenes[idx]?.map((scene, sIdx) => (
-                                        <button key={sIdx} onClick={() => { setSelectedAct(idx); setSelectedScene(sIdx); setView('writer'); setIsSidebarOpen(false); }} className={`nav-btn text-xs pl-6 truncate ${view === 'writer' && selectedScene === sIdx ? 'text-indigo-300' : ''}`}>{scene.number}. {scene.title}</button>
+                                        <button key={sIdx} onClick={() => { setSelectedAct(idx); setSelectedScene(sIdx); setView('writer'); setIsSidebarOpen(false); }} className={`nav-btn text-xs pl-6 truncate ${view === 'writer' && selectedScene === sIdx ? 'text-indigo-300' : isSceneComplete(idx, sIdx) ? 'text-emerald-400' : ''}`}>{scene.number}. {scene.title}</button>
                                     ))}
                                 </div>
                             ))}
@@ -1753,40 +1836,57 @@ Write ONLY the content for the CURRENT BEAT.
                                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
                                     <div className="flex justify-between items-center mb-6">
                                         <h2 className="text-2xl font-bold flex items-center gap-2"><Globe className="text-blue-400" /> World Lore</h2>
-                                        {/* Future: Add 'New Lore' button */}
                                     </div>
                                     <div className="grid gap-4">
                                         {story.lore.map((l, i) => (
                                             <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 p-6 transition-all hover:border-slate-700">
                                                 <div className="flex justify-between items-start mb-2">
                                                     <h3 className="font-bold text-lg text-blue-300">{l.topic}</h3>
-                                                    <div className="flex items-center gap-2 text-xs bg-slate-950 p-1 rounded border border-slate-800">
-                                                        <span className="text-slate-500 font-bold uppercase px-1">Reveal:</span>
-                                                        <select
-                                                            className="bg-transparent text-slate-300 outline-none"
-                                                            value={l.valid_from_act || 1}
-                                                            onChange={(e) => {
-                                                                const val = parseInt(e.target.value);
-                                                                const newLore = [...story.lore];
-                                                                newLore[i].valid_from_act = val;
-                                                                setStory(prev => ({ ...prev, lore: newLore }));
-                                                            }}
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="flex items-center gap-2 text-xs bg-slate-950 p-1 rounded border border-slate-800">
+                                                            <span className="text-slate-500 font-bold uppercase px-1">Reveal:</span>
+                                                            <select
+                                                                className="bg-transparent text-slate-300 outline-none max-w-[100px]"
+                                                                value={l.valid_from_act || 1}
+                                                                onChange={(e) => {
+                                                                    const val = parseInt(e.target.value);
+                                                                    const newLore = [...story.lore];
+                                                                    newLore[i].valid_from_act = val;
+                                                                    // Reset scene to 1 when Act changes for safety
+                                                                    newLore[i].valid_from_scene = 1;
+                                                                    setStory(prev => ({ ...prev, lore: newLore }));
+                                                                }}
+                                                            >
+                                                                {story.acts.map(a => <option key={a.number} value={a.number}>Act {a.number}: {a.title.substring(0, 15)}...</option>)}
+                                                            </select>
+                                                            <span className="text-slate-600">/</span>
+                                                            <select
+                                                                className="bg-transparent text-slate-300 outline-none max-w-[150px]"
+                                                                value={l.valid_from_scene || 1}
+                                                                onChange={(e) => {
+                                                                    const val = parseInt(e.target.value);
+                                                                    const newLore = [...story.lore];
+                                                                    newLore[i].valid_from_scene = val;
+                                                                    setStory(prev => ({ ...prev, lore: newLore }));
+                                                                }}
+                                                            >
+                                                                {(() => {
+                                                                    // Get scenes for the selected Act
+                                                                    // Act number is 1-based, array index is 0-based
+                                                                    const actIdx = (l.valid_from_act || 1) - 1;
+                                                                    const scenes = story.scenes[actIdx] || [];
+                                                                    if (scenes.length === 0) return <option value="1">Scene 1</option>;
+                                                                    return scenes.map(s => <option key={s.number} value={s.number}>Sc {s.number}: {s.title.substring(0, 20)}...</option>);
+                                                                })()}
+                                                            </select>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleDeleteLore(i)}
+                                                            className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded transition-colors"
+                                                            title="Delete Lore Item"
                                                         >
-                                                            {story.acts.map(a => <option key={a.number} value={a.number}>Act {a.number}</option>)}
-                                                        </select>
-                                                        <span className="text-slate-600">/</span>
-                                                        <input
-                                                            type="number"
-                                                            min="1"
-                                                            className="w-12 bg-transparent text-slate-300 outline-none"
-                                                            value={l.valid_from_scene || 1}
-                                                            onChange={(e) => {
-                                                                const val = parseInt(e.target.value);
-                                                                const newLore = [...story.lore];
-                                                                newLore[i].valid_from_scene = val;
-                                                                setStory(prev => ({ ...prev, lore: newLore }));
-                                                            }}
-                                                        />
+                                                            <Trash2 size={14} />
+                                                        </button>
                                                     </div>
                                                 </div>
                                                 <p className="text-slate-400 leading-relaxed">{l.detail}</p>
@@ -1802,7 +1902,7 @@ Write ONLY the content for the CURRENT BEAT.
                                         <div key={idx} className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
                                             <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/20">
                                                 <div><span className="text-xs font-bold text-slate-500 uppercase">Act {act.number}</span><h3 className="text-xl font-bold">{act.title}</h3><p className="text-sm text-slate-400">{act.description}</p></div>
-                                                {!story.scenes[idx] && <button onClick={() => generateScenes(idx)} disabled={loading} className="bg-indigo-600 px-4 py-2 rounded font-bold text-sm hover:bg-indigo-500">Weave Scenes</button>}
+                                                <button onClick={() => requestSceneWeaving(idx)} disabled={loading} className="bg-indigo-600 px-4 py-2 rounded font-bold text-sm hover:bg-indigo-500">{story.scenes[idx] ? 'Re-Weave Scenes' : 'Weave Scenes'}</button>
                                             </div>
                                             {story.scenes[idx] && <div className="p-4 bg-slate-950/50 border-b border-slate-800 space-y-4">
                                                 <ThreadVisualizer scenes={story.scenes[idx]} threads={story.threads} />
@@ -1829,7 +1929,7 @@ Write ONLY the content for the CURRENT BEAT.
                                         </div>
                                         <div className="flex flex-col gap-2">
                                             <button onClick={copyFullScene} className="bg-slate-800 p-2 rounded hover:bg-slate-700 transition-colors"><Copy size={18} /></button>
-                                            {!story.beats[`${selectedAct}-${selectedScene}`] && <button onClick={() => generateBeats(selectedAct, selectedScene)} disabled={loading} className="bg-emerald-600 px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2"><Sparkles size={16} /> Beats</button>}
+                                            <button onClick={() => requestBeatGeneration(selectedAct, selectedScene)} disabled={loading} className="bg-emerald-600 px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2"><Sparkles size={16} /> {story.beats[`${selectedAct}-${selectedScene}`] ? 'Re-Do Beats' : 'Beats'}</button>
                                         </div>
                                     </div>
                                     <div className="space-y-12">
@@ -1841,7 +1941,12 @@ Write ONLY the content for the CURRENT BEAT.
                                                     <div className="xl:w-80 shrink-0">
                                                         <div className={`p-5 rounded-xl border transition-all ${prose ? 'bg-slate-900/40 border-slate-800 opacity-60' : 'bg-slate-900 border-indigo-500/30'}`}>
                                                             <div className="flex justify-between mb-2"><span className="text-xs font-bold text-indigo-400">BEAT {bi + 1}</span><ValenceBadge score={beat.valence} /></div>
-                                                            <p className="text-sm font-medium mb-4">{beat.description}</p>
+                                                            <textarea
+                                                                className="w-full bg-slate-950 text-sm font-medium mb-4 p-2 rounded border border-transparent hover:border-slate-700 focus:border-indigo-500 outline-none resize-none transition-colors field-sizing-content"
+                                                                value={beat.description}
+                                                                onChange={(e) => handleBeatChange(selectedAct, selectedScene, bi, e.target.value)}
+                                                                rows={4}
+                                                            />
                                                             <div className="text-[10px] text-slate-500 uppercase font-bold italic mb-4">{beat.emotional_shift}</div>
                                                             {!prose && <div className="space-y-4 pt-4 border-t border-slate-800">
                                                                 <div className="flex justify-between text-[10px] text-slate-500 uppercase font-bold"><span>Slow</span><span>Balanced</span><span>Fast</span></div>
