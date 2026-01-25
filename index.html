@@ -1468,24 +1468,44 @@ CHARACTER CONTEXT: ${context}
             };
 
             const generateBeats = async (actIdx, sceneIdx) => {
-                setLoading(true); setLoadingStep("Directing Beats...");
-                try {
-                    const res = await callAI(`Scene: ${JSON.stringify(story.scenes[actIdx][sceneIdx])}\nThreads: ${JSON.stringify(story.scenes[actIdx][sceneIdx].active_thread_ids)}`, PROMPTS.beatDirector, true, "Beat Director");
-                    const sId = `${actIdx}-${sceneIdx}`;
-                    setStory(prev => {
-                        // Clear existing prose for this scene to match the new beats
-                        const newProse = { ...prev.prose };
-                        Object.keys(newProse).forEach(k => {
-                            if (k.startsWith(`${sId}-`)) delete newProse[k];
-                        });
-                        return {
-                            ...prev,
-                            beats: { ...prev.beats, [sId]: res.beats },
-                            prose: newProse
-                        };
+                const sId = `${actIdx}-${sceneIdx}`;
+                const sceneData = story.scenes[actIdx][sceneIdx];
+                const activeThreads = sceneData.active_thread_ids;
+
+                setLoading(true);
+
+                // 1. Clear State First (Clean Slate)
+                setLoadingStep("Clearing scene...");
+                setStory(prev => {
+                    const newProse = { ...prev.prose };
+                    Object.keys(newProse).forEach(k => {
+                        if (k.startsWith(`${sId}-`)) delete newProse[k];
                     });
+                    const newBeats = { ...prev.beats };
+                    delete newBeats[sId];
+
+                    return { ...prev, beats: newBeats, prose: newProse };
+                });
+
+                // 2. Generate New Beats
+                setLoadingStep("Directing Beats...");
+                try {
+                    const res = await callAI(`Scene: ${JSON.stringify(sceneData)}\nThreads: ${JSON.stringify(activeThreads)}`, PROMPTS.beatDirector, true, "Beat Director");
+
+                    if (res && res.beats) {
+                        setStory(prev => ({
+                            ...prev,
+                            beats: { ...prev.beats, [sId]: res.beats }
+                        }));
+                    } else {
+                        throw new Error("No beats generated from AI response.");
+                    }
                     setSelectedScene(sceneIdx);
-                } catch (e) { alert(e.message); } finally { setLoading(false); }
+                } catch (e) {
+                    alert("Beat Generation Error: " + e.message);
+                } finally {
+                    setLoading(false);
+                }
             };
 
 
@@ -1662,8 +1682,6 @@ FORBIDDEN:
 ## Previous Beat (Context)
 ### Description
 ${prevBeat ? prevBeat.description : "Start of Scene"}
-### Last 500 Words (Context)
-"...${fullSceneText.slice(-2000)}..."
 
 ## FULL SCENE HISTORY
 ${fullSceneText}
