@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EllipsisProse 0.34 - AI Story Architect</title>
+    <title>EllipsisProse 0.35 - AI Story Architect</title>
 
     <!-- 1. Tailwind CSS (Styling) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -547,21 +547,21 @@ Here is your guide for crafting a successful beat.
 - Create a gap between expectation and reality to keep the narrative unpredictable and force the characters to think on their feet. Authors plan beats as a game of tennis. They focus on the causality. What causes the character to act? Is it an external threat, an internal realization, or a line of dialogue from someone else? Is the reaction immediate (instinctive) or delayed (calculated)? Authors look for the gap between what a character expects to happen when they take an action, and what actually happens. The beat usually lands in that gap of surprise.
 - Ensure that the beat involves an emotional change. The characters should feel different after the beat completes than when it began.`,
 
-            editor: `You are a Ruthless Editor.
+            editor: `You are a Ruthless Editor working with a writer to clean up their draft.
 Task: Polish the following draft.
 Rules:
 1. Cut exposition.
 2. Strengthen verbs.
-3. Ensure character voice matches the samples.
+3. Ensure character voice matches their personality and current mood as inferred from the prose.
 4. Fix "filter words" (e.g., change "He saw the box" to "The box sat on the table").
-5. Check for and remove continuity errors such as a character referncinf future events.
+5. HIGH PRIORITY: Check for and remove continuity errors such as a character referencing future events. Look closely at the beat before and the beat after the current text and ensure that the current beat fits *within* those beats. Rewrite the beat to maintain continuity where required to avoid invalidating future beats.
 6. The dialogue needs to be written to give each character a *very* distinct voice.
-7. Ensure that characters are actively pursuing their own goals.
-8. Refine subtext: Ensure that there is a tension between what characters say and what they feel.
+7. Ensure that characters are actively pursuing their own goals within the scene.
+8. Refine subtext: Ensure that there is a clear tension between what characters say and what they feel.
 9. Remove repetition and 'crutch' words, such as ozone, whisper, and sternum.
-10. Ensure there is a clear cause and effect within the beat.
+10. Ensure there is a clear cause and effect within the beat. It is important that the beat shift the emotional state of the characters in a noticeable and clear way.
 11. Revise circular dialogue or events to force characters to change their approach to prevent static, stale action.
-12. Ensure that character reactions follow the pattern of: visceral, emotional, intellectual, action/speech.
+12. Ensure that character reactions follow the pattern of: visceral, emotional, intellectual, action/speech. This applies to well-developed characters as well as supporting characters.
 
 # CONTEXT
 This is the important information to keep in mind as you review the work.
@@ -578,7 +578,7 @@ This is the important information to keep in mind as you review the work.
 {style_guide}
 
 ## Characters Present
-It's essential that each character's vouce dhine through in their speech, mannerisms, and actions. They should each be clearly driven by personal goals.
+It's essential that each character's voice shines through in their speech, mannerisms, and actions. They should each be clearly driven by personal goals.
 {voices}
 
 
@@ -601,6 +601,9 @@ Task: Analyze the just-written text and return UPDATES for the Story Bible.
   
 Text Segment: {text}
 Current Cast: {cast_summary}
+
+EXISTING LORE: 
+{current_lore}
   
 1. CAST UPDATES: 
 - Did a character reveal new Backstory (History)?
@@ -608,7 +611,9 @@ Current Cast: {cast_summary}
 - Did their Goal change?
 2. LORE UPDATES:
 - Was a new location or object described in detail?
-- Look for 'Chekhov's Gun'; the seemingly inconsequential detail that may become important' later.
+- Look for 'Chekhov's Gun'; the seemingly inconsequential detail that may become important later.
+- LIMIT: Generate 1-4 items maximum.
+- DUPLICATION CHECK: Do not create lore for topics that already exist in the provided list.
   
   Output JSON:
   {
@@ -633,7 +638,7 @@ Does the Prose logically allow the Next Beat to happen as written?
 - If YES: Return valid: true.
 - If NO (e.g. Character A left the room, but Next Beat requires them to speak): 
 Return valid: false.
-REWRITE the remaining beats for this scene to accommodate the new reality while still steering toward the Scene Goal.
+REWRITE the remaining beats for this scene to accommodate the new reality while still steering toward the Scene Goal. Avoid lengthening the scene.
   
   Output JSON:
   {
@@ -651,12 +656,12 @@ REWRITE the remaining beats for this scene to accommodate the new reality while 
   Rules:
   1. Include the Protagonist (if not already redundant).
   2. Identify Antagonists, Sidekicks, Mentors, or significant figures mentioned in threads/history.
-  3. Extract a brief description and their role for each.
+  3. Extract a brief description, their role, and their GOAL for each.
   
   Output JSON:
   {
     "characters": [
-      { "name": "Name", "role": "Role (e.g. Antagonist)", "description": "Brief summary", "context": "Mentioned in..." }
+      { "name": "Name", "role": "Role (e.g. Antagonist)", "description": "Brief summary", "goals": "What do they want?", "context": "Mentioned in..." }
     ]
   }`,
 
@@ -988,6 +993,45 @@ Output JSON:
                             );
                         })}
                     </svg>
+                </div>
+            );
+        };
+
+        const CharacterCard = ({ c }) => {
+            const [isExpanded, setIsExpanded] = useState(false);
+            if (!c) return null;
+
+            return (
+                <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
+                    <div className="p-5 border-b border-slate-800 bg-slate-800/30 flex justify-between">
+                        <div><h3 className="text-xl font-bold">{c.name}</h3><span className="text-xs text-indigo-400 uppercase font-mono">{c.role}</span></div>
+                        <User className="text-slate-600" />
+                    </div>
+                    <div className="p-5 space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-slate-950 p-3 rounded border border-slate-800"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Status</div><div className="text-sm whitespace-pre-wrap">{c.details?.story_events || "N/A"}</div></div>
+                            <div className="bg-slate-950 p-3 rounded border border-slate-800"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Goal</div><div className="text-sm">{c.details?.goals || "Unknown"}</div></div>
+                        </div>
+                        <div><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">History</div><p className="text-sm text-slate-400">{c.details?.history || "No history."}</p></div>
+                        {c.voice_sample && <div className="bg-indigo-900/10 p-3 rounded border border-indigo-500/20 italic text-indigo-200 font-serif">"{c.voice_sample}"</div>}
+
+                        {c.details?.deep_profile && (
+                            <div className="pt-4 border-t border-slate-800">
+                                <button
+                                    onClick={() => setIsExpanded(!isExpanded)}
+                                    className="w-full text-xs text-indigo-400 hover:text-indigo-300 flex items-center justify-center gap-2 py-2 bg-slate-950 rounded border border-slate-800 hover:bg-slate-800 transition-colors"
+                                >
+                                    {isExpanded ? <React.Fragment><Minus size={12} /> Hide Full Interview</React.Fragment> : <React.Fragment><MessageSquare size={12} /> Read Full Interview</React.Fragment>}
+                                </button>
+                                {isExpanded && (
+                                    <div className="mt-4 p-4 bg-slate-950 rounded border border-slate-800 text-sm font-serif leading-relaxed h-96 overflow-y-auto custom-scrollbar whitespace-pre-wrap animate-fade-in">
+                                        <div className="text-[10px] text-slate-500 font-sans font-bold uppercase mb-2">Transcript</div>
+                                        {c.details.deep_profile}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
             );
         };
@@ -1335,7 +1379,7 @@ CHARACTER CONTEXT: ${context}
                                     details: {
                                         history: c.context || c.description,
                                         story_events: "Identified in Story Bible",
-                                        goals: "Unknown (To be revealed)",
+                                        goals: c.goals || "Unknown (To be revealed)",
                                         deep_profile: null
                                     }
                                 });
@@ -1349,7 +1393,7 @@ CHARACTER CONTEXT: ${context}
                         const char = finalCast[i];
                         if (!char.details?.deep_profile) {
                             setLoadingStep(`Interviewing ${char.name}...`);
-                            const context = `Role: ${char.role}\nDescription: ${char.details?.history || char.details?.story_events}`;
+                            const context = `Role: ${char.role}\nDescription: ${char.details?.history || char.details?.story_events}\nGoal: ${char.details?.goals}`;
 
                             // Pass bible context
                             const storyContext = {
@@ -1497,7 +1541,7 @@ CHARACTER CONTEXT: ${context}
                 // NOW using the updated mutableCast which definitely has the profiles
                 const activeCast = mutableCast.filter(c => scene.cast_names?.includes(c.name));
                 const castContext = activeCast.map(c =>
-                    `### ${c.name}\n- **Role:** ${c.role}\n- **Goal:** ${c.details?.goals}\n- **Voice Sample:** "${c.voice_sample}"\n- **Deep Profile (Interview):**\n${c.details?.deep_profile || "No profile available."}`
+                    `### ${c.name}\n- **Role:** ${c.role}\n- **Goal:** ${c.details?.goals}\n- **Deep Profile (Interview):**\n${c.details?.deep_profile || "No profile available."}`
                 ).join('\n\n');
 
                 // 3. Lore Formatting (Markdown Headers)
@@ -1519,7 +1563,7 @@ CHARACTER CONTEXT: ${context}
                 let selectedLore = availableLore;
                 // Only invoke the agent if we have a lot of lore > 5 items
                 if (availableLore.length > 5) {
-                    setLoadingStep("Consulting Archive...");
+                    setLoadingStep("Agent 1/4: Consulting Archive...");
                     const selectorPrompt = `
 Scene: ${scene.description}
 Beat Focus: ${beat.description}
@@ -1541,7 +1585,7 @@ ${availableLore.map((l, i) => `${i}. ${l.topic}`).join('\n')}
 
                 const getPacingDescription = (val) => {
                     if (Number(val) === 0) {
-                        return `PACING MODE: SLOW / ATMOSPHERIC / INTROSPECTIVE
+                        return `Pacing Mode: Slow / Atmospheric / Introspective
 
 Pacing Instructions:
 1.  **Expand Time:** Treat every second as if it lasts a minute. Slow the narrative clock down. Do not rush to the beat's conclusion.
@@ -1557,7 +1601,7 @@ FORBIDDEN:
 - "White Room" syndrome (dialogue without setting).`;
                     }
                     if (Number(val) === 2) {
-                        return `PACING MODE: FAST / HIGH-TENSION / KINETIC
+                        return `Pacing Mode: Fast / High-Tension / Kinetic
 
 Pacing Instructions:
 1.  **Immediate Stimulus-Response:** Write chronologically and viscerally. [Event happens] -> [Character reacts immediately]. There is no time for processing.
@@ -1568,11 +1612,11 @@ Pacing Instructions:
 
 FORBIDDEN:
 - Flashbacks or memories.
-- lengthy descriptions of scenery.
+- Lengthy descriptions of scenery.
 - Complex metaphors.
 - Passive voice.`;
                     }
-                    return `PACING MODE: MODERATE / DIALOGUE-HEAVY / BALANCED
+                    return `Pacing Mode: Moderate / Dialogue-Heavy / Balanced
 
 Pacing Instructions:
 1.  **The Tennis Match:** Focus on the back-and-forth flow of interaction. If there is dialogue, ensure it snaps back and forth.
@@ -1591,7 +1635,7 @@ FORBIDDEN:
                 const valenceDesc = getValenceDescription(beat.valence);
 
                 try {
-                    setLoadingStep("Agent 1/3: Drafting...");
+                    setLoadingStep("Agent 2/4: Drafting...");
                     const drafterSystemPrompt = PROMPTS.drafter
                         .replace("{scene_description}", scene.description)
                         .replace("{subtext}", beat.emotional_shift || "None")
@@ -1631,7 +1675,7 @@ Write ONLY the content for the CURRENT BEAT.
 `;
                     const draft = await callAI(drafterUserPrompt, drafterSystemPrompt, false, "Drafter");
 
-                    setLoadingStep("Agent 2/3: Polishing...");
+                    setLoadingStep("Agent 3/4: Polishing...");
                     const editorSystemPrompt = PROMPTS.editor
                         .replace("{draft}", draft)
                         .replace("{scene_description}", scene.description)
@@ -1648,7 +1692,7 @@ Write ONLY the content for the CURRENT BEAT.
 
                     // --- RIPPLE VALIDATION START ---
                     if (nextBeat) {
-                        setLoadingStep("Script Doctor: Checking Continuity...");
+                        setLoadingStep("Agent 4/4: Script Doctor: Checking Continuity...");
                         const validatorPrompt = PROMPTS.beatValidator
                             .replace("{next_beat_desc}", nextBeat.description)
                             .replace("{scene_goal}", scene.description)
@@ -1688,13 +1732,21 @@ Write ONLY the content for the CURRENT BEAT.
                     }
                     // --- RIPPLE VALIDATION END ---
 
-                    setLoadingStep("Agent 3/3: Archiving...");
-                    const archivistSystemPrompt = PROMPTS.archivist
-                        .replace("{text}", final)
-                        .replace("{cast_summary}", activeCast.map(c => c.name).join(', '));
+                    // --- ARCHIVIST RUN (Only on Scene Finish) ---
+                    if (!nextBeat) {
+                        setLoadingStep("Final Agent: Archiving...");
 
-                    const updates = await callAI("Analyze the text for updates.", archivistSystemPrompt, true, "Archivist");
-                    handleWorldUpdates(updates, currentActNum, currentSceneNum);
+                        // Prepare Lore List for Duplication Check
+                        const currentLoreList = story.lore.map(l => l.topic).join(', ');
+
+                        const archivistSystemPrompt = PROMPTS.archivist
+                            .replace("{text}", fullSceneText + "\n\n" + final) // Send full scene context
+                            .replace("{cast_summary}", activeCast.map(c => c.name).join(', '))
+                            .replace("{current_lore}", currentLoreList);
+
+                        const updates = await callAI("Analyze the full scene for updates.", archivistSystemPrompt, true, "Archivist");
+                        handleWorldUpdates(updates, currentActNum, currentSceneNum);
+                    }
                     setStory(prev => ({ ...prev, prose: { ...prev.prose, [bId]: { draft, final } } }));
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
@@ -1760,7 +1812,7 @@ Write ONLY the content for the CURRENT BEAT.
                 <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden">
                     <div className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="p-4 flex justify-between border-b border-slate-800">
-                            <h2 className="font-bold flex gap-2"><Book className="text-indigo-400" /> EllipsisProse 0.34</h2>
+                            <h2 className="font-bold flex gap-2"><Book className="text-indigo-400" /> EllipsisProse 0.35</h2>
                             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden"><X /></button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-1">
@@ -1800,7 +1852,7 @@ Write ONLY the content for the CURRENT BEAT.
                             {view === 'setup' && (
                                 <div className="max-w-xl mx-auto py-20 text-center animate-fade-in">
                                     <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"><Sparkles size={32} color="white" /></div>
-                                    <h1 className="text-2xl font-bold mb-4">EllipsisProse 0.34</h1>
+                                    <h1 className="text-2xl font-bold mb-4">EllipsisProse 0.35</h1>
                                     <p className="text-slate-400 mb-6">Enter a concept. The AI Architect will build your story bible.</p>
                                     <textarea className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 h-32 mb-6 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g. A fantasy world where magic costs memories..." value={inputConcept} onChange={e => setInputConcept(e.target.value)} />
                                     <button onClick={initStory} disabled={loading || !inputConcept} className="w-full bg-indigo-600 hover:bg-indigo-500 py-4 rounded-xl font-bold transition-all disabled:opacity-50">Initialize Story</button>
@@ -1852,22 +1904,7 @@ Write ONLY the content for the CURRENT BEAT.
 
                             {view === 'cast' && (
                                 <div className="grid md:grid-cols-2 gap-6 max-w-6xl mx-auto animate-fade-in">
-                                    {story.cast.map((c, i) => (
-                                        <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-                                            <div className="p-5 border-b border-slate-800 bg-slate-800/30 flex justify-between">
-                                                <div><h3 className="text-xl font-bold">{c.name}</h3><span className="text-xs text-indigo-400 uppercase font-mono">{c.role}</span></div>
-                                                <User className="text-slate-600" />
-                                            </div>
-                                            <div className="p-5 space-y-4">
-                                                <div className="grid grid-cols-2 gap-4">
-                                                    <div className="bg-slate-950 p-3 rounded border border-slate-800"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Status</div><div className="text-sm whitespace-pre-wrap">{c.details?.story_events}</div></div>
-                                                    <div className="bg-slate-950 p-3 rounded border border-slate-800"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Goal</div><div className="text-sm">{c.details?.goals}</div></div>
-                                                </div>
-                                                <div><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">History</div><p className="text-sm text-slate-400">{c.details?.history}</p></div>
-                                                <div className="bg-indigo-900/10 p-3 rounded border border-indigo-500/20 italic text-indigo-200 font-serif">"{c.voice_sample}"</div>
-                                            </div>
-                                        </div>
-                                    ))}
+                                    {story.cast && story.cast.map((c, i) => <CharacterCard key={i} c={c} />)}
                                 </div>
                             )}
 
