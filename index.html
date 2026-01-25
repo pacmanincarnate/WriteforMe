@@ -1472,7 +1472,18 @@ CHARACTER CONTEXT: ${context}
                 try {
                     const res = await callAI(`Scene: ${JSON.stringify(story.scenes[actIdx][sceneIdx])}\nThreads: ${JSON.stringify(story.scenes[actIdx][sceneIdx].active_thread_ids)}`, PROMPTS.beatDirector, true, "Beat Director");
                     const sId = `${actIdx}-${sceneIdx}`;
-                    setStory(prev => ({ ...prev, beats: { ...prev.beats, [sId]: res.beats } }));
+                    setStory(prev => {
+                        // Clear existing prose for this scene to match the new beats
+                        const newProse = { ...prev.prose };
+                        Object.keys(newProse).forEach(k => {
+                            if (k.startsWith(`${sId}-`)) delete newProse[k];
+                        });
+                        return {
+                            ...prev,
+                            beats: { ...prev.beats, [sId]: res.beats },
+                            prose: newProse
+                        };
+                    });
                     setSelectedScene(sceneIdx);
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
