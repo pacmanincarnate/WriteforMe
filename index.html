@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EllipsisProse 0.36 - AI Story Architect</title>
+    <title>EllipsisProse 0.35 - AI Story Architect</title>
 
     <!-- 1. Tailwind CSS (Styling) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -18,6 +18,9 @@
 
     <!-- 4. Lucide Icons (Visuals) -->
     <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- 5. JSZip (EPUB Export) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <!-- Custom Styles -->
     <style>
@@ -1064,6 +1067,7 @@ Output JSON:
             const [story, setStory] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_story");
                 return saved ? JSON.parse(saved) : {
+                    title: "Untitled Story",
                     concept: "",
                     status_quo: "",
                     inciting_incident: "",
@@ -1110,6 +1114,7 @@ Output JSON:
             const [audioState, setAudioState] = useState({ id: null, status: 'idle', player: null });
             const [audioCache, setAudioCache] = useState({});
 
+            const [inputTitle, setInputTitle] = useState("");
             const [inputConcept, setInputConcept] = useState("");
             const [pacing, setPacing] = useState(1);
             const [promptLog, setPromptLog] = useState([]); // New Log State
@@ -1254,6 +1259,200 @@ Output JSON:
                     document.body.removeChild(link);
                     URL.revokeObjectURL(url);
                 } catch (err) { alert("Export failed: " + err.message); }
+            };
+
+            const handleExportEpub = async () => {
+                if (!window.JSZip) {
+                    alert("JSZip library not loaded. Please restart the app or check your internet connection.");
+                    return;
+                }
+
+                try {
+                    const zip = new JSZip();
+                    const cleanTitle = story.title ? story.title : "My Story";
+                    const safeFilename = cleanTitle.replace(/[^a-zA-Z0-9]/g, "_");
+
+                    // 1. Mimetype (must be first, no compression)
+                    zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
+
+                    // 2. Container
+                    zip.folder("META-INF").file("container.xml", `<?xml version="1.0" ?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+   <rootfiles>
+      <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+   </rootfiles>
+</container>`);
+
+                    const oebps = zip.folder("OEBPS");
+                    const textFolder = oebps.folder("Text");
+
+                    let manifestItems = [];
+                    let spineItems = [];
+                    let tocPoints = [];
+                    let playOrder = 1;
+
+                    // Helper for valid IDs
+                    const cleanId = (str) => str.replace(/[^a-zA-Z0-9]/g, "_");
+
+                    // 3. Title Page
+                    const titleFilename = "Title.xhtml";
+                    const titleHtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>Title Page</title>
+<style>body { text-align: center; margin-top: 30%; }</style></head>
+<body>
+<h1>${story.title ? story.title.replace(/&/g, "&amp;") : "Untitled Story"}</h1>
+<h3 style="font-weight: normal; font-style: italic;">${story.concept ? story.concept.replace(/&/g, "&amp;") : "My Story"}</h3>
+<h3>Drafted with EllipsisProse</h3>
+</body>
+</html>`;
+                    textFolder.file(titleFilename, titleHtml);
+                    manifestItems.push(`<item id="titlepage" href="Text/${titleFilename}" media-type="application/xhtml+xml"/>`);
+                    spineItems.push(`<itemref idref="titlepage"/>`);
+                    tocPoints.push(`<navPoint id="navPoint-0" playOrder="0"><navLabel><text>Title Page</text></navLabel><content src="Text/${titleFilename}"/></navPoint>`);
+
+                    // 4. Content (Acts and Scenes)
+                    story.acts.forEach((act, actIdx) => {
+                        const actScenes = story.scenes[actIdx];
+                        if (!actScenes || actScenes.length === 0) return;
+
+                        // Act divider
+                        const actFilename = `Act_${actIdx + 1}.xhtml`;
+                        const actHtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head><title>${act.title}</title>
+<style>body { text-align: center; margin-top: 30%; }</style></head>
+<body>
+<h1>ACT ${act.number}</h1>
+<h2>${act.title.replace(/&/g, "&amp;")}</h2>
+<p>${act.description.replace(/&/g, "&amp;")}</p>
+</body>
+</html>`;
+                        textFolder.file(actFilename, actHtml);
+                        const actId = `act_${actIdx + 1}`;
+                        manifestItems.push(`<item id="${actId}" href="Text/${actFilename}" media-type="application/xhtml+xml"/>`);
+                        spineItems.push(`<itemref idref="${actId}"/>`);
+
+                        // Act NavPoint START
+                        let actNavPoint = `<navPoint id="navPoint-${playOrder}" playOrder="${playOrder}">
+<navLabel><text>Act ${act.number}: ${act.title.replace(/&/g, "&amp;")}</text></navLabel>
+<content src="Text/${actFilename}"/>`;
+                        playOrder++;
+
+                        actScenes.forEach((scene, sceneIdx) => {
+                            const sId = `${actIdx}-${sceneIdx}`;
+                            const beats = story.beats[sId];
+
+                            // Build Scene Content
+                            let sceneBody = `<h1>Chapter ${scene.number}: ${scene.title.replace(/&/g, "&amp;")}</h1>`;
+
+                            if (beats && beats.length > 0) {
+                                beats.forEach((b, bi) => {
+                                    const prose = story.prose[`${sId}-${bi}`];
+                                    if (prose && prose.final) {
+                                        // Ensure Markdown parsing results in valid XML content if possible
+                                        // Simple regex cleanup for unclosed tags could be complex, but let's assume standard prose
+                                        let html = parseMarkdown(prose.final);
+                                        // Remove <br> for <br /> compliance if needed, though parseMarkdown generates <br />
+                                        sceneBody += `\n<div class="beat">\n${html}\n</div>\n<hr style="border: 0; border-top: 1px solid #ccc; margin: 2em auto; width: 50%;" />\n`;
+                                    }
+                                });
+                            } else {
+                                sceneBody += `<p><em>[Scene not yet written]</em></p>`;
+                            }
+
+                            // Remove last HR
+                            sceneBody = sceneBody.replace(/<hr [^>]*\/>\s*$/, "");
+
+                            const sceneFilename = `Act${act.number}_Scene${scene.number}.xhtml`;
+                            const sceneHtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>${scene.title.replace(/&/g, "&amp;")}</title>
+<style>
+body { font-family: sans-serif; line-height: 1.6; padding: 1em; }
+p { margin-bottom: 1em; text-indent: 0; }
+.beat p { text-indent: 1.5em; }
+h1 { text-align: center; margin-bottom: 2em; }
+</style>
+</head>
+<body>
+${sceneBody}
+</body>
+</html>`;
+                            textFolder.file(sceneFilename, sceneHtml);
+                            const sceneId = `scene_${actIdx}_${sceneIdx}`;
+                            manifestItems.push(`<item id="${sceneId}" href="Text/${sceneFilename}" media-type="application/xhtml+xml"/>`);
+                            spineItems.push(`<itemref idref="${sceneId}"/>`);
+
+                            // Add Scene to NavMap (Nested)
+                            actNavPoint += `
+<navPoint id="navPoint-${playOrder}" playOrder="${playOrder}">
+<navLabel><text>${scene.number}. ${scene.title.replace(/&/g, "&amp;")}</text></navLabel>
+<content src="Text/${sceneFilename}"/>
+</navPoint>`;
+                            playOrder++;
+                        });
+
+                        // Act NavPoint END
+                        actNavPoint += `</navPoint>`;
+                        tocPoints.push(actNavPoint);
+                    });
+
+                    // 5. NCX (TOC)
+                    const ncx = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+   <head>
+      <meta name="dtb:uid" content="urn:uuid:12345"/>
+      <meta name="dtb:depth" content="2"/>
+      <meta name="dtb:totalPageCount" content="0"/>
+      <meta name="dtb:maxPageNumber" content="0"/>
+   </head>
+   <docTitle><text>${story.title ? story.title.replace(/&/g, "&amp;") : "Untitled Story"}</text></docTitle>
+   <navMap>
+      ${tocPoints.join('\n')}
+   </navMap>
+</ncx>`;
+                    oebps.file("toc.ncx", ncx);
+
+                    // 6. OPF
+                    const opf = `<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">
+   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+      <dc:title>${story.title ? story.title.replace(/&/g, "&amp;") : "Untitled Story"}</dc:title>
+      <dc:creator opf:role="aut">EllipsisProse User</dc:creator>
+      <dc:language>en</dc:language>
+      <dc:identifier id="BookId" opf:scheme="UUID">urn:uuid:12345</dc:identifier>
+   </metadata>
+   <manifest>
+      <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+      ${manifestItems.join('\n      ')}
+   </manifest>
+   <spine toc="ncx">
+      ${spineItems.join('\n      ')}
+   </spine>
+</package>`;
+                    oebps.file("content.opf", opf);
+
+                    // 7. Generate
+                    const content = await zip.generateAsync({ type: "blob" });
+                    const url = URL.createObjectURL(content);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = `ellipsisprose_export_${safeFilename}_${new Date().toISOString().slice(0, 10)}.epub`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+
+                } catch (e) {
+                    console.error(e);
+                    alert("EPUB Generation failed: " + e.message);
+                }
             };
 
             const handleImport = (event) => {
@@ -1434,6 +1633,7 @@ CHARACTER CONTEXT: ${context}
 
                     // Reset story state completely
                     const newStory = {
+                        title: inputTitle || "My New Story",
                         concept: bible.concept,
                         status_quo: bible.status_quo,
                         inciting_incident: bible.inciting_incident,
@@ -1873,7 +2073,7 @@ Write ONLY the content for the CURRENT BEAT.
                 <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden">
                     <div className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="p-4 flex justify-between border-b border-slate-800">
-                            <h2 className="font-bold flex gap-2"><Book className="text-indigo-400" /> EllipsisProse 0.36</h2>
+                            <h2 className="font-bold flex gap-2"><Book className="text-indigo-400" /> EllipsisProse 0.35</h2>
                             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden"><X /></button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-1">
@@ -1894,7 +2094,8 @@ Write ONLY the content for the CURRENT BEAT.
                             ))}
                         </div>
                         <div className="p-4 border-t border-slate-800 flex gap-2">
-                            <button onClick={handleExport} className="flex-1 bg-slate-800 hover:bg-slate-700 py-2 rounded text-xs flex justify-center gap-2 transition-colors"><Download size={14} /> Save</button>
+                            <button onClick={handleExport} className="flex-1 bg-slate-800 hover:bg-slate-700 py-2 rounded text-xs flex justify-center gap-2 transition-colors"><Download size={14} /> Save JSON</button>
+                            <button onClick={handleExportEpub} className="flex-1 bg-indigo-900 hover:bg-indigo-800 py-2 rounded text-xs flex justify-center gap-2 transition-colors text-indigo-100"><Book size={14} /> Export EPUB</button>
                             <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-slate-800 hover:bg-slate-700 py-2 rounded text-xs flex justify-center gap-2 transition-colors"><Upload size={14} /> Load</button>
                             <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".json" />
                         </div>
@@ -1913,9 +2114,10 @@ Write ONLY the content for the CURRENT BEAT.
                             {view === 'setup' && (
                                 <div className="max-w-xl mx-auto py-20 text-center animate-fade-in">
                                     <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"><Sparkles size={32} color="white" /></div>
-                                    <h1 className="text-2xl font-bold mb-4">EllipsisProse 0.36</h1>
-                                    <p className="text-slate-400 mb-6">Enter a concept. The AI Architect will build your story bible.</p>
-                                    <textarea className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 h-32 mb-6 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="e.g. A fantasy world where magic costs memories..." value={inputConcept} onChange={e => setInputConcept(e.target.value)} />
+                                    <h1 className="text-2xl font-bold mb-4">EllipsisProse 0.35</h1>
+                                    <p className="text-slate-400 mb-6">Enter a title and concept. The AI Architect will build your story bible.</p>
+                                    <input className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none font-bold" placeholder="Story Title (e.g. The Last Starship)" value={inputTitle} onChange={e => setInputTitle(e.target.value)} />
+                                    <textarea className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 h-32 mb-6 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Concept (e.g. A fantasy world where magic costs memories...)" value={inputConcept} onChange={e => setInputConcept(e.target.value)} />
                                     <button onClick={initStory} disabled={loading || !inputConcept} className="w-full bg-indigo-600 hover:bg-indigo-500 py-4 rounded-xl font-bold transition-all disabled:opacity-50">Initialize Story</button>
                                 </div>
                             )}
@@ -1924,6 +2126,15 @@ Write ONLY the content for the CURRENT BEAT.
                                 <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
                                     <div className="grid md:grid-cols-2 gap-6">
                                         <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-6">
+                                            <div>
+                                                <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2">Title</h3>
+                                                <input
+                                                    className="w-full bg-transparent border-b border-transparent hover:border-slate-700 focus:border-indigo-500 outline-none font-bold text-lg text-white transition-colors"
+                                                    value={story.title || ""}
+                                                    onChange={(e) => setStory({ ...story, title: e.target.value })}
+                                                    placeholder="Untitled Story"
+                                                />
+                                            </div>
                                             <div>
                                                 <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2">Concept</h3>
                                                 <p className="font-light">{story.concept}</p>
@@ -1976,14 +2187,14 @@ Write ONLY the content for the CURRENT BEAT.
                                     </div>
                                     <div className="grid gap-4">
                                         {story.lore.map((l, i) => (
-                                            <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 p-6 transition-all hover:border-slate-700">
-                                                <div className="flex justify-between items-start mb-2">
+                                            <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 p-4 md:p-6 transition-all hover:border-slate-700">
+                                                <div className="flex flex-col md:flex-row justify-between items-start gap-3 mb-2">
                                                     <h3 className="font-bold text-lg text-blue-300">{l.topic}</h3>
-                                                    <div className="flex items-center gap-2">
-                                                        <div className="flex items-center gap-2 text-xs bg-slate-950 p-1 rounded border border-slate-800">
+                                                    <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+                                                        <div className="flex flex-wrap items-center gap-2 text-xs bg-slate-950 p-1 rounded border border-slate-800">
                                                             <span className="text-slate-500 font-bold uppercase px-1">Reveal:</span>
                                                             <select
-                                                                className="bg-transparent text-slate-300 outline-none max-w-[100px]"
+                                                                className="bg-transparent text-slate-300 outline-none max-w-[80px] text-xs truncate"
                                                                 value={l.valid_from_act || 1}
                                                                 onChange={(e) => {
                                                                     const val = parseInt(e.target.value);
@@ -1998,7 +2209,7 @@ Write ONLY the content for the CURRENT BEAT.
                                                             </select>
                                                             <span className="text-slate-600">/</span>
                                                             <select
-                                                                className="bg-transparent text-slate-300 outline-none max-w-[150px]"
+                                                                className="bg-transparent text-slate-300 outline-none max-w-[100px] text-xs truncate"
                                                                 value={l.valid_from_scene || 1}
                                                                 onChange={(e) => {
                                                                     const val = parseInt(e.target.value);
