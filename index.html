@@ -378,6 +378,7 @@ Consider the following guidelines for how to think about scenes within an act:
  - Varied Pacing: Map your scenes to oscillate. Follow a high-stakes action scene with a slower, introspective sequel scene to let the character (and reader) breathe.
  - Rising Action: Ensure the overall trend line is going up. The stakes in Scene 10 must be higher than in Scene 1.
 - The Act Climax (The Point of No Return): You must design the final scene of the act to be irreversible. Think of the end of the act as a one-way gate. Once the character passes through it, they cannot go back to the way things were.
+- Be clear about where the scene is located; its setting, and its characters. Without this, the writer is likely to move the next scene to an incorrect location.
 
 PACING REQUIREMENT:
 - Generate between 12-16 scenes.
@@ -392,6 +393,9 @@ THREAD INTERACTION (Causality):
 - Collision: Two threads conflict (e.g., Duty vs. Love).
 - Resonance: Two threads thematically align.
 *ROSTER CHECK*: If you introduce NEW major characters to fulfill these scenes, list them in "new_characters".
+
+It is crucial that the scene descriptions expand fully on what is happening and what your intent is for the scene. Without this, the writing process has too little to work off of. This description is **NOT** for the reader; it is for the writer to fully understand the scene and its purpose.
+
 Output JSON:
   {
     "scenes": [
@@ -427,6 +431,7 @@ Output JSON:
  - Varied Pacing: Map your scenes to oscillate. Follow a high-stakes action scene with a slower, introspective sequel scene to let the character (and reader) breathe.
  - Rising Action: Ensure the overall trend line is going up. The stakes in Scene 10 must be higher than in Scene 1.
 - The Act Climax (The Point of No Return): You must design the final scene of the act to be irreversible. Think of the end of the act as a one-way gate. Once the character passes through it, they cannot go back to the way things were.
+- Be clear about where the scene is located; its setting, and its characters. Without this, the writer is likely to move the next scene to an incorrect location.
 
   PACING REQUIREMENT:
   - Generate between 18-24 scenes. This is the main meat of the book.
@@ -446,6 +451,8 @@ Output JSON:
   VALENCE: High oscillation. The end of the Act must have a strong NEGATIVE valence (-8 to -10) representing the crisis.
   *ROSTER CHECK*: If you introduce NEW major characters, list them in "new_characters".
   
+  It is crucial that the scene descriptions expand fully on what is happening and what your intent is for the scene. Without this, the writing process has too little to work off of. This description is **NOT** for the reader; it is for the writer to fully understand the scene and its purpose.
+
   Output JSON:
   {
     "scenes": [ { "number": 1, "title": "Scene Title", "description": "...", "active_thread_ids": ["t1"], "location": "...", "cast_names": ["..."], "valence": -5, "causality": { "interaction_type": "Collision", "description": "..." } } ],
@@ -468,6 +475,7 @@ Output JSON:
  - Rising Action: Ensure the overall trend line is going up. The stakes in Scene 10 must be higher than in Scene 1.
 - The Act Climax (The Point of No Return): You must design the final scene of the act to be irreversible. Think of the end of the act as a one-way gate. Once the character passes through it, they cannot go back to the way things were.
 - Think of every scene as a self-contained narrative unit.
+- Be clear about where the scene is located; its setting, and its characters. Without this, the writer is likely to move the next scene to an incorrect location.
 
 
   PACING REQUIREMENT:
@@ -483,6 +491,8 @@ Output JSON:
   - Resonance: Two threads thematically align.
 
   VALENCE: Start low (from Act 2 crisis), rise to tension, end High Positive (Resolution).
+
+  It is crucial that the scene descriptions expand fully on what is happening and what your intent is for the scene. Without this, the writing process has too little to work off of. This description is **NOT** for the reader; it is for the writer to fully understand the scene and its purpose.
   
   Output JSON:
   {
@@ -495,12 +505,12 @@ Output JSON:
 
   Task: Break the scene into 6-10 distinct beats.
   Input: Scene context, Threads involved.
-  Requirement: Vary the type of beats (Action, Reaction, Revelation).
+  Requirement: Vary the type of beats (Action, Reaction, Revelation, Resolution).
   
   VALENCE: Assign a "valence" score (-10 to +10) to each beat. 
   Oscillate between positive and negative beats to maintain tension.
 
-    Here is your framework for mapping out a successful sequence of beats.
+    Here is your framework for mapping out a successful sequence of beats. This is expected to be a paragraph or more.
     1. Define the State Change
     Consider the scene's endpoints. You must know the exact distance the character needs to travel emotionally or logically.
     Consider exactly what the protagonist believes, feels, or possesses at the start of the scene. Consider the inverted state at the end of the scene. Ensure the exit state is irreversible within the context of this scene. The characters cannot simply "reset" to the beginning once the scene ends.
@@ -525,12 +535,17 @@ Output JSON:
     - Create a gap between expectation and reality to keep the narrative unpredictable and force the characters to think on their feet. Authors plan beats as a game of tennis. They focus on the causality. What causes the character to act? Is it an external threat, an internal realization, or a line of dialogue from someone else? Is the reaction immediate (instinctive) or delayed (calculated)? Authors look for the gap between what a character expects to happen when they take an action, and what actually happens. The beat usually lands in that gap of surprise.
     - Ensure that each beat involves an emotional change. The characters should feel different after the beat completes than when it began.
 
-    Ensure that each of your beat descriptions thoroughly addresses the above so that each beat actively contributes to the story and character development in a coherent, immersive, unexpected, and compelling way.
+    Ensure that each of your beat descriptions thoroughly and completely addresses each point above so that each beat actively contributes to the story and character development in a coherent, immersive, unexpected, and compelling way. It is crucial that beat descriptions expand fully on what is happening and what your intent is for the beat. Without this, the writing process has too little to work off of.
   
+  PACING: Assign a pacing score (0, 1, or 2) to each beat.
+  - 0 (Slow): Atmospheric, introspection, sensory details. Use for setup and sequels.
+  - 1 (Balanced): Dialogue-heavy, standard narrative flow.
+  - 2 (Fast): Action, high tension, rapid-fire decisions. Use for climaxes and conflicts.
+
   Output JSON:
   {
     "beats": [
-      { "number": 1, "type": "Action/Reaction/Dialogue", "description": "description of what happens, and a full discussion on the authorial intent for the beat", "emotional_shift": "How the mood changes", "valence": 4 }
+      { "number": 1, "type": "Action/Reaction/Dialogue", "description": "description of what happens, who is in the beat, what they want, what they do, and a full discussion on the authorial intent for the beat", "emotional_shift": "How the mood changes", "valence": 4, "pacing": 1 }
     ]
   }`,
 
@@ -660,7 +675,7 @@ REWRITE the remaining beats for this scene to accommodate the new reality while 
     "valid": true/false,
     "reason": "Why it is invalid...",
     "rectified_beats": [ 
-       { "number": N, "type": "...", "description": "...", "emotional_shift": "...", "valence": 0 }
+       { "number": N, "type": "...", "description": "...", "emotional_shift": "...", "valence": 0, "pacing": 1 }
     ]
   }`,
 
@@ -1116,9 +1131,43 @@ Output JSON:
 
             const [inputTitle, setInputTitle] = useState("");
             const [inputConcept, setInputConcept] = useState("");
-            const [pacing, setPacing] = useState(1);
+
             const [promptLog, setPromptLog] = useState([]); // New Log State
             const fileInputRef = useRef(null);
+
+            // UI State
+            const [collapsedActs, setCollapsedActs] = useState({});
+            const [collapsedProse, setCollapsedProse] = useState({});
+            const [toast, setToast] = useState(null); // { message, type: 'success'|'error' }
+
+            const showToast = (message, type = 'success') => {
+                setToast({ message, type });
+                setTimeout(() => setToast(null), 3000);
+            };
+
+            const toggleAct = (idx) => {
+                setCollapsedActs(prev => ({ ...prev, [idx]: !prev[idx] }));
+            };
+
+            const toggleProse = (bId) => {
+                setCollapsedProse(prev => ({ ...prev, [bId]: !prev[bId] }));
+            };
+
+            const getSceneColor = (actIdx, sceneIdx) => {
+                const sId = `${actIdx}-${sceneIdx}`;
+                const beats = story.beats[sId];
+                if (!beats || beats.length === 0) return '';
+
+                // Check prose status
+                let writtenCount = 0;
+                beats.forEach((b, i) => {
+                    if (story.prose[`${sId}-${i}`]?.final) writtenCount++;
+                });
+
+                if (writtenCount === beats.length) return 'text-emerald-400';
+                if (writtenCount > 0) return 'text-amber-400';
+                return '';
+            };
 
             // Persistence Effects
             useEffect(() => { localStorage.setItem("ellipsisprose_api_provider", apiProvider); }, [apiProvider]);
@@ -1548,6 +1597,21 @@ CHARACTER CONTEXT: ${context}
                 });
             };
 
+            const handleBeatPacingChange = (actIdx, sceneIdx, beatIdx, newPacing) => {
+                const sId = `${actIdx}-${sceneIdx}`;
+                setStory(prev => {
+                    const newBeats = [...prev.beats[sId]];
+                    newBeats[beatIdx] = { ...newBeats[beatIdx], pacing: newPacing };
+                    return {
+                        ...prev,
+                        beats: {
+                            ...prev.beats,
+                            [sId]: newBeats
+                        }
+                    };
+                });
+            };
+
             const requestSceneWeaving = (actIdx) => {
                 if (story.scenes[actIdx]?.length > 0) {
                     if (!window.confirm("WARNING: Rerunning the Scene Weaver will overwrite ALL existing scenes and beats for this Act. This cannot be undone. Are you sure?")) return;
@@ -1669,6 +1733,7 @@ CHARACTER CONTEXT: ${context}
 
                     setStory(prev => ({ ...prev, lore: scheduledLore, acts: actData.acts }));
                     setView('dashboard');
+                    showToast("Story successfully initialized!");
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
 
@@ -1694,6 +1759,7 @@ CHARACTER CONTEXT: ${context}
                     setStory(prev => ({ ...prev, scenes: { ...prev.scenes, [actIndex]: res.scenes } }));
                     handleWorldUpdates({ new_characters: res.new_characters }, actNumber, 1);
                     setSelectedAct(actIndex);
+                    showToast(`Scenes for Act ${actNumber} generated!`);
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
 
@@ -1733,6 +1799,7 @@ CHARACTER CONTEXT: ${context}
                         throw new Error("No beats generated from AI response.");
                     }
                     setSelectedScene(sceneIdx);
+                    showToast("Beats generated successfully!");
                 } catch (e) {
                     alert("Beat Generation Error: " + e.message);
                 } finally {
@@ -1894,7 +1961,7 @@ FORBIDDEN:
 - Purely functional dialogue (ensure characters have distinct voices).`;
                 };
 
-                const pacingDesc = getPacingDescription(pacing);
+                const pacingDesc = getPacingDescription(beat.pacing !== undefined ? beat.pacing : 1);
                 const valenceDesc = getValenceDescription(beat.valence);
 
                 try {
@@ -2009,6 +2076,7 @@ Write ONLY the content for the CURRENT BEAT.
                         handleWorldUpdates(updates, currentActNum, currentSceneNum);
                     }
                     setStory(prev => ({ ...prev, prose: { ...prev.prose, [bId]: { draft, final } } }));
+                    showToast("Prose written and saved!");
                 } catch (e) { alert(e.message); } finally { setLoading(false); }
             };
 
@@ -2028,7 +2096,7 @@ Write ONLY the content for the CURRENT BEAT.
                 textArea.style.left = "-9999px";
                 document.body.appendChild(textArea);
                 textArea.select();
-                try { document.execCommand('copy'); alert("Copied!"); } catch (err) { alert("Copy failed."); }
+                try { document.execCommand('copy'); showToast("Copied to clipboard!"); } catch (err) { alert("Copy failed."); }
                 document.body.removeChild(textArea);
             };
 
@@ -2086,10 +2154,21 @@ Write ONLY the content for the CURRENT BEAT.
                             <button onClick={() => setView('structure')} className={`nav-btn ${view === 'structure' ? 'active' : ''}`}><Layers size={16} /> Act Planner</button>
                             {story.acts.map((act, idx) => (
                                 <div key={idx} className="ml-2 mt-2">
-                                    <div className="text-[10px] text-slate-500 font-bold uppercase px-3 mb-1">Act {act.number}</div>
-                                    {story.scenes[idx]?.map((scene, sIdx) => (
-                                        <button key={sIdx} onClick={() => { setSelectedAct(idx); setSelectedScene(sIdx); setView('writer'); setIsSidebarOpen(false); }} className={`nav-btn text-xs pl-6 truncate ${view === 'writer' && selectedScene === sIdx ? 'text-indigo-300' : isSceneComplete(idx, sIdx) ? 'text-emerald-400' : ''}`}>{scene.number}. {scene.title}</button>
-                                    ))}
+                                    <button
+                                        onClick={() => toggleAct(idx)}
+                                        className="w-full flex items-center justify-between text-[10px] text-slate-500 font-bold uppercase px-3 mb-1 hover:text-slate-300"
+                                    >
+                                        Act {act.number}
+                                        <div className="text-slate-600">
+                                            {collapsedActs[idx] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
+                                        </div>
+                                    </button>
+                                    {!collapsedActs[idx] && story.scenes[idx]?.map((scene, sIdx) => {
+                                        const colorClass = getSceneColor(idx, sIdx);
+                                        return (
+                                            <button key={sIdx} onClick={() => { setSelectedAct(idx); setSelectedScene(sIdx); setView('writer'); setIsSidebarOpen(false); }} className={`nav-btn text-xs pl-6 truncate ${view === 'writer' && selectedScene === sIdx ? 'text-indigo-300' : colorClass}`}>{scene.number}. {scene.title}</button>
+                                        );
+                                    })}
                                 </div>
                             ))}
                         </div>
@@ -2190,47 +2269,48 @@ Write ONLY the content for the CURRENT BEAT.
                                             <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 p-4 md:p-6 transition-all hover:border-slate-700">
                                                 <div className="flex flex-col md:flex-row justify-between items-start gap-3 mb-2">
                                                     <h3 className="font-bold text-lg text-blue-300">{l.topic}</h3>
-                                                    <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
-                                                        <div className="flex flex-wrap items-center gap-2 text-xs bg-slate-950 p-1 rounded border border-slate-800">
-                                                            <span className="text-slate-500 font-bold uppercase px-1">Reveal:</span>
-                                                            <select
-                                                                className="bg-transparent text-slate-300 outline-none max-w-[80px] text-xs truncate"
-                                                                value={l.valid_from_act || 1}
-                                                                onChange={(e) => {
-                                                                    const val = parseInt(e.target.value);
-                                                                    const newLore = [...story.lore];
-                                                                    newLore[i].valid_from_act = val;
-                                                                    // Reset scene to 1 when Act changes for safety
-                                                                    newLore[i].valid_from_scene = 1;
-                                                                    setStory(prev => ({ ...prev, lore: newLore }));
-                                                                }}
-                                                            >
-                                                                {story.acts.map(a => <option key={a.number} value={a.number}>Act {a.number}: {a.title.substring(0, 15)}...</option>)}
-                                                            </select>
-                                                            <span className="text-slate-600">/</span>
-                                                            <select
-                                                                className="bg-transparent text-slate-300 outline-none max-w-[100px] text-xs truncate"
-                                                                value={l.valid_from_scene || 1}
-                                                                onChange={(e) => {
-                                                                    const val = parseInt(e.target.value);
-                                                                    const newLore = [...story.lore];
-                                                                    newLore[i].valid_from_scene = val;
-                                                                    setStory(prev => ({ ...prev, lore: newLore }));
-                                                                }}
-                                                            >
-                                                                {(() => {
-                                                                    // Get scenes for the selected Act
-                                                                    // Act number is 1-based, array index is 0-based
-                                                                    const actIdx = (l.valid_from_act || 1) - 1;
-                                                                    const scenes = story.scenes[actIdx] || [];
-                                                                    if (scenes.length === 0) return <option value="1">Scene 1</option>;
-                                                                    return scenes.map(s => <option key={s.number} value={s.number}>Sc {s.number}: {s.title.substring(0, 20)}...</option>);
-                                                                })()}
-                                                            </select>
+                                                    <div className="flex items-start gap-2 self-start md:self-auto">
+                                                        <div className="flex flex-col gap-1 text-xs bg-slate-950 p-2 rounded border border-slate-800 min-w-[200px]">
+                                                            <div className="flex items-center justify-between gap-2 border-b border-slate-800/50 pb-1 mb-1">
+                                                                <span className="text-slate-500 font-bold uppercase">Act</span>
+                                                                <select
+                                                                    className="bg-transparent text-slate-300 outline-none text-right w-full cursor-pointer"
+                                                                    value={l.valid_from_act || 1}
+                                                                    onChange={(e) => {
+                                                                        const val = parseInt(e.target.value);
+                                                                        const newLore = [...story.lore];
+                                                                        newLore[i].valid_from_act = val;
+                                                                        newLore[i].valid_from_scene = 1;
+                                                                        setStory(prev => ({ ...prev, lore: newLore }));
+                                                                    }}
+                                                                >
+                                                                    {story.acts.map(a => <option key={a.number} value={a.number}>Act {a.number}: {a.title.substring(0, 30)}...</option>)}
+                                                                </select>
+                                                            </div>
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <span className="text-slate-500 font-bold uppercase">Scene</span>
+                                                                <select
+                                                                    className="bg-transparent text-slate-300 outline-none text-right w-full cursor-pointer"
+                                                                    value={l.valid_from_scene || 1}
+                                                                    onChange={(e) => {
+                                                                        const val = parseInt(e.target.value);
+                                                                        const newLore = [...story.lore];
+                                                                        newLore[i].valid_from_scene = val;
+                                                                        setStory(prev => ({ ...prev, lore: newLore }));
+                                                                    }}
+                                                                >
+                                                                    {(() => {
+                                                                        const actIdx = (l.valid_from_act || 1) - 1;
+                                                                        const scenes = story.scenes[actIdx] || [];
+                                                                        if (scenes.length === 0) return <option value="1">Scene 1</option>;
+                                                                        return scenes.map(s => <option key={s.number} value={s.number}>Sc {s.number}: {s.title.substring(0, 30)}...</option>);
+                                                                    })()}
+                                                                </select>
+                                                            </div>
                                                         </div>
                                                         <button
                                                             onClick={() => handleDeleteLore(i)}
-                                                            className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded transition-colors"
+                                                            className="p-1.5 text-slate-500 hover:text-red-400 hover:bg-slate-800 rounded transition-colors mt-1"
                                                             title="Delete Lore Item"
                                                         >
                                                             <Trash2 size={14} />
@@ -2284,10 +2364,12 @@ Write ONLY the content for the CURRENT BEAT.
                                         {story.beats[`${selectedAct}-${selectedScene}`]?.map((beat, bi) => {
                                             const bId = `${selectedAct}-${selectedScene}-${bi}`;
                                             const prose = story.prose[bId];
+                                            const isCollapsed = collapsedProse[bId] || false;
+
                                             return (
                                                 <div key={bi} className="flex flex-col xl:flex-row gap-8">
                                                     <div className="xl:w-80 shrink-0">
-                                                        <div className={`p-5 rounded-xl border transition-all ${prose ? 'bg-slate-900/40 border-slate-800 opacity-60' : 'bg-slate-900 border-indigo-500/30'}`}>
+                                                        <div className={`p-5 rounded-xl border transition-all ${prose ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-900 border-indigo-500/30'}`}>
                                                             <div className="flex justify-between mb-2"><span className="text-xs font-bold text-indigo-400">BEAT {bi + 1}</span><ValenceBadge score={beat.valence} /></div>
                                                             <textarea
                                                                 className="w-full bg-slate-950 text-sm font-medium mb-4 p-2 rounded border border-transparent hover:border-slate-700 focus:border-indigo-500 outline-none resize-none transition-colors field-sizing-content"
@@ -2296,28 +2378,36 @@ Write ONLY the content for the CURRENT BEAT.
                                                                 rows={4}
                                                             />
                                                             <div className="text-[10px] text-slate-500 uppercase font-bold italic mb-4">{beat.emotional_shift}</div>
-                                                            {!prose && <div className="space-y-4 pt-4 border-t border-slate-800">
-                                                                <div className="flex justify-between text-[10px] text-slate-500 uppercase font-bold"><span>Slow</span><span>Balanced</span><span>Fast</span></div>
-                                                                <input type="range" min="0" max="2" step="1" value={pacing} onChange={e => setPacing(parseInt(e.target.value, 10))} />
-                                                                <button onClick={() => writeProse(selectedAct, selectedScene, bi)} disabled={loading} className="w-full bg-indigo-600 py-2 rounded font-bold text-sm hover:bg-indigo-500 flex justify-center gap-2"><Feather size={14} /> Write</button>
-                                                            </div>}
-                                                        </div>
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        {prose ? (
-                                                            <div className="relative group/text">
-                                                                <div className="absolute -left-4 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500/0 via-indigo-500/20 to-indigo-500/0"></div>
-                                                                <div className="prose prose-invert max-w-none font-serif text-lg leading-loose text-slate-200" dangerouslySetInnerHTML={{ __html: parseMarkdown(prose.final) }} />
-                                                                <div className="mt-2 flex gap-2 opacity-0 group-hover/text:opacity-100 transition-opacity">
-                                                                    <button onClick={() => handlePlayTTS(bId, prose.final)} className={`p-2 rounded border transition-colors ${audioState.id === bId && audioState.status !== 'idle' ? 'bg-indigo-900 border-indigo-500 text-indigo-200' : 'bg-slate-900 border-slate-800 text-emerald-400 hover:text-emerald-300'}`}>
+                                                            {!prose ? (
+                                                                <div className="space-y-4 pt-4 border-t border-slate-800">
+                                                                    <div className="flex justify-between text-[10px] text-slate-500 uppercase font-bold"><span>Slow</span><span>Balanced</span><span>Fast</span></div>
+                                                                    <input type="range" min="0" max="2" step="1" value={beat.pacing !== undefined ? beat.pacing : 1} onChange={e => handleBeatPacingChange(selectedAct, selectedScene, bi, parseInt(e.target.value, 10))} />
+                                                                    <button onClick={() => writeProse(selectedAct, selectedScene, bi)} disabled={loading} className="w-full bg-indigo-600 py-2 rounded font-bold text-sm hover:bg-indigo-500 flex justify-center gap-2"><Feather size={14} /> Write</button>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="flex gap-2 pt-4 border-t border-slate-800">
+                                                                    <button onClick={() => handlePlayTTS(bId, prose.final)} className={`flex-1 py-2 rounded border transition-colors flex justify-center items-center ${audioState.id === bId && audioState.status !== 'idle' ? 'bg-indigo-900 border-indigo-500 text-indigo-200' : 'bg-slate-950 border-slate-800 text-emerald-400 hover:text-emerald-300'}`}>
                                                                         {audioState.id === bId && audioState.status === 'loading' ? <Loader2 size={16} className="animate-spin" /> :
                                                                             audioState.id === bId && audioState.status === 'playing' ? <Square size={16} fill="currentColor" /> :
                                                                                 audioCache[bId] ? <Play size={16} fill="currentColor" /> :
                                                                                     <Volume2 size={16} />}
                                                                     </button>
-                                                                    <button onClick={() => writeProse(selectedAct, selectedScene, bi)} className="p-2 bg-slate-900 rounded text-indigo-400 border border-slate-800 hover:text-indigo-300"><RefreshCw size={16} /></button>
+                                                                    <button onClick={() => writeProse(selectedAct, selectedScene, bi)} className="flex-1 py-2 bg-slate-950 rounded text-indigo-400 border border-slate-800 hover:text-indigo-300 flex justify-center items-center"><RefreshCw size={16} /></button>
+                                                                    <button onClick={() => toggleProse(bId)} className="flex-1 py-2 bg-slate-950 rounded text-slate-400 border border-slate-800 hover:text-slate-200 flex justify-center items-center">
+                                                                        {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                                                                    </button>
                                                                 </div>
-                                                            </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        {prose ? (
+                                                            !isCollapsed && (
+                                                                <div className="relative group/text animate-fade-in">
+                                                                    <div className="absolute -left-4 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500/0 via-indigo-500/20 to-indigo-500/0"></div>
+                                                                    <div className="prose prose-invert max-w-none font-serif text-lg leading-loose text-slate-200" dangerouslySetInnerHTML={{ __html: parseMarkdown(prose.final) }} />
+                                                                </div>
+                                                            )
                                                         ) : <div className="h-full border-l-2 border-slate-900/50 ml-6 pl-12 flex flex-col justify-center text-slate-800 italic text-xl select-none"><PenTool className="w-12 h-12 mb-4 opacity-10" /> Waiting...</div>}
                                                     </div>
                                                 </div>
@@ -2483,6 +2573,16 @@ Write ONLY the content for the CURRENT BEAT.
                                 </div>
                             )}
                         </main>
+                        {/* TOAST NOTIFICATION */}
+                        {toast && (
+                            <div className={`fixed bottom-6 right-6 z-50 px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-3 animate-fade-in ${toast.type === 'error' ? 'bg-red-900/90 border-red-500 text-red-100' : 'bg-emerald-900/90 border-emerald-500 text-emerald-100'}`}>
+                                {toast.type === 'error' ? <X size={20} /> : <Sparkles size={20} />}
+                                <div>
+                                    <h4 className="font-bold text-sm">{toast.type === 'error' ? 'Error' : 'Success'}</h4>
+                                    <p className="text-xs opacity-90">{toast.message}</p>
+                                </div>
+                            </div>
+                        )}
                     </div >
                 </div >
             );
