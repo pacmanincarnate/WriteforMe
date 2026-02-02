@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EllipsisProse 0.4 - AI Story Architect</title>
+    <title>EllipsisProse 0.41 - AI Story Architect</title>
 
     <!-- 1. Tailwind CSS (Styling) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -217,6 +217,7 @@
         const TrendingDown = (p) => <Icon name="trending-down" {...p} />;
         const Minus = (p) => <Icon name="minus" {...p} />;
         const Scroll = (p) => <Icon name="scroll" {...p} />;
+        const Search = (p) => <Icon name="search" {...p} />;
 
 
         /* ----------------------------------------------------------------------
@@ -304,7 +305,7 @@
               "evolution": "..."
           }
       },
-      "world_lore": [{ "topic": "Setting", "detail": "..." }]
+      "world_lore": [{ "topic": "Setting", "detail": "...", "related_to": ["Related Topic"] }]
   }`,
 
             actStructure: `You are an author working to develop the structure of a story.
@@ -652,7 +653,7 @@ EXISTING LORE:
       { "name": "Hero", "append_history": "...", "append_story_events": "...", "update_goals": "..." }
     ],
     "lore_updates": [
-      { "topic": "...", "detail": "..." }
+      { "topic": "...", "detail": "...", "related_to": ["..."] }
     ]
   }`,
 
@@ -742,8 +743,26 @@ Rules:
 Output JSON:
 {
   "selected_lore_topics": ["Topic A", "Topic B"]
-}`
+}`,
+
+            loreDistiller: `You are an impartial World Data Analyst.
+Task: Analyze the provided text and extract the "World Primer".
+Input: Unknown Text (could be any genre).
+
+REQUIREMENTS:
+1.  **Genre-Agnostic Tone**: Do NOT use genre-specific labels (e.g., do not say "Magic System" or "Sci-Fi Tech"). Instead use neutral terms like "Operational Rules", "Key Entities", "Environmental Conditions", "History".
+2.  **Focus**: Extract high-level rules that apply generally to the world, rather than specific plot events.
+3.  **Brevity**: Summarize into approx. 800-1000 words.
+4.  **Structure**:
+    - **Operational Rules**: The physics, metaphysics, or laws of the world.
+    - **Key Entities**: Major groups, factions, or species.
+    - **Environment**: Layout, geography, or atmosphere.
+    - **Tone/Style**: The feeling of the setting.
+
+Output: Plain Text Summary.`
         };
+
+
 
         const cleanJson = (text) => {
             if (!text) return "";
@@ -899,6 +918,203 @@ Output JSON:
                 throw error;
             }
         };
+
+        /* ----------------------------------------------------------------------
+           RAG & EMBEDDINGS INFRASTRUCTURE
+           ----------------------------------------------------------------------
+        */
+
+        const cosineSimilarity = (vecA, vecB) => {
+            let dotProduct = 0;
+            let magnitudeA = 0;
+            let magnitudeB = 0;
+            for (let i = 0; i < vecA.length; i++) {
+                dotProduct += vecA[i] * vecB[i];
+                magnitudeA += vecA[i] * vecA[i];
+                magnitudeB += vecB[i] * vecB[i];
+            }
+            magnitudeA = Math.sqrt(magnitudeA);
+            magnitudeB = Math.sqrt(magnitudeB);
+            if (magnitudeA === 0 || magnitudeB === 0) return 0;
+            return dotProduct / (magnitudeA * magnitudeB);
+        };
+
+        class EmbeddingService {
+            constructor(apiKey, provider = 'gemini') {
+                this.apiKey = apiKey;
+                this.provider = provider;
+            }
+
+            async getEmbedding(text) {
+                if (!text || !text.trim()) return null;
+                if (this.provider === 'gemini') {
+                    return await this.getGeminiEmbedding(text);
+                } else {
+                    return await this.getOpenRouterEmbedding(text);
+                }
+            }
+
+            async getGeminiEmbedding(text) {
+                // ... (Existing Gemini Logic)
+                const model = "text-embedding-004";
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${this.apiKey}`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: `models/${model}`,
+                        content: { parts: [{ text: text }] }
+                    })
+                });
+                if (!response.ok) {
+                    const err = await response.text();
+                    throw new Error(`Gemini Embedding Failed: ${response.status} - ${err}`);
+                }
+                const data = await response.json();
+                return data.embedding.values;
+            }
+
+            async getOpenRouterEmbedding(text) {
+                // OpenRouter Embeddings (Standard OpenAI-compatible format)
+                // We'll use a widely available model like coverage
+                const model = "text-embedding-3-small"; // Or "google/text-embedding-004" if available via OR
+
+                const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
+                    method: 'POST',
+                    headers: {
+                        "Authorization": `Bearer ${this.apiKey}`,
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": window.location.href,
+                        "X-Title": "EllipsisProse"
+                    },
+                    body: JSON.stringify({
+                        model: model,
+                        input: text
+                    })
+                });
+
+                if (!response.ok) {
+                    // Fallback mechanism: The user might strictly need a Google key for embeddings if OR ones fail or cost too much.
+                    // But for now, let's try to gracefully fail.
+                    const err = await response.text();
+                    throw new Error(`OpenRouter Embedding Failed: ${response.status} - ${err}`);
+                }
+
+                const data = await response.json();
+                // Standard OpenAI format: { data: [{ embedding: [...] }] }
+                return data.data?.[0]?.embedding;
+            }
+        }
+
+        class VectorStore {
+            constructor(dbName = 'EllipsisVectorStore') {
+                this.dbName = dbName;
+                this.db = null;
+                this.ready = this.init();
+            }
+
+            init() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, 1);
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains('vectors')) {
+                            db.createObjectStore('vectors', { keyPath: 'id' });
+                        }
+                    };
+                    request.onsuccess = (event) => {
+                        this.db = event.target.result;
+                        resolve();
+                    };
+                    request.onerror = (event) => reject(event.target.error);
+                });
+            }
+
+            async add(id, text, vector, metadata = {}) {
+                await this.ready;
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction('vectors', 'readwrite');
+                    const store = tx.objectStore('vectors');
+                    store.put({ id, text, vector, metadata, timestamp: Date.now() });
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+
+            async getAll() {
+                await this.ready;
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction('vectors', 'readonly');
+                    const store = tx.objectStore('vectors');
+                    const request = store.getAll();
+                    request.onsuccess = () => resolve(request.result);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async search(queryVector, limit = 5, threshold = 0.0, filterFn = null) {
+                const allItems = await this.getAll();
+                const scored = allItems.map(item => ({
+                    ...item,
+                    score: cosineSimilarity(queryVector, item.vector)
+                }));
+
+                // Filter by threshold AND optional filterFn on metadata
+                const filtered = scored.filter(i =>
+                    i.score >= threshold && (!filterFn || filterFn(i.metadata))
+                );
+                filtered.sort((a, b) => b.score - a.score);
+
+                return filtered.slice(0, limit);
+            }
+
+            async checkRedundancy(queryVector, threshold = 0.85) {
+                // Returns the single highest matching item IF it exceeds threshold
+                const results = await this.search(queryVector, 1, threshold);
+                return results.length > 0 ? results[0] : null;
+            }
+
+            async clear() {
+                await this.ready;
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction('vectors', 'readwrite');
+                    tx.objectStore('vectors').clear();
+                    tx.oncomplete = () => resolve();
+                });
+            }
+        }
+
+        class GraphManager {
+            constructor() {
+                // In-memory graph for now, syncs with React State
+                // Nodes are Lore Items (by ID/Topic)
+                // Edges are defined in metadata
+                this.adjList = new Map();
+            }
+
+            buildGraph(loreItems) {
+                this.adjList.clear();
+                loreItems.forEach(item => {
+                    if (!this.adjList.has(item.topic)) {
+                        this.adjList.set(item.topic, []);
+                    }
+                    // Parse "connections" or "related_to" from item details if we add that structure later
+                    // For now, we can infer some simple links or explicit ones
+                    if (item.related_to) {
+                        item.related_to.forEach(rel => {
+                            this.adjList.get(item.topic).push(rel);
+                            // Undirected?
+                            if (!this.adjList.has(rel)) this.adjList.set(rel, []);
+                            this.adjList.get(rel).push(item.topic);
+                        });
+                    }
+                });
+            }
+
+            getNeighbors(topic) {
+                return this.adjList.get(topic) || [];
+            }
+        }
 
         /* ----------------------------------------------------------------------
           HELPER COMPONENTS
@@ -1100,7 +1316,9 @@ Output JSON:
             });
 
             // Settings State
+            // Settings State
             const [apiProvider, setApiProvider] = useState(() => localStorage.getItem("ellipsisprose_api_provider") || 'gemini');
+            const [embeddingProvider, setEmbeddingProvider] = useState(() => localStorage.getItem("ellipsisprose_embedding_provider") || apiProvider); // New Logic
             const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
             const [geminiModel, setGeminiModel] = useState(() => localStorage.getItem("ellipsisprose_gemini_model") || "gemini-2.0-flash");
             const [geminiModelsList, setGeminiModelsList] = useState([]);
@@ -1132,9 +1350,301 @@ Output JSON:
 
             const [inputTitle, setInputTitle] = useState("");
             const [inputConcept, setInputConcept] = useState("");
+            const [importedLoreText, setImportedLoreText] = useState(""); // NEW: State for uploaded lore
+            const [worldPrimer, setWorldPrimer] = useState(null); // NEW: Distilled world primer
+            const loreInputRef = useRef(null); // NEW: Ref for lore file input
 
-            const [promptLog, setPromptLog] = useState([]); // New Log State
+            const [promptLog, setPromptLog] = useState([]);
             const fileInputRef = useRef(null);
+
+            // RAG & Graph State
+            const vectorStore = useRef(new VectorStore());
+            const graphManager = useRef(new GraphManager());
+            const embeddingService = useRef(null);
+            const [ragStatus, setRagStatus] = useState("idle"); // idle, indexing, ready
+
+            // RAG Inspector State
+            const [ragTestQuery, setRagTestQuery] = useState("");
+            const [ragTestResults, setRagTestResults] = useState([]);
+            const [ragTestLoading, setRagTestLoading] = useState(false);
+
+            // NEW: Distill Lore for large contexts
+
+            // NEW: Distill Lore for large contexts
+            const distillLore = async (text) => {
+                setLoadingStep("Distilling World Primer...");
+                try {
+                    const primer = await callAI(
+                        `Input Text Length: ${text.length} chars.\n\nText (First 50k chars):\n${text.substring(0, 50000)}...`,
+                        PROMPTS.loreDistiller,
+                        false, // Text output
+                        "Lore Distiller"
+                    );
+                    setWorldPrimer(primer);
+                    return primer;
+                } catch (e) {
+                    console.error("Distillation failed:", e);
+                    showToast("Distillation failed, using raw text.", "error");
+                    return null;
+                }
+            };
+
+            // NEW: Handle Lore File Import
+            const handleLoreImport = (event) => {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const text = e.target.result;
+                    setImportedLoreText(text); // Preserved for UI reference
+
+                    // Reset Primer
+                    setWorldPrimer(null);
+
+                    if (text.length > 20000) {
+                        showToast("Large file detected. Starting Hybrid Distillation...", "info");
+                        setLoading(true);
+
+                        // 1. Distill
+                        await distillLore(text);
+
+                        // 2. Chunk & Ingest (Simple chunking)
+                        const chunkSize = 2000;
+                        const chunks = [];
+                        for (let i = 0; i < text.length; i += chunkSize) {
+                            chunks.push({
+                                topic: `User Upload Segment ${Math.floor(i / chunkSize) + 1}`,
+                                detail: text.substring(i, i + chunkSize),
+                                valid_from_act: 1,
+                                valid_from_scene: 1,
+                                related_to: ["Author Upload"],
+                                description: "Imported Lore Segment"
+                            });
+                        }
+
+                        await ingestLoreBatch(chunks);
+                        setLoading(false);
+                        showToast("Lore distilled and ingested into RAG.", "success");
+                    } else {
+                        showToast("Lore document loaded!", "success");
+                    }
+                };
+                reader.readAsText(file);
+                event.target.value = null; // Reset input
+            };
+
+            // ...
+
+            const initStory = async (isAutopilotOrEvent = false) => {
+                const isAutopilot = typeof isAutopilotOrEvent === 'boolean' ? isAutopilotOrEvent : false;
+                const conceptToUse = inputConcept;
+                if (!conceptToUse) return;
+                setLoading(true); setLoadingStep("Architecting Story Bible...");
+
+                // Flush Audio Cache
+                Object.values(audioCache).forEach(url => URL.revokeObjectURL(url));
+                setAudioCache({});
+                setAudioState({ id: null, status: 'idle', player: null });
+
+                // Reset selection state
+                setSelectedAct(null);
+                setSelectedScene(null);
+
+                try {
+                    // Inject Imported Lore into the Concept Prompt
+                    let finalPrompt = `Concept: ${conceptToUse}`;
+
+                    if (worldPrimer) {
+                        // HYBRID STRATEGY: Primer + RAG
+                        finalPrompt += `\n\nWORLD PRIMER / CORE RULES:\n${worldPrimer}`;
+
+                        // Fetch specific relevance for the Concept from VectorStore
+                        // (Assuming we already ingested chunks in handleLoreImport)
+                        const relevantChunks = await retrieveContext(`Concept: ${conceptToUse} Themes and Tone`, 0.6);
+                        if (relevantChunks.length > 0) {
+                            finalPrompt += `\n\nRELEVANT LORE DETAILS:\n${relevantChunks.map(c => c.text).join('\n')}`;
+                        }
+
+                        finalPrompt += `\n\nINSTRUCTION: Incorporate these notes into the Status Quo, Themes, and especially the 'world_lore' array. The World Primer defines the hard rules; the Details provide color.`;
+
+                    } else if (importedLoreText && importedLoreText.trim().length > 0) {
+                        // LEGACY/SMALL FILE STRATEGY: Direct Injection
+                        finalPrompt += `\n\nEXISTING WORLD LORE / AUTHOR NOTES:\n${importedLoreText}\n\nINSTRUCTION: Incorporate these notes into the Status Quo, Themes, and especially the 'world_lore' array. Ensure consistency with these established facts.`;
+                    }
+
+                    const bible = await callAI(finalPrompt, PROMPTS.storyArchitect, true, "Story Architect");
+
+                    // 1. Identify All Characters
+                    setLoadingStep("Identifying Cast...");
+                    const extractionPrompt = `Analyze this Story Bible and list all characters mentioned.\n\n${JSON.stringify(bible)}`;
+                    const extracted = await callAI(extractionPrompt, PROMPTS.characterExtractor, true, "Cast Scanner");
+
+                    // 2. Prepare Cast List (Merge Protagonist + Extracted)
+                    let finalCast = [bible.protagonist];
+
+                    if (extracted.characters) {
+                        extracted.characters.forEach(c => {
+                            // If not already in list (check by name, loosely)
+                            if (!finalCast.find(existing => existing.name.toLowerCase() === c.name.toLowerCase())) {
+                                finalCast.push({
+                                    name: c.name,
+                                    role: c.role,
+                                    voice_sample: "TBD", // Will be profiled
+                                    details: {
+                                        history: c.context || c.description,
+                                        story_events: "Identified in Story Bible",
+                                        goals: c.goals || "Unknown (To be revealed)",
+                                        deep_profile: null
+                                    }
+                                });
+                            }
+                        });
+                    }
+
+                    // 3. Generate Deep Profiles for EVERYONE
+                    setLoadingStep("Interviewing Cast...");
+                    for (let i = 0; i < finalCast.length; i++) {
+                        // Autopilot optimization: only profile protagonist deep initially if in hurry? 
+                        // No, let's keep it robust.
+                        const char = finalCast[i];
+                        if (!char.details?.deep_profile) {
+                            setLoadingStep(`Interviewing ${char.name}...`);
+                            const context = `Role: ${char.role}\nDescription: ${char.details?.history || char.details?.story_events}\nGoal: ${char.details?.goals}`;
+
+                            // Pass bible context
+                            const storyContext = {
+                                concept: bible.concept,
+                                themes: bible.themes,
+                                style: bible.style
+                            };
+
+                            const profile = await generateCharacterProfile(char.name, char.role, context, storyContext);
+                            if (!char.details) char.details = {};
+                            char.details.deep_profile = profile;
+                            // Also set voice_sample to a snippet if "TBD"
+                            if (char.voice_sample === "TBD") {
+                                char.voice_sample = profile.split('.')[0].substring(0, 50) + "...";
+                            }
+                        }
+                    }
+
+                    // Reset story state completely
+                    const newStory = {
+                        title: inputTitle || "My New Story",
+                        concept: bible.concept,
+                        status_quo: bible.status_quo,
+                        inciting_incident: bible.inciting_incident,
+                        themes: bible.themes,
+                        style: bible.style,
+                        threads: bible.threads,
+                        cast: finalCast,
+                        lore: bible.world_lore,
+                        acts: [],
+                        scenes: {},
+                        beats: {},
+                        prose: {}
+                    };
+
+                    setLoadingStep("Structuring Acts...");
+                    const actData = await callAI(`Concept: ${bible.concept}\nThreads: ${JSON.stringify(bible.threads)}`, PROMPTS.actStructure, true, "Act Structure");
+
+                    // 4. Schedule Lore (Avoid Spoilers)
+                    setLoadingStep("Scheduling Lore Reveals...");
+                    const schedPrompt = `Story Concept: ${bible.concept}\n\nAct Outline: ${JSON.stringify(actData.acts)}\n\nWorld Lore: ${JSON.stringify(bible.world_lore)}`;
+                    const loreSchedule = await callAI(schedPrompt, PROMPTS.loreScheduler, true, "Lore Scheduler");
+
+                    // Merge schedule into lore
+                    const scheduledLore = bible.world_lore.map(l => {
+                        const sched = loreSchedule.lore_schedule?.find(s => s.topic === l.topic);
+                        return {
+                            ...l,
+                            valid_from_act: sched?.valid_from_act || 1,
+                            valid_from_scene: sched?.valid_from_scene || 1
+                        };
+                    });
+
+                    // RAG: Ingest Initial Batch
+                    setLoadingStep("Indexing Lore (RAG)...");
+                    // Note: We use the scheduledLore but ingestLoreBatch might mutate or we just index them
+                    await ingestLoreBatch(scheduledLore);
+                    // We could update story.lore with the result of ingestLoreBatch if we want to capture merged IDs 
+                    // but for init, they should be unique mostly.
+
+                    const finalStory = { ...newStory, lore: scheduledLore, acts: actData.acts };
+                    setStory(finalStory);
+                    setView('dashboard'); // Go to dashboard
+                    showToast("Story Bible initialized (with RAG)!");
+                    return finalStory;
+                } catch (e) {
+                    console.error(e);
+                    alert("Initialization failed: " + e.message);
+                } finally {
+                    if (!isAutopilot) setLoading(false);
+                }
+            };
+
+
+
+            // Single Item Ingest with Redundancy Check
+            const ingestLore = async (item) => {
+                if (!item.topic || !item.detail) return { ...item, is_merged: false };
+
+                // 1. Check for Semantic Redundancy
+                const tempEmbedding = await embeddingService.current.getEmbedding(`${item.topic}: ${item.description || item.detail}`);
+                if (!tempEmbedding) return item;
+
+                const redundancy = await vectorStore.current.checkRedundancy(tempEmbedding, 0.85);
+
+                if (redundancy) {
+                    // MERGE
+                    const mergedDetail = await callAI(
+                        `Existing: ${redundancy.text}\nNew: ${item.detail}\n\nTask: Merge these two lore entries into one concise, consistent entry.`,
+                        "You are a Lore Keeper.",
+                        false, // Text output
+                        "Lore Merger"
+                    );
+
+                    // Update Vector Store
+                    const newEmbedding = await embeddingService.current.getEmbedding(`${item.topic}: ${mergedDetail}`);
+                    await vectorStore.current.add(redundancy.id, `${item.topic}: ${mergedDetail}`, newEmbedding, { ...redundancy.metadata, detail: mergedDetail });
+
+                    return { ...item, detail: mergedDetail, is_merged: true };
+                } else {
+                    // NEW ENTRY
+                    const id = `lore_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    await vectorStore.current.add(id, `${item.topic}: ${item.detail}`, tempEmbedding, { topic: item.topic, valid_from_act: item.valid_from_act, valid_from_scene: item.valid_from_scene, related_to: item.related_to });
+                    return { ...item, is_merged: false };
+                }
+            };
+
+            // Batch Ingest (for Init or Import)
+            const ingestLoreBatch = async (loreList) => {
+                setRagStatus("indexing_batch");
+                // Clear old store if re-initializing? Maybe not if we want persistence, but for now yes to avoid stale ghosts
+                await vectorStore.current.clear();
+
+                let processedList = [];
+                for (const item of loreList) {
+                    // We run sequentially to allow deduplication against items just added in this batch
+                    const processed = await ingestLore(item);
+                    if (!processed.is_merged) {
+                        processedList.push(processed);
+                    } else {
+                        // If merged, we update the existing item in the processedList
+                        const idx = processedList.findIndex(p => p.topic === processed.topic);
+                        if (idx !== -1) processedList[idx] = processed;
+                    }
+                }
+                setRagStatus("ready");
+                return processedList;
+            };
+
+            // Build Graph on Load/Change
+            useEffect(() => {
+                if (story.lore) {
+                    graphManager.current.buildGraph(story.lore);
+                }
+            }, [story.lore]);
 
             // UI State
             const [collapsedActs, setCollapsedActs] = useState({});
@@ -1181,6 +1691,12 @@ Output JSON:
             useEffect(() => {
                 localStorage.setItem("ellipsisprose_story", JSON.stringify(story));
             }, [story]);
+
+            // Instantiate/Update Embedding Service
+            useEffect(() => {
+                const key = embeddingProvider === 'gemini' ? apiKey : openRouterKey;
+                embeddingService.current = new EmbeddingService(key, embeddingProvider);
+            }, [apiKey, openRouterKey, embeddingProvider]);
 
             useEffect(() => {
                 localStorage.setItem("ellipsisprose_view", view);
@@ -1247,43 +1763,93 @@ Output JSON:
                 }
             };
 
-            const handleWorldUpdates = (updates, activeActNum = 1, activeSceneNum = 1) => {
+            const handleWorldUpdates = async (updates, activeActNum = 1, activeSceneNum = 1) => {
                 if (!updates) return;
-                setStory(prev => {
-                    let newCast = [...prev.cast];
-                    let newLore = [...prev.lore];
-                    if (updates.cast_updates) {
-                        updates.cast_updates.forEach(up => {
-                            const idx = newCast.findIndex(c => c.name === up.name);
-                            if (idx !== -1) {
-                                const char = newCast[idx];
-                                if (!char.details) char.details = { history: "", story_events: "", goals: "", evolution: "" };
-                                if (up.append_history) char.details.history += `\n[New]: ${up.append_history}`;
-                                if (up.append_story_events) char.details.story_events += `\n- ${up.append_story_events}`;
-                                if (up.update_goals) char.details.goals = up.update_goals;
-                                newCast[idx] = char;
+
+                // RAG: Pre-process Lore Updates (Async Ingestion + Deduplication)
+                if (updates.lore_updates && updates.lore_updates.length > 0) {
+                    setRagStatus("indexing");
+                    const processedLoreStart = [];
+                    for (const up of updates.lore_updates) {
+                        const rawItem = {
+                            topic: up.topic,
+                            detail: up.detail,
+                            valid_from_act: activeActNum,
+                            valid_from_scene: activeSceneNum
+                        };
+                        // This awaits the embedding call and redundancy check
+                        const processed = await ingestLore(rawItem);
+                        processedLoreStart.push(processed);
+                    }
+                    setRagStatus("idle");
+
+                    // Now Update React State with processed items
+                    setStory(prev => {
+                        let newCast = [...prev.cast];
+                        // Logic for Cast (same as before)
+                        if (updates.cast_updates) {
+                            updates.cast_updates.forEach(up => {
+                                const idx = newCast.findIndex(c => c.name === up.name);
+                                if (idx !== -1) {
+                                    const char = newCast[idx];
+                                    if (!char.details) char.details = { history: "", story_events: "", goals: "", evolution: "" };
+                                    if (up.append_history) char.details.history += `\n[New]: ${up.append_history}`;
+                                    if (up.append_story_events) char.details.story_events += `\n- ${up.append_story_events}`;
+                                    if (up.update_goals) char.details.goals = up.update_goals;
+                                    newCast[idx] = char;
+                                }
+                            });
+                        }
+                        if (updates.new_characters) {
+                            updates.new_characters.forEach(nc => {
+                                if (!newCast.find(c => c.name === nc.name)) newCast.push(nc);
+                            });
+                        }
+
+                        let newLore = [...prev.lore];
+                        processedLoreStart.forEach(pItem => {
+                            if (pItem.is_merged) {
+                                // Update existing item in State
+                                const idx = newLore.findIndex(l => l.topic === pItem.topic);
+                                if (idx !== -1) {
+                                    newLore[idx] = { ...newLore[idx], detail: pItem.detail };
+                                }
+                            } else {
+                                // Add new
+                                if (!newLore.find(l => l.topic === pItem.topic)) {
+                                    newLore.push(pItem);
+                                }
                             }
                         });
-                    }
-                    if (updates.new_characters) {
-                        updates.new_characters.forEach(nc => {
-                            if (!newCast.find(c => c.name === nc.name)) newCast.push(nc);
-                        });
-                    }
-                    if (updates.lore_updates) {
-                        updates.lore_updates.forEach(up => {
-                            if (!newLore.find(l => l.topic === up.topic)) {
-                                newLore.push({
-                                    topic: up.topic,
-                                    detail: up.detail,
-                                    valid_from_act: activeActNum,
-                                    valid_from_scene: activeSceneNum
-                                });
-                            }
-                        });
-                    }
-                    return { ...prev, cast: newCast, lore: newLore };
-                });
+
+                        return { ...prev, cast: newCast, lore: newLore };
+                    });
+
+                } else {
+                    // No lore updates, just cast (Synchronous fallback)
+                    setStory(prev => {
+                        let newCast = [...prev.cast];
+                        if (updates.cast_updates) {
+                            updates.cast_updates.forEach(up => {
+                                const idx = newCast.findIndex(c => c.name === up.name);
+                                if (idx !== -1) {
+                                    const char = newCast[idx];
+                                    if (!char.details) char.details = { history: "", story_events: "", goals: "", evolution: "" };
+                                    if (up.append_history) char.details.history += `\n[New]: ${up.append_history}`;
+                                    if (up.append_story_events) char.details.story_events += `\n- ${up.append_story_events}`;
+                                    if (up.update_goals) char.details.goals = up.update_goals;
+                                    newCast[idx] = char;
+                                }
+                            });
+                        }
+                        if (updates.new_characters) {
+                            updates.new_characters.forEach(nc => {
+                                if (!newCast.find(c => c.name === nc.name)) newCast.push(nc);
+                            });
+                        }
+                        return { ...prev, cast: newCast };
+                    });
+                }
             };
 
             const handleDeleteLore = (index) => {
@@ -1521,6 +2087,82 @@ ${sceneBody}
                 event.target.value = null;
             };
 
+            // RAG Retrieval Engine
+            const retrieveContext = async (query, threshold = 0.5, filterFn = null) => {
+                if (!embeddingService.current || !vectorStore.current) return [];
+
+                try {
+                    // 0. Query Expansion (Agentic Step)
+                    // We only do this for purely narrative queries, not system queries like "Concept..."
+                    let searchKey = query;
+                    if (!query.startsWith("Concept:")) {
+                        try {
+                            const expanded = await callAI(
+                                `Identify key entities, locations, and implicit relationships in this narrative action. Output a comma-separated list of keywords.\nInput: "${query}"`,
+                                "You are a Search Optimizer.",
+                                false,
+                                "Query Expansion"
+                            );
+                            if (expanded) searchKey = `${query} ${expanded}`;
+                        } catch (e) {
+                            // Fallback to raw query if expansion fails
+                            console.warn("Query expansion failed, using raw query.");
+                        }
+                    }
+
+                    const queryVector = await embeddingService.current.getEmbedding(searchKey);
+                    if (!queryVector) return [];
+
+                    // 1. Vector Search (Top 3) with Filter
+                    const results = await vectorStore.current.search(queryVector, 3, threshold, filterFn);
+
+                    // 2. Graph Traversal (Immediate Neighbors of Top Results)
+                    let augmentedResults = [...results];
+                    const processedTopics = new Set(results.map(r => r.metadata.topic));
+
+                    for (const res of results) {
+                        const neighbors = graphManager.current.getNeighbors(res.metadata.topic);
+                        for (const neighborTopic of neighbors) {
+                            if (!processedTopics.has(neighborTopic)) {
+                                // We found a neighbor. We need its content. 
+                                // Since VectorStore currently stores by ID primarily, we might need to scan or keep a topic-map.
+                                // Optimization: For now, we search memory 'story.lore' as fallback or query DB by topic index if strict.
+                                // Simple approach: Check In-Memory Story.Lore for content
+                                const neighborItem = story.lore.find(l => l.topic === neighborTopic);
+                                if (neighborItem) {
+                                    augmentedResults.push({
+                                        text: `${neighborItem.topic}: ${neighborItem.detail}`,
+                                        score: 1.0, // High relevance by relation
+                                        metadata: { topic: neighborItem.topic, relation: "Graph Neighbor of " + res.metadata.topic }
+                                    });
+                                    processedTopics.add(neighborTopic);
+                                }
+                            }
+                        }
+                    }
+
+                    return augmentedResults;
+                } catch (e) {
+                    console.error("Retrieval failed:", e);
+                    return [];
+                }
+            };
+
+            // RAG Inspector Handler
+            const handleRagTest = async () => {
+                if (!ragTestQuery.trim()) return;
+                setRagTestLoading(true);
+                try {
+                    // Test retrieval NO FILTER
+                    const results = await retrieveContext(ragTestQuery, 0.0); // 0.0 threshold to see everything
+                    setRagTestResults(results);
+                } catch (e) {
+                    alert("RAG Test Failed: " + e.message);
+                } finally {
+                    setRagTestLoading(false);
+                }
+            };
+
             const callAI = async (prompt, systemPrompt, isJson = true, logName = "AI Task") => {
                 const logEntry = {
                     id: Date.now(),
@@ -1646,126 +2288,6 @@ CHARACTER CONTEXT: ${context}
                 generateBeats(actIdx, sceneIdx);
             };
 
-            const initStory = async (isAutopilotOrEvent = false) => {
-                const isAutopilot = typeof isAutopilotOrEvent === 'boolean' ? isAutopilotOrEvent : false;
-                const conceptToUse = inputConcept;
-                if (!conceptToUse) return;
-                setLoading(true); setLoadingStep("Architecting Story Bible...");
-
-                // Flush Audio Cache
-                Object.values(audioCache).forEach(url => URL.revokeObjectURL(url));
-                setAudioCache({});
-                setAudioState({ id: null, status: 'idle', player: null });
-
-                // Reset selection state
-                setSelectedAct(null);
-                setSelectedScene(null);
-
-                try {
-                    const bible = await callAI(`Concept: ${conceptToUse}`, PROMPTS.storyArchitect, true, "Story Architect");
-
-                    // 1. Identify All Characters
-                    setLoadingStep("Identifying Cast...");
-                    const extractionPrompt = `Analyze this Story Bible and list all characters mentioned.\n\n${JSON.stringify(bible)}`;
-                    const extracted = await callAI(extractionPrompt, PROMPTS.characterExtractor, true, "Cast Scanner");
-
-                    // 2. Prepare Cast List (Merge Protagonist + Extracted)
-                    let finalCast = [bible.protagonist];
-
-                    if (extracted.characters) {
-                        extracted.characters.forEach(c => {
-                            // If not already in list (check by name, loosely)
-                            if (!finalCast.find(existing => existing.name.toLowerCase() === c.name.toLowerCase())) {
-                                finalCast.push({
-                                    name: c.name,
-                                    role: c.role,
-                                    voice_sample: "TBD", // Will be profiled
-                                    details: {
-                                        history: c.context || c.description,
-                                        story_events: "Identified in Story Bible",
-                                        goals: c.goals || "Unknown (To be revealed)",
-                                        deep_profile: null
-                                    }
-                                });
-                            }
-                        });
-                    }
-
-                    // 3. Generate Deep Profiles for EVERYONE
-                    setLoadingStep("Interviewing Cast...");
-                    for (let i = 0; i < finalCast.length; i++) {
-                        // Autopilot optimization: only profile protagonist deep initially if in hurry? 
-                        // No, let's keep it robust.
-                        const char = finalCast[i];
-                        if (!char.details?.deep_profile) {
-                            setLoadingStep(`Interviewing ${char.name}...`);
-                            const context = `Role: ${char.role}\nDescription: ${char.details?.history || char.details?.story_events}\nGoal: ${char.details?.goals}`;
-
-                            // Pass bible context
-                            const storyContext = {
-                                concept: bible.concept,
-                                themes: bible.themes,
-                                style: bible.style
-                            };
-
-                            const profile = await generateCharacterProfile(char.name, char.role, context, storyContext);
-                            if (!char.details) char.details = {};
-                            char.details.deep_profile = profile;
-                            // Also set voice_sample to a snippet if "TBD"
-                            if (char.voice_sample === "TBD") {
-                                char.voice_sample = profile.split('.')[0].substring(0, 50) + "...";
-                            }
-                        }
-                    }
-
-                    // Reset story state completely
-                    const newStory = {
-                        title: inputTitle || "My New Story",
-                        concept: bible.concept,
-                        status_quo: bible.status_quo,
-                        inciting_incident: bible.inciting_incident,
-                        themes: bible.themes,
-                        style: bible.style,
-                        threads: bible.threads,
-                        cast: finalCast,
-                        lore: bible.world_lore,
-                        acts: [],
-                        scenes: {},
-                        beats: {},
-                        prose: {}
-                    };
-
-                    setLoadingStep("Structuring Acts...");
-                    const actData = await callAI(`Concept: ${bible.concept}\nThreads: ${JSON.stringify(bible.threads)}`, PROMPTS.actStructure, true, "Act Structure");
-
-                    // 4. Schedule Lore (Avoid Spoilers)
-                    setLoadingStep("Scheduling Lore Reveals...");
-                    const schedPrompt = `Story Concept: ${bible.concept}\n\nAct Outline: ${JSON.stringify(actData.acts)}\n\nWorld Lore: ${JSON.stringify(bible.world_lore)}`;
-                    const loreSchedule = await callAI(schedPrompt, PROMPTS.loreScheduler, true, "Lore Scheduler");
-
-                    // Merge schedule into lore
-                    const scheduledLore = bible.world_lore.map(l => {
-                        const sched = loreSchedule.lore_schedule?.find(s => s.topic === l.topic);
-                        return {
-                            ...l,
-                            valid_from_act: sched?.valid_from_act || 1,
-                            valid_from_scene: sched?.valid_from_scene || 1
-                        };
-                    });
-
-                    const finalStory = { ...newStory, lore: scheduledLore, acts: actData.acts };
-                    setStory(finalStory);
-
-                    if (!isAutopilot) {
-                        setView('dashboard');
-                        showToast("Story successfully initialized!");
-                    } else {
-                        showToast("Story Bible Created. Proceeding to Scenes...");
-                    }
-                    return finalStory;
-                } catch (e) { alert(e.message); throw e; } finally { if (!isAutopilot) setLoading(false); }
-            };
-
             const generateScenes = async (actIndex, currentStory = story, isAutopilot = false) => {
                 const storyToUse = currentStory || story;
                 setLoading(true); setLoadingStep(`Weaving Scenes for Act ${actIndex + 1}...`);
@@ -1790,7 +2312,17 @@ CHARACTER CONTEXT: ${context}
                         }
                     }
 
-                    const res = await callAI(`Act Context: ${JSON.stringify(act)}\nThreads: ${JSON.stringify(storyToUse.threads)}\nCast: ${JSON.stringify(storyToUse.cast)}\nLore: ${JSON.stringify(storyToUse.lore)}${previousEventsContext}`, systemPrompt, true, "Scene Weaver");
+                    // RAG: Retrieve Relevant Context for the Act
+                    const query = `Act ${act.number}: ${act.title}. ${act.description}. Themes: ${storyToUse.themes}`;
+                    // Query + Act Filter (Spoiler Protection)
+                    const ragLoreDocs = await retrieveContext(query, 0.6, (meta) => {
+                        return !meta.valid_from_act || meta.valid_from_act <= actNumber;
+                    });
+                    const ragContext = ragLoreDocs.length > 0
+                        ? `\nRELEVANT WORLD LORE (RAG Retrieved):\n${ragLoreDocs.map(d => `- [${d.metadata.topic}]: ${d.text} (${d.metadata.relation || "Direct Match"})`).join('\n')}`
+                        : `\nWORLD LORE:\n${JSON.stringify(storyToUse.lore)}`; // Fallback if RAG fails or empty
+
+                    const res = await callAI(`Act Context: ${JSON.stringify(act)}\nThreads: ${JSON.stringify(storyToUse.threads)}\nCast: ${JSON.stringify(storyToUse.cast)}\n${ragContext}${previousEventsContext}`, systemPrompt, true, "Scene Weaver");
 
                     const nextStory = { ...storyToUse, scenes: { ...storyToUse.scenes, [actIndex]: res.scenes } };
 
@@ -1833,7 +2365,18 @@ CHARACTER CONTEXT: ${context}
                 try {
                     // Hydrate thread objects for context
                     const activeThreadsData = storyToUse.threads.filter(t => activeThreads.includes(t.id));
-                    const res = await callAI(`Scene: ${JSON.stringify(sceneData)}\nThreads: ${JSON.stringify(activeThreadsData)}`, PROMPTS.beatDirector, true, "Beat Director");
+
+                    // RAG: Retrieval for Scene Context
+                    const query = `Scene: ${sceneData.title}. Location: ${sceneData.location}. Characters: ${sceneData.cast_names.join(", ")}. Threads: ${activeThreadsData.map(t => t.name).join(", ")}`;
+                    // Query + Scene Filter (Spoiler Protection)
+                    const ragLoreDocs = await retrieveContext(query, 0.65, (meta) => {
+                        return !meta.valid_from_act || meta.valid_from_act <= (actIdx + 1);
+                    });
+                    const ragContext = ragLoreDocs.length > 0
+                        ? `\nRELEVANT WORLD LORE (RAG Retrieved):\n${ragLoreDocs.map(d => `- [${d.metadata.topic}]: ${d.text}`).join('\n')}`
+                        : `\nWORLD LORE:\n${JSON.stringify(storyToUse.lore)}`;
+
+                    const res = await callAI(`Scene: ${JSON.stringify(sceneData)}\nThreads: ${JSON.stringify(activeThreadsData)}\n${ragContext}`, PROMPTS.beatDirector, true, "Beat Director");
 
                     if (res && res.beats) {
                         const nextStory = {
@@ -1868,7 +2411,8 @@ CHARACTER CONTEXT: ${context}
                 setLoading(true);
                 const sId = `${actIdx}-${sceneIdx}`;
                 const bId = `${sId}-${beatIdx}`;
-                const beat = storyToUse.beats[sId][beatIdx];
+                const beat = storyToUse.beats[sId]?.[beatIdx];
+                if (!beat) throw new Error(`Beat not found at index ${beatIdx} for ${sId}`);
                 const scene = storyToUse.scenes[actIdx][sceneIdx];
 
                 // 0. AGENTIC PRE-STEP: Ensure Character Profiles
@@ -1923,38 +2467,24 @@ CHARACTER CONTEXT: ${context}
                     `### ${c.name}\n- **Role:** ${c.role}\n- **Goal:** ${c.details?.goals}\n- **Deep Profile (Interview):**\n${c.details?.deep_profile || "No profile available."}`
                 ).join('\n\n');
 
-                // Lore Selection
+                // RAG: Retrieval for Beat Context
+                setLoadingStep("Retrieving Context (RAG)...");
                 const currentActNum = storyToUse.acts[actIdx].number;
                 const currentSceneNum = scene.number;
 
-                const availableLore = storyToUse.lore.filter(l => {
-                    const validAct = l.valid_from_act || 1;
-                    const validScene = l.valid_from_scene || 1;
-                    if (currentActNum > validAct) return true;
-                    if (currentActNum === validAct && currentSceneNum >= validScene) return true;
-                    return false;
+                // Build query focused on the Beat + Scene + Characters
+                const beatQuery = `Beat Action: ${beat.description}. Scene Context: ${scene.description}. Characters: ${scene.cast_names?.join(', ') || "None"}. Mood: ${beat.emotional_shift}`;
+
+                // High threshold to ensure only truly relevant lore is injected into the prose
+                // Query + Act Filter (Spoiler Protection checks Act number)
+                const ragLoreDocs = await retrieveContext(beatQuery, 0.65, (meta) => {
+                    return !meta.valid_from_act || meta.valid_from_act <= currentActNum;
                 });
 
-                let selectedLore = availableLore;
-                if (availableLore.length > 5) {
-                    setLoadingStep("Agent 1/4: Consulting Archive...");
-                    const selectorPrompt = `
-Scene: ${scene.description}
-Beat Focus: ${beat.description}
-Characters: ${scene.cast_names?.join(', ') || "None"}
-
-Available Lore:
-${availableLore.map((l, i) => `${i}. ${l.topic}`).join('\n')}
-`;
-                    const selection = await callAI(selectorPrompt, PROMPTS.loreSelector, true, "Lore Selector");
-                    if (selection.selected_lore_topics && selection.selected_lore_topics.length > 0) {
-                        selectedLore = availableLore.filter(l => selection.selected_lore_topics.includes(l.topic));
-                    } else {
-                        selectedLore = availableLore.slice(0, 5);
-                    }
-                }
-
-                const loreContext = selectedLore.map(l => `### ${l.topic}\n${l.detail}`).join('\n\n');
+                // Format for Drafter
+                const loreContext = ragLoreDocs.length > 0
+                    ? ragLoreDocs.map(d => `### ${d.metadata.topic} (${d.metadata.relation || "Direct Match"})\n${d.text}`).join('\n\n')
+                    : "No specific relevant world lore found for this moment.";
 
                 const getPacingDescription = (val) => {
                     // (Keep reused helper logic if possible, but for replacement safety I'll include it)
@@ -2174,13 +2704,21 @@ Write ONLY the content for the CURRENT BEAT.
 
                     // 4. Write Prose for All Beats in Scene 1
                     const sId = "0-0";
-                    const beats = beatsStory.beats[sId];
-                    if (!beats || beats.length === 0) throw new Error("No beats generated.");
-
                     let currentStory = beatsStory;
-                    for (let i = 0; i < beats.length; i++) {
-                        // Update progress toast manually between beats if needed, or let writeProse handles it
+                    if (!currentStory.beats[sId] || currentStory.beats[sId].length === 0) throw new Error("No beats generated.");
+
+                    let i = 0;
+                    let beatsProcessed = 0;
+                    while (i < currentStory.beats[sId].length) {
                         currentStory = await writeProse(0, 0, i, currentStory, true);
+
+                        beatsProcessed++;
+                        if (beatsProcessed % 3 === 0 && i < currentStory.beats[sId].length - 1) {
+                            showToast("Cooling down AI (5s)...");
+                            await new Promise(resolve => setTimeout(resolve, 5000));
+                        }
+
+                        i++;
                     }
 
                     showToast("Autopilot Complete: First Scene Written!");
@@ -2205,16 +2743,20 @@ Write ONLY the content for the CURRENT BEAT.
                         currentStory = await generateBeats(actIdx, sceneIdx, currentStory, true);
                     }
 
-                    const beats = currentStory.beats[sId];
-                    if (!beats) throw new Error("No beats found or generated.");
+                    if (!currentStory.beats[sId] || currentStory.beats[sId].length === 0) throw new Error("No beats found or generated.");
 
-                    for (let i = 0; i < beats.length; i++) {
-                        // Check if prose already exists to skip? 
-                        // The user might want to overwrite. Let's assume overwrite if triggered, 
-                        // or maybe we should check if 'final' exists? 
-                        // "Auto-Write" implies writing what isn't there or rewriting. 
-                        // Let's just run it. writeProse overwrites.
+                    let i = 0;
+                    let beatsProcessed = 0;
+                    while (i < currentStory.beats[sId].length) {
                         currentStory = await writeProse(actIdx, sceneIdx, i, currentStory, true);
+
+                        beatsProcessed++;
+                        if (beatsProcessed % 3 === 0 && i < currentStory.beats[sId].length - 1) {
+                            showToast("Cooling down AI (5s)...");
+                            await new Promise(resolve => setTimeout(resolve, 5000));
+                        }
+
+                        i++;
                     }
                     showToast("Scene Auto-Written!");
                 } catch (e) {
@@ -2283,6 +2825,7 @@ Write ONLY the content for the CURRENT BEAT.
                             <button onClick={() => setView('logs')} className={`nav-btn ${view === 'logs' ? 'active' : ''}`}><History size={16} /> Prompt Log</button>
                             <button onClick={() => setView('cast')} className={`nav-btn ${view === 'cast' ? 'active' : ''}`}><Users size={16} /> Cast & Roster</button>
                             <button onClick={() => setView('lore')} className={`nav-btn ${view === 'lore' ? 'active' : ''}`}><Globe size={16} /> World Lore</button>
+                            <button onClick={() => setView('inspector')} className={`nav-btn ${view === 'inspector' ? 'active' : ''}`}><Search size={16} /> RAG Inspector</button>
                             <button onClick={() => setView('structure')} className={`nav-btn ${view === 'structure' ? 'active' : ''}`}><Layers size={16} /> Act Planner</button>
                             {story.acts.map((act, idx) => (
                                 <div key={idx} className="ml-2 mt-2">
@@ -2328,7 +2871,36 @@ Write ONLY the content for the CURRENT BEAT.
                                     <h1 className="text-2xl font-bold mb-4">EllipsisProse 0.35</h1>
                                     <p className="text-slate-400 mb-6">Enter a title and concept. The AI Architect will build your story bible.</p>
                                     <input className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none font-bold" placeholder="Story Title (e.g. The Last Starship)" value={inputTitle} onChange={e => setInputTitle(e.target.value)} />
-                                    <textarea className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 h-32 mb-6 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Concept (e.g. A fantasy world where magic costs memories...)" value={inputConcept} onChange={e => setInputConcept(e.target.value)} />
+                                    <textarea className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 h-32 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Concept (e.g. A fantasy world where magic costs memories...)" value={inputConcept} onChange={e => setInputConcept(e.target.value)} />
+
+                                    {/* Import Lore UI */}
+                                    <div className="mb-6">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <label className="text-xs font-bold text-slate-500 uppercase">Existing Lore / Notes (Optional)</label>
+                                            <button onClick={() => loreInputRef.current.click()} className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1">
+                                                <Upload size={12} /> Upload Text/MD
+                                            </button>
+                                            <input type="file" ref={loreInputRef} onChange={handleLoreImport} className="hidden" accept=".txt,.md" />
+                                        </div>
+                                        {importedLoreText && (
+                                            <div className="relative animate-fade-in">
+                                                <textarea
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 h-24 text-xs font-mono text-slate-400 focus:border-indigo-500 outline-none resize-y"
+                                                    value={importedLoreText}
+                                                    onChange={(e) => setImportedLoreText(e.target.value)}
+                                                    placeholder="Uploaded lore content will appear here..."
+                                                />
+                                                <button
+                                                    onClick={() => setImportedLoreText("")}
+                                                    className="absolute top-2 right-2 text-slate-600 hover:text-red-400"
+                                                    title="Clear Lore"
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+
                                     <div className="flex gap-4">
                                         <button onClick={() => initStory(false)} disabled={loading || !inputConcept} className="flex-1 bg-indigo-600 hover:bg-indigo-500 py-4 rounded-xl font-bold transition-all disabled:opacity-50">Initialize Story</button>
                                         <button onClick={handleAutopilot} disabled={loading || !inputConcept} className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 py-4 rounded-xl font-bold transition-all disabled:opacity-50 flex items-center justify-center gap-2"><Zap size={20} /> Autopilot</button>
@@ -2397,7 +2969,17 @@ Write ONLY the content for the CURRENT BEAT.
                             {view === 'lore' && (
                                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
                                     <div className="flex justify-between items-center mb-6">
-                                        <h2 className="text-2xl font-bold flex items-center gap-2"><Globe className="text-blue-400" /> World Lore</h2>
+                                        <h2 className="text-2xl font-bold flex items-center gap-2">
+                                            <Globe className="text-blue-400" /> World Lore
+                                            {ragStatus === 'indexing' && <span className="text-xs bg-indigo-900 text-indigo-200 px-2 py-1 rounded animate-pulse">Indexing...</span>}
+                                        </h2>
+                                        <button
+                                            onClick={() => ingestLoreBatch(story.lore)}
+                                            disabled={ragStatus === 'indexing' || !apiKey && !openRouterKey}
+                                            className="text-xs bg-slate-800 hover:bg-slate-700 px-3 py-2 rounded flex items-center gap-2"
+                                        >
+                                            <RefreshCw size={12} className={ragStatus === 'indexing' ? 'animate-spin' : ''} /> Re-Index Graph
+                                        </button>
                                     </div>
                                     <div className="grid gap-4">
                                         {story.lore.map((l, i) => (
@@ -2591,6 +3173,64 @@ Write ONLY the content for the CURRENT BEAT.
                                 </div>
                             )}
 
+                            {view === 'inspector' && (
+                                <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+                                    <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Search className="text-indigo-400" /> RAG Inspector</h2>
+
+                                    {/* Test Input */}
+                                    <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
+                                        <label className="block text-sm font-bold text-slate-400 mb-2">Test Query</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                className="flex-1 bg-slate-950 border border-slate-800 rounded px-4 py-2 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                                placeholder="e.g., 'What acts of magic are illegal?'"
+                                                value={ragTestQuery}
+                                                onChange={e => setRagTestQuery(e.target.value)}
+                                                onKeyDown={e => e.key === 'Enter' && handleRagTest()}
+                                            />
+                                            <button onClick={handleRagTest} disabled={ragTestLoading} className="bg-indigo-600 px-6 py-2 rounded font-bold hover:bg-indigo-500 disabled:opacity-50">
+                                                {ragTestLoading ? <Loader2 className="animate-spin" /> : 'Search'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* World Primer Status */}
+                                    {worldPrimer && (
+                                        <div className="bg-indigo-900/20 border border-indigo-500/30 p-4 rounded-xl">
+                                            <h3 className="text-sm font-bold text-indigo-300 uppercase mb-2 flex items-center gap-2"><Book size={14} /> Active World Primer</h3>
+                                            <div className="text-sm text-slate-300 max-h-32 overflow-y-auto whitespace-pre-wrap">{worldPrimer}</div>
+                                        </div>
+                                    )}
+
+                                    {/* Results */}
+                                    <div className="space-y-4">
+                                        <h3 className="text-sm font-bold text-slate-500 uppercase">Retrieval Results</h3>
+                                        {ragTestResults.length === 0 ? (
+                                            <div className="text-center text-slate-600 italic py-10">Run a search to inspect vector matches.</div>
+                                        ) : (
+                                            ragTestResults.map((res, i) => (
+                                                <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 p-4">
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className="text-xs font-bold text-emerald-400 bg-emerald-900/30 px-2 py-0.5 rounded">
+                                                            Score: {(res.score * 100).toFixed(1)}%
+                                                        </div>
+                                                        <div className="text-xs text-slate-500 font-mono">
+                                                            Topic: {res.metadata.topic}
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-slate-300 text-sm leading-relaxed mb-2">{res.text}</p>
+
+                                                    {/* Metadata Debug */}
+                                                    <div className="text-[10px] text-slate-500 font-mono bg-slate-950 p-2 rounded">
+                                                        {JSON.stringify(res.metadata)}
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {view === 'settings' && (
                                 <div className="max-w-xl mx-auto py-10 animate-fade-in">
                                     <h2 className="text-2xl font-bold mb-6 flex items-center gap-2"><Settings className="text-indigo-400" /> Settings</h2>
@@ -2598,23 +3238,45 @@ Write ONLY the content for the CURRENT BEAT.
                                     <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-6">
 
                                         {/* API Provider Toggle */}
-                                        <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
-                                            <button
-                                                onClick={() => setApiProvider('gemini')}
-                                                className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${apiProvider === 'gemini' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
-                                            >
-                                                Gemini (Google)
-                                            </button>
-                                            <button
-                                                onClick={() => setApiProvider('openrouter')}
-                                                className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${apiProvider === 'openrouter' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
-                                            >
-                                                OpenRouter
-                                            </button>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Text Generation Provider</label>
+                                            <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                                                <button
+                                                    onClick={() => setApiProvider('gemini')}
+                                                    className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${apiProvider === 'gemini' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                                >
+                                                    Gemini (Google)
+                                                </button>
+                                                <button
+                                                    onClick={() => setApiProvider('openrouter')}
+                                                    className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${apiProvider === 'openrouter' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                                >
+                                                    OpenRouter
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Embedding Provider Toggle */}
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Embedding Provider (RAG)</label>
+                                            <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                                                <button
+                                                    onClick={() => setEmbeddingProvider('gemini')}
+                                                    className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${embeddingProvider === 'gemini' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                                >
+                                                    Gemini (Recommended)
+                                                </button>
+                                                <button
+                                                    onClick={() => setEmbeddingProvider('openrouter')}
+                                                    className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${embeddingProvider === 'openrouter' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                                >
+                                                    OpenRouter
+                                                </button>
+                                            </div>
                                         </div>
 
                                         {/* Gemini Settings */}
-                                        {apiProvider === 'gemini' && (
+                                        {(apiProvider === 'gemini' || embeddingProvider === 'gemini') && (
                                             <div className="animate-fade-in">
                                                 <label className="block text-sm font-bold text-slate-400 mb-2">Gemini API Key</label>
                                                 <p className="text-xs text-slate-500 mb-2">Required for all AI features. Your key is stored locally.</p>
@@ -2626,26 +3288,32 @@ Write ONLY the content for the CURRENT BEAT.
                                                     placeholder="AIzaSy..."
                                                 />
 
-                                                <label className="block text-sm font-bold text-slate-400 mb-2">Gemini Model</label>
-                                                <div className="flex gap-2">
-                                                    <div className="relative flex-1">
-                                                        <select
-                                                            value={geminiModel}
-                                                            onChange={(e) => setGeminiModel(e.target.value)}
-                                                            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none appearance-none transition-colors"
-                                                        >
-                                                            {geminiModelsList.length > 0 ? (
-                                                                geminiModelsList.map(m => <option key={m} value={m}>{m}</option>)
-                                                            ) : (
-                                                                <option value={geminiModel}>{geminiModel}</option>
-                                                            )}
-                                                        </select>
-                                                        <ChevronDown className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" size={14} />
+                                                {/* Only show Model Selector if Gemini is the Text Provider */}
+                                                {apiProvider === 'gemini' && (
+                                                    <div>
+                                                        <label className="block text-sm font-bold text-slate-400 mb-2">Gemini Model</label>
+                                                        <div className="flex gap-2">
+                                                            <div className="relative flex-1">
+                                                                <select
+                                                                    value={geminiModel}
+                                                                    onChange={(e) => setGeminiModel(e.target.value)}
+                                                                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none appearance-none transition-colors"
+                                                                >
+                                                                    {geminiModelsList.length > 0 ? (
+                                                                        geminiModelsList.map(m => <option key={m} value={m}>{m}</option>)
+                                                                    ) : (
+                                                                        <option value={geminiModel}>{geminiModel}</option>
+                                                                    )}
+                                                                </select>
+                                                                <ChevronDown className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" size={14} />
+                                                            </div>
+                                                            <button onClick={fetchGeminiModels} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 rounded border border-slate-700 transition-colors" title="Refresh Models">
+                                                                <RefreshCw size={16} />
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <button onClick={fetchGeminiModels} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 rounded border border-slate-700 transition-colors" title="Refresh Models">
-                                                        <RefreshCw size={16} />
-                                                    </button>
-                                                </div>
+                                                )}
+
                                                 <p className="text-xs text-slate-500 mt-2">
                                                     Don't have a key? <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-indigo-400 hover:underline">Get one from Google AI Studio</a>.
                                                 </p>
@@ -2653,7 +3321,7 @@ Write ONLY the content for the CURRENT BEAT.
                                         )}
 
                                         {/* OpenRouter Settings */}
-                                        {apiProvider === 'openrouter' && (
+                                        {(apiProvider === 'openrouter' || embeddingProvider === 'openrouter') && (
                                             <div className="space-y-4 animate-fade-in">
                                                 <div>
                                                     <label className="block text-sm font-bold text-slate-400 mb-2">OpenRouter API Key</label>
@@ -2665,44 +3333,47 @@ Write ONLY the content for the CURRENT BEAT.
                                                         placeholder="sk-or-..."
                                                     />
                                                 </div>
-                                                <div>
-                                                    <label className="block text-sm font-bold text-slate-400 mb-2">Model ID</label>
-                                                    <div className="flex gap-2">
-                                                        <input
-                                                            type="text"
-                                                            value={openRouterModel}
-                                                            onChange={(e) => setOpenRouterModel(e.target.value)}
-                                                            className="flex-1 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors"
-                                                            placeholder="google/gemini-2.0-flash-001"
-                                                        />
-                                                        <button onClick={saveModel} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 rounded border border-slate-700 transition-colors" title="Save Model">
-                                                            <Save size={16} />
-                                                        </button>
-                                                    </div>
 
-                                                    {savedModels.length > 0 && (
-                                                        <div className="mt-3 space-y-2">
-                                                            <label className="text-xs font-bold text-slate-500 uppercase">Saved Models</label>
-                                                            <div className="flex flex-wrap gap-2">
-                                                                {savedModels.map((model) => (
-                                                                    <div key={model} className={`flex items-center gap-2 px-3 py-1 rounded-full border text-xs cursor-pointer hover:bg-slate-800 transition-colors ${openRouterModel === model ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300' : 'bg-slate-950 border-slate-800 text-slate-400'}`} onClick={() => setOpenRouterModel(model)}>
-                                                                        <span className="truncate max-w-[200px]">{model}</span>
-                                                                        <button onClick={(e) => { e.stopPropagation(); deleteModel(model); }} className="hover:text-red-400 p-0.5 rounded-full hover:bg-slate-900/50">
-                                                                            <X size={12} />
-                                                                        </button>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
+                                                {/* Only show Model Selector if OpenRouter is the Text Provider */}
+                                                {apiProvider === 'openrouter' && (
+                                                    <div>
+                                                        <label className="block text-sm font-bold text-slate-400 mb-2">Model ID</label>
+                                                        <div className="flex gap-2">
+                                                            <input
+                                                                type="text"
+                                                                value={openRouterModel}
+                                                                onChange={(e) => setOpenRouterModel(e.target.value)}
+                                                                className="flex-1 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors"
+                                                                placeholder="google/gemini-2.0-flash-001"
+                                                            />
+                                                            <button onClick={saveModel} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 rounded border border-slate-700 transition-colors" title="Save Model">
+                                                                <Save size={16} />
+                                                            </button>
                                                         </div>
-                                                    )}
 
-                                                    <p className="text-xs text-slate-500 mt-2">
-                                                        Enter any valid OpenRouter model ID. Default: <code>google/gemini-2.0-flash-001</code>
+                                                        {savedModels.length > 0 && (
+                                                            <div className="mt-3 space-y-2">
+                                                                <label className="text-xs font-bold text-slate-500 uppercase">Saved Models</label>
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {savedModels.map((model) => (
+                                                                        <div key={model} className={`flex items-center gap-2 px-3 py-1 rounded-full border text-xs cursor-pointer hover:bg-slate-800 transition-colors ${openRouterModel === model ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300' : 'bg-slate-950 border-slate-800 text-slate-400'}`} onClick={() => setOpenRouterModel(model)}>
+                                                                            <span className="truncate max-w-[200px]">{model}</span>
+                                                                            <button onClick={(e) => { e.stopPropagation(); deleteModel(model); }} className="hover:text-red-400 p-0.5 rounded-full hover:bg-slate-900/50">
+                                                                                <X size={12} />
+                                                                            </button>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                <div className="mt-4 pt-4 border-t border-slate-800">
+                                                    <p className="text-xs text-slate-500">
+                                                        Get your key from <a href="https://openrouter.ai/keys" target="_blank" className="text-indigo-400 hover:underline">OpenRouter.ai</a>.
                                                     </p>
                                                 </div>
-                                                <p className="text-xs text-slate-500">
-                                                    Get your key from <a href="https://openrouter.ai/keys" target="_blank" className="text-indigo-400 hover:underline">OpenRouter.ai</a>.
-                                                </p>
                                             </div>
                                         )}
                                     </div>
