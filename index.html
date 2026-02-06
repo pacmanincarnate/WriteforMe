@@ -956,7 +956,7 @@ Output: Plain Text Summary.`
 
             async getGeminiEmbedding(text) {
                 // ... (Existing Gemini Logic)
-                const model = "text-embedding-004";
+                const model = "gemini-embedding-001";
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${this.apiKey}`;
                 const response = await fetch(url, {
                     method: 'POST',
@@ -977,7 +977,7 @@ Output: Plain Text Summary.`
             async getOpenRouterEmbedding(text) {
                 // OpenRouter Embeddings (Standard OpenAI-compatible format)
                 // We'll use a widely available model like coverage
-                const model = "text-embedding-3-small"; // Or "google/text-embedding-004" if available via OR
+                const model = "qwen/qwen3-embedding-8b"; // Or "google/text-embedding-004" if available via OR
 
                 const response = await fetch("https://openrouter.ai/api/v1/embeddings", {
                     method: 'POST',
