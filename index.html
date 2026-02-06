@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EllipsisProse 0.412 - AI Story Architect</title>
+    <title>EllipsisProse 0.42 - AI Story Architect</title>
 
     <!-- 1. Tailwind CSS (Styling) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -261,6 +261,63 @@
                 .replace(/\n\n/g, '</p><p>')
                 .replace(/\n/g, '<br />');
             return `<p>${html}</p>`;
+        };
+
+        /* ----------------------------------------------------------------------
+          STORY ARCHETYPES (Generator Lists)
+          ----------------------------------------------------------------------
+        */
+        const ARCH_GENRES = [
+            "Space Opera", "Cyberpunk", "High Fantasy", "Urban Fantasy", "Post-Apocalyptic",
+            "Dystopian", "Gothic Horror", "Cosmic Horror", "Hard Boiled Noir", "Western",
+            "Steampunk", "Romantic Comedy", "Political Thriller", "Espionage", "Superhero",
+            "Slice of Life", "Historical Drama", "Military Sci-Fi", "Whodunit", "Survival Thriller"
+        ];
+
+        const ARCH_STYLES = [
+            "Moody & Atmospheric", "Fast-paced & Kinetic", "Witty & Satirical", "Dark & Gritty",
+            "Optimistic & Whimsical", "Intellectual & Philosophical", "Minimalist & Stark",
+            "Lyrical & Poetic", "Suspenseful & Tense", "Melancholic & Reflective",
+            "Campy & Over-the-top", "Brutal & Unflinching"
+        ];
+
+        const ARCH_CONCEPTS = [
+            "a lone wanderer seeks redemption for a past sin",
+            "a team of specialists pulls off the ultimate heist",
+            "a detective investigates a murder that shouldn't be possible",
+            "strangers are trapped together in a confined location",
+            "a chosen one rejects their destiny",
+            "an artificial intelligence discovers emotions",
+            "a magical artifact ruins the life of its owner",
+            "two enemies are forced to work together to survive",
+            "a civilization faces imminent collapse from an unseen threat",
+            "a character wakes up with no memory in a strange world",
+            "a forbidden romance alters the course of history",
+            "a small lie spirals out of control into a global conspiracy",
+            "an explorer discovers a land that defies the laws of physics",
+            "a soldier questions the morality of their orders",
+            "a family secret threatens to destroy a dynasty",
+            "a scientist's experiment goes horribly wrong",
+            "a underdog competes in a high-stakes tournament",
+            "a ghost tries to solve their own murder",
+            "a time traveler tries to fix a mistake but makes it worse",
+            "a peaceful community is invaded by a superior force"
+        ];
+
+        const generateRandomArchetypes = (count = 20) => {
+            const options = [];
+            for (let i = 0; i < count; i++) {
+                const genre = ARCH_GENRES[Math.floor(Math.random() * ARCH_GENRES.length)];
+                const style = ARCH_STYLES[Math.floor(Math.random() * ARCH_STYLES.length)];
+                const concept = ARCH_CONCEPTS[Math.floor(Math.random() * ARCH_CONCEPTS.length)];
+
+                options.push({
+                    id: i,
+                    label: `${genre} / ${style} / ${concept.substring(0, 30)}...`,
+                    value: `A ${genre} story written in a ${style} style, wherein ${concept}.`
+                });
+            }
+            return options;
         };
 
         /* ----------------------------------------------------------------------
@@ -597,6 +654,7 @@ Rules:
 
 # CONTEXT
 This is the important information to keep in mind as you review the work.
+{continuity_error}
 
 ## Scene Description
 {scene_description}
@@ -1252,22 +1310,62 @@ Output: Plain Text Summary.`
             );
         };
 
-        const CharacterCard = ({ c }) => {
+
+        const EditButton = ({ title, value, onSave, className = "" }) => {
+            return (
+                <button
+                    onClick={onSave}
+                    className={`w-4 h-4 flex items-center justify-center rounded transition-colors text-slate-500 hover:text-indigo-400 hover:bg-indigo-950/30 ${className}`}
+                    title={`Edit ${title}`}
+                >
+                    <Edit3 size={10} />
+                </button>
+            );
+        };
+
+        const CharacterCard = ({ c, onEdit }) => {
             const [isExpanded, setIsExpanded] = useState(false);
             if (!c) return null;
 
             return (
                 <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
                     <div className="p-5 border-b border-slate-800 bg-slate-800/30 flex justify-between">
-                        <div><h3 className="text-xl font-bold">{c.name}</h3><span className="text-xs text-indigo-400 uppercase font-mono">{c.role}</span></div>
+                        <div>
+                            <div className="flex items-center gap-2">
+                                <h3 className="text-xl font-bold">{c.name}</h3>
+                                {onEdit && <EditButton title="Name" value={c.name} onSave={() => onEdit('name', 'Name', c.name)} />}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs text-indigo-400 uppercase font-mono">{c.role}</span>
+                                {onEdit && <EditButton title="Role" value={c.role} onSave={() => onEdit('role', 'Role', c.role)} />}
+                            </div>
+                        </div>
                         <User className="text-slate-600" />
                     </div>
                     <div className="p-5 space-y-4">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="bg-slate-950 p-3 rounded border border-slate-800"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Status</div><div className="text-sm whitespace-pre-wrap">{c.details?.story_events || "N/A"}</div></div>
-                            <div className="bg-slate-950 p-3 rounded border border-slate-800"><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">Goal</div><div className="text-sm">{c.details?.goals || "Unknown"}</div></div>
+                            <div className="bg-slate-950 p-3 rounded border border-slate-800">
+                                <div className="flex justify-between items-center mb-1">
+                                    <div className="text-[10px] text-slate-500 font-bold uppercase">Status</div>
+                                    {onEdit && <EditButton title="Status" value={c.details?.story_events} onSave={() => onEdit('details.story_events', 'Status', c.details?.story_events)} />}
+                                </div>
+                                <div className="text-sm whitespace-pre-wrap">{c.details?.story_events || "N/A"}</div>
+                            </div>
+                            <div className="bg-slate-950 p-3 rounded border border-slate-800">
+                                <div className="flex justify-between items-center mb-1">
+                                    <div className="text-[10px] text-slate-500 font-bold uppercase">Goal</div>
+                                    {onEdit && <EditButton title="Goal" value={c.details?.goals} onSave={() => onEdit('details.goals', 'Goal', c.details?.goals)} />}
+                                </div>
+                                <div className="text-sm">{c.details?.goals || "Unknown"}</div>
+                            </div>
                         </div>
-                        <div><div className="text-[10px] text-slate-500 font-bold uppercase mb-1">History</div><p className="text-sm text-slate-400">{c.details?.history || "No history."}</p></div>
+                        <div>
+                            <div className="flex justify-between items-center mb-1">
+                                <div className="text-[10px] text-slate-500 font-bold uppercase">History</div>
+                                {onEdit && <EditButton title="History" value={c.details?.history} onSave={() => onEdit('details.history', 'History', c.details?.history)} />}
+                            </div>
+                            <p className="text-sm text-slate-400">{c.details?.history || "No history."}</p>
+                        </div>
                         {c.voice_sample && <div className="bg-indigo-900/10 p-3 rounded border border-indigo-500/20 italic text-indigo-200 font-serif">"{c.voice_sample}"</div>}
 
                         {c.details?.deep_profile && (
@@ -1279,8 +1377,11 @@ Output: Plain Text Summary.`
                                     {isExpanded ? <React.Fragment><Minus size={12} /> Hide Full Interview</React.Fragment> : <React.Fragment><MessageSquare size={12} /> Read Full Interview</React.Fragment>}
                                 </button>
                                 {isExpanded && (
-                                    <div className="mt-4 p-4 bg-slate-950 rounded border border-slate-800 text-sm font-serif leading-relaxed h-96 overflow-y-auto custom-scrollbar whitespace-pre-wrap animate-fade-in">
-                                        <div className="text-[10px] text-slate-500 font-sans font-bold uppercase mb-2">Transcript</div>
+                                    <div className="mt-4 p-4 bg-slate-950 rounded border border-slate-800 text-sm font-serif leading-relaxed h-96 overflow-y-auto custom-scrollbar whitespace-pre-wrap animate-fade-in relative">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <div className="text-[10px] text-slate-500 font-sans font-bold uppercase">Transcript</div>
+                                            {onEdit && <EditButton title="Deep Profile" value={c.details?.deep_profile} onSave={() => onEdit('details.deep_profile', 'Deep Profile', c.details?.deep_profile)} />}
+                                        </div>
                                         {c.details.deep_profile}
                                     </div>
                                 )}
@@ -1290,6 +1391,59 @@ Output: Plain Text Summary.`
                 </div>
             );
         };
+
+        /* ----------------------------------------------------------------------
+           EDIT UTILS (NEW)
+           ----------------------------------------------------------------------
+        */
+        const EditModal = ({ isOpen, title, value, onConfirm, onCancel }) => {
+            const [localValue, setLocalValue] = useState(value);
+            useEffect(() => { setLocalValue(value); }, [value, isOpen]);
+
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-xl shadow-2xl flex flex-col h-[90vh]">
+                        <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50 rounded-t-xl">
+                            <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                                <Edit3 size={18} className="text-indigo-400" />
+                                Edit: {title}
+                            </h3>
+                            <button onClick={onCancel} className="text-slate-400 hover:text-white transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="flex-1 p-4 overflow-hidden flex flex-col">
+                            <textarea
+                                className="w-full flex-1 bg-slate-950 text-slate-200 p-4 rounded-lg border border-slate-700 focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none resize-none font-mono text-sm leading-relaxed"
+                                value={localValue}
+                                onChange={(e) => setLocalValue(e.target.value)}
+                                placeholder="Enter text here..."
+                                autoFocus
+                            />
+                        </div>
+                        <div className="p-4 border-t border-slate-700 bg-slate-800/50 rounded-b-xl flex justify-end gap-3">
+                            <button
+                                onClick={onCancel}
+                                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-300 hover:bg-slate-800 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={() => onConfirm(localValue)}
+                                className="px-5 py-2 rounded-lg text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-500 shadow-lg shadow-indigo-900/20 transition-all transform active:scale-95 flex items-center gap-2"
+                            >
+                                <Save size={16} />
+                                Save Changes
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+
 
         /* ----------------------------------------------------------------------
           MAIN APP COMPONENT
@@ -1329,6 +1483,14 @@ Output: Plain Text Summary.`
                 return saved ? JSON.parse(saved) : ["google/gemini-2.0-flash-001"];
             });
 
+            // Archetype State
+            const [archetypeOptions, setArchetypeOptions] = useState([]);
+
+            // Initialize Archetypes on Mount
+            useEffect(() => {
+                setArchetypeOptions(generateRandomArchetypes(20));
+            }, []);
+
             const [view, setView] = useState(() => localStorage.getItem("ellipsisprose_view") || 'setup');
             const [loading, setLoading] = useState(false);
             const [loadingStep, setLoadingStep] = useState("");
@@ -1367,6 +1529,27 @@ Output: Plain Text Summary.`
             const [ragTestQuery, setRagTestQuery] = useState("");
             const [ragTestResults, setRagTestResults] = useState([]);
             const [ragTestLoading, setRagTestLoading] = useState(false);
+
+            // Global Edit Modal State
+            const [editingState, setEditingState] = useState({
+                isOpen: false,
+                title: "",
+                value: "",
+                onConfirm: null
+            });
+
+            const openEditModal = (title, value, onConfirm) => {
+                setEditingState({
+                    isOpen: true,
+                    title,
+                    value: value || "",
+                    onConfirm: (newValue) => {
+                        onConfirm(newValue);
+                        setEditingState(prev => ({ ...prev, isOpen: false }));
+                        showToast(`${title} updated!`, "success");
+                    }
+                });
+            };
 
             // NEW: Distill Lore for large contexts
 
@@ -1943,7 +2126,6 @@ Output: Plain Text Summary.`
 <body>
 <h1>ACT ${act.number}</h1>
 <h2>${act.title.replace(/&/g, "&amp;")}</h2>
-<p>${act.description.replace(/&/g, "&amp;")}</p>
 </body>
 </html>`;
                         textFolder.file(actFilename, actHtml);
@@ -2589,7 +2771,42 @@ Write ONLY the content for the CURRENT BEAT.
 `;
                     const draft = await callAI(drafterUserPrompt, drafterSystemPrompt, false, "Drafter");
 
+                    // --- NEW INTERMEDIATE CONTINUITY CHECK ---
+                    let continuityErrorFlag = false;
+                    let continuityWarning = "";
+
+                    if (nextBeat) {
+                        setLoadingStep("Continuity Checker: Verifying Draft...");
+                        const checkerPrompt = PROMPTS.beatValidator
+                            .replace("{next_beat_desc}", nextBeat.description)
+                            .replace("{scene_goal}", scene.description)
+                            .replace("{prose_summary}", draft);
+
+                        try {
+                            const check = await callAI("Check draft continuity against next beat.", checkerPrompt, true, "Continuity Checker");
+                            if (check.valid === false) {
+                                continuityErrorFlag = true;
+                                continuityWarning = check.reason || "Potential continuity conflict with the next beat detected.";
+                                console.log("Continuity Warning:", continuityWarning);
+                            }
+                        } catch (err) {
+                            console.warn("Continuity check failed, proceeding without warning:", err);
+                        }
+                    }
+
+                    // --- EDITING PHASE ---
                     setLoadingStep("Agent 3/4: Polishing...");
+
+                    let editorErrorsContext = "";
+                    if (continuityErrorFlag) {
+                        editorErrorsContext = `
+> [!IMPORTANT]
+> **CONTINUITY WARNING DETECTED**
+> The drafted prose invalidates the plan for the Next Beat.
+> **Issue:** ${continuityWarning}
+> **Task:** You MUST Attempt to resolve this continuity error in your polish. Align the prose so the Next Beat is logically possible.`;
+                    }
+
                     const editorSystemPrompt = PROMPTS.editor
                         .replace("{draft}", draft)
                         .replace("{scene_description}", scene.description)
@@ -2601,15 +2818,18 @@ Write ONLY the content for the CURRENT BEAT.
                         .replace("{style_guide}", storyToUse.style?.writing_guide ? `Writing Guide: ${storyToUse.style.writing_guide}\nGenre: ${storyToUse.style.genre}\nMood: ${storyToUse.style.mood}` : "Standard Narrative")
                         .replace("{scene_beats}", sceneBeatsOutline)
                         .replace("{scene_list}", actScenesList)
-                        .replace("{prev_beat_text}", prevText);
+                        .replace("{prev_beat_text}", prevText)
+                        .replace("{continuity_error}", editorErrorsContext);
+
                     const final = await callAI("Polish this draft according to the rules.", editorSystemPrompt, false, "Editor");
 
                     let nextStory = { ...storyToUse, prose: { ...storyToUse.prose, [bId]: { draft, final } } };
                     if (castWasUpdated) nextStory.cast = mutableCast;
 
-                    // --- RIPPLE VALIDATION START ---
-                    if (nextBeat) {
-                        setLoadingStep("Agent 4/4: Script Doctor: Checking Continuity...");
+                    // --- RIPPLE VALIDATION START (CONDITIONAL) ---
+                    // ONLY run if we knew there was an error to begin with.
+                    if (nextBeat && continuityErrorFlag) {
+                        setLoadingStep("Agent 4/4: Script Doctor: Re-Checking Continuity...");
                         const validatorPrompt = PROMPTS.beatValidator
                             .replace("{next_beat_desc}", nextBeat.description)
                             .replace("{scene_goal}", scene.description)
@@ -2618,7 +2838,7 @@ Write ONLY the content for the CURRENT BEAT.
                         try {
                             const validation = await callAI("Validate continuity.", validatorPrompt, true, "Script Doctor");
                             if (validation.valid === false && validation.rectified_beats) {
-                                console.log("Ripple Effect: Beats rewritten due to prose deviation.", validation.reason);
+                                console.log("Ripple Effect Triggered: Editor could not resolve continuity issue.", validation.reason);
                                 if (!isAutopilot) alert(`Ripple Effect: The story has changed course!\nReason: ${validation.reason}\nFuture beats have been rewritten.`);
 
                                 const currentBeats = nextStory.beats[sId];
@@ -2629,6 +2849,8 @@ Write ONLY the content for the CURRENT BEAT.
                                 }));
 
                                 nextStory.beats[sId] = [...keptBeats, ...newFutureBeats];
+                            } else {
+                                console.log("Continuity Resolved by Editor.");
                             }
                         } catch (err) {
                             console.warn("Validator failed, proceeding anyway:", err);
@@ -2815,7 +3037,7 @@ Write ONLY the content for the CURRENT BEAT.
                 <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden">
                     <div className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="p-4 flex justify-between border-b border-slate-800">
-                            <h2 className="font-bold flex gap-2"><Book className="text-indigo-400" /> EllipsisProse 0.41</h2>
+                            <h2 className="font-bold flex gap-2"><Book className="text-indigo-400" /> EllipsisProse 0.42</h2>
                             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden"><X /></button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-1">
@@ -2868,9 +3090,37 @@ Write ONLY the content for the CURRENT BEAT.
                             {view === 'setup' && (
                                 <div className="max-w-xl mx-auto py-20 text-center animate-fade-in">
                                     <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"><Sparkles size={32} color="white" /></div>
-                                    <h1 className="text-2xl font-bold mb-4">EllipsisProse 0.41</h1>
+                                    <h1 className="text-2xl font-bold mb-4">EllipsisProse 0.42</h1>
                                     <p className="text-slate-400 mb-6">Enter a title and concept. The AI Architect will build your story bible.</p>
                                     <input className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none font-bold" placeholder="Story Title (e.g. The Last Starship)" value={inputTitle} onChange={e => setInputTitle(e.target.value)} />
+
+                                    {/* Archetype Dropdown */}
+                                    <div className="mb-4 relative group">
+                                        <div className="absolute right-3 top-3 text-slate-500 pointer-events-none"><ChevronDown size={14} /></div>
+                                        <select
+                                            className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 pr-8 text-xs text-slate-400 focus:border-indigo-500 outline-none appearance-none cursor-pointer hover:bg-slate-900 transition-colors"
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                if (val === 'random') {
+                                                    setArchetypeOptions(generateRandomArchetypes(20));
+                                                    e.target.value = ""; // Reset dropdown to placeholder
+                                                } else if (val) {
+                                                    setInputConcept(val);
+                                                }
+                                            }}
+                                            defaultValue=""
+                                        >
+                                            <option value="" disabled>✨ Need Inspiration? Select a Story Archetype...</option>
+                                            {archetypeOptions.map(opt => (
+                                                <option key={opt.id} value={opt.value}>
+                                                    {opt.label}
+                                                </option>
+                                            ))}
+                                            <option value="" disabled>---</option>
+                                            <option value="random">🎲 Generate New List...</option>
+                                        </select>
+                                    </div>
+
                                     <textarea className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 h-32 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Concept (e.g. A fantasy world where magic costs memories...)" value={inputConcept} onChange={e => setInputConcept(e.target.value)} />
 
                                     {/* Import Lore UI */}
@@ -2922,19 +3172,31 @@ Write ONLY the content for the CURRENT BEAT.
                                                 />
                                             </div>
                                             <div>
-                                                <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2">Concept</h3>
+                                                <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2 flex justify-between items-center">
+                                                    Concept
+                                                    <EditButton title="Concept" value={story.concept} onSave={() => openEditModal("Concept", story.concept, (val) => setStory({ ...story, concept: val }))} />
+                                                </h3>
                                                 <p className="font-light">{story.concept}</p>
                                             </div>
                                             <div>
-                                                <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2">Status Quo</h3>
+                                                <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2 flex justify-between items-center">
+                                                    Status Quo
+                                                    <EditButton title="Status Quo" value={story.status_quo} onSave={() => openEditModal("Status Quo", story.status_quo, (val) => setStory({ ...story, status_quo: val }))} />
+                                                </h3>
                                                 <p className="text-sm text-slate-400">{story.status_quo}</p>
                                             </div>
                                             <div>
-                                                <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2">Inciting Incident</h3>
+                                                <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2 flex justify-between items-center">
+                                                    Inciting Incident
+                                                    <EditButton title="Inciting Incident" value={story.inciting_incident} onSave={() => openEditModal("Inciting Incident", story.inciting_incident, (val) => setStory({ ...story, inciting_incident: val }))} />
+                                                </h3>
                                                 <p className="text-sm text-slate-400">{story.inciting_incident}</p>
                                             </div>
                                             <div>
-                                                <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2">Themes</h3>
+                                                <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2 flex justify-between items-center">
+                                                    Themes
+                                                    <EditButton title="Themes" value={story.themes} onSave={() => openEditModal("Themes", story.themes, (val) => setStory({ ...story, themes: val }))} />
+                                                </h3>
                                                 <p className="text-sm text-slate-400">{story.themes}</p>
                                             </div>
                                         </div>
@@ -2942,18 +3204,22 @@ Write ONLY the content for the CURRENT BEAT.
                                             <div className="p-6 bg-slate-900 rounded-xl border border-slate-800">
                                                 <h3 className="text-xs font-bold text-pink-400 uppercase mb-4 flex gap-2"><Feather size={16} /> Style & Tone</h3>
                                                 <div className="space-y-2">
-                                                    <div className="flex gap-2"><span className="text-xs font-bold text-slate-500 uppercase w-16">Genre</span><span className="text-sm">{story.style?.genre}</span></div>
-                                                    <div className="flex gap-2"><span className="text-xs font-bold text-slate-500 uppercase w-16">Mood</span><span className="text-sm">{story.style?.mood}</span></div>
-                                                    <div className="mt-2 text-sm text-slate-400 italic border-l-2 border-slate-700 pl-3">{story.style?.writing_guide}</div>
+                                                    <div className="flex gap-2 items-center"><span className="text-xs font-bold text-slate-500 uppercase w-16">Genre</span><span className="text-sm">{story.style?.genre}</span><EditButton title="Genre" value={story.style?.genre} onSave={() => openEditModal("Genre", story.style?.genre, (val) => setStory({ ...story, style: { ...story.style, genre: val } }))} /></div>
+                                                    <div className="flex gap-2 items-center"><span className="text-xs font-bold text-slate-500 uppercase w-16">Mood</span><span className="text-sm">{story.style?.mood}</span><EditButton title="Mood" value={story.style?.mood} onSave={() => openEditModal("Mood", story.style?.mood, (val) => setStory({ ...story, style: { ...story.style, mood: val } }))} /></div>
+                                                    <div className="flex justify-between items-center mt-2">
+                                                        <span className="text-xs font-bold text-slate-500 uppercase">Writing Guide</span>
+                                                        <EditButton title="Writing Guide" value={story.style?.writing_guide} onSave={() => openEditModal("Writing Guide", story.style?.writing_guide, (val) => setStory({ ...story, style: { ...story.style, writing_guide: val } }))} />
+                                                    </div>
+                                                    <div className="text-sm text-slate-400 italic border-l-2 border-slate-700 pl-3">{story.style?.writing_guide}</div>
                                                 </div>
                                             </div>
                                             <div className="p-6 bg-slate-900 rounded-xl border border-slate-800">
                                                 <h3 className="text-xs font-bold text-emerald-400 uppercase mb-4 flex gap-2"><GitBranch size={16} /> Threads</h3>
-                                                <div className="space-y-4">{story.threads.map(t => <div key={t.id} className="p-3 bg-slate-950 rounded border border-slate-800/50"><div className="font-bold mb-1">{t.name}</div><div className="text-sm text-slate-400">{t.description}</div></div>)}</div>
+                                                <div className="space-y-4">{story.threads.map((t, i) => <div key={t.id} className="p-3 bg-slate-950 rounded border border-slate-800/50"><div className="font-bold mb-1 flex justify-between items-center">{t.name}<EditButton title={`Thread: ${t.name}`} value={t.description} onSave={() => openEditModal(`Thread: ${t.name}`, t.description, (val) => { const newThreads = [...story.threads]; newThreads[i].description = val; setStory({ ...story, threads: newThreads }); })} /></div><div className="text-sm text-slate-400">{t.description}</div></div>)}</div>
                                             </div>
                                             <div className="p-6 bg-slate-900 rounded-xl border border-slate-800">
                                                 <h3 className="text-xs font-bold text-blue-400 uppercase mb-4 flex gap-2"><Globe size={16} /> Lore</h3>
-                                                <div className="space-y-4">{story.lore.map((l, i) => <div key={i} className="text-sm border-b border-slate-800/50 pb-4 flex flex-col gap-1"><span className="text-blue-300 font-mono font-bold">{l.topic}</span><span className="text-slate-400">{l.detail}</span></div>)}</div>
+                                                <div className="space-y-4">{story.lore.map((l, i) => <div key={i} className="text-sm border-b border-slate-800/50 pb-4 flex flex-col gap-1"><div className="flex justify-between items-center"><span className="text-blue-300 font-mono font-bold">{l.topic}</span><EditButton title={`Lore: ${l.topic}`} value={l.detail} onSave={() => openEditModal(`Lore: ${l.topic}`, l.detail, (val) => { const newLore = [...story.lore]; newLore[i].detail = val; setStory({ ...story, lore: newLore }); })} /></div><span className="text-slate-400">{l.detail}</span></div>)}</div>
                                             </div>
                                         </div>
                                     </div>
@@ -2961,8 +3227,28 @@ Write ONLY the content for the CURRENT BEAT.
                             )}
 
                             {view === 'cast' && (
-                                <div className="grid md:grid-cols-2 gap-6 max-w-6xl mx-auto animate-fade-in">
-                                    {story.cast && story.cast.map((c, i) => <CharacterCard key={i} c={c} />)}
+                                <div className="flex flex-col gap-6 max-w-[1200px] mx-auto animate-fade-in">
+                                    {story.cast && story.cast.map((c, i) => (
+                                        <CharacterCard
+                                            key={i}
+                                            c={c}
+                                            onEdit={(field, title, val) => {
+                                                openEditModal(title, val, (newValue) => {
+                                                    setStory(prev => {
+                                                        const newCast = [...prev.cast];
+                                                        if (field.includes('.')) {
+                                                            const [parent, child] = field.split('.');
+                                                            if (!newCast[i][parent]) newCast[i][parent] = {};
+                                                            newCast[i][parent] = { ...newCast[i][parent], [child]: newValue };
+                                                        } else {
+                                                            newCast[i][field] = newValue;
+                                                        }
+                                                        return { ...prev, cast: newCast };
+                                                    });
+                                                });
+                                            }}
+                                        />
+                                    ))}
                                 </div>
                             )}
 
@@ -2985,7 +3271,10 @@ Write ONLY the content for the CURRENT BEAT.
                                         {story.lore.map((l, i) => (
                                             <div key={i} className="bg-slate-900 rounded-xl border border-slate-800 p-4 md:p-6 transition-all hover:border-slate-700">
                                                 <div className="flex flex-col md:flex-row justify-between items-start gap-3 mb-2">
-                                                    <h3 className="font-bold text-lg text-blue-300">{l.topic}</h3>
+                                                    <h3 className="font-bold text-lg text-blue-300 flex items-center gap-2">
+                                                        {l.topic}
+                                                        <EditButton title={`Lore: ${l.topic}`} value={l.topic} onSave={() => openEditModal(`Lore: ${l.topic}`, l.topic, (val) => { const newLore = [...story.lore]; newLore[i].topic = val; setStory({ ...story, lore: newLore }); })} />
+                                                    </h3>
                                                     <div className="flex items-start gap-2 self-start md:self-auto">
                                                         <div className="flex flex-col gap-1 text-xs bg-slate-950 p-2 rounded border border-slate-800 min-w-[200px]">
                                                             <div className="flex items-center justify-between gap-2 border-b border-slate-800/50 pb-1 mb-1">
@@ -3034,7 +3323,10 @@ Write ONLY the content for the CURRENT BEAT.
                                                         </button>
                                                     </div>
                                                 </div>
-                                                <p className="text-slate-400 leading-relaxed">{l.detail}</p>
+                                                <div className="flex items-start gap-2 mt-2">
+                                                    <p className="text-slate-400 leading-relaxed flex-1 whitespace-pre-wrap">{l.detail}</p>
+                                                    <EditButton title={`Lore Detail: ${l.topic}`} value={l.detail} onSave={() => openEditModal(`Lore Detail: ${l.topic}`, l.detail, (val) => { const newLore = [...story.lore]; newLore[i].detail = val; setStory({ ...story, lore: newLore }); })} />
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -3045,9 +3337,21 @@ Write ONLY the content for the CURRENT BEAT.
                                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
                                     {story.acts.map((act, idx) => (
                                         <div key={idx} className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-                                            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/20">
-                                                <div><span className="text-xs font-bold text-slate-500 uppercase">Act {act.number}</span><h3 className="text-xl font-bold">{act.title}</h3><p className="text-sm text-slate-400">{act.description}</p></div>
-                                                <button onClick={() => requestSceneWeaving(idx)} disabled={loading} className="bg-indigo-600 px-4 py-2 rounded font-bold text-sm hover:bg-indigo-500">{story.scenes[idx] ? 'Re-Weave Scenes' : 'Weave Scenes'}</button>
+                                            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/20 gap-4">
+                                                <div className="flex-1">
+                                                    <span className="text-xs font-bold text-slate-500 uppercase">Act {act.number}</span>
+                                                    <h3 className="text-xl font-bold flex flex-wrap items-center gap-3 text-wrap break-words">
+                                                        {act.title}
+                                                        <EditButton title={`Act ${act.number} Title`} value={act.title} onSave={() => openEditModal(`Act ${act.number} Title`, act.title, (val) => { const newActs = [...story.acts]; newActs[idx].title = val; setStory({ ...story, acts: newActs }); })} />
+                                                        <button onClick={() => requestSceneWeaving(idx)} disabled={loading} className="shrink-0 bg-indigo-600 px-3 py-1 rounded-full font-bold text-xs hover:bg-indigo-500 text-white shadow transition-all active:scale-95 flex items-center gap-1">
+                                                            <Sparkles size={12} fill="currentColor" /> {story.scenes[idx] ? 'Re-Weave' : 'Weave'}
+                                                        </button>
+                                                    </h3>
+                                                    <p className="text-sm text-slate-400 flex items-center gap-2 text-wrap break-words mt-1">
+                                                        {act.description}
+                                                        <EditButton title={`Act ${act.number} Description`} value={act.description} onSave={() => openEditModal(`Act ${act.number} Description`, act.description, (val) => { const newActs = [...story.acts]; newActs[idx].description = val; setStory({ ...story, acts: newActs }); })} />
+                                                    </p>
+                                                </div>
                                             </div>
                                             {story.scenes[idx] && <div className="p-4 bg-slate-950/50 border-b border-slate-800 space-y-4">
                                                 <ThreadVisualizer scenes={story.scenes[idx]} threads={story.threads} />
@@ -3055,7 +3359,19 @@ Write ONLY the content for the CURRENT BEAT.
                                             </div>}
                                             {story.scenes[idx] && <div className="divide-y divide-slate-800">{story.scenes[idx].map((s, si) => (
                                                 <div key={si} className="p-4 flex justify-between items-center hover:bg-slate-800/30 group">
-                                                    <div className="flex gap-4"><div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500">{s.number}</div><div><h4 className="font-bold">{s.title}</h4><p className="text-sm text-slate-500">{s.description}</p></div></div>
+                                                    <div className="flex gap-4">
+                                                        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500">{s.number}</div>
+                                                        <div>
+                                                            <h4 className="font-bold flex items-center gap-2">
+                                                                {s.title}
+                                                                <EditButton title={`Scene ${s.number} Title`} value={s.title} onSave={() => openEditModal(`Scene ${s.number} Title`, s.title, (val) => { const newScenes = { ...story.scenes }; newScenes[idx][si].title = val; setStory({ ...story, scenes: newScenes }); })} />
+                                                            </h4>
+                                                            <p className="text-sm text-slate-500 flex items-center gap-2">
+                                                                {s.description}
+                                                                <EditButton title={`Scene ${s.number} Description`} value={s.description} onSave={() => openEditModal(`Scene ${s.number} Description`, s.description, (val) => { const newScenes = { ...story.scenes }; newScenes[idx][si].description = val; setStory({ ...story, scenes: newScenes }); })} />
+                                                            </p>
+                                                        </div>
+                                                    </div>
                                                     <div className="flex items-center gap-3"><ValenceBadge score={s.valence} /><button onClick={() => { setSelectedAct(idx); setSelectedScene(si); setView('writer'); }} className="text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"><Edit3 size={18} /></button></div>
                                                 </div>
                                             ))}</div>}
@@ -3069,8 +3385,15 @@ Write ONLY the content for the CURRENT BEAT.
                                     <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 flex justify-between items-start">
                                         <div>
                                             <button onClick={() => setView('structure')} className="text-xs text-slate-500 flex items-center gap-1 mb-2 hover:text-white"><ArrowLeft size={12} /> Back</button>
-                                            <div className="flex items-center gap-3 mb-2"><h2 className="text-2xl font-bold">{story.scenes[selectedAct][selectedScene].title}</h2><ValenceBadge score={story.scenes[selectedAct][selectedScene].valence} /></div>
-                                            <p className="text-slate-400">{story.scenes[selectedAct][selectedScene].description}</p>
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <h2 className="text-2xl font-bold">{story.scenes[selectedAct][selectedScene].title}</h2>
+                                                <EditButton title={`Scene Title`} value={story.scenes[selectedAct][selectedScene].title} onSave={() => openEditModal(`Scene Title`, story.scenes[selectedAct][selectedScene].title, (val) => { const newScenes = { ...story.scenes }; newScenes[selectedAct] = [...newScenes[selectedAct]]; newScenes[selectedAct][selectedScene] = { ...newScenes[selectedAct][selectedScene], title: val }; setStory({ ...story, scenes: newScenes }); })} />
+                                                <ValenceBadge score={story.scenes[selectedAct][selectedScene].valence} />
+                                            </div>
+                                            <div className="flex items-start gap-2">
+                                                <p className="text-slate-400">{story.scenes[selectedAct][selectedScene].description}</p>
+                                                <EditButton title={`Scene Description`} value={story.scenes[selectedAct][selectedScene].description} onSave={() => openEditModal(`Scene Description`, story.scenes[selectedAct][selectedScene].description, (val) => { const newScenes = { ...story.scenes }; newScenes[selectedAct] = [...newScenes[selectedAct]]; newScenes[selectedAct][selectedScene] = { ...newScenes[selectedAct][selectedScene], description: val }; setStory({ ...story, scenes: newScenes }); })} />
+                                            </div>
                                         </div>
                                         <div className="flex flex-col gap-2">
                                             <button onClick={copyFullScene} className="bg-slate-800 p-2 rounded hover:bg-slate-700 transition-colors"><Copy size={18} /></button>
@@ -3095,7 +3418,10 @@ Write ONLY the content for the CURRENT BEAT.
                                                                 onChange={(e) => handleBeatChange(selectedAct, selectedScene, bi, e.target.value)}
                                                                 rows={4}
                                                             />
-                                                            <div className="text-[10px] text-slate-500 uppercase font-bold italic mb-4">{beat.emotional_shift}</div>
+                                                            <div className="text-[10px] text-slate-500 uppercase font-bold italic mb-4 flex items-center gap-2">
+                                                                {beat.emotional_shift}
+                                                                <EditButton title={`Beat ${bi + 1} Subtext`} value={beat.emotional_shift} onSave={() => openEditModal(`Beat ${bi + 1} Subtext`, beat.emotional_shift, (val) => { const newBeats = [...story.beats[bId.split('-').slice(0, 2).join('-')]]; newBeats[bi] = { ...newBeats[bi], emotional_shift: val }; setStory({ ...story, beats: { ...story.beats, [bId.split('-').slice(0, 2).join('-')]: newBeats } }); })} />
+                                                            </div>
                                                             {!prose ? (
                                                                 <div className="space-y-4 pt-4 border-t border-slate-800">
                                                                     <div className="flex justify-between text-[10px] text-slate-500 uppercase font-bold"><span>Slow</span><span>Balanced</span><span>Fast</span></div>
@@ -3122,6 +3448,15 @@ Write ONLY the content for the CURRENT BEAT.
                                                         {prose ? (
                                                             !isCollapsed && (
                                                                 <div className="relative group/text animate-fade-in">
+                                                                    <div className="absolute top-2 right-2 opacity-0 group-hover/text:opacity-100 transition-opacity z-10">
+                                                                        <EditButton title="Prose" value={prose.final} onSave={() => openEditModal("Prose", prose.final, (val) => {
+                                                                            setStory(prev => {
+                                                                                const newProse = { ...prev.prose };
+                                                                                newProse[bId] = { ...newProse[bId], final: val };
+                                                                                return { ...prev, prose: newProse };
+                                                                            });
+                                                                        })} className="bg-slate-800 shadow-xl border border-slate-700 hover:bg-slate-700 text-slate-300" />
+                                                                    </div>
                                                                     <div className="absolute -left-4 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500/0 via-indigo-500/20 to-indigo-500/0"></div>
                                                                     <div className="prose prose-invert max-w-none font-serif text-lg leading-loose text-slate-200" dangerouslySetInnerHTML={{ __html: parseMarkdown(prose.final) }} />
                                                                 </div>
@@ -3391,6 +3726,14 @@ Write ONLY the content for the CURRENT BEAT.
                             </div>
                         )}
                     </div >
+                    {/* GLOBAL EDIT MODAL */}
+                    <EditModal
+                        isOpen={editingState.isOpen}
+                        title={editingState.title}
+                        value={editingState.value}
+                        onConfirm={editingState.onConfirm}
+                        onCancel={() => setEditingState(prev => ({ ...prev, isOpen: false }))}
+                    />
                 </div >
             );
         }
