@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EllipsisProse 0.42 - AI Story Architect</title>
+    <title>EllipsisProse 0.5 - AI Story Architect</title>
 
     <!-- 1. Tailwind CSS (Styling) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -218,6 +218,9 @@
         const Minus = (p) => <Icon name="minus" {...p} />;
         const Scroll = (p) => <Icon name="scroll" {...p} />;
         const Search = (p) => <Icon name="search" {...p} />;
+        const Plus = (p) => <Icon name="plus" {...p} />;
+        const Heart = (p) => <Icon name="heart" {...p} />;
+        const Link2 = (p) => <Icon name="link-2" {...p} />;
 
 
         /* ----------------------------------------------------------------------
@@ -451,6 +454,9 @@ THREAD INTERACTION (Causality):
 - Isolation: Only advances one thread.
 - Collision: Two threads conflict (e.g., Duty vs. Love).
 - Resonance: Two threads thematically align.
+RELATIONSHIPS EVOLUTION REQUIREMENT:
+You will receive the CURRENT CHARACTER RELATIONSHIPS in the input context. As you plan the act's scenes, you must design how these relationships will change by the end of each scene (chapter). Each scene must contain a "relationship_changes" array, populating the next evolution of relationships for any character combination impacted by this scene. Specify the source, target, the new feeling, and the narrative trigger.
+
 *ROSTER CHECK*: If you introduce NEW major characters to fulfill these scenes, list them in "new_characters".
 
 It is crucial that the scene descriptions expand fully on what is happening and what your intent is for the scene. Without this, the writing process has too little to work off of. This description is **NOT** for the reader; it is for the writer to fully understand the scene and its purpose.
@@ -469,7 +475,10 @@ Output JSON:
         "causality": { 
             "interaction_type": "Isolation", 
             "description": "Establishes Hero's boredom (Thread A)." 
-        }
+        },
+        "relationship_changes": [
+          { "from": "Character A", "to": "Character B", "feeling": "New attitude/feeling", "trigger": "Narrative event that causes this shift" }
+        ]
       }
     ],
     "new_characters": [ { "name": "...", "role": "...", "description": "...", "voice_sample": "...", "details": { "history": "...", "goals": "...", "evolution": "..." } } ]
@@ -507,6 +516,9 @@ Output JSON:
   - Collision: Two threads conflict (e.g., Duty vs. Love).
   - Resonance: Two threads thematically align.
 
+  RELATIONSHIPS EVOLUTION REQUIREMENT:
+  You will receive the CURRENT CHARACTER RELATIONSHIPS in the input context. As you plan the act's scenes, you must design how these relationships will change by the end of each scene (chapter). Each scene must contain a "relationship_changes" array, populating the next evolution of relationships for any character combination impacted by this scene. Specify the source, target, the new feeling, and the narrative trigger.
+
   VALENCE: High oscillation. The end of the Act must have a strong NEGATIVE valence (-8 to -10) representing the crisis.
   *ROSTER CHECK*: If you introduce NEW major characters, list them in "new_characters".
   
@@ -514,7 +526,7 @@ Output JSON:
 
   Output JSON:
   {
-    "scenes": [ { "number": 1, "title": "Scene Title", "description": "...", "active_thread_ids": ["t1"], "location": "...", "cast_names": ["..."], "valence": -5, "causality": { "interaction_type": "Collision", "description": "..." } } ],
+    "scenes": [ { "number": 1, "title": "Scene Title", "description": "...", "active_thread_ids": ["t1"], "location": "...", "cast_names": ["..."], "valence": -5, "causality": { "interaction_type": "Collision", "description": "..." }, "relationship_changes": [ { "from": "...", "to": "...", "feeling": "...", "trigger": "..." } ] } ],
     "new_characters": []
   }`,
 
@@ -549,13 +561,16 @@ Output JSON:
   - Collision: Two threads conflict (e.g., Duty vs. Love).
   - Resonance: Two threads thematically align.
 
+  RELATIONSHIPS EVOLUTION REQUIREMENT:
+  You will receive the CURRENT CHARACTER RELATIONSHIPS in the input context. As you plan the act's scenes, you must design how these relationships will change by the end of each scene (chapter). Each scene must contain a "relationship_changes" array, populating the next evolution of relationships for any character combination impacted by this scene. Specify the source, target, the new feeling, and the narrative trigger.
+
   VALENCE: Start low (from Act 2 crisis), rise to tension, end High Positive (Resolution).
 
   It is crucial that the scene descriptions expand fully on what is happening and what your intent is for the scene. Without this, the writing process has too little to work off of. This description is **NOT** for the reader; it is for the writer to fully understand the scene and its purpose.
   
   Output JSON:
   {
-    "scenes": [ { "number": 1, "title": "Scene Title", "description": "...", "active_thread_ids": ["t1"], "location": "...", "cast_names": ["..."], "valence": 5, "causality": { "interaction_type": "Resonance", "description": "..." } } ],
+    "scenes": [ { "number": 1, "title": "Scene Title", "description": "...", "active_thread_ids": ["t1"], "location": "...", "cast_names": ["..."], "valence": 5, "causality": { "interaction_type": "Resonance", "description": "...", "relationship_changes": [ { "from": "...", "to": "...", "feeling": "...", "trigger": "..." } ] } } ],
     "new_characters": []
   }`,
 
@@ -563,11 +578,14 @@ Output JSON:
 
 
   Task: Break the scene into 6-10 distinct beats.
-  Input: Scene context, Threads involved.
+  Input: Scene context (including planned relationship changes), Threads involved.
   Requirement: Vary the type of beats (Action, Reaction, Revelation, Resolution).
   
   VALENCE: Assign a "valence" score (-10 to +10) to each beat. 
   Oscillate between positive and negative beats to maintain tension.
+
+  CHARACTER RELATIONSHIP SHIFTS REQUIREMENT:
+  Pay close attention to any "relationship_changes" defined for this scene. You must design specific beats where the actions and dialogue lead to these planned relationship evolutions. The turning points in these relationships should serve as structural pivots in your beat sequencing.
 
     Here is your framework for mapping out a successful sequence of beats. This is expected to be a paragraph or more.
     1. Define the State Change
@@ -614,6 +632,9 @@ Output JSON:
 ## Scene Description
 {scene_description}
 
+## Planned Relationship Changes for Scene
+{relationship_changes}
+
 ## Mood & Pacing
 - Subtext: {subtext}
 - {pacing}
@@ -651,6 +672,7 @@ Rules:
 10. Ensure there is a clear cause and effect within the beat. It is important that the beat shift the emotional state of the characters in a noticeable and clear way.
 11. Revise circular dialogue or events to force characters to change their approach to prevent static, stale action.
 12. Ensure that character reactions follow the pattern of: visceral, emotional, intellectual, action/speech. This applies to well-developed characters as well as supporting characters.
+13. CRITICAL: Do NOT include any markdown headings, titles, or labels at the top of your response (such as "# Polished Draft", "### Polished Version", etc.). Return ONLY the raw, polished narrative prose itself.
 
 # CONTEXT
 This is the important information to keep in mind as you review the work.
@@ -658,6 +680,9 @@ This is the important information to keep in mind as you review the work.
 
 ## Scene Description
 {scene_description}
+
+## Planned Relationship Changes for Scene
+{relationship_changes}
 
 ## Mood & Pacing
 - Subtext: {subtext}
@@ -687,33 +712,39 @@ It's essential that each character's voice shines through in their speech, manne
 Output: Plain Text (The Final Polish).`,
 
             archivist: `You are the Story Archivist.
-Task: Analyze the just-written text and return UPDATES for the Story Bible.
+  Task: Analyze the just-written text and return UPDATES for the Story Bible.
+    
+  Text Segment: {text}
+  Current Cast: {cast_summary}
   
-Text Segment: {text}
-Current Cast: {cast_summary}
-
-EXISTING LORE: 
-{current_lore}
-  
-1. CAST UPDATES: 
-- Did a character reveal new Backstory (History)?
-- Did a major Event just happen to them? (Add to Story Events)
-- Did their Goal change?
-2. LORE UPDATES:
-- Was a new location or object described in detail?
-- Look for 'Chekhov's Gun'; the seemingly inconsequential detail that may become important later.
-- LIMIT: Generate 1-4 items maximum.
-- DUPLICATION CHECK: Do not create lore for topics that already exist in the provided list.
-  
-  Output JSON:
-  {
-    "cast_updates": [
-      { "name": "Hero", "append_history": "...", "append_story_events": "...", "update_goals": "..." }
-    ],
-    "lore_updates": [
-      { "topic": "...", "detail": "...", "related_to": ["..."] }
-    ]
-  }`,
+  EXISTING LORE: 
+  {current_lore}
+    
+  1. CAST UPDATES: 
+  - Did a character reveal new Backstory (History)?
+  - Did a major Event just happen to them? (Add to Story Events)
+  - Did their Goal change?
+  2. LORE UPDATES:
+  - Was a new location or object described in detail?
+  - Look for 'Chekhov's Gun'; the seemingly inconsequential detail that may become important later.
+  - LIMIT: Generate 1-4 items maximum.
+  - DUPLICATION CHECK: Do not create lore for topics that already exist in the provided list.
+  3. RELATIONSHIP UPDATES (NEW):
+  - Did a character's feelings or dynamics toward another character present in the scene change or get revealed?
+  - Return directional updates (e.g. from Character A to Character B).
+    
+    Output JSON:
+    {
+      "cast_updates": [
+        { "name": "Hero", "append_history": "...", "append_story_events": "...", "update_goals": "..." }
+      ],
+      "lore_updates": [
+        { "topic": "...", "detail": "...", "related_to": ["..."] }
+      ],
+      "relationship_updates": [
+        { "from": "Hero", "to": "Sidekick", "new_feeling": "Growing respect but hidden jealousy", "trigger": "Watched them save the day" }
+      ]
+    }`,
 
             beatValidator: `You are a Script Doctor.
 CONTEXT:
@@ -728,7 +759,8 @@ Does the Prose logically allow the Next Beat to happen as written?
 - If YES: Return valid: true.
 - If NO (e.g. Character A left the room, but Next Beat requires them to speak): 
 Return valid: false.
-REWRITE the remaining beats for this scene to accommodate the new reality while still steering toward the Scene Goal. Avoid lengthening the scene.
+REWRITE the remaining beats for this scene to accommodate the new reality while still steering toward the Scene Goal.
+CRITICAL: Do NOT include the beat that was just written (described in the "Reality" section). Start your rectified_beats list directly with the adaptation of the plan for the NEXT beat. Avoid lengthening the scene.
   
   Output JSON:
   {
@@ -817,21 +849,126 @@ REQUIREMENTS:
     - **Environment**: Layout, geography, or atmosphere.
     - **Tone/Style**: The feeling of the setting.
 
-Output: Plain Text Summary.`
+Output: Plain Text Summary.`,
+
+            beatReviewer: `You are a Senior Story Editor reviewing a sequence of beats for a single scene.
+Task: Evaluate each beat for coherence, pacing, and contribution to the scene goal. Identify beats that need revision.
+
+Consider:
+1. Do the beats work together as a cohesive unit?
+2. Does each beat advance the scene toward its goal?
+3. Are planned relationship shifts (if any are specified in the scene context) properly developed and justified by the beats' emotional and logical trajectory?
+4. Are there redundant beats or gaps in the emotional arc?
+4. Does the pacing feel natural?
+5. Are character motivations consistent?
+6. Is the emotional trajectory compelling?
+
+Output JSON:
+{
+  "overall_feedback": "Summary of the beat sequence quality and any systemic issues",
+  "rewrites": [
+    {
+      "beat_number": 3,
+      "issue": "What's wrong with this beat",
+      "new_direction": "How this beat should be rewritten to better serve the scene"
+    }
+  ]
+}
+
+If ALL beats are satisfactory, return an empty "rewrites" array.`,
+
+            beatRewriter: `You are a Beat Architect revising a single beat within a scene.
+Task: Rewrite this beat according to the feedback provided, while maintaining continuity with surrounding beats.
+
+Rules:
+1. Maintain the same beat format and quality standards as the original.
+2. Ensure the rewritten beat flows naturally from the previous beat.
+3. Ensure the rewritten beat sets up the next beat logically.
+4. Address ALL feedback points in your rewrite.
+5. Keep the same approximate length/detail as the original.
+
+Output JSON:
+{
+  "number": N,
+  "type": "Action/Reaction/Dialogue",
+  "description": "Full rewritten beat description",
+  "emotional_shift": "How the mood changes",
+  "valence": N,
+  "pacing": N
+}`,
+
+            loreConnector: `You are a Narrative Connections Agent.
+Task: Given a scene description and available world lore, select 3-4 lore entries that should influence the beat development for this scene.
+
+You are looking for:
+1. Direct relevance: Lore about locations, characters, or objects appearing in the scene
+2. Thematic resonance: Lore that echoes or contrasts with the scene's themes
+3. Chekhov's opportunities: Lore items that could be subtly referenced to set up future payoffs
+4. Continuity anchors: Facts that should be maintained for consistency
+
+Output JSON:
+{
+  "selected_lore": [
+    {
+      "topic": "Lore Topic Name",
+      "relevance": "Why this lore is important for this scene",
+      "suggested_usage": "How it should influence the beats"
+    }
+  ]
+}`,
+
+            relationshipInitializer: `You are a Lead Character Dynamics Designer.
+Task: Establish the starting relationship matrix between all characters in the cast.
+Input: Story Concept, Themes, and detailed Cast List.
+
+For every directional combination of characters (i.e. Character A to Character B, and Character B to Character A), define how they feel about one another, their dynamic, or their tension at the very beginning of the story (Act 1, before the status quo is broken).
+
+Ensure the relationships are:
+1. Directional: Character A's feeling toward Character B might be different from Character B's feeling toward Character A.
+2. Character-driven: Aligned with their backstory, flaw, and role in the story.
+3. Tension-rich: Contain seeds of potential conflict, loyalty, envy, or love that can be explored in the plot.
+
+Output JSON:
+{
+  "relationships": [
+    {
+      "from": "Character Name",
+      "to": "Character Name",
+      "feeling": "Detailed description of their starting attitude/feeling/dynamic toward the other character"
+    }
+  ]
+}`
         };
 
 
 
         const cleanJson = (text) => {
             if (!text) return "";
-            // Find the first open brace and the last close brace to fallback if code blocks aren't cleaner
-            // But first, try to capture a code block if it exists, as that's explicit
+            // Try matching markdown code blocks first
             const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
             if (match) return match[1].trim();
 
-            // If no code block, just find the outer braces
-            const start = text.indexOf('{');
-            const end = text.lastIndexOf('}');
+            // Look for outer braces (for objects) or brackets (for arrays)
+            const startObj = text.indexOf('{');
+            const endObj = text.lastIndexOf('}');
+            const startArr = text.indexOf('[');
+            const endArr = text.lastIndexOf(']');
+
+            let start = -1;
+            let end = -1;
+            
+            if (startObj !== -1 && startArr !== -1) {
+                start = Math.min(startObj, startArr);
+            } else {
+                start = startObj !== -1 ? startObj : startArr;
+            }
+
+            if (endObj !== -1 && endArr !== -1) {
+                end = Math.max(endObj, endArr);
+            } else {
+                end = endObj !== -1 ? endObj : endArr;
+            }
+
             if (start !== -1 && end !== -1 && end > start) {
                 return text.substring(start, end + 1);
             }
@@ -969,8 +1106,27 @@ Output: Plain Text Summary.`
                 }
 
                 const data = await response.json();
-                const text = data.choices?.[0]?.message?.content;
-                return isJson ? JSON.parse(cleanJson(text)) : text;
+                if (data.error) {
+                    throw new Error(`OpenRouter API returned error: ${data.error.message || JSON.stringify(data.error)}`);
+                }
+                let text = data.choices?.[0]?.message?.content;
+                const msg = data.choices?.[0]?.message;
+                if ((text === undefined || text === null || String(text).trim() === "" || String(text) === "null") && msg) {
+                    text = msg.reasoning || msg.reasoning_content;
+                }
+                if (text === undefined || text === null) {
+                    throw new Error(`OpenRouter returned no content. Response payload: ${JSON.stringify(data)}`);
+                }
+
+                if (isJson) {
+                    try {
+                        return JSON.parse(cleanJson(text));
+                    } catch (e) {
+                        console.error("OpenRouter JSON Parse Error. Raw Text:", text);
+                        throw new Error(`Failed to parse OpenRouter response as JSON. Check console for details. Raw snippet: ${String(text).substring(0, 150)}`);
+                    }
+                }
+                return text;
             } catch (error) {
                 console.error("OpenRouter Error:", error);
                 throw error;
@@ -1452,7 +1608,15 @@ Output: Plain Text Summary.`
         function EllipsisProsef() {
             const [story, setStory] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_story");
-                return saved ? JSON.parse(saved) : {
+                if (saved) {
+                    const parsed = JSON.parse(saved);
+                    return {
+                        continuity_ledger: [],
+                        relationships: {},
+                        ...parsed
+                    };
+                }
+                return {
                     title: "Untitled Story",
                     concept: "",
                     status_quo: "",
@@ -1465,7 +1629,9 @@ Output: Plain Text Summary.`
                     acts: [],
                     scenes: {},
                     beats: {},
-                    prose: {}
+                    prose: {},
+                    continuity_ledger: [],
+                    relationships: {}
                 };
             });
 
@@ -1483,6 +1649,14 @@ Output: Plain Text Summary.`
                 return saved ? JSON.parse(saved) : ["google/gemini-2.0-flash-001"];
             });
 
+            // Dual Model State (Structure vs Prose)
+            const [useProseModel, setUseProseModel] = useState(() => localStorage.getItem("ellipsisprose_use_prose_model") === 'true');
+            const [geminiProseModel, setGeminiProseModel] = useState(() => localStorage.getItem("ellipsisprose_gemini_prose_model") || "");
+            const [openRouterProseModel, setOpenRouterProseModel] = useState(() => localStorage.getItem("ellipsisprose_openrouter_prose_model") || "");
+
+            // Selected relationship for editing
+            const [selectedRel, setSelectedRel] = useState(null);
+
             // Archetype State
             const [archetypeOptions, setArchetypeOptions] = useState([]);
 
@@ -1495,6 +1669,15 @@ Output: Plain Text Summary.`
             const [loading, setLoading] = useState(false);
             const [loadingStep, setLoadingStep] = useState("");
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+            const [continuousAutopilot, setContinuousAutopilot] = useState(false);
+            const continuousAutopilotRef = useRef(false);
+            useEffect(() => {
+                continuousAutopilotRef.current = continuousAutopilot;
+                if (!continuousAutopilot) {
+                    setLoading(false);
+                }
+            }, [continuousAutopilot]);
 
             const [selectedAct, setSelectedAct] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_selectedAct");
@@ -1725,11 +1908,38 @@ Output: Plain Text Summary.`
                         acts: [],
                         scenes: {},
                         beats: {},
-                        prose: {}
+                        prose: {},
+                        continuity_ledger: [],
+                        relationships: {}
                     };
 
+                    // Establish Starting Relationship Matrix
+                    if (finalCast.length >= 2) {
+                        setLoadingStep("Establishing Starting Relationships...");
+                        const castSummary = finalCast.map(c => `- **${c.name}** (${c.role}): ${c.details?.history || c.details?.story_events}`).join('\n');
+                        const relInputPrompt = `Story Concept: ${bible.concept}\nThemes: ${bible.themes}\n\nCast List:\n${castSummary}`;
+                        
+                        try {
+                            const relData = await callAI(relInputPrompt, PROMPTS.relationshipInitializer, true, "Relationship Initializer");
+                            if (relData && relData.relationships) {
+                                relData.relationships.forEach(rel => {
+                                    const key = `${rel.from}->${rel.to}`;
+                                    newStory.relationships[key] = {
+                                        current: rel.feeling,
+                                        history: [
+                                            { chapter: "Act 1, Starting", change: `${rel.feeling} (Starting relationship)` }
+                                        ]
+                                    };
+                                });
+                            }
+                        } catch (relError) {
+                            console.warn("Starting relationship initialization failed, continuing with empty matrix:", relError);
+                        }
+                    }
+
                     setLoadingStep("Structuring Acts...");
-                    const actData = await callAI(`Concept: ${bible.concept}\nThreads: ${JSON.stringify(bible.threads)}`, PROMPTS.actStructure, true, "Act Structure");
+                    const actStyleCtx = bible.style ? `\nStyle: Genre: ${bible.style.genre || ''}, Mood: ${bible.style.mood || ''}, Writing Guide: ${bible.style.writing_guide || ''}` : '';
+                    const actData = await callAI(`Concept: ${bible.concept}\nThreads: ${JSON.stringify(bible.threads)}${actStyleCtx}`, PROMPTS.actStructure, true, "Act Structure");
 
                     // 4. Schedule Lore (Avoid Spoilers)
                     setLoadingStep("Scheduling Lore Reveals...");
@@ -1870,6 +2080,9 @@ Output: Plain Text Summary.`
             useEffect(() => { localStorage.setItem("ellipsisprose_openrouter_key", openRouterKey); }, [openRouterKey]);
             useEffect(() => { localStorage.setItem("ellipsisprose_openrouter_model", openRouterModel); }, [openRouterModel]);
             useEffect(() => { localStorage.setItem("ellipsisprose_saved_models", JSON.stringify(savedModels)); }, [savedModels]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_use_prose_model", useProseModel); }, [useProseModel]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_gemini_prose_model", geminiProseModel); }, [geminiProseModel]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_openrouter_prose_model", openRouterProseModel); }, [openRouterProseModel]);
 
             useEffect(() => {
                 localStorage.setItem("ellipsisprose_story", JSON.stringify(story));
@@ -1983,6 +2196,7 @@ Output: Plain Text Summary.`
                                 }
                             });
                         }
+
                         if (updates.new_characters) {
                             updates.new_characters.forEach(nc => {
                                 if (!newCast.find(c => c.name === nc.name)) newCast.push(nc);
@@ -2005,7 +2219,24 @@ Output: Plain Text Summary.`
                             }
                         });
 
-                        return { ...prev, cast: newCast, lore: newLore };
+                        // Unified relationship updates
+                        const newRels = { ...(prev.relationships || {}) };
+                        if (updates.relationship_updates) {
+                            updates.relationship_updates.forEach(up => {
+                                const key = `${up.from}->${up.to}`;
+                                if (!newRels[key]) {
+                                    newRels[key] = { current: "", history: [] };
+                                }
+                                newRels[key].current = up.new_feeling;
+                                if (!newRels[key].history) newRels[key].history = [];
+                                newRels[key].history.push({
+                                    chapter: `Act ${activeActNum}, Scene ${activeSceneNum}`,
+                                    change: `${up.new_feeling} (${up.trigger})`
+                                });
+                            });
+                        }
+
+                        return { ...prev, cast: newCast, lore: newLore, relationships: newRels };
                     });
 
                 } else {
@@ -2030,7 +2261,25 @@ Output: Plain Text Summary.`
                                 if (!newCast.find(c => c.name === nc.name)) newCast.push(nc);
                             });
                         }
-                        return { ...prev, cast: newCast };
+
+                        // Unified relationship updates (no lore branch)
+                        const newRels = { ...(prev.relationships || {}) };
+                        if (updates.relationship_updates) {
+                            updates.relationship_updates.forEach(up => {
+                                const key = `${up.from}->${up.to}`;
+                                if (!newRels[key]) {
+                                    newRels[key] = { current: "", history: [] };
+                                }
+                                newRels[key].current = up.new_feeling;
+                                if (!newRels[key].history) newRels[key].history = [];
+                                newRels[key].history.push({
+                                    chapter: `Act ${activeActNum}, Scene ${activeSceneNum}`,
+                                    change: `${up.new_feeling} (${up.trigger})`
+                                });
+                            });
+                        }
+
+                        return { ...prev, cast: newCast, relationships: newRels };
                     });
                 }
             };
@@ -2143,23 +2392,25 @@ Output: Plain Text Summary.`
                             const sId = `${actIdx}-${sceneIdx}`;
                             const beats = story.beats[sId];
 
+                            // Check if this scene has ANY written prose
+                            let hasWrittenProse = false;
+                            if (beats && beats.length > 0) {
+                                hasWrittenProse = beats.some((b, bi) => story.prose[`${sId}-${bi}`]?.final);
+                            }
+
+                            // Skip scenes with no written prose
+                            if (!hasWrittenProse) return;
+
                             // Build Scene Content
                             let sceneBody = `<h1>Chapter ${scene.number}: ${scene.title.replace(/&/g, "&amp;")}</h1>`;
 
-                            if (beats && beats.length > 0) {
-                                beats.forEach((b, bi) => {
-                                    const prose = story.prose[`${sId}-${bi}`];
-                                    if (prose && prose.final) {
-                                        // Ensure Markdown parsing results in valid XML content if possible
-                                        // Simple regex cleanup for unclosed tags could be complex, but let's assume standard prose
-                                        let html = parseMarkdown(prose.final);
-                                        // Remove <br> for <br /> compliance if needed, though parseMarkdown generates <br />
-                                        sceneBody += `\n<div class="beat">\n${html}\n</div>\n<hr style="border: 0; border-top: 1px solid #ccc; margin: 2em auto; width: 50%;" />\n`;
-                                    }
-                                });
-                            } else {
-                                sceneBody += `<p><em>[Scene not yet written]</em></p>`;
-                            }
+                            beats.forEach((b, bi) => {
+                                const prose = story.prose[`${sId}-${bi}`];
+                                if (prose && prose.final) {
+                                    let html = parseMarkdown(prose.final);
+                                    sceneBody += `\n<div class="beat">\n${html}\n</div>\n<hr style="border: 0; border-top: 1px solid #ccc; margin: 2em auto; width: 50%;" />\n`;
+                                }
+                            });
 
                             // Remove last HR
                             sceneBody = sceneBody.replace(/<hr [^>]*\/>\s*$/, "");
@@ -2344,8 +2595,13 @@ ${sceneBody}
                     setRagTestLoading(false);
                 }
             };
+            const getContinuityContext = (storyToUse = story) => {
+                if (!storyToUse.continuity_ledger || storyToUse.continuity_ledger.length === 0) return "";
+                const factsList = storyToUse.continuity_ledger.map(f => `- [${f.category || "Fact"} / ${f.key}]: ${f.value}`).join('\n');
+                return `\n\nCANONICAL FACTS (These are absolute truths. Never contradict these.):\n${factsList}\n`;
+            };
 
-            const callAI = async (prompt, systemPrompt, isJson = true, logName = "AI Task") => {
+            const callAI = async (prompt, systemPrompt, isJson = true, logName = "AI Task", taskType = "structure") => {
                 const logEntry = {
                     id: Date.now(),
                     timestamp: new Date().toLocaleTimeString(),
@@ -2358,16 +2614,30 @@ ${sceneBody}
                 const maxRetries = 3;
                 let attempt = 0;
 
+                // Determine model based on taskType and dual-model settings
+                const getModel = () => {
+                    if (taskType === 'prose' && useProseModel) {
+                        if (apiProvider === 'gemini') return geminiProseModel || geminiModel;
+                        return openRouterProseModel || openRouterModel;
+                    }
+                    if (apiProvider === 'gemini') return geminiModel;
+                    return openRouterModel;
+                };
+                const modelToUse = getModel();
+
                 while (attempt < maxRetries) {
                     try {
                         if (apiProvider === 'gemini') {
-                            return await callGemini(apiKey, geminiModel, prompt, systemPrompt, isJson);
+                            return await callGemini(apiKey, modelToUse, prompt, systemPrompt, isJson);
                         } else {
-                            return await callOpenRouter(openRouterKey, openRouterModel, prompt, systemPrompt, isJson);
+                            return await callOpenRouter(openRouterKey, modelToUse, prompt, systemPrompt, isJson);
                         }
                     } catch (error) {
                         attempt++;
-                        const is503 = error.message.includes("503") || error.message.includes("Service Unavailable") || error.message.includes("Overloaded");
+                        console.error(`AI call error [${logName}] (Attempt ${attempt}/${maxRetries}):`, error);
+                        const is503 = error?.message?.includes("503") || 
+                                      error?.message?.includes("Service Unavailable") || 
+                                      error?.message?.includes("Overloaded");
 
                         if (is503 && attempt < maxRetries) {
                             console.warn(`API 503 Error. Retrying in 5 seconds... (Attempt ${attempt}/${maxRetries})`);
@@ -2455,6 +2725,57 @@ CHARACTER CONTEXT: ${context}
                 });
             };
 
+            const handleAddBeat = (actIdx, sceneIdx, insertAfterIdx) => {
+                const sId = `${actIdx}-${sceneIdx}`;
+                setStory(prev => {
+                    const currentBeats = prev.beats[sId] ? [...prev.beats[sId]] : [];
+                    const newBeat = {
+                        number: insertAfterIdx + 2,
+                        type: "Action",
+                        description: "",
+                        emotional_shift: "",
+                        valence: 0,
+                        pacing: 1
+                    };
+                    currentBeats.splice(insertAfterIdx + 1, 0, newBeat);
+                    // Renumber all beats
+                    const renumbered = currentBeats.map((b, i) => ({ ...b, number: i + 1 }));
+                    return { ...prev, beats: { ...prev.beats, [sId]: renumbered } };
+                });
+                showToast(`Beat added after Beat ${insertAfterIdx + 1}`);
+            };
+
+            const handleDeleteBeat = (actIdx, sceneIdx, beatIdx) => {
+                if (!window.confirm(`Delete Beat ${beatIdx + 1}? This will also remove its prose. This cannot be undone.`)) return;
+                const sId = `${actIdx}-${sceneIdx}`;
+                setStory(prev => {
+                    const currentBeats = [...prev.beats[sId]];
+                    currentBeats.splice(beatIdx, 1);
+                    // Renumber remaining beats
+                    const renumbered = currentBeats.map((b, i) => ({ ...b, number: i + 1 }));
+                    // Remove prose for deleted beat and re-key subsequent prose
+                    const newProse = {};
+                    Object.keys(prev.prose).forEach(key => {
+                        if (!key.startsWith(`${sId}-`)) {
+                            newProse[key] = prev.prose[key];
+                        }
+                    });
+                    // Re-add prose for remaining beats with correct keys
+                    let proseIdx = 0;
+                    for (let i = 0; i < (prev.beats[sId]?.length || 0); i++) {
+                        if (i === beatIdx) continue; // skip deleted
+                        const oldKey = `${sId}-${i}`;
+                        const newKey = `${sId}-${proseIdx}`;
+                        if (prev.prose[oldKey]) {
+                            newProse[newKey] = prev.prose[oldKey];
+                        }
+                        proseIdx++;
+                    }
+                    return { ...prev, beats: { ...prev.beats, [sId]: renumbered }, prose: newProse };
+                });
+                showToast(`Beat ${beatIdx + 1} deleted`);
+            };
+
             const requestSceneWeaving = (actIdx) => {
                 if (story.scenes[actIdx]?.length > 0) {
                     if (!window.confirm("WARNING: Rerunning the Scene Weaver will overwrite ALL existing scenes and beats for this Act. This cannot be undone. Are you sure?")) return;
@@ -2504,9 +2825,49 @@ CHARACTER CONTEXT: ${context}
                         ? `\nRELEVANT WORLD LORE (RAG Retrieved):\n${ragLoreDocs.map(d => `- [${d.metadata.topic}]: ${d.text} (${d.metadata.relation || "Direct Match"})`).join('\n')}`
                         : `\nWORLD LORE:\n${JSON.stringify(storyToUse.lore)}`; // Fallback if RAG fails or empty
 
-                    const res = await callAI(`Act Context: ${JSON.stringify(act)}\nThreads: ${JSON.stringify(storyToUse.threads)}\nCast: ${JSON.stringify(storyToUse.cast)}\n${ragContext}${previousEventsContext}`, systemPrompt, true, "Scene Weaver");
+                    // Inject Style Context into scene weaving
+                    const styleContext = storyToUse.style ? `\nSTYLE REQUIREMENTS:\n- Genre: ${storyToUse.style.genre || 'Unspecified'}\n- Mood: ${storyToUse.style.mood || 'Unspecified'}\n- Writing Guide: ${storyToUse.style.writing_guide || 'Standard Narrative'}` : '';
+
+                    // Build current relationships context
+                    let currentRelationshipsContext = "";
+                    if (storyToUse.relationships && Object.keys(storyToUse.relationships).length > 0) {
+                        const relStrings = [];
+                        Object.keys(storyToUse.relationships).forEach(key => {
+                            const rel = storyToUse.relationships[key];
+                            if (rel && rel.current) {
+                                const [from, to] = key.split("->");
+                                relStrings.push(`- **${from}** toward **${to}**: ${rel.current}`);
+                            }
+                        });
+                        if (relStrings.length > 0) {
+                            currentRelationshipsContext = `\n\nCURRENT CHARACTER RELATIONSHIPS:\n${relStrings.join('\n')}`;
+                        }
+                    }
+
+                    const res = await callAI(`Act Context: ${JSON.stringify(act)}\nThreads: ${JSON.stringify(storyToUse.threads)}\nCast: ${JSON.stringify(storyToUse.cast)}${currentRelationshipsContext}\n${ragContext}${previousEventsContext}${styleContext}${getContinuityContext(storyToUse)}`, systemPrompt, true, "Scene Weaver");
 
                     const nextStory = { ...storyToUse, scenes: { ...storyToUse.scenes, [actIndex]: res.scenes } };
+
+                    // Populate next evolution of relationships in the matrix
+                    if (res.scenes) {
+                        const newRels = { ...(nextStory.relationships || {}) };
+                        res.scenes.forEach(scene => {
+                            if (scene.relationship_changes && scene.relationship_changes.length > 0) {
+                                scene.relationship_changes.forEach(ch => {
+                                    const key = `${ch.from}->${ch.to}`;
+                                    if (!newRels[key]) {
+                                        newRels[key] = { current: "", history: [] };
+                                    }
+                                    newRels[key].current = ch.feeling;
+                                    newRels[key].history.push({
+                                        chapter: `Act ${actNumber}, Scene ${scene.number}: ${scene.title}`,
+                                        change: `${ch.feeling} (Planned change: ${ch.trigger})`
+                                    });
+                                });
+                            }
+                        });
+                        nextStory.relationships = newRels;
+                    }
 
                     setStory(nextStory);
 
@@ -2558,12 +2919,75 @@ CHARACTER CONTEXT: ${context}
                         ? `\nRELEVANT WORLD LORE (RAG Retrieved):\n${ragLoreDocs.map(d => `- [${d.metadata.topic}]: ${d.text}`).join('\n')}`
                         : `\nWORLD LORE:\n${JSON.stringify(storyToUse.lore)}`;
 
-                    const res = await callAI(`Scene: ${JSON.stringify(sceneData)}\nThreads: ${JSON.stringify(activeThreadsData)}\n${ragContext}`, PROMPTS.beatDirector, true, "Beat Director");
+                    // Inject Style Context
+                    const styleContext = storyToUse.style ? `\nSTYLE REQUIREMENTS:\n- Genre: ${storyToUse.style.genre || 'Unspecified'}\n- Mood: ${storyToUse.style.mood || 'Unspecified'}\n- Writing Guide: ${storyToUse.style.writing_guide || 'Standard Narrative'}` : '';
+
+                    // LORE CONNECTOR AGENT: Select relevant lore before beat generation
+                    let loreConnectionsContext = '';
+                    if (storyToUse.lore && storyToUse.lore.length > 0) {
+                        try {
+                            setLoadingStep("Lore Connector: Finding relevant context...");
+                            const loreList = storyToUse.lore.map(l => `- ${l.topic}: ${l.detail}`).join('\n');
+                            const connectorPrompt = `Scene: ${sceneData.title}\nDescription: ${sceneData.description}\nLocation: ${sceneData.location || 'Unknown'}\nCharacters: ${(sceneData.cast_names || []).join(', ')}\n\nAvailable Lore:\n${loreList}`;
+                            const connections = await callAI(connectorPrompt, PROMPTS.loreConnector, true, "Lore Connector");
+                            if (connections?.selected_lore?.length > 0) {
+                                loreConnectionsContext = `\n\nLORE CONNECTIONS (integrate these into your beats):\n${connections.selected_lore.map(l => `- ${l.topic}: ${l.relevance}. Suggested usage: ${l.suggested_usage}`).join('\n')}`;
+                            }
+                        } catch (e) {
+                            console.warn("Lore Connector failed, continuing without:", e);
+                        }
+                    }
+
+                    // Highlight planned relationship changes
+                    let relChangesContext = "";
+                    if (sceneData.relationship_changes && sceneData.relationship_changes.length > 0) {
+                        const changes = sceneData.relationship_changes.map(ch => `- **${ch.from}** toward **${ch.to}** will shift to: "${ch.feeling}" (Trigger: ${ch.trigger})`).join('\n');
+                        relChangesContext = `\n\nPLANNED CHARACTER RELATIONSHIP CHANGES IN THIS SCENE:\n${changes}`;
+                    }
+
+                    const continuityContext = getContinuityContext(storyToUse);
+                    const res = await callAI(`Scene: ${JSON.stringify(sceneData)}\nThreads: ${JSON.stringify(activeThreadsData)}${relChangesContext}\n${ragContext}${styleContext}${loreConnectionsContext}${continuityContext}`, PROMPTS.beatDirector, true, "Beat Director");
 
                     if (res && res.beats) {
+                        // BEAT REVIEWER AGENT: Review and revise beats
+                        let finalBeats = res.beats;
+                        try {
+                            setLoadingStep("Beat Reviewer: Evaluating cohesion...");
+                            const reviewPrompt = `Scene Goal: ${sceneData.description}${relChangesContext}\n\nBeats to Review:\n${res.beats.map(b => `Beat ${b.number}: [${b.type}] ${b.description} (Valence: ${b.valence}, Shift: ${b.emotional_shift})`).join('\n\n')}${styleContext}${continuityContext}`;
+                            const review = await callAI(reviewPrompt, PROMPTS.beatReviewer, true, "Beat Reviewer");
+
+                            if (review?.rewrites?.length > 0) {
+                                showToast(`Beat Reviewer: ${review.rewrites.length} beat(s) flagged for revision`, 'info');
+                                console.log("Beat Review Feedback:", review.overall_feedback);
+
+                                // Rewrite each flagged beat
+                                for (const rewrite of review.rewrites) {
+                                    const beatNum = rewrite.beat_number;
+                                    const beatIndex = finalBeats.findIndex(b => b.number === beatNum);
+                                    if (beatIndex === -1) continue;
+
+                                    setLoadingStep(`Rewriting Beat ${beatNum}...`);
+                                    const prevBeatCtx = beatIndex > 0 ? `Previous Beat: ${finalBeats[beatIndex - 1].description}` : 'Start of Scene';
+                                    const nextBeatCtx = beatIndex < finalBeats.length - 1 ? `Next Beat: ${finalBeats[beatIndex + 1].description}` : 'End of Scene';
+
+                                    const rewritePrompt = `Original Beat:\n${JSON.stringify(finalBeats[beatIndex])}\n\nIssue: ${rewrite.issue}\nNew Direction: ${rewrite.new_direction}\n\nContext:\n${prevBeatCtx}\n${nextBeatCtx}\nScene Goal: ${sceneData.description}${styleContext}${continuityContext}`;
+                                    const rewritten = await callAI(rewritePrompt, PROMPTS.beatRewriter, true, `Beat Rewriter (${beatNum})`);
+
+                                    if (rewritten) {
+                                        finalBeats[beatIndex] = { ...finalBeats[beatIndex], ...rewritten, number: beatNum };
+                                    }
+                                }
+                            } else {
+                                showToast("Beat Reviewer: All beats passed review!");
+                            }
+                        } catch (e) {
+                            console.error("Beat review failed, using initial beats:", e);
+                            showToast(`Beat Reviewer failed: ${e.message}. Proceeding with initial beats.`, 'error');
+                        }
+
                         const nextStory = {
                             ...storyToUse,
-                            beats: { ...storyToUse.beats, [sId]: res.beats },
+                            beats: { ...storyToUse.beats, [sId]: finalBeats },
                             // clear prose for this scene to be safe
                             prose: Object.keys(storyToUse.prose).reduce((acc, key) => {
                                 if (!key.startsWith(`${sId}-`)) acc[key] = storyToUse.prose[key];
@@ -2645,9 +3069,25 @@ CHARACTER CONTEXT: ${context}
                 const actScenesList = currentActScenes.map(s => `Scene ${s.number}: ${s.title} - ${s.description}`).join('\n');
 
                 const activeCast = mutableCast.filter(c => scene.cast_names?.includes(c.name));
-                const castContext = activeCast.map(c =>
-                    `### ${c.name}\n- **Role:** ${c.role}\n- **Goal:** ${c.details?.goals}\n- **Deep Profile (Interview):**\n${c.details?.deep_profile || "No profile available."}`
-                ).join('\n\n');
+
+                // Format planned relationship changes for this scene
+                let relChangesProse = "None planned.";
+                if (scene.relationship_changes && scene.relationship_changes.length > 0) {
+                    relChangesProse = scene.relationship_changes.map(ch => `- **${ch.from}** toward **${ch.to}**: Will evolve to: "${ch.feeling}" (Trigger/Catalyst: ${ch.trigger})`).join('\n');
+                }
+                const castContext = activeCast.map(c => {
+                    const relLines = [];
+                    activeCast.forEach(other => {
+                        if (other.name === c.name) return;
+                        const relKey = `${c.name}->${other.name}`;
+                        const rel = storyToUse.relationships?.[relKey];
+                        if (rel && rel.current) {
+                            relLines.push(`- **Relationship with ${other.name}:** ${rel.current}`);
+                        }
+                    });
+                    const relContext = relLines.length > 0 ? `\n- **Relationships in Scene:**\n${relLines.join('\n')}` : "";
+                    return `### ${c.name}\n- **Role:** ${c.role}\n- **Goal:** ${c.details?.goals}${relContext}\n- **Deep Profile (Interview):**\n${c.details?.deep_profile || "No profile available."}`;
+                }).join('\n\n');
 
                 // RAG: Retrieval for Beat Context
                 setLoadingStep("Retrieving Context (RAG)...");
@@ -2736,12 +3176,14 @@ FORBIDDEN:
                     setLoadingStep("Agent 2/4: Drafting...");
                     const drafterSystemPrompt = PROMPTS.drafter
                         .replace("{scene_description}", scene.description)
+                        .replace("{relationship_changes}", relChangesProse)
                         .replace("{subtext}", beat.emotional_shift || "None")
                         .replace("{pacing}", pacingDesc)
                         .replace("{voices}", castContext)
                         .replace("{lore}", loreContext)
                         .replace("{valence}", valenceDesc)
-                        .replace("{style_guide}", storyToUse.style?.writing_guide ? `Writing Guide: ${storyToUse.style.writing_guide}\nGenre: ${storyToUse.style.genre}\nMood: ${storyToUse.style.mood}` : "Standard Narrative");
+                        .replace("{style_guide}", storyToUse.style?.writing_guide ? `Writing Guide: ${storyToUse.style.writing_guide}\nGenre: ${storyToUse.style.genre}\nMood: ${storyToUse.style.mood}` : "Standard Narrative")
+                        + getContinuityContext(storyToUse);
 
                     const drafterUserPrompt = `
 # STORY TIMELINE
@@ -2769,7 +3211,7 @@ Write ONLY the content for the CURRENT BEAT.
 - Do not encroach on the Next Beat.
 - Bridge them explicitly.
 `;
-                    const draft = await callAI(drafterUserPrompt, drafterSystemPrompt, false, "Drafter");
+                    const draft = await callAI(drafterUserPrompt, drafterSystemPrompt, false, "Drafter", "prose");
 
                     // --- NEW INTERMEDIATE CONTINUITY CHECK ---
                     let continuityErrorFlag = false;
@@ -2810,6 +3252,7 @@ Write ONLY the content for the CURRENT BEAT.
                     const editorSystemPrompt = PROMPTS.editor
                         .replace("{draft}", draft)
                         .replace("{scene_description}", scene.description)
+                        .replace("{relationship_changes}", relChangesProse)
                         .replace("{subtext}", beat.emotional_shift || "None")
                         .replace("{pacing}", pacingDesc)
                         .replace("{voices}", castContext)
@@ -2819,9 +3262,25 @@ Write ONLY the content for the CURRENT BEAT.
                         .replace("{scene_beats}", sceneBeatsOutline)
                         .replace("{scene_list}", actScenesList)
                         .replace("{prev_beat_text}", prevText)
-                        .replace("{continuity_error}", editorErrorsContext);
+                        .replace("{continuity_error}", editorErrorsContext)
+                        + getContinuityContext(storyToUse);
 
-                    const final = await callAI("Polish this draft according to the rules.", editorSystemPrompt, false, "Editor");
+                    let final = await callAI("Polish this draft according to the rules.", editorSystemPrompt, false, "Editor", "prose");
+
+                    // Clean up any leading lines starting with '#' (markdown headings) and leading whitespace
+                    if (final) {
+                        const lines = final.split('\n');
+                        let startIdx = 0;
+                        while (startIdx < lines.length) {
+                            const trimmedLine = lines[startIdx].trim();
+                            if (trimmedLine.startsWith('#') || trimmedLine === '') {
+                                startIdx++;
+                            } else {
+                                break;
+                            }
+                        }
+                        final = lines.slice(startIdx).join('\n').trim();
+                    }
 
                     let nextStory = { ...storyToUse, prose: { ...storyToUse.prose, [bId]: { draft, final } } };
                     if (castWasUpdated) nextStory.cast = mutableCast;
@@ -2841,14 +3300,34 @@ Write ONLY the content for the CURRENT BEAT.
                                 console.log("Ripple Effect Triggered: Editor could not resolve continuity issue.", validation.reason);
                                 if (!isAutopilot) alert(`Ripple Effect: The story has changed course!\nReason: ${validation.reason}\nFuture beats have been rewritten.`);
 
-                                const currentBeats = nextStory.beats[sId];
+                                const currentBeats = nextStory.beats[sId] || [];
                                 const keptBeats = currentBeats.slice(0, beatIdx + 1);
-                                const newFutureBeats = validation.rectified_beats.map((b, i) => ({
+
+                                // Filter out any returned beats that are duplicates of the current beat
+                                const currentBeatDesc = currentBeats[beatIdx]?.description || "";
+                                const filteredRectified = validation.rectified_beats.filter(b => {
+                                    if (!b.description) return false;
+                                    const cleanDesc = b.description.toLowerCase().trim();
+                                    const cleanCurrent = currentBeatDesc.toLowerCase().trim();
+                                    if (cleanDesc === cleanCurrent) return false;
+                                    if (cleanDesc.length > 10 && cleanCurrent.length > 10) {
+                                        if (cleanCurrent.includes(cleanDesc) || cleanDesc.includes(cleanCurrent)) return false;
+                                    }
+                                    return true;
+                                });
+
+                                const newFutureBeats = filteredRectified.map((b, i) => ({
                                     ...b,
                                     number: beatIdx + 2 + i // renumber sequentially
                                 }));
 
-                                nextStory.beats[sId] = [...keptBeats, ...newFutureBeats];
+                                nextStory = {
+                                    ...nextStory,
+                                    beats: {
+                                        ...nextStory.beats,
+                                        [sId]: [...keptBeats, ...newFutureBeats]
+                                    }
+                                };
                             } else {
                                 console.log("Continuity Resolved by Editor.");
                             }
@@ -2953,6 +3432,141 @@ Write ONLY the content for the CURRENT BEAT.
                 }
             };
 
+            const runContinuousAutopilotStep = async () => {
+                if (!story.concept) {
+                    showToast("Please enter a story concept first!");
+                    setContinuousAutopilot(false);
+                    return;
+                }
+
+                let currentStory = story;
+
+                // Check if story acts are initialized
+                if (!currentStory.acts || currentStory.acts.length === 0) {
+                    setLoadingStep("Autopilot: Initializing Story Bible...");
+                    currentStory = await initStory(true);
+                    if (!continuousAutopilotRef.current) return;
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
+
+                // Iterate acts and find first chronological gap
+                for (let actIdx = 0; actIdx < currentStory.acts.length; actIdx++) {
+                    if (!continuousAutopilotRef.current) return;
+
+                    const act = currentStory.acts[actIdx];
+                    const scenes = currentStory.scenes[actIdx];
+
+                    // Gap 1: Scenes are not wove for this Act
+                    if (!scenes || scenes.length === 0) {
+                        setView('structure');
+                        setLoadingStep(`Autopilot: Weaving scenes for Act ${actIdx + 1}...`);
+                        currentStory = await generateScenes(actIdx, currentStory, true);
+                        if (!continuousAutopilotRef.current) {
+                            setLoading(false);
+                            return;
+                        }
+                        showToast(`Act ${actIdx + 1} scenes wove! Cooling down...`);
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        setLoading(false);
+                        return;
+                    }
+
+                    // Iterate scenes in this act
+                    for (let sceneIdx = 0; sceneIdx < scenes.length; sceneIdx++) {
+                        if (!continuousAutopilotRef.current) return;
+
+                        const scene = scenes[sceneIdx];
+                        const sId = `${actIdx}-${sceneIdx}`;
+                        const beats = currentStory.beats[sId];
+
+                        // Gap 2: Beats are not wove for this scene
+                        if (!beats || beats.length === 0) {
+                            setSelectedAct(actIdx);
+                            setSelectedScene(sceneIdx);
+                            setView('writer');
+                            setLoadingStep(`Autopilot: Generating beats for Act ${actIdx + 1}, Scene ${sceneIdx + 1}...`);
+                            currentStory = await generateBeats(actIdx, sceneIdx, currentStory, true);
+                            if (!continuousAutopilotRef.current) {
+                                setLoading(false);
+                                return;
+                            }
+                            showToast(`Beats generated for Scene ${sceneIdx + 1}! Cooling down...`);
+                            await new Promise(resolve => setTimeout(resolve, 3000));
+                            setLoading(false);
+                            return;
+                        }
+
+                        // Gap 3: Prose is missing for any beat in this scene
+                        let firstMissingBeat = -1;
+                        for (let beatIdx = 0; beatIdx < beats.length; beatIdx++) {
+                            const bId = `${sId}-${beatIdx}`;
+                            const prose = currentStory.prose[bId];
+                            if (!prose || !prose.final) {
+                                firstMissingBeat = beatIdx;
+                                break;
+                            }
+                        }
+
+                        if (firstMissingBeat !== -1) {
+                            setSelectedAct(actIdx);
+                            setSelectedScene(sceneIdx);
+                            setView('writer');
+                            
+                            let beatsProcessed = 0;
+                            let i = firstMissingBeat;
+                            // Dynamically loop based on the live, updated story beat array length
+                            while (i < currentStory.beats[sId].length) {
+                                if (!continuousAutopilotRef.current) {
+                                    setLoading(false);
+                                    return;
+                                }
+                                
+                                setLoadingStep(`Autopilot: Drafting prose for Act ${actIdx + 1}, Scene ${sceneIdx + 1}, Beat ${i + 1} of ${currentStory.beats[sId].length}...`);
+                                currentStory = await writeProse(actIdx, sceneIdx, i, currentStory, true);
+                                
+                                beatsProcessed++;
+                                // Cooldown AI every 3 beats to respect rate limits
+                                if (beatsProcessed % 3 === 0 && i < currentStory.beats[sId].length - 1) {
+                                    showToast("Cooling down AI (5s)...");
+                                    await new Promise(resolve => setTimeout(resolve, 5000));
+                                }
+                                i++;
+                            }
+                            
+                            // Take a small break after finishing a full scene before starting next scene/act
+                            if (continuousAutopilotRef.current) {
+                                showToast(`Scene ${sceneIdx + 1} completed! Taking a short breath...`);
+                                await new Promise(resolve => setTimeout(resolve, 3000));
+                            }
+                            setLoading(false);
+                            return;
+                        }
+                    }
+                }
+
+                // Done with all acts, scenes, and beats
+                setContinuousAutopilot(false);
+                showToast("✨ Continuous Autopilot Complete! The entire book has been wove and written!");
+            };
+
+            useEffect(() => {
+                let active = true;
+                const run = async () => {
+                    if (continuousAutopilot && !loading && active) {
+                        try {
+                            await runContinuousAutopilotStep();
+                        } catch (err) {
+                            console.error("Continuous Autopilot error:", err);
+                            showToast(`Autopilot error: ${err.message}`, true);
+                            setContinuousAutopilot(false);
+                            setLoading(false);
+                        }
+                    }
+                };
+                run();
+                return () => { active = false; };
+            }, [continuousAutopilot, story, loading]);
+
             const handleAutoGenerateScene = async (actIdx, sceneIdx) => {
                 if (!window.confirm("Auto-Write this entire scene? This will generate beats (if missing) and write prose for every beat.")) return;
 
@@ -3037,7 +3651,7 @@ Write ONLY the content for the CURRENT BEAT.
                 <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden">
                     <div className={`fixed inset-y-0 left-0 z-50 w-72 bg-slate-900 border-r border-slate-800 flex flex-col transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
                         <div className="p-4 flex justify-between border-b border-slate-800">
-                            <h2 className="font-bold flex gap-2"><Book className="text-indigo-400" /> EllipsisProse 0.42</h2>
+                            <h2 className="font-bold flex gap-2"><Book className="text-indigo-400" /> EllipsisProse 0.5</h2>
                             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden"><X /></button>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4 space-y-1">
@@ -3046,6 +3660,7 @@ Write ONLY the content for the CURRENT BEAT.
                             <button onClick={() => setView('settings')} className={`nav-btn ${view === 'settings' ? 'active' : ''}`}><Settings size={16} /> Settings</button>
                             <button onClick={() => setView('logs')} className={`nav-btn ${view === 'logs' ? 'active' : ''}`}><History size={16} /> Prompt Log</button>
                             <button onClick={() => setView('cast')} className={`nav-btn ${view === 'cast' ? 'active' : ''}`}><Users size={16} /> Cast & Roster</button>
+                            <button onClick={() => setView('relationships')} className={`nav-btn ${view === 'relationships' ? 'active' : ''}`}><Heart size={16} /> Relationships</button>
                             <button onClick={() => setView('lore')} className={`nav-btn ${view === 'lore' ? 'active' : ''}`}><Globe size={16} /> World Lore</button>
                             <button onClick={() => setView('inspector')} className={`nav-btn ${view === 'inspector' ? 'active' : ''}`}><Search size={16} /> RAG Inspector</button>
                             <button onClick={() => setView('structure')} className={`nav-btn ${view === 'structure' ? 'active' : ''}`}><Layers size={16} /> Act Planner</button>
@@ -3090,7 +3705,7 @@ Write ONLY the content for the CURRENT BEAT.
                             {view === 'setup' && (
                                 <div className="max-w-xl mx-auto py-20 text-center animate-fade-in">
                                     <div className="bg-indigo-600 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6"><Sparkles size={32} color="white" /></div>
-                                    <h1 className="text-2xl font-bold mb-4">EllipsisProse 0.42</h1>
+                                    <h1 className="text-2xl font-bold mb-4">EllipsisProse 0.5</h1>
                                     <p className="text-slate-400 mb-6">Enter a title and concept. The AI Architect will build your story bible.</p>
                                     <input className="w-full bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4 focus:ring-2 focus:ring-indigo-500 outline-none font-bold" placeholder="Story Title (e.g. The Last Starship)" value={inputTitle} onChange={e => setInputTitle(e.target.value)} />
 
@@ -3217,11 +3832,92 @@ Write ONLY the content for the CURRENT BEAT.
                                                 <h3 className="text-xs font-bold text-emerald-400 uppercase mb-4 flex gap-2"><GitBranch size={16} /> Threads</h3>
                                                 <div className="space-y-4">{story.threads.map((t, i) => <div key={t.id} className="p-3 bg-slate-950 rounded border border-slate-800/50"><div className="font-bold mb-1 flex justify-between items-center">{t.name}<EditButton title={`Thread: ${t.name}`} value={t.description} onSave={() => openEditModal(`Thread: ${t.name}`, t.description, (val) => { const newThreads = [...story.threads]; newThreads[i].description = val; setStory({ ...story, threads: newThreads }); })} /></div><div className="text-sm text-slate-400">{t.description}</div></div>)}</div>
                                             </div>
-                                            <div className="p-6 bg-slate-900 rounded-xl border border-slate-800">
-                                                <h3 className="text-xs font-bold text-blue-400 uppercase mb-4 flex gap-2"><Globe size={16} /> Lore</h3>
-                                                <div className="space-y-4">{story.lore.map((l, i) => <div key={i} className="text-sm border-b border-slate-800/50 pb-4 flex flex-col gap-1"><div className="flex justify-between items-center"><span className="text-blue-300 font-mono font-bold">{l.topic}</span><EditButton title={`Lore: ${l.topic}`} value={l.detail} onSave={() => openEditModal(`Lore: ${l.topic}`, l.detail, (val) => { const newLore = [...story.lore]; newLore[i].detail = val; setStory({ ...story, lore: newLore }); })} /></div><span className="text-slate-400">{l.detail}</span></div>)}</div>
-                                            </div>
+
                                         </div>
+                                    </div>
+
+                                    {/* Continuity Ledger Card */}
+                                    <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
+                                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                                            <div>
+                                                <h3 className="text-xs font-bold text-indigo-400 uppercase flex gap-2 items-center">
+                                                    <Layers size={16} /> Continuity Ledger (Canonical Facts)
+                                                </h3>
+                                                <p className="text-xs text-slate-500 mt-1">Injected directly into all AI prompts to prevent contradictions (e.g. ship names, rules, timeline events).</p>
+                                            </div>
+                                            <button
+                                                onClick={() => {
+                                                    const key = prompt("Enter Fact Key (e.g. Ship Name):");
+                                                    if (!key) return;
+                                                    const value = prompt("Enter Fact Value (e.g. The Meridian):");
+                                                    if (!value) return;
+                                                    const category = prompt("Enter Category (Setting, Character, Rules, Timeline, Plot, Other):", "Setting");
+                                                    if (!category) return;
+                                                    
+                                                    setStory(prev => ({
+                                                        ...prev,
+                                                        continuity_ledger: [
+                                                            ...(prev.continuity_ledger || []),
+                                                            { key, value, category }
+                                                        ]
+                                                    }));
+                                                }}
+                                                className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-3 py-2 rounded-lg flex items-center gap-1 transition-all self-start sm:self-auto"
+                                            >
+                                                <Plus size={14} /> Add Fact
+                                            </button>
+                                        </div>
+                                        
+                                        {(!story.continuity_ledger || story.continuity_ledger.length === 0) ? (
+                                            <div className="text-center py-8 text-slate-500 italic border border-dashed border-slate-800 rounded-lg">
+                                                No canonical facts defined yet. Click Add Fact to seed the continuity ledger.
+                                            </div>
+                                        ) : (
+                                            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                {story.continuity_ledger.map((fact, idx) => (
+                                                    <div key={idx} className="p-4 bg-slate-950 rounded-lg border border-slate-800 flex flex-col justify-between group hover:border-slate-700 transition-all">
+                                                        <div>
+                                                            <div className="flex justify-between items-start mb-2">
+                                                                <span className="text-[9px] font-bold text-slate-400 uppercase bg-slate-900 px-2 py-0.5 rounded border border-slate-800/80">{fact.category || "Other"}</span>
+                                                                <div className="opacity-0 group-hover:opacity-100 flex gap-1.5 transition-opacity">
+                                                                    <button 
+                                                                        onClick={() => {
+                                                                            openEditModal(`Ledger Fact: ${fact.key}`, fact.value, (newVal) => {
+                                                                                setStory(prev => {
+                                                                                    const newLedger = [...prev.continuity_ledger];
+                                                                                    newLedger[idx].value = newVal;
+                                                                                    return { ...prev, continuity_ledger: newLedger };
+                                                                                });
+                                                                            });
+                                                                        }}
+                                                                        className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white transition-colors"
+                                                                        title="Edit Value"
+                                                                    >
+                                                                        <Edit3 size={12} />
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => {
+                                                                            if (window.confirm(`Delete canonical fact "${fact.key}"?`)) {
+                                                                                setStory(prev => {
+                                                                                    const newLedger = prev.continuity_ledger.filter((_, i) => i !== idx);
+                                                                                    return { ...prev, continuity_ledger: newLedger };
+                                                                                });
+                                                                            }
+                                                                        }}
+                                                                        className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-red-400 transition-colors"
+                                                                        title="Delete Fact"
+                                                                    >
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <h4 className="font-bold text-sm text-slate-200 mb-1">{fact.key}</h4>
+                                                        </div>
+                                                        <p className="text-xs text-slate-400 font-mono mt-2 bg-slate-900/50 p-2.5 rounded border border-slate-800/30 whitespace-pre-wrap leading-relaxed">{fact.value}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -3333,24 +4029,352 @@ Write ONLY the content for the CURRENT BEAT.
                                 </div>
                             )}
 
+                            {view === 'relationships' && (
+                                <div className="max-w-6xl mx-auto space-y-8 animate-fade-in">
+                                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                                        <div>
+                                            <h2 className="text-2xl font-bold flex items-center gap-2">
+                                                <Heart className="text-pink-500 fill-pink-500/20" /> Character Relationship Matrix
+                                            </h2>
+                                            <p className="text-sm text-slate-400 mt-1">
+                                                Track and manage how characters feel about one another. Directional arcs (A ➔ B vs B ➔ A) evolve over scene completions.
+                                            </p>
+                                        </div>
+                                        {story.cast && story.cast.length >= 2 && (
+                                            <button
+                                                onClick={() => {
+                                                    const from = prompt(`From Character (choose: ${story.cast.map(c => c.name).join(', ')}):`);
+                                                    if (!from || !story.cast.find(c => c.name.toLowerCase() === from.toLowerCase())) return;
+                                                    const to = prompt(`To Character (choose: ${story.cast.map(c => c.name).join(', ')}):`);
+                                                    if (!to || !story.cast.find(c => c.name.toLowerCase() === to.toLowerCase())) return;
+                                                    if (from.toLowerCase() === to.toLowerCase()) {
+                                                        alert("A character cannot have a relationship with themselves.");
+                                                        return;
+                                                    }
+                                                    const feeling = prompt("Current feeling or dynamic (e.g. Secretly in love):");
+                                                    if (!feeling) return;
+                                                    
+                                                    const realFrom = story.cast.find(c => c.name.toLowerCase() === from.toLowerCase()).name;
+                                                    const realTo = story.cast.find(c => c.name.toLowerCase() === to.toLowerCase()).name;
+                                                    
+                                                    setStory(prev => {
+                                                        const newRels = { ...(prev.relationships || {}) };
+                                                        const key = `${realFrom}->${realTo}`;
+                                                        newRels[key] = {
+                                                            current: feeling,
+                                                            history: [
+                                                                { chapter: "Manual", change: `${feeling} (Created manually)` }
+                                                            ]
+                                                        };
+                                                        return { ...prev, relationships: newRels };
+                                                    });
+                                                }}
+                                                className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-4 py-2.5 rounded-lg flex items-center gap-1.5 transition-all self-start sm:self-auto shadow-lg shadow-indigo-950/20"
+                                            >
+                                                <Plus size={14} /> Establish Relationship
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {(!story.cast || story.cast.length < 2) ? (
+                                        <div className="text-center py-16 bg-slate-900 border border-slate-800 rounded-xl max-w-2xl mx-auto space-y-4">
+                                            <div className="w-16 h-16 bg-slate-950 rounded-full flex items-center justify-center mx-auto border border-slate-800">
+                                                <Users className="text-slate-600" size={32} />
+                                            </div>
+                                            <div className="space-y-1">
+                                                <h3 className="font-bold text-slate-300">Roster Requirements</h3>
+                                                <p className="text-sm text-slate-500 px-6">
+                                                    You need at least 2 characters in your story's cast to establish relationships and build the matrix. Add characters under the "Cast & Roster" tab first.
+                                                </p>
+                                            </div>
+                                            <button
+                                                onClick={() => setView('cast')}
+                                                className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-4 py-2 rounded-lg transition-colors border border-slate-700"
+                                            >
+                                                Go to Cast Roster
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="grid lg:grid-cols-3 gap-8">
+                                            {/* Matrix Grid Card (Left 2 cols) */}
+                                            <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl flex flex-col">
+                                                <div className="p-5 border-b border-slate-800 bg-slate-800/20">
+                                                    <h3 className="font-bold text-slate-200 flex items-center gap-2 text-sm uppercase tracking-wider">
+                                                        <Layers size={16} className="text-indigo-400" /> Directional Grid
+                                                    </h3>
+                                                </div>
+                                                <div className="p-6 overflow-x-auto custom-scrollbar">
+                                                    <table className="w-full border-collapse min-w-[500px]">
+                                                        <thead>
+                                                            <tr>
+                                                                <th className="p-3 text-[10px] font-bold text-slate-500 uppercase border-b border-slate-800 text-left bg-slate-950/30 w-32">
+                                                                    Source ➔ Target
+                                                                </th>
+                                                                {story.cast.map(c => (
+                                                                    <th key={c.name} className="p-3 text-[10px] font-bold text-slate-400 uppercase border-b border-slate-800 text-center bg-slate-950/20 max-w-[120px] truncate">
+                                                                        {c.name}
+                                                                    </th>
+                                                                ))}
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {story.cast.map(fromChar => (
+                                                                <tr key={fromChar.name} className="border-b border-slate-800/40 hover:bg-slate-950/10">
+                                                                    <td className="p-3 font-bold text-xs text-slate-300 bg-slate-950/30 border-r border-slate-850 truncate max-w-[120px]">
+                                                                        {fromChar.name}
+                                                                    </td>
+                                                                    {story.cast.map(toChar => {
+                                                                        const isSelf = fromChar.name === toChar.name;
+                                                                        const relKey = `${fromChar.name}->${toChar.name}`;
+                                                                        const rel = story.relationships?.[relKey];
+                                                                        
+                                                                        if (isSelf) {
+                                                                            return (
+                                                                                <td key={toChar.name} className="p-3 text-center bg-slate-950/50 text-[10px] text-slate-600 font-mono italic select-none">
+                                                                                    Self
+                                                                                </td>
+                                                                            );
+                                                                        }
+                                                                        
+                                                                        return (
+                                                                            <td 
+                                                                                key={toChar.name}
+                                                                                onClick={() => {
+                                                                                    setSelectedRel({
+                                                                                        from: fromChar.name,
+                                                                                        to: toChar.name,
+                                                                                        key: relKey,
+                                                                                        current: rel?.current || "",
+                                                                                        history: rel?.history || []
+                                                                                    });
+                                                                                }}
+                                                                                className={`p-3 text-center text-xs cursor-pointer transition-all hover:bg-indigo-950/20 active:scale-95 ${rel?.current ? 'text-indigo-200 bg-indigo-500/5 font-medium' : 'text-slate-600 hover:text-slate-300 italic'}`}
+                                                                                style={{ minWidth: '120px', maxWidth: '180px' }}
+                                                                            >
+                                                                                {rel?.current ? (
+                                                                                    <div className="flex flex-col items-center gap-1 group/cell">
+                                                                                        <span className="truncate max-w-[140px] text-[11px] block">{rel.current}</span>
+                                                                                        <Heart size={10} className="text-pink-500 fill-pink-500/20 opacity-40 group-hover/cell:opacity-100 transition-opacity" />
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    <span className="text-[10px] opacity-40">+ Set Arc</span>
+                                                                                )}
+                                                                            </td>
+                                                                        );
+                                                                    })}
+                                                                </tr>
+                                                            ))}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                                <div className="p-4 border-t border-slate-800 bg-slate-950/30 flex gap-4 text-[10px] text-slate-500">
+                                                    <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-indigo-500/10 border border-indigo-500/20 inline-block"></span> Established</div>
+                                                    <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-950/50 inline-block"></span> Not Defined</div>
+                                                    <div className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-slate-950/80 border border-slate-800 inline-block"></span> Diagonal (Self)</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Details & Evolution Panel (Right Col) */}
+                                            <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-xl flex flex-col">
+                                                <div className="p-5 border-b border-slate-800 bg-slate-800/20">
+                                                    <h3 className="font-bold text-slate-200 flex items-center gap-2 text-sm uppercase tracking-wider">
+                                                        <Activity size={16} className="text-indigo-400" /> Dynamics Inspector
+                                                    </h3>
+                                                </div>
+                                                
+                                                {!selectedRel ? (
+                                                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-500 italic space-y-3">
+                                                        <Heart size={24} className="text-slate-700 animate-pulse" />
+                                                        <p className="text-xs max-w-[200px]">Click any intersection cell in the matrix grid to inspect directional evolution.</p>
+                                                    </div>
+                                                ) : (
+                                                    <div className="p-6 space-y-6 flex-1 overflow-y-auto custom-scrollbar">
+                                                        <div className="bg-slate-950 p-4 rounded-lg border border-slate-800 space-y-3">
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-[10px] font-bold text-indigo-400 uppercase font-mono">Current Feeling</span>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        const val = prompt(`Update feeling for ${selectedRel.from} ➔ ${selectedRel.to}:`, selectedRel.current);
+                                                                        if (val === null) return;
+                                                                        
+                                                                        setStory(prev => {
+                                                                            const newRels = { ...(prev.relationships || {}) };
+                                                                            if (!newRels[selectedRel.key]) {
+                                                                                newRels[selectedRel.key] = { current: "", history: [] };
+                                                                            }
+                                                                            newRels[selectedRel.key].current = val;
+                                                                            newRels[selectedRel.key].history.push({
+                                                                                chapter: "Manual Edit",
+                                                                                change: `${val} (Edited manually)`
+                                                                            });
+                                                                            
+                                                                            // Update inspector local view state
+                                                                            setSelectedRel(prevSel => ({
+                                                                                ...prevSel,
+                                                                                current: val,
+                                                                                history: newRels[selectedRel.key].history
+                                                                            }));
+                                                                            
+                                                                            return { ...prev, relationships: newRels };
+                                                                        });
+                                                                    }}
+                                                                    className="text-[10px] bg-slate-850 hover:bg-slate-800 border border-slate-800 text-slate-300 font-bold px-2 py-1 rounded transition-colors"
+                                                                >
+                                                                    Edit Active
+                                                                </button>
+                                                            </div>
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="text-xs font-bold text-slate-300">{selectedRel.from}</div>
+                                                                <div className="text-xs text-indigo-400 font-mono">➔</div>
+                                                                <div className="text-xs font-bold text-slate-300">{selectedRel.to}</div>
+                                                            </div>
+                                                            <div className="text-sm font-serif italic text-slate-200 border-l-2 border-indigo-500 pl-3 py-1 bg-indigo-950/10 rounded-r">
+                                                                {selectedRel.current || "No current dynamic defined."}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-4">
+                                                            <div className="flex items-center justify-between border-b border-slate-850 pb-2">
+                                                                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                                    <History size={12} className="text-pink-400" /> Evolutionary History
+                                                                </h4>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        if (window.confirm("Clear all milestone logs for this relationship? Active value remains.")) {
+                                                                            setStory(prev => {
+                                                                                const newRels = { ...(prev.relationships || {}) };
+                                                                                if (newRels[selectedRel.key]) {
+                                                                                    newRels[selectedRel.key].history = [];
+                                                                                }
+                                                                                setSelectedRel(prevSel => ({
+                                                                                    ...prevSel,
+                                                                                    history: []
+                                                                                }));
+                                                                                return { ...prev, relationships: newRels };
+                                                                            });
+                                                                        }
+                                                                    }}
+                                                                    className="text-[9px] text-slate-500 hover:text-red-400 font-bold uppercase transition-colors"
+                                                                >
+                                                                    Reset Logs
+                                                                </button>
+                                                            </div>
+                                                            
+                                                            {selectedRel.history.length === 0 ? (
+                                                                <p className="text-xs text-slate-500 italic py-4">No historical milestones recorded yet.</p>
+                                                            ) : (
+                                                                <div className="relative border-l border-slate-800 ml-2.5 pl-4 space-y-6 py-2">
+                                                                    {selectedRel.history.map((hist, hIdx) => (
+                                                                        <div key={hIdx} className="relative">
+                                                                            {/* Timeline Bullet */}
+                                                                            <span className="absolute -left-[21.5px] top-1.5 w-2 h-2 rounded-full bg-slate-900 border-2 border-indigo-500"></span>
+                                                                            <div className="space-y-1">
+                                                                                <div className="text-[9px] font-mono font-bold text-slate-500 uppercase">{hist.chapter}</div>
+                                                                                <div className="text-xs text-slate-300 leading-relaxed font-serif">{hist.change}</div>
+
+                                                         {(() => {
+                                                             const upcoming = [];
+                                                             Object.keys(story.scenes || {}).forEach(actIdx => {
+                                                                 const scenes = story.scenes[actIdx] || [];
+                                                                 scenes.forEach(scene => {
+                                                                     if (scene.relationship_changes) {
+                                                                         scene.relationship_changes.forEach(ch => {
+                                                                             if (ch.from === selectedRel.from && ch.to === selectedRel.to) {
+                                                                                 upcoming.push({
+                                                                                     act: parseInt(actIdx) + 1,
+                                                                                     sceneNum: scene.number,
+                                                                                     sceneTitle: scene.title,
+                                                                                     feeling: ch.feeling,
+                                                                                     trigger: ch.trigger
+                                                                                 });
+                                                                             }
+                                                                         });
+                                                                     }
+                                                                 });
+                                                             });
+                                                             
+                                                             if (upcoming.length === 0) return null;
+                                                             
+                                                             return (
+                                                                 <div className="space-y-4 pt-4 border-t border-slate-850 mt-6 animate-fade-in">
+                                                                     <h4 className="text-[10px] font-bold text-pink-400 uppercase tracking-wider flex items-center gap-1.5">
+                                                                         <Sparkles size={12} className="text-pink-400" /> Upcoming Narrative Milestones
+                                                                     </h4>
+                                                                     <div className="space-y-3">
+                                                                         {upcoming.map((u, ui) => (
+                                                                             <div key={ui} className="bg-slate-950/60 p-3 rounded-lg border border-pink-900/20">
+                                                                                 <div className="flex justify-between items-center mb-1">
+                                                                                     <span className="text-[9px] font-bold text-slate-500 uppercase">Act {u.act}, Scene {u.sceneNum}</span>
+                                                                                     <span className="text-[10px] bg-pink-950/30 text-pink-300 px-2 py-0.5 rounded-full font-serif italic">{u.feeling}</span>
+                                                                                 </div>
+                                                                                 <div className="text-xs text-slate-300 font-medium mb-1">{u.sceneTitle}</div>
+                                                                                 <p className="text-[11px] text-slate-500 italic"><span className="font-bold text-slate-600 not-italic uppercase text-[9px] mr-1">Trigger:</span>{u.trigger}</p>
+                                                                             </div>
+                                                                         ))}
+                                                                     </div>
+                                                                 </div>
+                                                             );
+                                                         })()}
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             {view === 'structure' && (
                                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+                                    <div className="bg-slate-900/60 p-6 rounded-xl border border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4">
+                                        <div>
+                                            <h2 className="text-xl font-bold flex items-center gap-2"><Layers className="text-indigo-400" /> Book Structure & Outline</h2>
+                                            <p className="text-xs text-slate-400 mt-1">Manage act structures, weave chapters, and control continuous autonomous generation.</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setContinuousAutopilot(!continuousAutopilot)}
+                                            className={`px-5 py-2.5 rounded-full font-bold text-sm flex items-center gap-2 shadow-lg transition-all active:scale-95 border ${
+                                                continuousAutopilot
+                                                    ? 'bg-red-950/60 border-red-500/40 text-red-400 hover:bg-red-900/40'
+                                                    : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 border-transparent text-white'
+                                            }`}
+                                        >
+                                            {continuousAutopilot ? (
+                                                <>
+                                                    <Loader2 className="animate-spin text-red-400" size={16} />
+                                                    Stop Autopilot
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Zap size={16} className="fill-current text-purple-200" />
+                                                    Continuous Autopilot
+                                                </>
+                                            )}
+                                        </button>
+                                    </div>
                                     {story.acts.map((act, idx) => (
                                         <div key={idx} className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-                                            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/20 gap-4">
-                                                <div className="flex-1">
-                                                    <span className="text-xs font-bold text-slate-500 uppercase">Act {act.number}</span>
-                                                    <h3 className="text-xl font-bold flex flex-wrap items-center gap-3 text-wrap break-words">
-                                                        {act.title}
-                                                        <EditButton title={`Act ${act.number} Title`} value={act.title} onSave={() => openEditModal(`Act ${act.number} Title`, act.title, (val) => { const newActs = [...story.acts]; newActs[idx].title = val; setStory({ ...story, acts: newActs }); })} />
-                                                        <button onClick={() => requestSceneWeaving(idx)} disabled={loading} className="shrink-0 bg-indigo-600 px-3 py-1 rounded-full font-bold text-xs hover:bg-indigo-500 text-white shadow transition-all active:scale-95 flex items-center gap-1">
-                                                            <Sparkles size={12} fill="currentColor" /> {story.scenes[idx] ? 'Re-Weave' : 'Weave'}
-                                                        </button>
-                                                    </h3>
-                                                    <p className="text-sm text-slate-400 flex items-center gap-2 text-wrap break-words mt-1">
-                                                        {act.description}
-                                                        <EditButton title={`Act ${act.number} Description`} value={act.description} onSave={() => openEditModal(`Act ${act.number} Description`, act.description, (val) => { const newActs = [...story.acts]; newActs[idx].description = val; setStory({ ...story, acts: newActs }); })} />
-                                                    </p>
+                                            <div className="p-6 border-b border-slate-800 bg-slate-800/20">
+                                                <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-3">
+                                                    <div className="flex-1 min-w-0">
+                                                        <span className="text-xs font-bold text-slate-500 uppercase">Act {act.number}</span>
+                                                        <h3 className="text-xl font-bold flex items-center gap-2 text-wrap break-words">
+                                                            {act.title}
+                                                            <EditButton title={`Act ${act.number} Title`} value={act.title} onSave={() => openEditModal(`Act ${act.number} Title`, act.title, (val) => { const newActs = [...story.acts]; newActs[idx].title = val; setStory({ ...story, acts: newActs }); })} />
+                                                        </h3>
+                                                        <p className="text-sm text-slate-400 text-wrap break-words mt-1">
+                                                            {act.description}
+                                                            <EditButton title={`Act ${act.number} Description`} value={act.description} onSave={() => openEditModal(`Act ${act.number} Description`, act.description, (val) => { const newActs = [...story.acts]; newActs[idx].description = val; setStory({ ...story, acts: newActs }); })} />
+                                                        </p>
+                                                    </div>
+                                                    <button onClick={() => requestSceneWeaving(idx)} disabled={loading} className="shrink-0 bg-indigo-600 px-4 py-2 rounded-full font-bold text-xs hover:bg-indigo-500 text-white shadow transition-all active:scale-95 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed self-start">
+                                                        <Sparkles size={12} fill="currentColor" /> {story.scenes[idx] ? 'Re-Weave Scenes' : 'Weave Scenes'}
+                                                    </button>
                                                 </div>
                                             </div>
                                             {story.scenes[idx] && <div className="p-4 bg-slate-950/50 border-b border-slate-800 space-y-4">
@@ -3358,21 +4382,33 @@ Write ONLY the content for the CURRENT BEAT.
                                                 <ValenceGraph dataPoints={story.scenes[idx].map(s => s.valence)} />
                                             </div>}
                                             {story.scenes[idx] && <div className="divide-y divide-slate-800">{story.scenes[idx].map((s, si) => (
-                                                <div key={si} className="p-4 flex justify-between items-center hover:bg-slate-800/30 group">
-                                                    <div className="flex gap-4">
-                                                        <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500">{s.number}</div>
-                                                        <div>
-                                                            <h4 className="font-bold flex items-center gap-2">
-                                                                {s.title}
-                                                                <EditButton title={`Scene ${s.number} Title`} value={s.title} onSave={() => openEditModal(`Scene ${s.number} Title`, s.title, (val) => { const newScenes = { ...story.scenes }; newScenes[idx][si].title = val; setStory({ ...story, scenes: newScenes }); })} />
-                                                            </h4>
-                                                            <p className="text-sm text-slate-500 flex items-center gap-2">
-                                                                {s.description}
-                                                                <EditButton title={`Scene ${s.number} Description`} value={s.description} onSave={() => openEditModal(`Scene ${s.number} Description`, s.description, (val) => { const newScenes = { ...story.scenes }; newScenes[idx][si].description = val; setStory({ ...story, scenes: newScenes }); })} />
-                                                            </p>
+                                                <div key={si} className="p-4 hover:bg-slate-800/30 group">
+                                                    <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-3">
+                                                        <div className="flex gap-3 flex-1 min-w-0">
+                                                            <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-500 shrink-0">{s.number}</div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <h4 className="font-bold flex items-center gap-2">
+                                                                    {s.title}
+                                                                    <EditButton title={`Scene ${s.number} Title`} value={s.title} onSave={() => openEditModal(`Scene ${s.number} Title`, s.title, (val) => { const newScenes = { ...story.scenes }; newScenes[idx][si].title = val; setStory({ ...story, scenes: newScenes }); })} />
+                                                                </h4>
+                                                                <p className="text-sm text-slate-500">
+                                                                    {s.description}
+                                                                    <EditButton title={`Scene ${s.number} Description`} value={s.description} onSave={() => openEditModal(`Scene ${s.number} Description`, s.description, (val) => { const newScenes = { ...story.scenes }; newScenes[idx][si].description = val; setStory({ ...story, scenes: newScenes }); })} />
+                                                                </p>
+                                                                {s.relationship_changes && s.relationship_changes.length > 0 && (
+                                                                    <div className="mt-2 flex flex-wrap gap-2">
+                                                                        {s.relationship_changes.map((ch, chi) => (
+                                                                            <span key={chi} className="inline-flex items-center gap-1 text-[10px] bg-pink-950/40 text-pink-300 border border-pink-900/50 px-2 py-0.5 rounded-full" title={`Catalyst: ${ch.trigger}`}>
+                                                                                <Heart size={10} className="fill-pink-500/20 text-pink-400" />
+                                                                                {ch.from} ➔ {ch.to}: {ch.feeling}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         </div>
+                                                        <div className="flex items-center gap-3 self-end md:self-auto shrink-0"><ValenceBadge score={s.valence} /><button onClick={() => { setSelectedAct(idx); setSelectedScene(si); setView('writer'); }} className="text-indigo-400 md:opacity-0 md:group-hover:opacity-100 transition-opacity"><Edit3 size={18} /></button></div>
                                                     </div>
-                                                    <div className="flex items-center gap-3"><ValenceBadge score={s.valence} /><button onClick={() => { setSelectedAct(idx); setSelectedScene(si); setView('writer'); }} className="text-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity"><Edit3 size={18} /></button></div>
                                                 </div>
                                             ))}</div>}
                                         </div>
@@ -3382,23 +4418,48 @@ Write ONLY the content for the CURRENT BEAT.
 
                             {view === 'writer' && selectedAct !== null && selectedScene !== null && (
                                 <div className="max-w-6xl mx-auto space-y-8 animate-fade-in pb-32">
-                                    <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 flex justify-between items-start">
-                                        <div>
-                                            <button onClick={() => setView('structure')} className="text-xs text-slate-500 flex items-center gap-1 mb-2 hover:text-white"><ArrowLeft size={12} /> Back</button>
-                                            <div className="flex items-center gap-3 mb-2">
-                                                <h2 className="text-2xl font-bold">{story.scenes[selectedAct][selectedScene].title}</h2>
-                                                <EditButton title={`Scene Title`} value={story.scenes[selectedAct][selectedScene].title} onSave={() => openEditModal(`Scene Title`, story.scenes[selectedAct][selectedScene].title, (val) => { const newScenes = { ...story.scenes }; newScenes[selectedAct] = [...newScenes[selectedAct]]; newScenes[selectedAct][selectedScene] = { ...newScenes[selectedAct][selectedScene], title: val }; setStory({ ...story, scenes: newScenes }); })} />
-                                                <ValenceBadge score={story.scenes[selectedAct][selectedScene].valence} />
+                                    <div className="bg-slate-900 p-6 rounded-xl border border-slate-800">
+                                        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
+                                            <div className="flex-1 min-w-0">
+                                                <button onClick={() => setView('structure')} className="text-xs text-slate-500 flex items-center gap-1 mb-2 hover:text-white"><ArrowLeft size={12} /> Back</button>
+                                                <div className="flex flex-wrap items-center gap-3 mb-2">
+                                                    <h2 className="text-2xl font-bold">{story.scenes[selectedAct][selectedScene].title}</h2>
+                                                    <EditButton title={`Scene Title`} value={story.scenes[selectedAct][selectedScene].title} onSave={() => openEditModal(`Scene Title`, story.scenes[selectedAct][selectedScene].title, (val) => { const newScenes = { ...story.scenes }; newScenes[selectedAct] = [...newScenes[selectedAct]]; newScenes[selectedAct][selectedScene] = { ...newScenes[selectedAct][selectedScene], title: val }; setStory({ ...story, scenes: newScenes }); })} />
+                                                    <ValenceBadge score={story.scenes[selectedAct][selectedScene].valence} />
+                                                </div>
+                                                <p className="text-slate-400">{story.scenes[selectedAct][selectedScene].description}
+                                                    <EditButton title={`Scene Description`} value={story.scenes[selectedAct][selectedScene].description} onSave={() => openEditModal(`Scene Description`, story.scenes[selectedAct][selectedScene].description, (val) => { const newScenes = { ...story.scenes }; newScenes[selectedAct] = [...newScenes[selectedAct]]; newScenes[selectedAct][selectedScene] = { ...newScenes[selectedAct][selectedScene], description: val }; setStory({ ...story, scenes: newScenes }); })} />
+                                                </p>
+                                                {story.scenes[selectedAct][selectedScene].relationship_changes && story.scenes[selectedAct][selectedScene].relationship_changes.length > 0 && (
+                                                    <div className="mt-4 pt-4 border-t border-slate-800">
+                                                        <h4 className="text-[10px] font-bold text-pink-400 uppercase tracking-wider flex items-center gap-1.5 mb-2">
+                                                            <Heart size={12} className="fill-pink-500/20 text-pink-400" /> Planned Relationship Transformations
+                                                        </h4>
+                                                        <div className="grid sm:grid-cols-2 gap-3">
+                                                            {story.scenes[selectedAct][selectedScene].relationship_changes.map((ch, chi) => (
+                                                                <div key={chi} className="bg-slate-950/60 p-3 rounded-lg border border-pink-900/30 flex flex-col justify-between hover:border-pink-500/30 transition-colors">
+                                                                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <span className="text-xs font-bold text-slate-300">{ch.from}</span>
+                                                                            <span className="text-[10px] text-pink-400 font-mono">➔</span>
+                                                                            <span className="text-xs font-bold text-slate-300">{ch.to}</span>
+                                                                        </div>
+                                                                        <span className="text-[9px] bg-pink-950/30 border border-pink-900/40 text-pink-300 px-2 py-0.5 rounded-full font-serif italic">
+                                                                            {ch.feeling}
+                                                                        </span>
+                                                                    </div>
+                                                                    <p className="text-[11px] text-slate-500 italic"><span className="font-bold text-slate-600 not-italic uppercase text-[9px] mr-1">Catalyst:</span>{ch.trigger}</p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
-                                            <div className="flex items-start gap-2">
-                                                <p className="text-slate-400">{story.scenes[selectedAct][selectedScene].description}</p>
-                                                <EditButton title={`Scene Description`} value={story.scenes[selectedAct][selectedScene].description} onSave={() => openEditModal(`Scene Description`, story.scenes[selectedAct][selectedScene].description, (val) => { const newScenes = { ...story.scenes }; newScenes[selectedAct] = [...newScenes[selectedAct]]; newScenes[selectedAct][selectedScene] = { ...newScenes[selectedAct][selectedScene], description: val }; setStory({ ...story, scenes: newScenes }); })} />
+                                            <div className="flex flex-row md:flex-col gap-2 shrink-0 flex-wrap">
+                                                <button onClick={copyFullScene} className="bg-slate-800 p-2 rounded hover:bg-slate-700 transition-colors"><Copy size={18} /></button>
+                                                <button onClick={() => requestBeatGeneration(selectedAct, selectedScene)} disabled={loading} className="bg-emerald-600 px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><Sparkles size={16} /> {story.beats[`${selectedAct}-${selectedScene}`] ? 'Re-Do Beats' : 'Beats'}</button>
+                                                <button onClick={() => handleAutoGenerateScene(selectedAct, selectedScene)} disabled={loading} className="bg-purple-600 px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" title="Auto-write prose for all beats"><Zap size={16} /> Auto-Write</button>
                                             </div>
-                                        </div>
-                                        <div className="flex flex-col gap-2">
-                                            <button onClick={copyFullScene} className="bg-slate-800 p-2 rounded hover:bg-slate-700 transition-colors"><Copy size={18} /></button>
-                                            <button onClick={() => requestBeatGeneration(selectedAct, selectedScene)} disabled={loading} className="bg-emerald-600 px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2"><Sparkles size={16} /> {story.beats[`${selectedAct}-${selectedScene}`] ? 'Re-Do Beats' : 'Beats'}</button>
-                                            <button onClick={() => handleAutoGenerateScene(selectedAct, selectedScene)} disabled={loading} className="bg-purple-600 px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2" title="Auto-write prose for all beats"><Zap size={16} /> Auto-Write</button>
                                         </div>
                                     </div>
                                     <div className="space-y-12">
@@ -3408,10 +4469,17 @@ Write ONLY the content for the CURRENT BEAT.
                                             const isCollapsed = collapsedProse[bId] || false;
 
                                             return (
-                                                <div key={bi} className="flex flex-col xl:flex-row gap-8">
+                                                <React.Fragment key={bi}>
+                                                <div className="flex flex-col xl:flex-row gap-8">
                                                     <div className="xl:w-80 shrink-0">
                                                         <div className={`p-5 rounded-xl border transition-all ${prose ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-900 border-indigo-500/30'}`}>
-                                                            <div className="flex justify-between mb-2"><span className="text-xs font-bold text-indigo-400">BEAT {bi + 1}</span><ValenceBadge score={beat.valence} /></div>
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-xs font-bold text-indigo-400">BEAT {bi + 1}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <ValenceBadge score={beat.valence} />
+                                                    <button onClick={() => handleDeleteBeat(selectedAct, selectedScene, bi)} className="text-slate-600 hover:text-red-400 transition-colors p-0.5" title="Delete Beat"><Trash2 size={12} /></button>
+                                                </div>
+                                            </div>
                                                             <textarea
                                                                 className="w-full bg-slate-950 text-sm font-medium mb-4 p-2 rounded border border-transparent hover:border-slate-700 focus:border-indigo-500 outline-none resize-none transition-colors field-sizing-content"
                                                                 value={beat.description}
@@ -3436,7 +4504,7 @@ Write ONLY the content for the CURRENT BEAT.
                                                                                 audioCache[bId] ? <Play size={16} fill="currentColor" /> :
                                                                                     <Volume2 size={16} />}
                                                                     </button>
-                                                                    <button onClick={() => writeProse(selectedAct, selectedScene, bi)} className="flex-1 py-2 bg-slate-950 rounded text-indigo-400 border border-slate-800 hover:text-indigo-300 flex justify-center items-center"><RefreshCw size={16} /></button>
+                                                                    <button onClick={() => writeProse(selectedAct, selectedScene, bi)} disabled={loading} className="flex-1 py-2 bg-slate-950 rounded text-indigo-400 border border-slate-800 hover:text-indigo-300 flex justify-center items-center disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw size={16} /></button>
                                                                     <button onClick={() => toggleProse(bId)} className="flex-1 py-2 bg-slate-950 rounded text-slate-400 border border-slate-800 hover:text-slate-200 flex justify-center items-center">
                                                                         {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
                                                                     </button>
@@ -3464,6 +4532,13 @@ Write ONLY the content for the CURRENT BEAT.
                                                         ) : <div className="h-full border-l-2 border-slate-900/50 ml-6 pl-12 flex flex-col justify-center text-slate-800 italic text-xl select-none"><PenTool className="w-12 h-12 mb-4 opacity-10" /> Waiting...</div>}
                                                     </div>
                                                 </div>
+                                                {/* Add Beat Divider */}
+                                                <div className="flex items-center justify-center py-1">
+                                                    <div className="flex-1 border-t border-slate-800/50"></div>
+                                                    <button onClick={() => handleAddBeat(selectedAct, selectedScene, bi)} className="mx-3 p-1 rounded-full border border-dashed border-slate-700 text-slate-600 hover:text-indigo-400 hover:border-indigo-500 transition-colors" title="Insert beat here"><Plus size={14} /></button>
+                                                    <div className="flex-1 border-t border-slate-800/50"></div>
+                                                </div>
+                                                </React.Fragment>
                                             );
                                         })}
                                     </div>
@@ -3711,6 +4786,52 @@ Write ONLY the content for the CURRENT BEAT.
                                                 </div>
                                             </div>
                                         )}
+
+                                        {/* Dual Model: Prose Model */}
+                                        <div className="pt-4 border-t border-slate-800">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <label className="block text-xs font-bold text-slate-500 uppercase">Separate Prose Model</label>
+                                                <button
+                                                    onClick={() => setUseProseModel(!useProseModel)}
+                                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useProseModel ? 'bg-indigo-600' : 'bg-slate-700'}`}
+                                                >
+                                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useProseModel ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                </button>
+                                            </div>
+                                            <p className="text-xs text-slate-500 mb-3">Use a different model for prose generation (Drafter & Editor) vs. structure tasks (Architect, Scene Weaver, Beat Director).</p>
+                                            {useProseModel && (
+                                                <div className="animate-fade-in space-y-3">
+                                                    {apiProvider === 'gemini' && (
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-slate-500 mb-1">Prose Model (Gemini)</label>
+                                                            <div className="relative">
+                                                                <select
+                                                                    value={geminiProseModel}
+                                                                    onChange={(e) => setGeminiProseModel(e.target.value)}
+                                                                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none appearance-none transition-colors"
+                                                                >
+                                                                    <option value="">Same as Structure Model</option>
+                                                                    {geminiModelsList.map(m => <option key={m} value={m}>{m}</option>)}
+                                                                </select>
+                                                                <ChevronDown className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" size={14} />
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    {apiProvider === 'openrouter' && (
+                                                        <div>
+                                                            <label className="block text-xs font-bold text-slate-500 mb-1">Prose Model (OpenRouter)</label>
+                                                            <input
+                                                                type="text"
+                                                                value={openRouterProseModel}
+                                                                onChange={(e) => setOpenRouterProseModel(e.target.value)}
+                                                                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors"
+                                                                placeholder="e.g. anthropic/claude-sonnet-4"
+                                                            />
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             )}
