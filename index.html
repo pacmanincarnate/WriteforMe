@@ -221,6 +221,12 @@
         .animate-fade-in {
             animation: fadeIn 0.4s ease-out forwards;
         }
+
+        @media (max-aspect-ratio: 1/1) {
+            .overview-grid {
+                grid-template-columns: 1fr !important;
+            }
+        }
     </style>
 </head>
 
@@ -299,6 +305,7 @@
         const RotateCcw = (p) => <Icon name="rotate-ccw" {...p} />;
         const CheckCircle = (p) => <Icon name="check-circle" {...p} />;
         const Wand2 = (p) => <Icon name="wand-2" {...p} />;
+        const Image = (p) => <Icon name="image" {...p} />;
 
 
         /* ----------------------------------------------------------------------
@@ -1263,6 +1270,12 @@ Write the final, beautiful polished narrative prose here.
             // 5.2 Writing Review Agent (SMALL)
             writingReview: `You are a ruthless Booker Prize-level copy editor. Your task is to tear the generated prose apart. Assume the writing is bloated, generic, and uninspired unless you prove otherwise.
 
+CONTEXT ORIENTATION:
+You will receive three inputs:
+1. <current_beat_choreography> \u2014 the specific dramatic action this prose was tasked with executing.
+2. <previous_scene_prose> \u2014 all prose that has already been written and finalized for earlier beats in this scene. This represents the published narrative so far.
+3. <generated_prose> \u2014 the new prose under review.
+
 EVALUATION CRITERIA:
 1. Choreography Check: Did the prose text execute the action defined in the choreography?
 2. Quality Check: Did the prose "Tell" rather than "Show"? Is visceral-emotional-intellectual-action reaction order followed?
@@ -1280,15 +1293,41 @@ Perform a sentence-by-sentence analysis of style, showing vs telling, filter wor
 </deviation_reasons>
 </review>`,
 
+            // 5.3 Relaxed Writing Review Agent (SMALL)
+            writingReviewRelaxed: `You are a copy editor focusing exclusively on continuity and beat execution. Your task is to review the generated prose. Unlike standard reviews, you must ignore stylistic flaws, passive voice, showing vs telling, or minor voice discrepancies. You must ONLY fail the output if it violates physical or narrative continuity with the previous prose, or if it fails to execute and end the beat in the way intended by the choreography.
+
+CONTEXT ORIENTATION:
+You will receive three inputs:
+1. <current_beat_choreography> \u2014 the specific dramatic action this prose was tasked with executing.
+2. <previous_scene_prose> \u2014 all prose that has already been written and finalized for earlier beats in this scene. This represents the published narrative so far.
+3. <generated_prose> \u2014 the new prose under review.
+
+EVALUATION CRITERIA:
+1. Continuity Check: Does the generated prose contradict or break continuity with the events, locations, or status established in the previous prose?
+2. Beat Completion: Does the generated prose fail to execute the core action, outcome, and ending state intended by the current beat choreography?
+
+Output strict XML:
+<review>
+<critique_analysis>
+Perform a focused analysis checking only for continuity violations or failure to complete the beat. Ignore style, pacing, and vocabulary.
+</critique_analysis>
+<status>PASS or FAIL</status>
+<deviation_reasons>
+<reason>Explain the exact issue and how to fix it.</reason>
+</deviation_reasons>
+</review>`,
+
             // Retroactive State Injection (RSI) Command (LARGE)
             rsiPrompt: `You are a continuity repair agent. We need to retroactively inject a dormant state change (e.g. an item, fact, or secret) into past scene prose without altering the overall value shifts, emotional dynamic, or current plot outcomes of that scene.
 
-PROSE TO REWRITE:
+<prose_to_rewrite>
 {prose_text}
+</prose_to_rewrite>
 
-INJECTION MANDATE:
+<injection_mandate>
 Seamlessly insert the following detail: "{injection_detail}".
 Ensure this is done subtly (e.g. pocketing an item, glancing at a document, mentioning a fact). Do not change the scene's emotional climax or outcome.
+</injection_mandate>
 
 Output Schema:
 <prose_text>
@@ -1691,6 +1730,64 @@ Output Schema:
                     const tx = this.db.transaction('vectors', 'readwrite');
                     tx.objectStore('vectors').clear();
                     tx.oncomplete = () => resolve();
+                });
+            }
+        }
+
+        class ImageStore {
+            constructor(dbName = 'EllipsisImageStore') {
+                this.dbName = dbName;
+                this.db = null;
+                this.ready = this.init();
+            }
+
+            init() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, 1);
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains('images')) {
+                            db.createObjectStore('images', { keyPath: 'id' });
+                        }
+                    };
+                    request.onsuccess = (event) => {
+                        this.db = event.target.result;
+                        resolve();
+                    };
+                    request.onerror = (event) => reject(event.target.error);
+                });
+            }
+
+            async saveImage(id, dataUrl) {
+                await this.ready;
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction('images', 'readwrite');
+                    const store = tx.objectStore('images');
+                    store.put({ id, dataUrl, timestamp: Date.now() });
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+
+            async getImage(id) {
+                await this.ready;
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction('images', 'readonly');
+                    const store = tx.objectStore('images');
+                    const request = store.get(id);
+                    request.onsuccess = () => resolve(request.result ? request.result.dataUrl : null);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async deleteImage(id) {
+                await this.ready;
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction('images', 'readwrite');
+                    const store = tx.objectStore('images');
+                    store.delete(id);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
                 });
             }
         }
@@ -2143,7 +2240,7 @@ Output Schema:
                                 className="px-4 py-2 rounded-lg text-sm font-medium text-red-400 hover:bg-red-950/20 hover:text-red-300 border border-red-900/50 transition-colors flex items-center gap-2"
                             >
                                 <Trash2 size={16} />
-                                Abort & Rollback
+                                {tierName === "Writing Agent" ? "Use Last Draft & Flag Failed" : "Abort & Rollback"}
                             </button>
 
                             <div className="flex gap-3">
@@ -2162,6 +2259,41 @@ Output Schema:
                                     {showEditor ? "Save & Proceed" : "Proceed Anyway"}
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const CritiqueModal = ({ isOpen, beatNumber, critique, onClose }) => {
+            if (!isOpen) return null;
+
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-slate-900 border border-slate-700 w-full max-w-2xl rounded-xl shadow-2xl flex flex-col h-[70vh]">
+                        <div className="p-4 border-b border-slate-700 flex justify-between items-center bg-red-950/20 rounded-t-xl">
+                            <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                                <AlertTriangle size={18} className="text-red-400" />
+                                Reviewer Critique: Beat {beatNumber}
+                            </h3>
+                            <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+                        <div className="flex-1 p-6 overflow-y-auto space-y-4 text-slate-300">
+                            <div className="bg-slate-950 p-5 rounded-lg border border-slate-800/80 max-h-full overflow-y-auto w-full">
+                                <div className="prose prose-invert max-w-none font-sans text-sm leading-relaxed text-slate-300 whitespace-pre-wrap">
+                                    {critique}
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-4 border-t border-slate-700 bg-slate-800/50 rounded-b-xl flex justify-end">
+                            <button
+                                onClick={onClose}
+                                className="px-5 py-2 rounded-lg text-sm font-bold text-white bg-slate-800 hover:bg-slate-700 transition-colors"
+                            >
+                                Close
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2197,11 +2329,11 @@ Output Schema:
             { value: "zap", label: "Zap (Action)" },
             { value: "heart", label: "Heart (Romance)" },
             { value: "eye", label: "Eye (Suspense)" },
-            { value: "message-square", label: "Message Square (Sparring)" },
+            { value: "message-square", label: "Message Square (Dialogue)" },
             { value: "search", label: "Search (Mystery)" },
             { value: "globe", label: "Globe (Grand Scale)" },
             { value: "scroll", label: "Scroll (World Building)" },
-            { value: "smile", label: "Smile (Lighthearted)" },
+            { value: "smile", label: "Smile (Humor)" },
             { value: "layers", label: "Layers (Exposition)" },
             { value: "sparkles", label: "Sparkles (Revelation)" },
             { value: "help-circle", label: "Help Circle (Uncertainty)" },
@@ -2211,9 +2343,82 @@ Output Schema:
             { value: "shield", label: "Shield (Defense)" },
             { value: "flame", label: "Flame (Intensity)" },
             { value: "compass", label: "Compass (Journey)" },
-            { value: "clock", label: "Clock (Time / Pacing)" },
+            { value: "clock", label: "Clock (Pacing)" },
             { value: "key", label: "Key (Reveal)" },
-            { value: "feather", label: "Feather (Writing)" }
+            { value: "feather", label: "Feather (Writing)" },
+            { value: "award", label: "Award (Glory)" },
+            { value: "anchor", label: "Anchor (Stability)" },
+            { value: "aperture", label: "Aperture (Focus)" },
+            { value: "bell", label: "Bell (Alert)" },
+            { value: "bomb", label: "Bomb (Threat)" },
+            { value: "bone", label: "Bone (Death)" },
+            { value: "briefcase", label: "Briefcase (Business)" },
+            { value: "camera", label: "Camera (Visual)" },
+            { value: "castle", label: "Castle (Setting)" },
+            { value: "cloud", label: "Cloud (Atmosphere)" },
+            { value: "coffee", label: "Coffee (Cozy)" },
+            { value: "coins", label: "Coins (Wealth)" },
+            { value: "crown", label: "Crown (Royalty)" },
+            { value: "database", label: "Database (Lore)" },
+            { value: "droplet", label: "Droplet (Rain/Blood)" },
+            { value: "frown", label: "Frown (Sorrow)" },
+            { value: "fingerprint", label: "Fingerprint (Identity)" },
+            { value: "flower", label: "Flower (Beauty)" },
+            { value: "gavel", label: "Gavel (Law)" },
+            { value: "ghost", label: "Ghost (Horror)" },
+            { value: "gift", label: "Gift (Surprise)" },
+            { value: "hammer", label: "Hammer (Craft)" },
+            { value: "home", label: "Home (Domestic)" },
+            { value: "image", label: "Image (Art)" },
+            { value: "infinity", label: "Infinity (Cosmic)" },
+            { value: "life-buoy", label: "Life Buoy (Rescue)" },
+            { value: "link", label: "Link (Connection)" },
+            { value: "lock", label: "Lock (Secrecy)" },
+            { value: "magnet", label: "Magnet (Attraction)" },
+            { value: "map", label: "Map (Geography)" },
+            { value: "map-pin", label: "Map Pin (Location)" },
+            { value: "milestone", label: "Milestone (Progress)" },
+            { value: "moon", label: "Moon (Dreams)" },
+            { value: "mountain", label: "Mountain (Obstacle)" },
+            { value: "music", label: "Music (Sound)" },
+            { value: "package", label: "Package (Object)" },
+            { value: "palette", label: "Palette (Color)" },
+            { value: "pen-tool", label: "Pen Tool (Craft)" },
+            { value: "phone", label: "Phone (Call)" },
+            { value: "puzzle", label: "Puzzle (Conspiracy)" },
+            { value: "radio", label: "Radio (Signal)" },
+            { value: "scissors", label: "Scissors (Severance)" },
+            { value: "send", label: "Send (Message)" },
+            { value: "skull", label: "Skull (Fatality)" },
+            { value: "snowflake", label: "Snowflake (Cold)" },
+            { value: "sun", label: "Sun (Warmth)" },
+            { value: "target", label: "Target (Goal)" },
+            { value: "thumbs-up", label: "Thumbs Up (Approval)" },
+            { value: "trash-2", label: "Trash (Discard)" },
+            { value: "trophy", label: "Trophy (Success)" },
+            { value: "umbrella", label: "Umbrella (Protection)" },
+            { value: "volume-2", label: "Volume (Voice)" },
+            { value: "wind", label: "Wind (Speed)" },
+            { value: "wand", label: "Wand (Magic)" },
+            { value: "dribbble", label: "Dribbble (Leisure)" },
+            { value: "sprout", label: "Sprout (Growth)" },
+            { value: "activity", label: "Activity (Pulse)" },
+            { value: "battery", label: "Battery (Energy)" },
+            { value: "crosshair", label: "Crosshair (Precision)" }
+        ];
+
+        const DEFAULT_IMAGE_STYLES = [
+            { id: "none", name: "None (No added style)", description: "" },
+            { id: "dark_fantasy", name: "Dark Fantasy Oil Painting", description: "dark fantasy oil painting style, heavy impasto, rich textures, moody chiaroscuro lighting, deep shadows, detailed brushwork" },
+            { id: "cyberpunk", name: "Cyberpunk Neon Vector", description: "cyberpunk vector art style, clean lines, vibrant neon color palette, glowing accents, synthwave aesthetic, high contrast" },
+            { id: "ghibli", name: "Studio Ghibli Anime", description: "classic hand-drawn anime style, soft watercolor backgrounds, clean line art, warm emotional lighting, gentle nostalgic atmosphere" },
+            { id: "noir", name: "Cinematic Noir Photography", description: "high-contrast monochrome cinematic photography, film noir style, heavy shadows, wet streets, atmospheric fog, dramatic key lighting" },
+            { id: "watercolor", name: "Vintage Watercolor", description: "vintage watercolor illustration, soft pastel washes, delicate ink outlines, textured paper, whimsical and nostalgic feel" },
+            { id: "concept_art", name: "Epic Digital Concept Art", description: "epic fantasy digital concept art style, sweeping landscapes, volumetric lighting, highly detailed environment, dramatic scale and atmosphere" },
+            { id: "charcoal", name: "Pencil Sketch & Charcoal", description: "detailed pencil sketch and charcoal drawing, cross-hatching, realistic textures, artistic paper grain, high contrast sketch" },
+            { id: "pop_art", name: "Retro Comic Book Pop Art", description: "retro 1980s comic book style, bold outlines, halftone dot patterns, saturated primary colors, dynamic action lines" },
+            { id: "woodcut", name: "Mythological Woodcut Print", description: "traditional woodblock print style, bold black ink cuts, vintage paper texture, mythological illustration, stylized engravings" },
+            { id: "surrealism", name: "Surrealist Dreamscape", description: "surrealist painting style, dreamlike atmosphere, melting geometries, strange lighting, rich symbolic details, vivid colors" }
         ];
 
         /* ----------------------------------------------------------------------
@@ -2263,6 +2468,21 @@ Output Schema:
                 };
             });
 
+            // Image Store & States
+            const imageStore = useMemo(() => new ImageStore(), []);
+            const [imageProvider, setImageProvider] = useState(() => localStorage.getItem("ellipsisprose_image_provider") || 'gemini');
+            const [imageModel, setImageModel] = useState(() => localStorage.getItem("ellipsisprose_image_model") || 'imagen-3.0-generate-002');
+            const [imageApiKey, setImageApiKey] = useState(() => localStorage.getItem("ellipsisprose_image_api_key") || '');
+            const [customImageStyles, setCustomImageStyles] = useState(() => {
+                const saved = localStorage.getItem("ellipsisprose_custom_image_styles");
+                return saved ? JSON.parse(saved) : [];
+            });
+            const [loadedImages, setLoadedImages] = useState({});
+            const [loadingCover, setLoadingCover] = useState(false);
+            const [loadingImages, setLoadingImages] = useState({});
+            const [newStyleName, setNewStyleName] = useState("");
+            const [newStyleDesc, setNewStyleDesc] = useState("");
+
             // Settings State
             // Settings State
             const [apiProvider, setApiProvider] = useState(() => localStorage.getItem("ellipsisprose_api_provider") || 'gemini');
@@ -2291,6 +2511,7 @@ Output Schema:
             const [newModeContext, setNewModeContext] = useState("");
             const [newModePrompt, setNewModePrompt] = useState("");
             const [newModeIcon, setNewModeIcon] = useState("tag");
+            const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
 
             const allNarrativeModes = {
                 ...NARRATIVE_MODES,
@@ -2404,6 +2625,21 @@ Output Schema:
                 onResolve: null
             });
 
+            // Critique Modal State for failed beats
+            const [critiqueState, setCritiqueState] = useState({
+                isOpen: false,
+                beatNumber: null,
+                critique: ""
+            });
+
+            const openCritiqueModal = (beatNumber, critique) => {
+                setCritiqueState({
+                    isOpen: true,
+                    beatNumber,
+                    critique: critique || "No critique available."
+                });
+            };
+
             const openEditModal = (title, value, onConfirm) => {
                 setEditingState({
                     isOpen: true,
@@ -2418,13 +2654,11 @@ Output Schema:
             };
 
             // NEW: Distill Lore for large contexts
-
-            // NEW: Distill Lore for large contexts
             const distillLore = async (text) => {
                 setLoadingStep("Distilling World Primer...");
                 try {
                     const primer = await callAI(
-                        `Input Text Length: ${text.length} chars.\n\nText (First 50k chars):\n${text.substring(0, 50000)}...`,
+                        `<input_text_length>${text.length}</input_text_length>\n\n<text_content>${text.substring(0, 50000)}...</text_content>`,
                         PROMPTS.loreDistiller,
                         false, // Text output
                         "Lore Distiller"
@@ -2523,12 +2757,14 @@ Output Schema:
                 setLoadingStep(`RSI: Injecting [${item}] into Act ${openSlot.actIdx + 1}, Scene ${openSlot.sceneIdx + 1}, Beat ${openSlot.beatIdx + 1}...`);
 
                 const rsiUserPrompt = `
-PROSE TO REWRITE:
+<prose_to_rewrite>
 ${openSlot.prose}
+</prose_to_rewrite>
 
-INJECTION MANDATE:
+<injection_mandate>
 Seamlessly include an action where ${charName} acquires or pockets the item: "${item}".
 Do not change the scene's emotional climax, value shift, or overall outcome.
+</injection_mandate>
 `;
                 const rsiOutput = await callAI(rsiUserPrompt, PROMPTS.rsiPrompt, false, "RSI Injector", "large");
                 const newProse = extractTag(rsiOutput, 'prose_text') || rsiOutput;
@@ -2852,11 +3088,13 @@ Do not change the scene's emotional climax, value shift, or overall outcome.
                     };
                     
                     const prompt = `
-USER DIRECTIVE:
-"${directiveInput}"
+<user_directive>
+${directiveInput}
+</user_directive>
 
-CURRENT STORY STRUCTURE:
+<current_story_structure>
 ${JSON.stringify(structureOverview, null, 2)}
+</current_story_structure>
 `;
                     
                     const response = await callAI(prompt, PROMPTS.directivePlanner, false, "Directive Planner", "large");
@@ -2981,12 +3219,12 @@ ${JSON.stringify(structureOverview, null, 2)}
                     }
 
                     const genOutput = await callAI(userPrompt, systemPrompt, false, `${tierName} Generator`, currentModelSize);
+                    lastGenOutput = genOutput;
 
                     let parsedData;
                     try {
                         parsedData = parserFn(genOutput);
                         if (!parsedData) throw new Error("Parser returned null output.");
-                        lastGenOutput = genOutput;
                         lastParsedData = parsedData;
                     } catch (parseError) {
                         console.error(`XML Parser failed on ${tierName}:`, parseError);
@@ -3013,15 +3251,15 @@ Themes: ${story.themes}
 Lore: ${story.lore.map(l => `${l.topic}: ${l.detail}`).join('\n')}
 `;
                             const interviewPrompt = `
-World Bible:\n${worldBibleContext}
-Character Brief:\n<character_briefs>
+<world_bible>${worldBibleContext}</world_bible>
+<character_briefs>
 <char_id>${brief.id}</char_id>
 ${brief.name}
 <brief_role>${brief.role}</brief_role>
 <core_flaw>${brief.core_flaw}</core_flaw>
 <core_desire>${brief.core_desire}</core_desire>
 </character_briefs>
-Spawning Context:\n${spawningContext}
+<spawning_context>${spawningContext}</spawning_context>
 `;
                             const interviewOutput = await callAI(interviewPrompt, PROMPTS.characterDevelopment, false, `Character Developer (${brief.name})`, "large");
                             const interview = extractTag(interviewOutput, 'first_person_interview') || interviewOutput;
@@ -3046,7 +3284,12 @@ Spawning Context:\n${spawningContext}
 
                     setLoadingStep(`Reviewing ${tierName} output...`);
                     const reviewPrompt = reviewerPromptFn(genOutput);
-                    const reviewOutput = await callAI(reviewPrompt, reviewerSystemPrompt, false, `${tierName} Reviewer`, "small");
+                    let activeReviewerPrompt = reviewerSystemPrompt;
+                    if (tierName === "Writing Agent" && attempt === 4) {
+                        activeReviewerPrompt = PROMPTS.writingReviewRelaxed;
+                        showToast("Using relaxed Writing Review Agent for final attempt...", "info");
+                    }
+                    const reviewOutput = await callAI(reviewPrompt, activeReviewerPrompt, false, `${tierName} Reviewer`, "small");
 
                     const reviewStatus = extractTag(reviewOutput, 'status') || "FAIL";
                     const reasons = extractAllTags(reviewOutput, 'reason');
@@ -3093,6 +3336,11 @@ Spawning Context:\n${spawningContext}
                         showToast(`Autopilot: Proceeding with last valid ${tierName} despite validation warnings.`, 'warning');
                         return { genOutput: lastGenOutput, parsedData: lastParsedData };
                     } else {
+                        if (tierName === "Writing Agent") {
+                            showToast(`Writing Agent failed. Fallback: using last version of prose.`, 'warning');
+                            const fallbackProse = extractTag(lastGenOutput, 'prose_text') || lastGenOutput;
+                            return { genOutput: lastGenOutput, parsedData: { prose: fallbackProse }, failed: true, critique: lastCritique };
+                        }
                         showToast(`Escalation failed at ${tierName}. Triggering cascading deletion...`, 'error');
                         if (parentTierFailFn) {
                             await parentTierFailFn(deviationReasons);
@@ -3142,6 +3390,12 @@ Spawning Context:\n${spawningContext}
                                         reject(err);
                                     }
                                 } else {
+                                    if (tierName === "Writing Agent") {
+                                        showToast(`Writing Agent failed. Fallback: using last version of prose.`, 'warning');
+                                        const fallbackProse = extractTag(lastGenOutput, 'prose_text') || lastGenOutput;
+                                        resolve({ genOutput: lastGenOutput, parsedData: { prose: fallbackProse }, failed: true, critique: lastCritique });
+                                        return;
+                                    }
                                     showToast(`Cascading deletion triggered.`, 'error');
                                     if (parentTierFailFn) {
                                         await parentTierFailFn(deviationReasons);
@@ -3171,15 +3425,15 @@ Spawning Context:\n${spawningContext}
 
                 try {
                     // Inject Imported Lore into the Concept Prompt
-                    let finalPrompt = `Concept: ${conceptToUse}`;
+                    let finalPrompt = `<concept>${conceptToUse}</concept>`;
                     if (worldPrimer) {
-                        finalPrompt += `\n\nWORLD PRIMER / CORE RULES:\n${worldPrimer}`;
+                        finalPrompt += `\n\n<world_primer>${worldPrimer}</world_primer>`;
                         const relevantChunks = await retrieveContext(`Concept: ${conceptToUse} Themes and Tone`, 0.6);
                         if (relevantChunks.length > 0) {
-                            finalPrompt += `\n\nRELEVANT LORE DETAILS:\n${relevantChunks.map(c => c.text).join('\n')}`;
+                            finalPrompt += `\n\n<relevant_lore>${relevantChunks.map(c => c.text).join('\n')}</relevant_lore>`;
                         }
                     } else if (importedLoreText && importedLoreText.trim().length > 0) {
-                        finalPrompt += `\n\nEXISTING WORLD LORE / AUTHOR NOTES:\n${importedLoreText}`;
+                        finalPrompt += `\n\n<author_lore_notes>${importedLoreText}</author_lore_notes>`;
                     }
 
                     // TIER 0.1: Conceptual Development
@@ -3202,8 +3456,7 @@ Spawning Context:\n${spawningContext}
                         setLoadingStep(`Interviewing starting cast: ${char.name}...`);
                         
                         const interviewPrompt = `
-World Bible: ${worldBible}
-Character Brief:
+<world_bible>${worldBible}</world_bible>
 <character_briefs>
 <char_id>${char.id}</char_id>
 ${char.name}
@@ -3282,19 +3535,31 @@ ${char.name}
                         tierName: "Story Arc Agent",
                         isAutopilot,
                         generatorPromptFn: () => `
-World Bible: ${worldBible}
-Genre: ${genre}
-Style: ${styleDesc}
-Tone & Atmosphere: ${toneAtmosphere}
-Cast List:
-${startingCast.map(c => `- **${c.name}** (${c.role}): Flaw: ${c.core_flaw}, Desire: ${c.core_desire}`).join('\n')}
+<world_bible>
+${worldBible}
+</world_bible>
+<genre>
+${genre}
+</genre>
+<style>
+${styleDesc}
+</style>
+<tone_and_atmosphere>
+${toneAtmosphere}
+</tone_and_atmosphere>
+<cast_list>
+${startingCast.map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw}, Desire: ${c.core_desire}`).join('\n')}
+</cast_list>
 `,
                         systemPrompt: PROMPTS.storyArc,
                         reviewerSystemPrompt: PROMPTS.arcReview,
                         reviewerPromptFn: (genOutput) => `
-User Concept: ${conceptToUse}
-Generated Story Arc:
+<user_concept>
+${conceptToUse}
+</user_concept>
+<generated_story_arc>
 ${genOutput}
+</generated_story_arc>
 `,
                         parserFn: (text) => {
                             const globalArcBlock = extractTag(text, 'global_arc');
@@ -3336,23 +3601,29 @@ ${genOutput}
                         tierName: "Act Agent",
                         isAutopilot,
                         generatorPromptFn: () => `
-Story Arc:
-Starting Value: ${arcResult.parsedData.starting_value_state}
-Ending Value: ${arcResult.parsedData.ending_value_state}
-Twists & Surprises: ${arcResult.parsedData.major_surprises_and_twists}
+<story_arc>
+<starting_value>${arcResult.parsedData.starting_value_state}</starting_value>
+<ending_value>${arcResult.parsedData.ending_value_state}</ending_value>
+<twists_and_surprises>${arcResult.parsedData.major_surprises_and_twists}</twists_and_surprises>
+</story_arc>
 
-Narrative Threads:
-${(initialStoryState.threads || []).map(t => `- **${t.id}**: ${t.name} - ${t.description}`).join('\n')}
+<narrative_threads>
+${(initialStoryState.threads || []).map(t => `<thread><thread_id>${t.id}</thread_id><name>${t.name}</name><description>${t.description}</description></thread>`).join('\n')}
+</narrative_threads>
 
-Cast List:
-${story.cast.map(c => `- **${c.name}** (${c.role})`).join('\n')}
+<cast_list>
+${story.cast.map(c => `- ${c.name} (${c.role})`).join('\n')}
+</cast_list>
 `,
                         systemPrompt: PROMPTS.actAgent,
                         reviewerSystemPrompt: PROMPTS.actReview,
                         reviewerPromptFn: (genOutput) => `
-Story Arc: ${arcResult.parsedData.major_surprises_and_twists}
-Generated Acts:
+<story_arc_twists_and_surprises>
+${arcResult.parsedData.major_surprises_and_twists}
+</story_arc_twists_and_surprises>
+<generated_acts>
 ${genOutput}
+</generated_acts>
 `,
                         parserFn: (text) => {
                             const actBlocks = extractAllTags(text, 'act');
@@ -3586,7 +3857,69 @@ ${genOutput}
                 else localStorage.removeItem("ellipsisprose_selectedScene");
             }, [selectedScene]);
 
+            // Image Persistence Effects
+            useEffect(() => { localStorage.setItem("ellipsisprose_image_provider", imageProvider); }, [imageProvider]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_image_model", imageModel); }, [imageModel]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_image_api_key", imageApiKey); }, [imageApiKey]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_custom_image_styles", JSON.stringify(customImageStyles)); }, [customImageStyles]);
 
+            // Ensure story has a unique ID
+            useEffect(() => {
+                if (story && !story.id) {
+                    setStory(prev => {
+                        if (prev && prev.id) return prev;
+                        return {
+                            ...prev,
+                            id: `story_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
+                        };
+                    });
+                }
+            }, [story]);
+
+            // Load Cover Image from IndexedDB
+            useEffect(() => {
+                if (story && story.id) {
+                    imageStore.getImage(`cover_${story.id}`).then(dataUrl => {
+                        setLoadedImages(prev => ({ ...prev, cover: dataUrl }));
+                    }).catch(err => console.error("Error loading cover image:", err));
+                } else {
+                    setLoadedImages(prev => {
+                        const copy = { ...prev };
+                        delete copy.cover;
+                        return copy;
+                    });
+                }
+            }, [story?.id]);
+
+            // Load Beat Images for the active scene from IndexedDB
+            const activeBeatsLength = story?.beats?.[`${selectedAct}-${selectedScene}`]?.length || 0;
+            useEffect(() => {
+                if (story && story.id && selectedAct !== null && selectedScene !== null) {
+                    const beats = story.beats[`${selectedAct}-${selectedScene}`] || [];
+                    const sId = `${selectedAct}-${selectedScene}`;
+                    
+                    const promises = beats.map((_, bi) => {
+                        const imgKey = `beat_${story.id}_${sId}_${bi}`;
+                        return imageStore.getImage(imgKey).then(dataUrl => ({ idx: bi, dataUrl }));
+                    });
+                    
+                    Promise.all(promises).then(results => {
+                        const newLoaded = {};
+                        results.forEach(({ idx, dataUrl }) => {
+                            if (dataUrl) {
+                                newLoaded[`${sId}-${idx}`] = dataUrl;
+                            }
+                        });
+                        setLoadedImages(prev => {
+                            const cleared = { cover: prev.cover };
+                            Object.keys(newLoaded).forEach(key => {
+                                cleared[key] = newLoaded[key];
+                            });
+                            return cleared;
+                        });
+                    }).catch(err => console.error("Error loading beat images:", err));
+                }
+            }, [story?.id, selectedAct, selectedScene, activeBeatsLength]);
 
             const handlePlayTTS = async (id, text) => {
                 // 1. If currently playing THIS track, stop it
@@ -3642,13 +3975,16 @@ ${genOutput}
                 try {
                     const currentLoreList = story.lore.map(l => l.topic).join(', ');
                     const promptText = `
-current_world_bible:
+<current_world_bible>
 ${story.status_quo}
-Current Lore Topics:
+</current_world_bible>
+<current_lore_topics>
 ${currentLoreList}
+</current_lore_topics>
 
-newly_generated_payload:
+<newly_generated_payload>
 ${payload}
+</newly_generated_payload>
 `;
                     const extractionOutput = await callAI(promptText, PROMPTS.loreExtraction, false, "Lore Extraction Agent", "small");
                     if (extractionOutput && !extractionOutput.includes("<extracted_lore>NONE</extracted_lore>")) {
@@ -3884,6 +4220,225 @@ ${payload}
                 showToast(`Custom mode ${modeId} deleted.`, 'info');
             };
 
+            const callImageAPI = async (prompt, aspectRatio = "1:1") => {
+                const prov = imageProvider;
+                const model = imageModel;
+                const key = imageApiKey || (prov === 'gemini' ? apiKey : openRouterKey);
+
+                if (!key) {
+                    throw new Error(`API key for provider "${prov}" is not configured. Please check your settings.`);
+                }
+
+                if (prov === 'gemini') {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateImages?key=${key}`;
+                    const payload = {
+                        prompt: prompt,
+                        numberOfImages: 1,
+                        outputMimeType: "image/jpeg",
+                        aspectRatio: aspectRatio
+                    };
+                    
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`Gemini Image API failed: ${response.status} - ${errText}`);
+                    }
+                    
+                    const data = await response.json();
+                    const b64 = data.generatedImages?.[0]?.image?.imageBytes;
+                    if (!b64) {
+                        throw new Error(`No image returned from Gemini Imagen API. Response: ${JSON.stringify(data)}`);
+                    }
+                    return `data:image/jpeg;base64,${b64}`;
+                } else if (prov === 'openrouter') {
+                    const url = `https://openrouter.ai/api/v1/chat/completions`;
+                    const payload = {
+                        model: model,
+                        messages: [
+                            { role: "user", content: prompt }
+                        ],
+                        modalities: ["image"]
+                    };
+                    
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${key}`,
+                            'HTTP-Referer': window.location.href,
+                            'X-Title': 'EllipsisProse'
+                        },
+                        body: JSON.stringify(payload)
+                    });
+                    
+                    if (!response.ok) {
+                        const errText = await response.text();
+                        throw new Error(`OpenRouter Image API failed: ${response.status} - ${errText}`);
+                    }
+                    
+                    const data = await response.json();
+                    const choice = data.choices?.[0];
+                    const msg = choice?.message;
+                    const images = msg?.images;
+                    const imgObj = images?.[0];
+                    const imgUrl = imgObj?.image_url?.url || imgObj?.url;
+                    
+                    if (!imgUrl) {
+                        throw new Error(`No image URL returned from OpenRouter. Response: ${JSON.stringify(data)}`);
+                    }
+                    
+                    if (imgUrl.startsWith("data:")) {
+                        return imgUrl;
+                    }
+                    
+                    const imgResponse = await fetch(imgUrl);
+                    if (!imgResponse.ok) {
+                        throw new Error(`Failed to fetch image from URL returned by OpenRouter: ${imgResponse.statusText}`);
+                    }
+                    const blob = await imgResponse.blob();
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onloadend = () => resolve(reader.result);
+                        reader.onerror = reject;
+                        reader.readAsDataURL(blob);
+                    });
+                } else {
+                    throw new Error(`Unsupported Image Provider: ${prov}`);
+                }
+            };
+
+            const generateCoverImage = async () => {
+                if (loadingCover) return;
+                setLoadingCover(true);
+                try {
+                    const sysPrompt = `You are an expert graphic designer and book cover artist. Your task is to design a distinctive, professional book cover design concept.
+You will take a novel's title, concept, status quo, inciting incident, and genre, and create a single highly detailed and symbolic image generation prompt for a book cover.
+Focus on composition, central imagery, symbolic representations of the themes, lighting, and mood. The cover image should be designed for a vertical format.
+Do not ask the image generator to print text on the cover (like the title or author name) to avoid scrambled AI text. Focus on the artwork itself.
+Output ONLY the raw image generation prompt itself. Do not include any intros or explanations.`;
+                    
+                    const userPrompt = `NOVEL INFORMATION:
+Title: ${story.title || "Untitled Novel"}
+Genre: ${story.style?.genre || "Not specified"}
+Concept: ${story.concept || "Not specified"}
+Status Quo: ${story.status_quo || "Not specified"}
+Inciting Incident: ${story.inciting_incident || "Not specified"}
+
+Please write a highly detailed and symbolic cover art image generation prompt. It must be optimized for a vertical aspect ratio. Describe the scene, layout, central motif, atmospheric colors, lighting, and symbolic imagery. Return ONLY the prompt text.`;
+
+                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Cover Image Prompt Agent", "small");
+                    
+                    const selectedStyleId = story.imageStyle || 'none';
+                    const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
+                    const styleObj = combinedStyles.find(s => s.id === selectedStyleId);
+                    const styleDescription = styleObj ? styleObj.description : "";
+                    const finalPrompt = promptBase.trim() + (styleDescription ? ", " + styleDescription : "");
+
+                    const dataUrl = await callImageAPI(finalPrompt, "3:4");
+                    await imageStore.saveImage(`cover_${story.id}`, dataUrl);
+                    setLoadedImages(prev => ({ ...prev, cover: dataUrl }));
+                    showToast("Cover image generated successfully!");
+                } catch (err) {
+                    console.error(err);
+                    alert("Cover Image Generation failed: " + err.message);
+                } finally {
+                    setLoadingCover(false);
+                }
+            };
+
+            const deleteCoverImage = async () => {
+                if (!window.confirm("Are you sure you want to remove the cover image?")) return;
+                try {
+                    await imageStore.deleteImage(`cover_${story.id}`);
+                    setLoadedImages(prev => {
+                        const copy = { ...prev };
+                        delete copy.cover;
+                        return copy;
+                    });
+                    showToast("Cover image removed.");
+                } catch (err) {
+                    console.error(err);
+                    alert("Failed to delete cover image: " + err.message);
+                }
+            };
+
+            const generateBeatImage = async (actIdx, sceneIdx, beatIdx) => {
+                const sId = `${actIdx}-${sceneIdx}`;
+                const bId = `${sId}-${beatIdx}`;
+                
+                setLoadingImages(prev => ({ ...prev, [bId]: true }));
+                try {
+                    const scene = story.scenes[actIdx][sceneIdx];
+                    const beats = story.beats[sId] || [];
+                    const beat = beats[beatIdx];
+                    if (!beat) throw new Error("Beat not found.");
+
+                    const sceneCast = (scene.cast_ids || []).map(id => story.cast.find(c => c.id === id)).filter(Boolean);
+                    const castInfo = sceneCast.map(c => `- ${c.name}: ${c.role || 'No role details'}. Core Desire: ${c.core_desire || 'Unknown'}. Core Flaw: ${c.core_flaw || 'Unknown'}.`).join('\n');
+
+                    const sysPrompt = `You are a visual design agent. Your task is to take a narrative beat description and details about the characters present in the scene, and create a highly detailed, evocative, and specific image generation prompt.
+Focus on describing the visual scene: composition, characters (appearance, clothing, expression, posture), setting, lighting, and mood.
+Do not use buzzwords like "photorealistic", "ultra realistic", "8k", etc. Instead, write descriptive sentences that imply high quality and style.
+Avoid long-winded meta-explanations. Output ONLY the raw image generation prompt itself. Do not include any intro or wrap in JSON.`;
+
+                    const userPrompt = `SCENE CONTEXT:
+Title: ${scene.title}
+Description: ${scene.description}
+
+CHARACTERS PRESENT IN SCENE:
+${castInfo}
+
+NARRATIVE BEAT TO VISUALIZE:
+Description: ${beat.description}
+Emotional Subtext: ${beat.emotional_shift || 'None'}
+
+Please write a highly descriptive and specific image generation prompt focusing on the visual elements of this beat. Make it a single paragraph, rich in sensory details, character details, composition, and lighting. Do not include style-specific instructions, as a style will be appended later. Return ONLY the description.`;
+
+                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Beat Image Prompt Agent", "small");
+                    
+                    const selectedStyleId = story.imageStyle || 'none';
+                    const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
+                    const styleObj = combinedStyles.find(s => s.id === selectedStyleId);
+                    const styleDescription = styleObj ? styleObj.description : "";
+                    const finalPrompt = promptBase.trim() + (styleDescription ? ", " + styleDescription : "");
+
+                    const dataUrl = await callImageAPI(finalPrompt, "1:1");
+                    await imageStore.saveImage(`beat_${story.id}_${sId}_${beatIdx}`, dataUrl);
+                    setLoadedImages(prev => ({ ...prev, [bId]: dataUrl }));
+                    showToast(`Beat ${beatIdx + 1} image generated successfully!`);
+                } catch (err) {
+                    console.error(err);
+                    alert(`Beat Image Generation failed: ` + err.message);
+                } finally {
+                    setLoadingImages(prev => ({ ...prev, [bId]: false }));
+                }
+            };
+
+            const deleteBeatImage = async (actIdx, sceneIdx, beatIdx) => {
+                if (!window.confirm(`Are you sure you want to remove the image for Beat ${beatIdx + 1}?`)) return;
+                const sId = `${actIdx}-${sceneIdx}`;
+                const bId = `${sId}-${beatIdx}`;
+                try {
+                    await imageStore.deleteImage(`beat_${story.id}_${sId}_${beatIdx}`);
+                    setLoadedImages(prev => {
+                        const copy = { ...prev };
+                        delete copy[bId];
+                        return copy;
+                    });
+                    showToast(`Beat ${beatIdx + 1} image removed.`);
+                } catch (err) {
+                    console.error(err);
+                    alert("Failed to delete beat image: " + err.message);
+                }
+            };
+
             const handleExport = () => {
                 try {
                     const jsonString = JSON.stringify(story, null, 2);
@@ -3910,6 +4465,52 @@ ${payload}
                     const cleanTitle = story.title ? story.title : "My Story";
                     const safeFilename = cleanTitle.replace(/[^a-zA-Z0-9]/g, "_");
 
+                    // Helpers to parse data URLs
+                    const dataURLtoBlob = (dataurl) => {
+                        let arr = dataurl.split(','), mime = arr[0].match(/:(.*?);/)[1],
+                            bstr = atob(arr[1]), n = bstr.length, u8arr = new Uint8Array(n);
+                        while(n--){
+                            u8arr[n] = bstr.charCodeAt(n);
+                        }
+                        return new Blob([u8arr], {type:mime});
+                    };
+
+                    const getMimeAndExt = (dataurl) => {
+                        const mime = dataurl.split(',')[0].match(/:(.*?);/)[1];
+                        const ext = mime.split('/')[1] === 'jpeg' ? 'jpg' : mime.split('/')[1];
+                        return { mime, ext };
+                    };
+
+                    // Fetch all image keys for this story from IndexedDB
+                    const imagesMap = {};
+                    if (story.id) {
+                        // 1. Cover
+                        const coverData = await imageStore.getImage(`cover_${story.id}`);
+                        if (coverData) {
+                            imagesMap.cover = coverData;
+                        }
+
+                        // 2. Beats
+                        const imagePromises = [];
+                        story.acts.forEach((act, actIdx) => {
+                            const actScenes = story.scenes[actIdx] || [];
+                            actScenes.forEach((scene, sceneIdx) => {
+                                const sId = `${actIdx}-${sceneIdx}`;
+                                const beats = story.beats[sId] || [];
+                                beats.forEach((_, bi) => {
+                                    const imgKey = `beat_${story.id}_${sId}_${bi}`;
+                                    const promise = imageStore.getImage(imgKey).then(dataUrl => {
+                                        if (dataUrl) {
+                                            imagesMap[imgKey] = dataUrl;
+                                        }
+                                    });
+                                    imagePromises.push(promise);
+                                });
+                            });
+                        });
+                        await Promise.all(imagePromises);
+                    }
+
                     // 1. Mimetype (must be first, no compression)
                     zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
 
@@ -3923,6 +4524,7 @@ ${payload}
 
                     const oebps = zip.folder("OEBPS");
                     const textFolder = oebps.folder("Text");
+                    const imagesFolder = oebps.folder("Images");
 
                     let manifestItems = [];
                     let spineItems = [];
@@ -3931,6 +4533,44 @@ ${payload}
 
                     // Helper for valid IDs
                     const cleanId = (str) => str.replace(/[^a-zA-Z0-9]/g, "_");
+
+                    // 2.1 Cover image (if exists)
+                    let coverImgFilename = "";
+                    let coverMime = "";
+                    if (imagesMap.cover) {
+                        const { mime, ext } = getMimeAndExt(imagesMap.cover);
+                        coverMime = mime;
+                        coverImgFilename = `cover.${ext}`;
+                        const coverBlob = dataURLtoBlob(imagesMap.cover);
+                        imagesFolder.file(coverImgFilename, coverBlob);
+                        
+                        manifestItems.push(`<item id="cover-image" href="Images/${coverImgFilename}" media-type="${coverMime}"/>`);
+                        
+                        // Add cover page XHTML
+                        const coverFilename = "Cover.xhtml";
+                        const coverHtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Cover</title>
+<style>
+  body { margin: 0; padding: 0; text-align: center; background-color: #000000; }
+  div { margin: 0; padding: 0; height: 100%; display: flex; align-items: center; justify-content: center; }
+  img { max-width: 100%; max-height: 100%; object-fit: contain; }
+</style>
+</head>
+<body>
+<div>
+  <img src="Images/${coverImgFilename}" alt="Cover" />
+</div>
+</body>
+</html>`;
+                        textFolder.file(coverFilename, coverHtml);
+                        manifestItems.push(`<item id="coverpage" href="Text/${coverFilename}" media-type="application/xhtml+xml"/>`);
+                        spineItems.push(`<itemref idref="coverpage"/>`);
+                        tocPoints.push(`<navPoint id="navPoint-${playOrder}" playOrder="${playOrder}"><navLabel><text>Cover</text></navLabel><content src="Text/${coverFilename}"/></navPoint>`);
+                        playOrder++;
+                    }
 
                     // 3. Title Page
                     const titleFilename = "Title.xhtml";
@@ -3948,7 +4588,8 @@ ${payload}
                     textFolder.file(titleFilename, titleHtml);
                     manifestItems.push(`<item id="titlepage" href="Text/${titleFilename}" media-type="application/xhtml+xml"/>`);
                     spineItems.push(`<itemref idref="titlepage"/>`);
-                    tocPoints.push(`<navPoint id="navPoint-0" playOrder="0"><navLabel><text>Title Page</text></navLabel><content src="Text/${titleFilename}"/></navPoint>`);
+                    tocPoints.push(`<navPoint id="navPoint-${playOrder}" playOrder="${playOrder}"><navLabel><text>Title Page</text></navLabel><content src="Text/${titleFilename}"/></navPoint>`);
+                    playOrder++;
 
                     // 4. Content (Acts and Scenes)
                     story.acts.forEach((act, actIdx) => {
@@ -3998,6 +4639,26 @@ ${payload}
                                 const prose = story.prose[`${sId}-${bi}`];
                                 if (prose && prose.final) {
                                     let html = parseMarkdown(prose.final);
+                                    
+                                    // Check if this beat has an image
+                                    const imgKey = `beat_${story.id}_${sId}_${bi}`;
+                                    const imgData = imagesMap[imgKey];
+                                    if (imgData) {
+                                        const { mime: imgMime, ext: imgExt } = getMimeAndExt(imgData);
+                                        const imgFilename = `beat_${actIdx}_${sceneIdx}_${bi}.${imgExt}`;
+                                        const imgId = `img_${actIdx}_${sceneIdx}_${bi}`;
+                                        
+                                        // Write to Images folder in zip
+                                        const imgBlob = dataURLtoBlob(imgData);
+                                        imagesFolder.file(imgFilename, imgBlob);
+                                        
+                                        // Add to manifest
+                                        manifestItems.push(`<item id="${imgId}" href="Images/${imgFilename}" media-type="${imgMime}"/>`);
+                                        
+                                        // Append image to HTML body (centered, with margin)
+                                        sceneBody += `\n<div style="text-align: center; margin: 1.5em 0;"><img src="../Images/${imgFilename}" style="max-width: 100%; height: auto; border-radius: 4px;" alt="Beat Image" /></div>\n`;
+                                    }
+
                                     sceneBody += `\n<div class="beat">\n${html}\n</div>\n<hr style="border: 0; border-top: 1px solid #ccc; margin: 2em auto; width: 50%;" />\n`;
                                 }
                             });
@@ -4059,13 +4720,20 @@ ${sceneBody}
                     oebps.file("toc.ncx", ncx);
 
                     // 6. OPF
-                    const opf = `<?xml version="1.0" encoding="utf-8"?>
-<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">
-   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+                    let opfMetadata = `
       <dc:title>${story.title ? story.title.replace(/&/g, "&amp;") : "Untitled Story"}</dc:title>
       <dc:creator opf:role="aut">EllipsisProse User</dc:creator>
       <dc:language>en</dc:language>
       <dc:identifier id="BookId" opf:scheme="UUID">urn:uuid:12345</dc:identifier>
+`;
+                    if (imagesMap.cover) {
+                        opfMetadata += `      <meta name="cover" content="cover-image"/>\n`;
+                    }
+
+                    const opf = `<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="BookId" version="2.0">
+   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:opf="http://www.idpf.org/2007/opf">
+      ${opfMetadata}
    </metadata>
    <manifest>
       <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
@@ -4250,8 +4918,7 @@ ${sceneBody}
 
             const generateCharacterProfile = async (charName, charRole, context, storyContext) => {
                 const contextBlock = `
-World Bible: ${storyContext?.concept || ""}
-Character Brief:
+<world_bible>${storyContext?.concept || ""}</world_bible>
 <character_briefs>
 <char_id>C_${charName.replace(/\s+/g, '_')}</char_id>
 ${charName}
@@ -4260,7 +4927,7 @@ ${charName}
 <core_desire>${context}</core_desire>
 </character_briefs>
 `;
-                const prompt = `${contextBlock}\n\nProvide the first-person interview for ${charName}.`;
+                const prompt = `${contextBlock}\n\n<instruction>Provide the first-person interview for ${charName}.</instruction>`;
                 const interviewOutput = await callAI(prompt, PROMPTS.characterDevelopment, false, "Character Developer (Tier 0.2)", "large");
                 return extractTag(interviewOutput, 'first_person_interview') || interviewOutput;
             };
@@ -4430,30 +5097,47 @@ ${charName}
                         tierName: "Scene Agent",
                         isAutopilot,
                         generatorPromptFn: () => `
-Act Mandate: ${act.act_mandate || act.description}
-World Developments: ${act.world_building_developments || ""}
-Active Threads: ${JSON.stringify(storyToUse.threads)}
-Cast List:
-${storyToUse.cast.map(c => `- **${c.name}** (${c.role}): Flaw: ${c.core_flaw}`).join('\n')}
-Relationships:
+<act_mandate>
+${act.act_mandate || act.description}
+</act_mandate>
+<world_developments>
+${act.world_building_developments || ""}
+</world_developments>
+<active_threads>
+${(storyToUse.threads || []).map(t => `<thread><thread_id>${t.id}</thread_id><name>${t.name}</name><description>${t.description}</description></thread>`).join('\n')}
+</active_threads>
+<cast_list>
+${storyToUse.cast.map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw}`).join('\n')}
+</cast_list>
+<relationships>
 ${currentRelationshipsContext}
-World Lore Context:
+</relationships>
+<world_lore_context>
 ${ragContext}
-Previous Scene Ending Context:
+</world_lore_context>
+<previous_scene_ending_context>
 ${previousEventsContext}
-Style Instructions:
+</previous_scene_ending_context>
+<style_instructions>
 ${styleContext}
+</style_instructions>
 
-Available Narrative Modes:
+<available_narrative_modes>
 ${allNarrativeModesXml}
+</available_narrative_modes>
 `,
                         systemPrompt: PROMPTS.sceneAgent,
                         reviewerSystemPrompt: PROMPTS.sceneReview,
                         reviewerPromptFn: (genOutput) => `
-Act Mandate: ${act.act_mandate || act.description}
-Previous Events Context: ${previousEventsContext}
-Generated Scene Sequence:
+<act_mandate>
+${act.act_mandate || act.description}
+</act_mandate>
+<previous_events_context>
+${previousEventsContext}
+</previous_events_context>
+<generated_scene_sequence>
 ${genOutput}
+</generated_scene_sequence>
 `,
                         parserFn: (text) => {
                             const sceneBlocks = extractAllTags(text, 'scene_sequence');
@@ -4581,41 +5265,61 @@ ${genOutput}
                         tierName: "Beat Agent",
                         isAutopilot,
                         generatorPromptFn: () => `
-Scene Title: ${sceneData.title}
-Scene Objective: ${sceneData.objective}
-Scene Value Shift: Start: ${sceneData.start_valence}, End: ${sceneData.end_valence}
-Scene Description: ${sceneData.description}
-Dominant Narrative Mode: ${sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"}
+<scene_title>${sceneData.title}</scene_title>
+<scene_objective>${sceneData.objective}</scene_objective>
+<scene_value_shift>
+  <start_valence>${sceneData.start_valence}</start_valence>
+  <end_valence>${sceneData.end_valence}</end_valence>
+</scene_value_shift>
+<scene_description>
+${sceneData.description}
+</scene_description>
+<dominant_narrative_mode>${sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"}</dominant_narrative_mode>
 
-Characters Present & Profiles:
-${activeCast.map(c => `### ${c.name} (Role: ${c.role})
-Interview/Psychology:
-${c.details?.deep_profile || "No profile available."}`).join('\n\n')}
+<characters_present_profiles>
+${activeCast.map(c => `<character_profile>
+  <name>${c.name}</name>
+  <role>${c.role}</role>
+  <interview_psychology>
+${c.details?.deep_profile || 'No profile available.'}
+  </interview_psychology>
+</character_profile>`).join('\n')}
+</characters_present_profiles>
 
-Relationships Present:
+<relationships_present>
 ${currentRelationshipsContext}
+</relationships_present>
 
-Inventory:
+<inventory>
 ${JSON.stringify(storyToUse.continuity_ledger)}
+</inventory>
 
-World Lore context:
+<world_lore_context>
 ${ragContext}
+</world_lore_context>
 
-Available Narrative Modes for Override:
+<available_narrative_modes_for_override>
 ${allNarrativeModesXml}
+</available_narrative_modes_for_override>
 ${directiveInstruction ? `
-=== DIRECTIVE REQUIREMENT ===
+<directive_requirement>
 You MUST adapt the beat choreography to address this specific instruction:
 "${directiveInstruction}"
+</directive_requirement>
 ` : ""}
 `,
                         systemPrompt: PROMPTS.beatAgent,
                         reviewerSystemPrompt: PROMPTS.beatReview,
                         reviewerPromptFn: (genOutput) => `
-Scene Objective: ${sceneData.objective}
-Scene Value Shift: ${sceneData.start_valence} to ${sceneData.end_valence}
-Generated Beat Choreography:
+<scene_objective>
+${sceneData.objective}
+</scene_objective>
+<scene_value_shift>
+${sceneData.start_valence} to ${sceneData.end_valence}
+</scene_value_shift>
+<generated_beat_choreography>
 ${genOutput}
+</generated_beat_choreography>
 `,
                         parserFn: (text) => {
                             let beatBlocks = extractAllTags(text, 'beat_choreography');
@@ -4768,26 +5472,38 @@ ${genOutput}
                         tierName: "Writing Agent",
                         isAutopilot,
                         generatorPromptFn: () => `
-Scene Description: ${scene.description}
-Active Characters Profiles:
-${activeCast.map(c => `### ${c.name}
-Psychology/Interview:
-${c.details?.deep_profile}`).join('\n\n')}
-Current Relationships:
+<scene_description>
+${scene.description}
+</scene_description>
+<active_characters_profiles>
+${activeCast.map(c => `<character_profile>
+  <name>${c.name}</name>
+  <interview_psychology>
+${c.details?.deep_profile}
+  </interview_psychology>
+</character_profile>`).join('\n')}
+</active_characters_profiles>
+<current_relationships>
 ${currentRelationshipsContext}
-Lore/Subtext Context:
+</current_relationships>
+<lore_subtext_context>
 ${loreContext}
-Genre: ${storyToUse.style?.genre}
-Style: ${storyToUse.style?.writing_guide}
-Tone: ${storyToUse.style?.mood}
+</lore_subtext_context>
+<reference_style>
+<genre>${storyToUse.style?.genre}</genre>
+<style_guide>${storyToUse.style?.writing_guide}</style_guide>
+<tone>${storyToUse.style?.mood}</tone>
+</reference_style>
 
-Previous Prose (Context):
+<previous_prose_context>
 ${prevText}
+</previous_prose_context>
 
-FULL SCENE HISTORY:
+<full_scene_history>
 ${fullSceneText}
+</full_scene_history>
 
-Current Beat Choreography (TASK):
+<current_beat_choreography>
 <beat_choreography>
 <scene_id>${beat.scene_id}</scene_id>
 <beat_id>${beat.id || `${sId}.${beatIdx}`}</beat_id>
@@ -4799,19 +5515,23 @@ ${beat.description}
 <char_B_reaction>${beat.reaction || ""}</char_B_reaction>
 <power_shift>${beat.power_shift || ""}</power_shift>
 </beat_choreography>
+</current_beat_choreography>
 ${directiveInstruction ? `
-=== DIRECTIVE REWRITE MANDATE ===
+<directive_rewrite_mandate>
 You MUST rewrite this beat's prose to satisfy the following instruction:
 "${directiveInstruction}"
+</directive_rewrite_mandate>
 ` : ""}
 `,
                         systemPrompt: finalWritingSystemPrompt,
                         reviewerSystemPrompt: PROMPTS.writingReview,
                         reviewerPromptFn: (genOutput) => `
-Current Beat Choreography:
+<current_beat_choreography>
 ${beat.description}
-Generated Prose:
+</current_beat_choreography>
+<generated_prose>
 ${genOutput}
+</generated_prose>
 `,
                         parserFn: (text) => {
                             const prose = extractTag(text, 'prose_text') || text;
@@ -4854,7 +5574,18 @@ ${genOutput}
                         finalProseText = lines.slice(startIdx).join('\n').trim();
                     }
 
-                    let nextStory = { ...storyToUse, prose: { ...storyToUse.prose, [bId]: { draft: finalProseText, final: finalProseText } } };
+                    let nextStory = { 
+                        ...storyToUse, 
+                        prose: { 
+                            ...storyToUse.prose, 
+                            [bId]: { 
+                                draft: finalProseText, 
+                                final: finalProseText,
+                                failed: proseResult.failed || false,
+                                critique: proseResult.critique || ""
+                            } 
+                        } 
+                    };
                     if (castWasUpdated) nextStory.cast = mutableCast;
 
                     // Run Archivist at end of scene
@@ -4865,12 +5596,15 @@ ${genOutput}
                         const completedSceneText = fullSceneText + "\n\n" + finalProseText;
                         
                         const archivistPrompt = `
-Scene Text:
+<scene_text>
 ${completedSceneText}
-Cast List:
+</scene_text>
+<cast_list>
 ${activeCast.map(c => c.name).join(', ')}
-Current Lore Topics:
+</cast_list>
+<current_lore_topics>
 ${currentLoreList}
+</current_lore_topics>
 `;
                         const archivistSystemPrompt = PROMPTS.archivist;
                         try {
@@ -5339,7 +6073,7 @@ ${currentLoreList}
 
                             {view === 'dashboard' && (
                                 <div className="max-w-5xl mx-auto space-y-8 animate-fade-in">
-                                    <div className="grid md:grid-cols-2 gap-6">
+                                    <div className="grid md:grid-cols-2 gap-6 overview-grid">
                                         <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-6">
                                             <div>
                                                 <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2">Title</h3>
@@ -5349,6 +6083,49 @@ ${currentLoreList}
                                                     onChange={(e) => setStory({ ...story, title: e.target.value })}
                                                     placeholder="Untitled Story"
                                                 />
+                                            </div>
+                                            
+                                            {/* Cover Image Block */}
+                                            <div className="pt-2">
+                                                <h3 className="text-xs font-bold text-slate-500 uppercase mb-2">Cover Image (Vertical)</h3>
+                                                {loadedImages.cover ? (
+                                                    <div className="relative group rounded-lg overflow-hidden border border-slate-800 w-44 aspect-[2/3] mx-auto shadow-lg">
+                                                        <img src={loadedImages.cover} className="w-full h-full object-cover" alt="Story Cover" />
+                                                        <div className="absolute inset-0 bg-slate-950/80 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
+                                                            <button
+                                                                onClick={generateCoverImage}
+                                                                disabled={loadingCover}
+                                                                className="bg-indigo-600 hover:bg-indigo-500 text-white p-2 rounded-full text-xs font-bold flex items-center gap-1 transition-colors"
+                                                                title="Regenerate Cover"
+                                                            >
+                                                                <RefreshCw size={14} />
+                                                            </button>
+                                                            <button
+                                                                onClick={deleteCoverImage}
+                                                                className="bg-red-600 hover:bg-red-500 text-white p-2 rounded-full text-xs font-bold flex items-center gap-1 transition-colors"
+                                                                title="Delete Cover"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <button
+                                                        onClick={generateCoverImage}
+                                                        disabled={loadingCover}
+                                                        className="w-full bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-300 py-3 rounded-lg text-xs flex justify-center items-center gap-2 transition-all font-semibold"
+                                                    >
+                                                        {loadingCover ? (
+                                                            <>
+                                                                <Loader2 size={14} className="animate-spin" /> Generating Cover...
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Image size={14} /> Generate Cover Image
+                                                            </>
+                                                        )}
+                                                    </button>
+                                                )}
                                             </div>
                                             <div>
                                                 <h3 className="text-xs font-bold text-indigo-400 uppercase mb-2 flex justify-between items-center">
@@ -6501,7 +7278,18 @@ ${currentLoreList}
                                                     <div className="xl:w-80 shrink-0">
                                                         <div className={`p-5 rounded-xl border transition-all ${prose ? 'bg-slate-900/40 border-slate-800' : 'bg-slate-900 border-indigo-500/30'}`}>
                                             <div className="flex justify-between items-center mb-2">
-                                                <span className="text-xs font-bold text-indigo-400">BEAT {bi + 1}</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-bold text-indigo-400">BEAT {bi + 1}</span>
+                                                    {prose?.failed && (
+                                                        <button 
+                                                            onClick={() => openCritiqueModal(bi + 1, prose.critique)}
+                                                            className="text-[10px] bg-red-950/40 border border-red-500/40 text-red-400 hover:bg-red-900/50 hover:border-red-400 px-1.5 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer"
+                                                            title="View Critique"
+                                                        >
+                                                            <AlertTriangle size={10} /> Failed
+                                                        </button>
+                                                    )}
+                                                </div>
                                                 <div className="flex items-center gap-2">
                                                     <ValenceBadge score={beat.valence} />
                                                     <button onClick={() => handleDeleteBeat(selectedAct, selectedScene, bi)} className="text-slate-600 hover:text-red-400 transition-colors p-0.5" title="Delete Beat"><Trash2 size={12} /></button>
@@ -6542,9 +7330,35 @@ ${currentLoreList}
                                                                     ))}
                                                                 </select>
                                                             </div>
+                                                            {/* Beat Image Section */}
+                                                            {loadedImages[`${selectedAct}-${selectedScene}-${bi}`] && (
+                                                                <div className="mb-4 pt-2 border-t border-slate-800/40">
+                                                                    <div className="relative group rounded-lg overflow-hidden border border-slate-850 w-full aspect-square shadow-sm">
+                                                                        <img src={loadedImages[`${selectedAct}-${selectedScene}-${bi}`]} className="w-full h-full object-cover" alt={`Beat ${bi + 1}`} />
+                                                                        <div className="absolute inset-0 bg-slate-950/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                                                            <button
+                                                                                onClick={() => deleteBeatImage(selectedAct, selectedScene, bi)}
+                                                                                className="bg-red-600 hover:bg-red-500 text-white p-2 rounded-full text-xs font-bold transition-colors"
+                                                                                title="Delete Image"
+                                                                            >
+                                                                                <Trash2 size={14} />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            )}
+
                                                             {!prose ? (
-                                                                <div className="pt-4 border-t border-slate-800">
-                                                                    <button onClick={() => writeProse(selectedAct, selectedScene, bi)} disabled={loading} className="w-full bg-indigo-600 py-2 rounded font-bold text-sm hover:bg-indigo-500 flex justify-center gap-2"><Feather size={14} /> Write</button>
+                                                                <div className="flex gap-2 pt-4 border-t border-slate-800">
+                                                                    <button onClick={() => writeProse(selectedAct, selectedScene, bi)} disabled={loading} className="flex-[3] bg-indigo-600 py-2 rounded font-bold text-sm hover:bg-indigo-500 flex justify-center items-center gap-2"><Feather size={14} /> Write</button>
+                                                                    <button
+                                                                        onClick={() => generateBeatImage(selectedAct, selectedScene, bi)}
+                                                                        disabled={loadingImages[`${selectedAct}-${selectedScene}-${bi}`] || loading}
+                                                                        className="flex-1 py-2 bg-slate-950 rounded text-slate-400 border border-slate-800 hover:text-slate-200 flex justify-center items-center"
+                                                                        title="Generate Image"
+                                                                    >
+                                                                        {loadingImages[`${selectedAct}-${selectedScene}-${bi}`] ? <Loader2 size={16} className="animate-spin" /> : <Image size={16} />}
+                                                                    </button>
                                                                 </div>
                                                             ) : (
                                                                 <div className="flex gap-2 pt-4 border-t border-slate-800">
@@ -6557,6 +7371,14 @@ ${currentLoreList}
                                                                     <button onClick={() => writeProse(selectedAct, selectedScene, bi)} disabled={loading} className="flex-1 py-2 bg-slate-950 rounded text-indigo-400 border border-slate-800 hover:text-indigo-300 flex justify-center items-center disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw size={16} /></button>
                                                                     <button onClick={() => toggleProse(bId)} className="flex-1 py-2 bg-slate-950 rounded text-slate-400 border border-slate-800 hover:text-slate-200 flex justify-center items-center">
                                                                         {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => generateBeatImage(selectedAct, selectedScene, bi)}
+                                                                        disabled={loadingImages[`${selectedAct}-${selectedScene}-${bi}`] || loading}
+                                                                        className="flex-1 py-2 bg-slate-950 rounded text-slate-400 border border-slate-800 hover:text-slate-200 flex justify-center items-center"
+                                                                        title="Generate / Regenerate Image"
+                                                                    >
+                                                                        {loadingImages[`${selectedAct}-${selectedScene}-${bi}`] ? <Loader2 size={16} className="animate-spin" /> : <Image size={16} />}
                                                                     </button>
                                                                 </div>
                                                             )}
@@ -6882,6 +7704,157 @@ ${currentLoreList}
                                                 </div>
                                             )}
                                         </div>
+ 
+                                        {/* Image Generation Settings */}
+                                        <div className="pt-6 border-t border-slate-800 space-y-4">
+                                            <div className="flex justify-between items-center">
+                                                <label className="block text-xs font-bold text-slate-500 uppercase">Image Generation Settings</label>
+                                            </div>
+                                            <p className="text-xs text-slate-500">Configure your image generation API, models, and story art style.</p>
+                                            
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-400 mb-1">Image API Provider</label>
+                                                    <div className="relative">
+                                                        <select
+                                                            value={imageProvider}
+                                                            onChange={(e) => {
+                                                                const prov = e.target.value;
+                                                                setImageProvider(prov);
+                                                                if (prov === 'gemini') {
+                                                                    setImageModel('imagen-3.0-generate-002');
+                                                                } else {
+                                                                    setImageModel('stabilityai/stable-diffusion-xl');
+                                                                }
+                                                            }}
+                                                            className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none appearance-none transition-colors text-white cursor-pointer"
+                                                        >
+                                                            <option value="gemini">Gemini (Imagen 3)</option>
+                                                            <option value="openrouter">OpenRouter (SDXL/Flux/etc.)</option>
+                                                        </select>
+                                                        <ChevronDown className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" size={14} />
+                                                    </div>
+                                                </div>
+                                                
+                                                <div>
+                                                    <label className="block text-xs font-bold text-slate-400 mb-1">Image Model</label>
+                                                    <input
+                                                        type="text"
+                                                        value={imageModel}
+                                                        onChange={(e) => setImageModel(e.target.value)}
+                                                        className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors text-white"
+                                                        placeholder={imageProvider === 'gemini' ? "imagen-3.0-generate-002" : "stabilityai/stable-diffusion-xl"}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-bold text-slate-400 mb-1">Dedicated Image API Key (Optional)</label>
+                                                <input
+                                                    type="password"
+                                                    value={imageApiKey}
+                                                    onChange={(e) => setImageApiKey(e.target.value)}
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors text-white"
+                                                    placeholder="If blank, uses text provider key (Gemini/OpenRouter)"
+                                                />
+                                            </div>
+
+                                            {/* Story Style Dropdown */}
+                                            <div className="pt-2">
+                                                <label className="block text-xs font-bold text-slate-400 mb-1">Story Art Style</label>
+                                                <div className="relative">
+                                                    <select
+                                                        value={story.imageStyle || "none"}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value;
+                                                            setStory({ ...story, imageStyle: val });
+                                                        }}
+                                                        className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none appearance-none transition-colors text-white font-semibold cursor-pointer"
+                                                    >
+                                                        {DEFAULT_IMAGE_STYLES.map(s => (
+                                                            <option key={s.id} value={s.id}>{s.name}</option>
+                                                        ))}
+                                                        {customImageStyles.map(s => (
+                                                            <option key={s.id} value={s.id}>{s.name} (Custom)</option>
+                                                        ))}
+                                                    </select>
+                                                    <ChevronDown className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" size={14} />
+                                                </div>
+                                                {story.imageStyle && story.imageStyle !== "none" && (
+                                                    <p className="text-xs text-slate-500 italic mt-1">
+                                                        Style description: {(() => {
+                                                            const combined = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
+                                                            return combined.find(c => c.id === story.imageStyle)?.description || "";
+                                                        })()}
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            {/* Custom Styles Manager */}
+                                            <div className="pt-2 space-y-3">
+                                                <label className="block text-xs font-bold text-slate-500 uppercase">Add Custom Image Style</label>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Style Name (e.g. Modern Retro)"
+                                                        value={newStyleName}
+                                                        onChange={(e) => setNewStyleName(e.target.value)}
+                                                        className="bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:border-indigo-500 outline-none text-white placeholder-slate-600"
+                                                    />
+                                                    <input
+                                                        type="text"
+                                                        placeholder="Description (e.g. high contrast, neon colors)"
+                                                        value={newStyleDesc}
+                                                        onChange={(e) => setNewStyleDesc(e.target.value)}
+                                                        className="bg-slate-950 border border-slate-800 rounded px-3 py-1.5 text-xs focus:border-indigo-500 outline-none text-white placeholder-slate-600"
+                                                    />
+                                                </div>
+                                                <button
+                                                    onClick={() => {
+                                                        if (!newStyleName.trim() || !newStyleDesc.trim()) {
+                                                            alert("Please enter both style name and description.");
+                                                            return;
+                                                        }
+                                                        const id = `custom_${Date.now()}`;
+                                                        const newStyle = { id, name: newStyleName.trim(), description: newStyleDesc.trim() };
+                                                        setCustomImageStyles([...customImageStyles, newStyle]);
+                                                        setStory({ ...story, imageStyle: id }); // Select newly created style
+                                                        setNewStyleName("");
+                                                        setNewStyleDesc("");
+                                                        showToast(`Custom image style "${newStyle.name}" added!`);
+                                                    }}
+                                                    className="w-full bg-slate-800 hover:bg-slate-700 text-white text-xs py-2 rounded border border-slate-700 font-bold flex justify-center items-center gap-1 transition-colors"
+                                                >
+                                                    <Plus size={12} /> Add Style
+                                                </button>
+                                                {customImageStyles.length > 0 && (
+                                                    <div className="space-y-1.5 pt-2">
+                                                        <label className="text-[10px] font-bold text-slate-600 uppercase">Manage Custom Styles</label>
+                                                        <div className="flex flex-col gap-1.5">
+                                                            {customImageStyles.map(s => (
+                                                                <div key={s.id} className="flex justify-between items-center bg-slate-950 p-2 rounded border border-slate-850 text-xs">
+                                                                    <div className="truncate pr-4 text-slate-400">
+                                                                        <span className="font-semibold text-slate-300">{s.name}:</span> <span className="italic">{s.description}</span>
+                                                                    </div>
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setCustomImageStyles(customImageStyles.filter(c => c.id !== s.id));
+                                                                            if (story.imageStyle === s.id) {
+                                                                                setStory({ ...story, imageStyle: 'none' });
+                                                                            }
+                                                                            showToast(`Custom image style "${s.name}" deleted.`, 'info');
+                                                                        }}
+                                                                        className="text-slate-600 hover:text-red-400 p-0.5 rounded transition-colors shrink-0"
+                                                                    >
+                                                                        <Trash2 size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
 
                                         {/* Custom Narrative Modes Section */}
                                         <div className="pt-6 border-t border-slate-800 space-y-4">
@@ -6943,22 +7916,22 @@ ${currentLoreList}
                                                 </div>
                                                 <div>
                                                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Select Mode Icon</label>
-                                                     <div className="flex items-center gap-2">
-                                                         <div className="w-8 h-8 rounded bg-slate-900 border border-slate-800 flex items-center justify-center text-indigo-400 shrink-0">
+                                                     <button
+                                                         type="button"
+                                                         onClick={() => setIsIconPickerOpen(true)}
+                                                         className="flex items-center gap-3 w-full bg-slate-900 border border-slate-800 hover:border-indigo-500/50 hover:bg-slate-850/50 rounded p-2 text-left transition-all group/btn"
+                                                     >
+                                                         <div className="w-8 h-8 rounded bg-slate-950 border border-slate-800 flex items-center justify-center text-indigo-400 shrink-0 group-hover/btn:text-indigo-300 group-hover/btn:border-indigo-500/30 transition-colors">
                                                              <Icon name={newModeIcon} className="w-4 h-4" />
                                                          </div>
-                                                         <select
-                                                             value={newModeIcon}
-                                                             onChange={(e) => setNewModeIcon(e.target.value)}
-                                                             className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-200 focus:border-indigo-500 outline-none transition-colors cursor-pointer"
-                                                         >
-                                                             {AVAILABLE_ICONS.map(ico => (
-                                                                 <option key={ico.value} value={ico.value} className="bg-slate-900 text-slate-100">
-                                                                     {ico.label}
-                                                                 </option>
-                                                             ))}
-                                                         </select>
-                                                     </div>
+                                                         <div className="flex-1 min-w-0">
+                                                             <div className="text-xs font-semibold text-slate-200 truncate">
+                                                                 {AVAILABLE_ICONS.find(ico => ico.value === newModeIcon)?.label || newModeIcon}
+                                                             </div>
+                                                             <div className="text-[10px] text-slate-500 mt-0.5">Click to choose from the icon library</div>
+                                                         </div>
+                                                         <ChevronDown size={14} className="text-slate-500 group-hover/btn:text-slate-300 transition-colors" />
+                                                     </button>
                                                  </div>
                                                 <div>
                                                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Prompt Injection Instructions (for Writing Agent)</label>
@@ -7030,6 +8003,67 @@ ${currentLoreList}
                             setInterventionState(prev => ({ ...prev, isOpen: false }));
                         }}
                     />
+                    {/* CRITIQUE MODAL */}
+                    <CritiqueModal
+                        isOpen={critiqueState.isOpen}
+                        beatNumber={critiqueState.beatNumber}
+                        critique={critiqueState.critique}
+                        onClose={() => setCritiqueState(prev => ({ ...prev, isOpen: false }))}
+                    />
+                    {/* ICON PICKER MODAL */}
+                    {isIconPickerOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in">
+                            <div className="bg-slate-900 border border-slate-800 w-full max-w-sm rounded-xl shadow-2xl flex flex-col overflow-hidden">
+                                <div className="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-850/50">
+                                    <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                                        <Sparkles size={16} className="text-indigo-400" />
+                                        Select Mode Icon
+                                    </h3>
+                                    <button onClick={() => setIsIconPickerOpen(false)} className="text-slate-400 hover:text-white transition-colors">
+                                        <X size={18} />
+                                    </button>
+                                </div>
+                                <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                                    <div className="grid grid-cols-9 gap-2">
+                                        {AVAILABLE_ICONS.map((ico) => {
+                                            const isSelected = newModeIcon === ico.value;
+                                            return (
+                                                <button
+                                                    key={ico.value}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setNewModeIcon(ico.value);
+                                                        setIsIconPickerOpen(false);
+                                                    }}
+                                                    title={ico.label}
+                                                    className={`w-8 h-8 rounded flex items-center justify-center transition-all ${
+                                                        isSelected
+                                                            ? 'bg-indigo-600 text-white scale-110 shadow-lg shadow-indigo-900/50 border border-indigo-400'
+                                                            : 'bg-slate-950 hover:bg-slate-800 text-slate-400 hover:text-indigo-300 hover:scale-105 border border-slate-850'
+                                                    }`}
+                                                >
+                                                    <Icon name={ico.value} className="w-4 h-4" />
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <div className="mt-4 text-center">
+                                        <p className="text-[10px] text-slate-500 font-medium">
+                                            Currently selected: <span className="text-indigo-400 font-bold">{AVAILABLE_ICONS.find(ico => ico.value === newModeIcon)?.label || newModeIcon}</span>
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="p-3 border-t border-slate-800 bg-slate-850/50 flex justify-end">
+                                    <button
+                                        onClick={() => setIsIconPickerOpen(false)}
+                                        className="px-4 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-white text-xs font-bold transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div >
             );
         }
