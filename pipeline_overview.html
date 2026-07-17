@@ -1,0 +1,1469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EllipsisProse Narrative Pipeline Overview</title>
+    <!-- Modern Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root {
+            --bg-color: #0b0d19;
+            --surface-color: rgba(20, 24, 46, 0.6);
+            --surface-border: rgba(255, 255, 255, 0.08);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --primary: #6366f1;
+            --primary-glow: rgba(99, 102, 241, 0.15);
+            --success: #10b981;
+            --success-glow: rgba(16, 185, 129, 0.15);
+            --warning: #f59e0b;
+            --warning-glow: rgba(245, 158, 11, 0.15);
+            --danger: #ef4444;
+            --danger-glow: rgba(239, 68, 68, 0.15);
+            --info: #06b6d4;
+            --info-glow: rgba(6, 182, 212, 0.15);
+            --purple: #a855f7;
+            --purple-glow: rgba(168, 85, 247, 0.15);
+            --font-main: 'Plus Jakarta Sans', sans-serif;
+            --font-display: 'Outfit', sans-serif;
+            --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            font-family: var(--font-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(99, 102, 241, 0.05) 0%, transparent 40%),
+                radial-gradient(circle at 90% 80%, rgba(168, 85, 247, 0.05) 0%, transparent 40%);
+        }
+
+        header {
+            padding: 2rem 4rem;
+            border-bottom: 1px solid var(--surface-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(11, 13, 25, 0.8);
+            backdrop-filter: blur(12px);
+            z-index: 100;
+            position: sticky;
+            top: 0;
+        }
+
+        .logo {
+            font-family: var(--font-display);
+            font-weight: 800;
+            font-size: 1.8rem;
+            background: linear-gradient(135deg, #a855f7 0%, #6366f1 50%, #06b6d4 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+        }
+
+        .logo i {
+            background: linear-gradient(135deg, #a855f7 0%, #6366f1 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-top: 0.2rem;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+        }
+
+        .btn {
+            background: var(--surface-color);
+            border: 1px solid var(--surface-border);
+            color: var(--text-primary);
+            padding: 0.6rem 1.2rem;
+            border-radius: 8px;
+            font-family: var(--font-main);
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            transition: var(--transition);
+        }
+
+        .btn:hover {
+            border-color: var(--primary);
+            box-shadow: 0 0 12px var(--primary-glow);
+            transform: translateY(-2px);
+        }
+
+        .btn.btn-primary {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .btn.btn-primary:hover {
+            background: #4f46e5;
+            box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+        }
+
+        .main-container {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 2rem;
+            padding: 2rem 4rem;
+            max-width: 1800px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        /* Flowchart Area */
+        .flowchart-wrapper {
+            background: var(--surface-color);
+            border: 1px solid var(--surface-border);
+            border-radius: 16px;
+            padding: 2rem;
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            position: relative;
+            min-height: 800px;
+            overflow-y: auto;
+        }
+
+        .flowchart-title {
+            font-family: var(--font-display);
+            font-size: 1.4rem;
+            font-weight: 600;
+            margin-bottom: 2rem;
+            align-self: flex-start;
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .phase-header {
+            font-family: var(--font-display);
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            background: rgba(99, 102, 241, 0.08);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            padding: 0.6rem 2rem;
+            border-radius: 30px;
+            margin: 2.5rem 0 1rem 0;
+            z-index: 10;
+            box-shadow: 0 0 15px rgba(99, 102, 241, 0.1);
+        }
+
+        .flow-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            position: relative;
+            padding: 1rem 0;
+        }
+
+        .flow-step-card {
+            background: rgba(17, 20, 38, 0.85);
+            border: 1px solid var(--surface-border);
+            border-radius: 12px;
+            width: 540px;
+            padding: 1.2rem;
+            margin: 1.5rem 0;
+            cursor: pointer;
+            transition: var(--transition);
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            z-index: 5;
+        }
+
+        .flow-step-card:hover, .flow-step-card.active {
+            transform: scale(1.02);
+            border-color: var(--primary);
+            box-shadow: 0 0 25px var(--primary-glow);
+        }
+
+        .flow-step-card.active {
+            background: rgba(99, 102, 241, 0.08);
+            border-color: var(--primary);
+            outline: 1px solid var(--primary);
+        }
+
+        .step-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.6rem;
+        }
+
+        .step-num {
+            font-size: 0.8rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--primary);
+            background: rgba(99, 102, 241, 0.15);
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+        }
+
+        .step-tier {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .step-title {
+            font-family: var(--font-display);
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 0.4rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .step-desc {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            line-height: 1.4;
+        }
+
+        .step-inputs {
+            margin-top: 0.6rem;
+            padding: 0.4rem 0.6rem;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            border-left: 2px solid var(--primary);
+            line-height: 1.4;
+        }
+
+        .step-inputs strong {
+            color: var(--text-primary);
+        }
+
+        .step-gate-info {
+            margin-top: 0.6rem;
+            font-size: 0.75rem;
+            color: var(--warning);
+            font-weight: 600;
+            background: rgba(245, 158, 11, 0.08);
+            border: 1px solid rgba(245, 158, 11, 0.2);
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            display: inline-block;
+        }
+
+        .badge-ai {
+            font-size: 0.7rem;
+            font-weight: 700;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .badge-ai.small-model {
+            background: rgba(6, 182, 212, 0.15);
+            color: var(--info);
+            border: 1px solid rgba(6, 182, 212, 0.3);
+        }
+
+        .badge-ai.large-model {
+            background: rgba(168, 85, 247, 0.15);
+            color: var(--purple);
+            border: 1px solid rgba(168, 85, 247, 0.3);
+        }
+
+        .badge-ai.prog {
+            background: rgba(16, 185, 129, 0.15);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        /* Connecting Lines and SVG Flow Overlay */
+        .svg-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .flow-line {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.08);
+            stroke-width: 2.5;
+            stroke-dasharray: 6 4;
+            animation: dash 20s linear infinite;
+        }
+
+        .flow-line.active {
+            stroke: var(--primary);
+            stroke-width: 3.5;
+            stroke-dasharray: 8 4;
+            filter: drop-shadow(0 0 5px var(--primary));
+            animation: dash 8s linear infinite;
+        }
+
+        .flow-line.retry {
+            stroke: var(--warning);
+            stroke-width: 3;
+            stroke-dasharray: 6 3;
+            filter: drop-shadow(0 0 3px var(--warning));
+            animation: dash-reverse 10s linear infinite;
+        }
+
+        .flow-line.failure {
+            stroke: var(--danger);
+            stroke-width: 3;
+            stroke-dasharray: 6 3;
+            animation: dash 10s linear infinite;
+        }
+
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -1000;
+            }
+        }
+
+        @keyframes dash-reverse {
+            to {
+                stroke-dashoffset: 1000;
+            }
+        }
+
+        /* Decision Branch UI Cards */
+        .decision-container {
+            display: flex;
+            justify-content: center;
+            gap: 2.5rem;
+            width: 100%;
+            margin: 1.5rem 0;
+            position: relative;
+            z-index: 5;
+        }
+
+        .decision-branch {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .decision-card {
+            background: rgba(17, 20, 38, 0.85);
+            border: 1px solid var(--surface-border);
+            border-radius: 12px;
+            width: 240px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: var(--transition);
+            text-align: center;
+        }
+
+        .decision-card:hover, .decision-card.active {
+            transform: translateY(-2px);
+            border-color: var(--primary);
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.15);
+        }
+
+        .decision-card.pass {
+            border-left: 4px solid var(--success);
+        }
+
+        .decision-card.pass:hover, .decision-card.pass.active {
+            border-color: var(--success);
+            box-shadow: 0 0 20px var(--success-glow);
+        }
+
+        .decision-card.fail {
+            border-left: 4px solid var(--danger);
+        }
+
+        .decision-card.fail:hover, .decision-card.fail.active {
+            border-color: var(--danger);
+            box-shadow: 0 0 20px var(--danger-glow);
+        }
+
+        /* Inspector Panel (Right Sidebar) */
+        .inspector-panel {
+            background: var(--surface-color);
+            border: 1px solid var(--surface-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            backdrop-filter: blur(8px);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            height: fit-content;
+            position: sticky;
+            top: 100px;
+        }
+
+        .inspector-title {
+            font-family: var(--font-display);
+            font-size: 1.3rem;
+            font-weight: 700;
+            border-bottom: 1px solid var(--surface-border);
+            padding-bottom: 0.8rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .inspector-section {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .inspector-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-secondary);
+        }
+
+        .inspector-val {
+            font-size: 0.9rem;
+            line-height: 1.5;
+            color: var(--text-primary);
+        }
+
+        .inspector-val code {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 0.15rem 0.3rem;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #ff79c6;
+        }
+
+        /* Live Simulator Console */
+        .simulator-wrapper {
+            grid-column: 1 / -1;
+            background: var(--surface-color);
+            border: 1px solid var(--surface-border);
+            border-radius: 16px;
+            padding: 1.5rem;
+            margin-top: 1rem;
+            backdrop-filter: blur(8px);
+        }
+
+        .simulator-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--surface-border);
+            padding-bottom: 0.8rem;
+        }
+
+        .simulator-title {
+            font-family: var(--font-display);
+            font-size: 1.2rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .simulator-controls {
+            display: flex;
+            gap: 0.8rem;
+            flex-wrap: wrap;
+        }
+
+        .console-output {
+            background: #05070f;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            height: 280px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.85rem;
+            padding: 1rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+            box-shadow: inset 0 2px 8px rgba(0,0,0,0.8);
+        }
+
+        .log-line {
+            display: flex;
+            gap: 0.5rem;
+            line-height: 1.4;
+        }
+
+        .log-time {
+            color: #50fa7b;
+            flex-shrink: 0;
+        }
+
+        .log-source {
+            color: #6272a4;
+            flex-shrink: 0;
+        }
+
+        .log-content {
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+
+        .log-content.success { color: var(--success); }
+        .log-content.warn { color: var(--warning); }
+        .log-content.error { color: var(--danger); }
+        .log-content.info { color: #8be9fd; }
+        .log-content.agent { color: #ff79c6; }
+
+        /* Animation Keyframes */
+        @keyframes pulse-primary {
+            0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+        }
+
+        .pulse-active {
+            animation: pulse-primary 2s infinite;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="header-logo-group">
+            <div class="logo">
+                <i class="fa-solid fa-square-share-nodes"></i>
+                EllipsisProse
+            </div>
+            <div class="subtitle">Detailed Narrative Generation Pipeline & Cascading Rollbacks</div>
+        </div>
+        <div class="header-actions">
+            <button class="btn" id="btn-simplified-mode" onclick="toggleFlowMode('simplified')">
+                <i class="fa-solid fa-list-check"></i> Simplified View
+            </button>
+            <button class="btn btn-primary" id="btn-detailed-mode" onclick="toggleFlowMode('detailed')">
+                <i class="fa-solid fa-diagram-project"></i> Detailed View
+            </button>
+        </div>
+    </header>
+
+    <div class="main-container">
+        
+        <!-- Flowchart Board -->
+        <div class="flowchart-wrapper">
+            <div class="flowchart-title">
+                <i class="fa-solid fa-route" style="color: var(--primary);"></i>
+                Narrative Generation Flow
+            </div>
+            
+            <div class="flow-container">
+                <!-- SVG Canvas for Connector Paths & Markers -->
+                <svg class="svg-overlay" id="connector-svg">
+                    <defs>
+                        <!-- Arrowhead markers -->
+                        <marker id="arrow-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#6366f1" />
+                        </marker>
+                        <marker id="arrow-retry" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#f59e0b" />
+                        </marker>
+                        <marker id="arrow-fail" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#ef4444" />
+                        </marker>
+                    </defs>
+                </svg>
+
+                <div class="phase-header">Phase 1: Story Conception & Worldbuilding</div>
+
+                <!-- Stage 1: Conceptual Development -->
+                <div class="flow-step-card" id="step-1" onclick="inspectStep(1)">
+                    <div class="step-header">
+                        <span class="step-num">Step 1</span>
+                        <span class="step-tier"><i class="fa-solid fa-brain"></i> Tier 0.1</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-lightbulb" style="color: var(--info);"></i> Conceptual Development Agent</div>
+                    <div class="step-desc">
+                        <span class="badge-ai large-model">large-model</span>
+                        Generates core genre classification, world bible status quo, and initial character briefs.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> User raw outline text, style guides, atmosphere/tone goals, imported world lore contexts.
+                    </div>
+                    <div class="step-gate-info">Gate: Successful YAML/XML structure parse</div>
+                </div>
+
+                <!-- Stage 2: Character Development -->
+                <div class="flow-step-card" id="step-2" onclick="inspectStep(2)">
+                    <div class="step-header">
+                        <span class="step-num">Step 2</span>
+                        <span class="step-tier"><i class="fa-solid fa-users"></i> Tier 0.2</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-comments" style="color: var(--purple);"></i> Character Developer (Interviews)</div>
+                    <div class="step-desc">
+                        <span class="badge-ai large-model">large-model</span> (Sequential Loop)
+                        Interviews each generated character brief in first-person to extract deep dossiers and voice guides.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> World bible context, active character briefs (id, name, role, core flaw, core desire).
+                    </div>
+                    <div class="step-gate-info">Gate: All dossiers successfully generated</div>
+                </div>
+
+                <!-- Stage 3: Story Arc Planner -->
+                <div class="flow-step-card" id="step-3" onclick="inspectStep(3)">
+                    <div class="step-header">
+                        <span class="step-num">Step 3</span>
+                        <span class="step-tier"><i class="fa-solid fa-diagram-next"></i> Tier 1.1</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-arrows-split-up-and-left" style="color: var(--primary);"></i> Story Arc Agent</div>
+                    <div class="step-desc">
+                        <span class="badge-ai large-model">large-model</span>
+                        Establishes inciting incidents, core narrative threads (A/B plots), character arc parameters, and twists.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> World bible details, style guides, cast voice files, core character desires and emotional flaws.
+                    </div>
+                    <div class="step-gate-info">Gate: Passes XML/YAML parse checks</div>
+                </div>
+
+                <!-- Stage 4: Story Arc Reviewer -->
+                <div class="flow-step-card" id="step-4" onclick="inspectStep(4)">
+                    <div class="step-header">
+                        <span class="step-num">Step 4</span>
+                        <span class="step-tier"><i class="fa-solid fa-shield-halved"></i> Tier 1.2</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-clipboard-check" style="color: var(--warning);"></i> Story Arc Reviewer</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span>
+                        Validates story values, themes, and emotional twist pacing milestones. Outputs status PASS or FAIL.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Raw concept outlines, world bible status quo, newly generated story arc parameters plan.
+                    </div>
+                    <div class="step-gate-info">Gate: Reviewer status == 'PASS' (Loops back if FAIL)</div>
+                </div>
+
+                <div class="phase-header">Phase 2: Structural Outlining</div>
+
+                <!-- Stage 5: Act Planner -->
+                <div class="flow-step-card" id="step-5" onclick="inspectStep(5)">
+                    <div class="step-header">
+                        <span class="step-num">Step 5</span>
+                        <span class="step-tier"><i class="fa-solid fa-folder-open"></i> Tier 2.1</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-map" style="color: var(--purple);"></i> Act Planner (Act Agent)</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span> escalates to <span class="badge-ai large-model">large-model</span>
+                        Generates structural Acts with titles, mandates, world developments, and story knots. Up to 3 attempts.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Core narrative concept, theme milestones guidelines, character list, twists, and structural thresholds.
+                    </div>
+                    <div class="step-gate-info">Gate: Passes Programmatic validation (>= 3 Acts, details length)</div>
+                </div>
+
+                <!-- Stage 6: Act Reviewer -->
+                <div class="flow-step-card" id="step-6" onclick="inspectStep(6)">
+                    <div class="step-header">
+                        <span class="step-num">Step 6</span>
+                        <span class="step-tier"><i class="fa-solid fa-shield-halved"></i> Tier 2.2</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-list-check" style="color: var(--warning);"></i> Act Reviewer</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span>
+                        Checks Act mandates for logical cohesion, milestones, and theme matches. Outputs status PASS or FAIL.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Generated Act outlines array, major twists list, inciting incidents, theme milestones.
+                    </div>
+                    <div class="step-gate-info">Gate: Reviewer status == 'PASS' (Loops back if FAIL)</div>
+                </div>
+
+                <!-- Stage 7: Chapter Planner -->
+                <div class="flow-step-card" id="step-7" onclick="inspectStep(7)">
+                    <div class="step-header">
+                        <span class="step-num">Step 7</span>
+                        <span class="step-tier"><i class="fa-solid fa-book-open"></i> Tier 3.1</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-book" style="color: var(--primary);"></i> Chapter Planner (Chapter Agent)</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span> escalates to <span class="badge-ai large-model">large-model</span> (Loop for each Act)
+                        Generates chapter objects detailing titles, objectives, and pacing milestones. Up to 3 attempts.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Detailed Act mandates, cast dossiers, story/style guidelines, and active target Act parameters.
+                    </div>
+                    <div class="step-gate-info">Gate: Passes Programmatic validation (>= 5 Chapters)</div>
+                </div>
+
+                <!-- Stage 8: Chapter Reviewer -->
+                <div class="flow-step-card" id="step-8" onclick="inspectStep(8)">
+                    <div class="step-header">
+                        <span class="step-num">Step 8</span>
+                        <span class="step-tier"><i class="fa-solid fa-shield-halved"></i> Tier 3.2</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-clipboard-check" style="color: var(--warning);"></i> Chapter Reviewer</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span>
+                        Ensures chapters follow pacing guidelines and have logical flow. Outputs PASS or FAIL.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Newly generated chapter plans structure list, parent Act objectives, theme guidelines.
+                    </div>
+                    <div class="step-gate-info">Gate: Reviewer status == 'PASS' (Rolls back if 3 failures)</div>
+                </div>
+
+                <!-- Stage 9: Scene Planner -->
+                <div class="flow-step-card" id="step-9" onclick="inspectStep(9)">
+                    <div class="step-header">
+                        <span class="step-num">Step 9</span>
+                        <span class="step-tier"><i class="fa-solid fa-film"></i> Tier 4.1</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-clapperboard" style="color: var(--info);"></i> Scene Planner (Scene Agent)</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span> escalates to <span class="badge-ai large-model">large-model</span> (Loop for each Chapter)
+                        Builds scene rosters: settings, casts, dominant mode, and value/relationship shifts.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Act/Chapter details schema, cast dossiers list, world bible rules, active Chapter objectives.
+                    </div>
+                    <div class="step-gate-info">Gate: Passes Programmatic validation (>= scenes range limit)</div>
+                </div>
+
+                <!-- Stage 10: Scene Reviewer -->
+                <div class="flow-step-card" id="step-10" onclick="inspectStep(10)">
+                    <div class="step-header">
+                        <span class="step-num">Step 10</span>
+                        <span class="step-tier"><i class="fa-solid fa-shield-halved"></i> Tier 4.2</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-spell-check" style="color: var(--warning);"></i> Scene Reviewer</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span>
+                        Ensures scenes feature appropriate character presence and value shifts. Outputs PASS or FAIL.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Newly generated scene structure roster, parent chapter objectives, active character list.
+                    </div>
+                    <div class="step-gate-info">Gate: Reviewer status == 'PASS' (Rolls back if 3 failures)</div>
+                </div>
+
+                <div class="phase-header">Phase 3: Choreography & Writing (The Autopilot Beat Loop)</div>
+
+                <!-- Stage 11: Beat Planner -->
+                <div class="flow-step-card" id="step-11" onclick="inspectStep(11)">
+                    <div class="step-header">
+                        <span class="step-num">Step 11</span>
+                        <span class="step-tier"><i class="fa-solid fa-layer-group"></i> Tier 5.1</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-wand-magic-sparkles" style="color: var(--purple);"></i> Beat Planner (Beat Agent)</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span> escalates to <span class="badge-ai large-model">large-model</span> (Loop for each Scene)
+                        Lays out choreographic beats: start positions, turning pivots, reactions, and exit states.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Scene directives, cast dossiers, relationship ledger, style guides, preceding beat plans.
+                    </div>
+                    <div class="step-gate-info">Gate: Passes Programmatic validation (>= beats range limit)</div>
+                </div>
+
+                <!-- Stage 12: Beat Reviewer -->
+                <div class="flow-step-card" id="step-12" onclick="inspectStep(12)">
+                    <div class="step-header">
+                        <span class="step-num">Step 12</span>
+                        <span class="step-tier"><i class="fa-solid fa-shield-halved"></i> Tier 5.2</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-check-double" style="color: var(--warning);"></i> Beat Reviewer</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span>
+                        Validates beat structure depth, physical posture continuity, and character actions. Outputs PASS or FAIL.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Newly generated beats choreography plan, parent scene parameters, cast voice dossiers.
+                    </div>
+                    <div class="step-gate-info">Gate: Reviewer status == 'PASS' (Rolls back if 3 failures)</div>
+                </div>
+
+                <!-- Stage 13: Query Expansion -->
+                <div class="flow-step-card" id="step-13" onclick="inspectStep(13)">
+                    <div class="step-header">
+                        <span class="step-num">Step 13</span>
+                        <span class="step-tier"><i class="fa-solid fa-magnifying-glass"></i> RAG Preprocess</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-arrows-to-eye" style="color: var(--info);"></i> Query Expansion</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span>
+                        Extracts implicit keywords, relationships, and locations from raw action parameters to optimize context retrieval.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Raw choreography beat action description text, active cast list, scene location.
+                    </div>
+                    <div class="step-gate-info">Gate: Preprocessed terms returned</div>
+                </div>
+
+                <!-- Stage 14: Writing Agent -->
+                <div class="flow-step-card" id="step-14" onclick="inspectStep(14)">
+                    <div class="step-header">
+                        <span class="step-num">Step 14</span>
+                        <span class="step-tier"><i class="fa-solid fa-pen-nib"></i> Tier 5.3</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-feather-pointed" style="color: var(--primary);"></i> Writing Agent (Prose Gen)</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span>
+                        Generates raw narrative prose text (400-600 words) from RAG contexts and choreography directives.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Choreography beat instructions, preceding beat prose, cast cards, RAG lore details, style guides.
+                    </div>
+                    <div class="step-gate-info">Gate: Passes prose length validation guidelines</div>
+                </div>
+
+                <!-- Stage 15: Continuity Reviewer -->
+                <div class="flow-step-card" id="step-15" onclick="inspectStep(15)">
+                    <div class="step-header">
+                        <span class="step-num">Step 15</span>
+                        <span class="step-tier"><i class="fa-solid fa-shield-halved"></i> Validation</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-clipboard-check" style="color: var(--warning);"></i> Continuity Reviewer</div>
+                    <div class="step-desc">
+                        <span class="badge-ai small-model">small-model</span>
+                        Compares new prose against previous beat's prose, checking for logical inconsistencies, teleportation, or posture slips. Outputs PASS/FAIL.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Preceding beat's prose text, newly generated prose draft, target choreography instructions.
+                    </div>
+                    <div class="step-gate-info">Gate: Reviewer status == 'PASS' (Loops to Editor or Writer on FAIL)</div>
+                </div>
+
+                <!-- Decision Branch (Detailed Path Only) -->
+                <div class="decision-container" id="decision-block">
+                    <div class="decision-branch">
+                        <div class="decision-card pass" id="step-15-pass" onclick="inspectStep(15.5)">
+                            <div class="step-title" style="font-size: 1rem;"><i class="fa-solid fa-circle-check" style="color: var(--success);"></i> PASS Path</div>
+                            <div class="step-desc" style="font-size: 0.75rem;">Seamless transition. Moves on to word filtering checks.</div>
+                        </div>
+                    </div>
+                    <div class="decision-branch">
+                        <div class="decision-card fail" id="step-15-fail" onclick="inspectStep(15.6)">
+                            <div class="step-title" style="font-size: 1rem;"><i class="fa-solid fa-circle-xmark" style="color: var(--danger);"></i> FAIL Path</div>
+                            <div class="step-desc" style="font-size: 0.75rem;">Consistency gaps detected. Routes to editor or rewrite loop.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stage 16: Continuity/Surgical Editor -->
+                <div class="flow-step-card" id="step-16" onclick="inspectStep(16)">
+                    <div class="step-header">
+                        <span class="step-num">Step 16</span>
+                        <span class="step-tier"><i class="fa-solid fa-crop-simple"></i> Recovery</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-scissors" style="color: var(--warning);"></i> Continuity Editor (Surgical Patch)</div>
+                    <div class="step-desc">
+                        <span class="badge-ai large-model">large-model</span>
+                        Applies targeted search-and-replace edit blocks to rectify minor/major transitions without rewriting the entire beat.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Preceding beat's prose, newly generated prose draft, reviewer's detailed critique checklist reasons.
+                    </div>
+                    <div class="step-gate-info">Gate: Search-and-replace block applied successfully</div>
+                </div>
+
+                <!-- Stage 17: Banned Words Check -->
+                <div class="flow-step-card" id="step-17" onclick="inspectStep(17)">
+                    <div class="step-header">
+                        <span class="step-num">Step 17</span>
+                        <span class="step-tier"><i class="fa-solid fa-filter"></i> Sanity Check</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-ban" style="color: var(--danger);"></i> Banned Words & Surgical Patch</div>
+                    <div class="step-desc">
+                        <span class="badge-ai prog">Code Check</span> & <span class="badge-ai large-model">Surgical AI</span>
+                        Checks for filter words / cliches. If >2 matches, runs a Surgical Editor to swap them with fresh prose contextually.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Finalized prose text draft, global banned phrases/cliches blacklist parameters.
+                    </div>
+                    <div class="step-gate-info">Gate: Banned phrases count <= 2 (or patch applies)</div>
+                </div>
+
+                <!-- Stage 18: Archivist & Lore Extraction -->
+                <div class="flow-step-card" id="step-18" onclick="inspectStep(18)">
+                    <div class="step-header">
+                        <span class="step-num">Step 18</span>
+                        <span class="step-tier"><i class="fa-solid fa-box-archive"></i> Post-Process</span>
+                    </div>
+                    <div class="step-title"><i class="fa-solid fa-floppy-disk" style="color: var(--success);"></i> Archivist (End of Scene)</div>
+                    <div class="step-desc">
+                        <span class="badge-ai large-model">large-model</span> (JSON output)
+                        Runs at the end of a scene. Indexes new lore facts, updates cast goals, and records relationship changes into the World Bible database.
+                    </div>
+                    <div class="step-inputs">
+                        <strong>Inputs:</strong> Concatenated text of all beats in the scene, current cast profiles, lore database topics schema.
+                    </div>
+                    <div class="step-gate-info">Gate: JSON output validates and parses successfully</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Inspector Panel (Right Sidebar) -->
+        <div class="inspector-panel" id="inspector">
+            <div class="inspector-title" id="ins-title">
+                <i class="fa-solid fa-circle-info" style="color: var(--primary);"></i>
+                Select a pipeline step
+            </div>
+            
+            <div class="inspector-section">
+                <div class="inspector-label">Function Name</div>
+                <div class="inspector-val" id="ins-function">Click on any card to view detailed specifications, input contexts, model configurations, and retry/error rollback vectors.</div>
+            </div>
+
+            <div class="inspector-section">
+                <div class="inspector-label">AI Model & Tier</div>
+                <div class="inspector-val" id="ins-model">-</div>
+            </div>
+
+            <div class="inspector-section">
+                <div class="inspector-label">Inputs / Context Passed</div>
+                <div class="inspector-val" id="ins-inputs">-</div>
+            </div>
+
+            <div class="inspector-section">
+                <div class="inspector-label">Expected Output</div>
+                <div class="inspector-val" id="ins-output">-</div>
+            </div>
+
+            <div class="inspector-section">
+                <div class="inspector-label">Gate Condition to Advance</div>
+                <div class="inspector-val" id="ins-gate">-</div>
+            </div>
+
+            <div class="inspector-section">
+                <div class="inspector-label">Failure & Retry Mechanics</div>
+                <div class="inspector-val" id="ins-retries">-</div>
+            </div>
+        </div>
+
+        <!-- Live Simulator Console -->
+        <div class="simulator-wrapper">
+            <div class="simulator-header">
+                <div class="simulator-title">
+                    <i class="fa-solid fa-terminal" style="color: var(--primary);"></i>
+                    Pipeline Execution Simulator
+                </div>
+                <div class="simulator-controls">
+                    <button class="btn btn-primary" id="btn-sim-outline" onclick="runSimulation('outline')">
+                        <i class="fa-solid fa-compass"></i> Simulate Outlining Phase (Tiers 0.1-4.2)
+                    </button>
+                    <button class="btn btn-primary" id="btn-sim-clean" onclick="runSimulation('outline')">
+                        <i class="fa-solid fa-circle-play"></i> Simulate Prose Clean Pass
+                    </button>
+                    <button class="btn" style="border-color: var(--warning);" id="btn-sim-editor" onclick="runSimulation('editor')">
+                        <i class="fa-solid fa-screwdriver-wrench"></i> Simulate Continuity FAIL (Editor Recovery)
+                    </button>
+                    <button class="btn" style="border-color: var(--danger);" id="btn-sim-rewrite" onclick="runSimulation('rewrite')">
+                        <i class="fa-solid fa-arrows-spin"></i> Simulate Critical FAIL (Agent Rewrite Loop)
+                    </button>
+                    <button class="btn" onclick="clearConsole()">
+                        <i class="fa-solid fa-trash-can"></i> Clear
+                    </button>
+                </div>
+            </div>
+            <div class="console-output" id="console-log">
+                <div class="log-line">
+                    <span class="log-time">[00:00:00]</span>
+                    <span class="log-source">[SYSTEM]</span>
+                    <span class="log-content info">Simulator ready. Select an execution path above to see the console output stream in real-time.</span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Script logic for interactivity -->
+    <script>
+        const stepData = {
+            1: {
+                title: "Conceptual Development Agent",
+                function: "initStory() - Tier 0.1",
+                model: "<code>deepseek/deepseek-v4-pro</code> (large, JSON: false)",
+                inputs: "User raw outline text, style/genre guides, tone parameters, and imported lore context.",
+                output: "YAML object detailing core genre class, style guidelines, atmosphere guidelines, world bible status quo, and initial character briefs.",
+                gate: "YAML or XML tags parse correctly, returning string blocks for genre, style, and world bible.",
+                retries: "Direct UI correction loops. No automated cascading deletions above this stage."
+            },
+            2: {
+                title: "Character Developer (Interviews)",
+                function: "initStory() - Tier 0.2",
+                model: "<code>deepseek/deepseek-v4-pro</code> (large, JSON: false)",
+                inputs: "World bible context, active character brief (name, role, flaw, desire), and narrative tone guidelines.",
+                output: "First-person narrative interview context, voice samples, and psychological dossiers.",
+                gate: "A text interview block is successfully generated for every single character profile brief in the cast list.",
+                retries: "No automated rollback. If any interview fails, it retries the generation. If it fails permanently, the story baseline initialization aborts."
+            },
+            3: {
+                title: "Story Arc Agent",
+                function: "initStory() - Tier 1.1",
+                model: "<code>deepseek/deepseek-v4-pro</code> (large, JSON: false)",
+                inputs: "World bible, genre classification, style parameters, tone guidelines, character casts with flaws/desires.",
+                output: "YAML schema detailing starting and ending value states (inciting incident), character arcs, twists, and narrative threads.",
+                gate: "Story Arc details parsed as valid YAML structure. Maps character arcs and narrative threads.",
+                retries: "Retries the Story Arc planner up to 3 times on reviewer FAIL status."
+            },
+            4: {
+                title: "Story Arc Reviewer",
+                function: "runAgentWithEscalation() - Tier 1.2",
+                model: "<code>deepseek/deepseek-v4-flash</code> (small, JSON: false)",
+                inputs: "Story concept, world bible, generated Story Arc plan.",
+                output: "YAML status report: PASS or FAIL along with critiques/reasons.",
+                gate: "Reviewer status == 'PASS'",
+                retries: "Fails trigger a retry of Step 3 (Story Arc Agent), feeding the critique reasons as prompts. Bypasses to large model on attempt 3."
+            },
+            5: {
+                title: "Act Planner (Act Agent)",
+                function: "runAgentWithEscalation() - Tier 2.1",
+                model: "Starts with <code>deepseek/deepseek-v4-flash</code> (small). Escalates to <code>deepseek/deepseek-v4-pro</code> (large) on Attempt 3.",
+                inputs: "Story concept, theme milestones, character profiles list, and structural boundaries.",
+                output: "YAML list representing Acts: number, title, description, milestones, and knots.",
+                gate: "Passes Programmatic Validation: at least 3 acts planned, and every act description has a length >= 50 characters.",
+                retries: "Up to 3 attempts. Failure to compile valid YAML or programmatic bounds results in immediate retry. Downstream failure in Chapter Agent plans triggers a rollback to this step."
+            },
+            6: {
+                title: "Act Reviewer",
+                function: "runAgentWithEscalation() - Tier 2.2",
+                model: "<code>deepseek/deepseek-v4-flash</code> (small, JSON: false)",
+                inputs: "Generated Act outlines, twists and surprises, inciting incidents.",
+                output: "YAML listing critique analysis, status (PASS or FAIL), and list of deviation reasons.",
+                gate: "Reviewer returns status YAML with status equal to 'PASS'.",
+                retries: "If the review fails (FAIL status), it triggers a retry of Step 5 (Act Planner), passing the review reasons as feedback. Bypasses to large model on attempt 3."
+            },
+            7: {
+                title: "Chapter Planner (Chapter Agent)",
+                function: "runAgentWithEscalation() - Tier 3.1",
+                model: "Starts with <code>deepseek/deepseek-v4-flash</code> (small). Escalates to <code>deepseek/deepseek-v4-pro</code> (large) on Attempt 3.",
+                inputs: "Detailed Act list, character dossiers, story guidelines, and specific active Act variables.",
+                output: "YAML schema detailing chapters: chapter number, title, and descriptive milestones.",
+                gate: "Passes Programmatic Validation: at least 5 chapters generated for the target Act.",
+                retries: "Up to 3 attempts. If the Chapter Agent fails 3 times, it triggers a cascading rollback to the Act Agent (Step 5, wiping current act outline and starting over). Downstream failure in Scene planning triggers a rollback to this step."
+            },
+            8: {
+                title: "Chapter Reviewer",
+                function: "runAgentWithEscalation() - Tier 3.2",
+                model: "<code>deepseek/deepseek-v4-flash</code> (small, JSON: false)",
+                inputs: "Generated chapter structures, Act objectives.",
+                output: "YAML outlining critique analysis, status (PASS or FAIL), and deviation reasons.",
+                gate: "Reviewer returns status YAML with status equal to 'PASS'.",
+                retries: "If the review fails, it loops back to retry Step 7 (Chapter Planner) up to 3 times. If all attempts fail, it rolls back to Step 5 (Act Planner)."
+            },
+            9: {
+                title: "Scene Planner (Scene Agent)",
+                function: "runAgentWithEscalation() - Tier 4.1",
+                model: "Starts with <code>deepseek/deepseek-v4-flash</code> (small). Escalates to <code>deepseek/deepseek-v4-pro</code> (large) on Attempt 3.",
+                inputs: "Act/Chapter outline, active cast lists, target chapter scope, and world bible rules.",
+                output: "YAML array outlining Scenes: scene number, title, cast IDs, dominant narrative mode, value shifts, and relationship shifts.",
+                gate: "Passes Programmatic Validation: at least 2 scenes (or target ranges limit) created per Chapter.",
+                retries: "Up to 3 attempts. If scene planning fails 3 times, it triggers a rollback to the Chapter Agent (Step 7). Downstream failure in Beat planning triggers a rollback to this step."
+            },
+            10: {
+                title: "Scene Reviewer",
+                function: "runAgentWithEscalation() - Tier 4.2",
+                model: "<code>deepseek/deepseek-v4-flash</code> (small, JSON: false)",
+                inputs: "Generated scenes, parent chapter objectives, cast list.",
+                output: "YAML outlining critique analysis, status (PASS or FAIL), and deviation reasons.",
+                gate: "Reviewer returns status YAML with status equal to 'PASS'.",
+                retries: "If the review fails, it loops back to retry Step 9 (Scene Planner) up to 3 times. If all attempts fail, it rolls back to Step 7 (Chapter Planner)."
+            },
+            11: {
+                title: "Beat Planner (Beat Agent)",
+                function: "runAgentWithEscalation() - Tier 5.1",
+                model: "Starts with <code>deepseek/deepseek-v4-flash</code> (small). Escalates to <code>deepseek/deepseek-v4-pro</code> (large) on Attempt 3.",
+                inputs: "Parent scene directives, character interview profiles, current relationship ledger, style guide parameters, and preceding beat outlines.",
+                output: "YAML output containing detailed choreography: <code>start</code> entry states, <code>pivot</code> turning points, <code>end</code> exit states, and tactical actions.",
+                gate: "Passes Programmatic Validation: at least 3 beats (or target ranges limit) created per Scene.",
+                retries: "Up to 3 attempts. If 3 attempts fail, it rolls back to the Scene Agent (deleting scenes and replanning). Downstream failure in prose writing (Writing Agent) triggers a rollback to this step."
+            },
+            12: {
+                title: "Beat Reviewer",
+                function: "runAgentWithEscalation() - Tier 5.2",
+                model: "<code>deepseek/deepseek-v4-flash</code> (small, JSON: false)",
+                inputs: "Generated beats choreography, parent scene description.",
+                output: "YAML outlining critique analysis, status (PASS or FAIL), and deviation reasons.",
+                gate: "Reviewer returns status YAML with status equal to 'PASS'.",
+                retries: "If the review fails, it loops back to retry Step 11 (Beat Planner) up to 3 times. If all attempts fail, it rolls back to Step 9 (Scene Planner)."
+            },
+            13: {
+                title: "Query Expansion",
+                function: "retrieveContext() Preprocessor",
+                model: "<code>deepseek/deepseek-v4-flash</code> (small, temperature: 0.2)",
+                inputs: "Raw beat description text, current character profiles, and scene location coordinates.",
+                output: "A comma-separated string containing refined search keywords, thematic tags, and entity associations.",
+                gate: "RAG context strings successfully retrieved from Vector DB (uses query as fallback if search throws error).",
+                retries: "If Query Expansion fails or times out, the system catches the error, logs a console warning, and falls back to using the raw narrative action query directly."
+            },
+            14: {
+                title: "Writing Agent (Prose Generation)",
+                function: "writeProse() - Tier 5.3",
+                model: "Starts with <code>deepseek/deepseek-v4-flash</code> (small). Escalates to <code>deepseek/deepseek-v4-pro</code> (large) on Attempt 3.",
+                inputs: "Comprehensive context block including detailed scene choreography, character profiles, RAG lore contexts, style guide, full scene history, and preceding beat's prose.",
+                output: "Story text paragraphs (400-600 words). Strictly text-only (no XML wrappers, markdown formatting, or YAML tags).",
+                gate: "Passes length validation parameters (prose is non-empty and falls within range configurations).",
+                retries: "Up to 3 attempts. If all 3 attempts fail, it triggers a rollback to the Beat Agent (Step 11, deleting current beat prose and regenerates beat structure)."
+            },
+            15: {
+                title: "Continuity Reviewer",
+                function: "callAI() - Reviewer Validation",
+                model: "<code>deepseek/deepseek-v4-flash</code> (small, JSON: false)",
+                inputs: "Preceding beat's prose text, generated beat's prose text, and target choreography directives.",
+                output: "Strict YAML containing <code>critique_analysis</code>, <code>status</code> (PASS/FAIL), and a list of <code>deviation_reasons</code>.",
+                gate: "Reviewer returns status YAML with status equal to 'PASS'.",
+                retries: "If the small model returns malformed YAML, the system catches the parser warning and immediately retries the review call using the <code>large</code> model (DeepSeek-Pro). If YAML parsing still fails, fallback checks inspect raw text for the word 'PASS'."
+            },
+            15.5: {
+                title: "PASS Path (Reviewer)",
+                function: "Review Passed Step",
+                model: "Programmatic Routing",
+                inputs: "Review status string is equal to 'PASS'.",
+                output: "Bypasses the Surgical Continuity Editor entirely, saves the current prose, and routes directly to Step 17 (Banned Words Check).",
+                gate: "Routing matches 'PASS'.",
+                retries: "N/A"
+            },
+            15.6: {
+                title: "FAIL Path (Reviewer)",
+                function: "Review Failed Routing",
+                model: "Programmatic Routing",
+                inputs: "Review status string is equal to 'FAIL' along with checklist reasons.",
+                output: "Branches into two pathways based on severity: 1. If any critique has severity 'CRITICAL', it skips editor patching and increments <code>attempt++</code> on the Writing Agent (Tier 5.3). 2. If only 'MAJOR' or 'MINOR' issues exist, it routes to Step 16 (Continuity Editor).",
+                gate: "Routing matches 'FAIL'.",
+                retries: "N/A"
+            },
+            16: {
+                title: "Continuity Editor (Surgical Patch)",
+                function: "applySurgicalEdits() Recovery",
+                model: "<code>deepseek/deepseek-v4-pro</code> (large, JSON: false)",
+                inputs: "Preceding beat's prose, current drafted prose, and the reviewer's detailed critique reasons.",
+                output: "YAML block listing precise edit instructions: <code>search_replace</code>, <code>rewrite_passage</code>, <code>insert_after</code>, or <code>delete_passage</code>.",
+                gate: "The search-replace search string blocks successfully find matches and patch the draft text in memory.",
+                retries: "If applying surgical edits fails due to malformed XML/YAML tags or search string mismatches (e.g. 'unexpected end of stream'), the system catches the exception, logs a parsing failure warning, and rolls back to the Beat Agent (Step 11, regenerating choreography)."
+            },
+            17: {
+                title: "Banned Words & Surgical Patch",
+                function: "window.countBannedPhrases() check",
+                model: "Code regex scan + <code>deepseek/deepseek-v4-pro</code> (large, JSON: false)",
+                inputs: "Finalized prose text draft, and the active global banned words/phrases list.",
+                output: "If matching phrases count > 2: calls the Surgical Editor using YAML search-replace blocks to rewrite only sentences containing banned terms.",
+                gate: "Code checks count is <= 2 matches, or surgical AI replacements succeed.",
+                retries: "If the surgical editor YAML parser fails, it retains the raw generated text but logs a console warning, allowing generation to continue without crashing."
+            },
+            18: {
+                title: "Archivist (End of Scene)",
+                function: "handleWorldUpdates() / Archivist",
+                model: "<code>deepseek/deepseek-v4-pro</code> (large, JSON: true)",
+                inputs: "The complete concatenated text of all beats in the scene, current cast profiles, and list of lore topics.",
+                output: "Strict JSON object detailing updates to character histories, newly discovered character profiles, lore entries, and relationship shift updates.",
+                gate: "Successful JSON parse of output object.",
+                retries: "Since the model uses strict JSON mode (response_format), the API outputs formatted JSON. If structural parsing errors occur, the system runs fallback regex filters on the raw text to locate braces `{}` and logs a warn warning."
+            }
+        };
+
+        let currentMode = "detailed";
+        let activeStep = null;
+        let simInterval = null;
+
+        function toggleFlowMode(mode) {
+            currentMode = mode;
+            document.getElementById('btn-simplified-mode').className = `btn ${mode === 'simplified' ? 'btn-primary' : ''}`;
+            document.getElementById('btn-detailed-mode').className = `btn ${mode === 'detailed' ? 'btn-primary' : ''}`;
+            
+            const decisionBlock = document.getElementById('decision-block');
+            const editorStep = document.getElementById('step-16');
+            const reviewerArcs = document.getElementById('step-4');
+            const reviewerActs = document.getElementById('step-6');
+            const reviewerChapters = document.getElementById('step-8');
+            const reviewerScenes = document.getElementById('step-10');
+            const reviewerBeats = document.getElementById('step-12');
+            
+            if (mode === 'simplified') {
+                decisionBlock.style.display = 'none';
+                editorStep.style.display = 'none';
+                reviewerArcs.style.display = 'none';
+                reviewerActs.style.display = 'none';
+                reviewerChapters.style.display = 'none';
+                reviewerScenes.style.display = 'none';
+                reviewerBeats.style.display = 'none';
+            } else {
+                decisionBlock.style.display = 'flex';
+                editorStep.style.display = 'block';
+                reviewerArcs.style.display = 'block';
+                reviewerActs.style.display = 'block';
+                reviewerChapters.style.display = 'block';
+                reviewerScenes.style.display = 'block';
+                reviewerBeats.style.display = 'block';
+            }
+            updateConnectors();
+        }
+
+        // SVG Connector Line Math
+        function updateConnectors() {
+            const svg = document.getElementById('connector-svg');
+            svg.innerHTML = svg.innerHTML.split('</defs>')[0] + '</defs>'; // keep defs, clear paths
+            
+            let standardSteps = [];
+            if (currentMode === 'detailed') {
+                standardSteps = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+            } else {
+                standardSteps = [1, 2, 3, 5, 7, 9, 11, 13, 14, 15];
+            }
+            
+            // Connect sequential steps
+            for (let i = 0; i < standardSteps.length - 1; i++) {
+                drawConnector(`step-${standardSteps[i]}`, `step-${standardSteps[i+1]}`, 'active');
+            }
+
+            if (currentMode === 'detailed') {
+                // Connect Step 15 (Reviewer) to Decision Block branches
+                drawConnector('step-15', 'step-15-pass', 'active');
+                drawConnector('step-15', 'step-15-fail', 'active');
+                
+                // Connect Pass Branch to Step 17
+                drawConnector('step-15-pass', 'step-17', 'active');
+                
+                // Connect Fail Branch to Step 16 (Editor)
+                drawConnector('step-15-fail', 'step-16', 'active');
+                
+                // Connect Step 16 to Step 17
+                drawConnector('step-16', 'step-17', 'active');
+
+                // Draw loops & rollback lines (with marker arrows)
+                // Left Side Cascading Rollbacks
+                drawCurveConnector('step-4', 'step-3', 'retry', -80, true);    // Story Arc Review fails -> Story Arc Agent retry
+                drawCurveConnector('step-6', 'step-5', 'retry', -100, true);   // Act Review fails -> Act Agent retry
+                drawCurveConnector('step-8', 'step-7', 'retry', -120, true);   // Chapter Review fails -> Chapter Agent retry
+                drawCurveConnector('step-10', 'step-9', 'retry', -140, true);   // Scene Review fails -> Scene Agent retry
+                drawCurveConnector('step-12', 'step-11', 'retry', -160, true); // Beat Review fails -> Beat Agent retry
+                
+                drawCurveConnector('step-7', 'step-5', 'retry', -180, true);   // Chapter Agent fails (3x) -> Act Agent rollback
+                drawCurveConnector('step-9', 'step-7', 'retry', -200, true);   // Scene Agent fails (3x) -> Chapter Agent rollback
+                drawCurveConnector('step-11', 'step-9', 'retry', -220, true);  // Beat Agent fails (3x) -> Scene Agent rollback
+                drawCurveConnector('step-16', 'step-11', 'retry', -240, true); // Editor fails -> Beat Agent rollback
+
+                // Right Side localized generation loops
+                drawCurveConnector('step-15-fail', 'step-14', 'retry', 150, true); // Reviewer Critical fail -> Writing Agent (Rewrite)
+            } else {
+                // Simplified Mode Connectors: Skip decision block and editor
+                drawConnector('step-15', 'step-17', 'active');
+            }
+
+            // Connect Step 17 to Step 18
+            drawConnector('step-17', 'step-18', 'active');
+        }
+
+        function drawConnector(fromId, toId, type) {
+            const fromEl = document.getElementById(fromId);
+            const toEl = document.getElementById(toId);
+            const container = document.querySelector('.flow-container');
+            
+            if (!fromEl || !toEl) return;
+
+            const rectFrom = fromEl.getBoundingClientRect();
+            const rectTo = toEl.getBoundingClientRect();
+            const rectContainer = container.getBoundingClientRect();
+
+            const x1 = rectFrom.left + rectFrom.width / 2 - rectContainer.left;
+            const y1 = rectFrom.bottom - rectContainer.top;
+            const x2 = rectTo.left + rectTo.width / 2 - rectContainer.left;
+            const y2 = rectTo.top - rectContainer.top;
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            path.setAttribute('d', `M ${x1} ${y1} L ${x2} ${y2}`);
+            path.setAttribute('class', `flow-line ${type}`);
+            path.setAttribute('marker-end', 'url(#arrow-active)');
+            document.getElementById('connector-svg').appendChild(path);
+        }
+
+        function drawCurveConnector(fromId, toId, type, curveOffset, drawArrow = false) {
+            const fromEl = document.getElementById(fromId);
+            const toEl = document.getElementById(toId);
+            const container = document.querySelector('.flow-container');
+            
+            if (!fromEl || !toEl) return;
+
+            const rectFrom = fromEl.getBoundingClientRect();
+            const rectTo = toEl.getBoundingClientRect();
+            const rectContainer = container.getBoundingClientRect();
+
+            // Right/Left side connectors for retry/fallback paths
+            const x1 = (curveOffset > 0 ? rectFrom.right : rectFrom.left) - rectContainer.left;
+            const y1 = rectFrom.top + rectFrom.height / 2 - rectContainer.top;
+            const x2 = (curveOffset > 0 ? rectTo.right : rectTo.left) - rectContainer.left;
+            const y2 = rectTo.top + rectTo.height / 2 - rectContainer.top;
+
+            const controlX = x1 + curveOffset;
+            const controlY = (y1 + y2) / 2;
+
+            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            
+            // Draw path backwards from origin step to target step to let marker-end point toward retry target
+            path.setAttribute('d', `M ${x1} ${y1} C ${controlX} ${y1}, ${controlX} ${y2}, ${x2} ${y2}`);
+            path.setAttribute('class', `flow-line ${type}`);
+            if (drawArrow) {
+                path.setAttribute('marker-end', 'url(#arrow-retry)');
+            }
+            document.getElementById('connector-svg').appendChild(path);
+        }
+
+        function inspectStep(stepId) {
+            // Remove active class from all
+            document.querySelectorAll('.flow-step-card, .decision-card').forEach(el => el.classList.remove('active', 'pulse-active'));
+            
+            let cardId = `step-${stepId}`;
+            if (stepId === 15.5) cardId = 'step-15-pass';
+            if (stepId === 15.6) cardId = 'step-15-fail';
+            
+            const card = document.getElementById(cardId);
+            if (card) {
+                card.classList.add('active');
+                card.classList.add('pulse-active');
+            }
+
+            const data = stepData[stepId];
+            if (data) {
+                document.getElementById('ins-title').innerHTML = `<i class="fa-solid fa-circle-info" style="color: var(--primary);"></i> ${data.title}`;
+                document.getElementById('ins-function').innerHTML = `<code>${data.function}</code>`;
+                document.getElementById('ins-model').innerHTML = data.model;
+                document.getElementById('ins-inputs').innerHTML = data.inputs;
+                document.getElementById('ins-output').innerHTML = data.output;
+                document.getElementById('ins-gate').innerHTML = data.gate;
+                document.getElementById('ins-retries').innerHTML = data.retries;
+            }
+            activeStep = stepId;
+        }
+
+        function clearConsole() {
+            document.getElementById('console-log').innerHTML = '';
+        }
+
+        function writeLog(source, text, type = 'info') {
+            const consoleEl = document.getElementById('console-log');
+            const timeStr = new Date().toLocaleTimeString();
+            
+            const logLine = document.createElement('div');
+            logLine.className = 'log-line';
+            logLine.innerHTML = `
+                <span class="log-time">[${timeStr}]</span>
+                <span class="log-source">[${source}]</span>
+                <span class="log-content ${type}">${text}</span>
+            `;
+            consoleEl.appendChild(logLine);
+            consoleEl.scrollTop = consoleEl.scrollHeight;
+        }
+
+        function runSimulation(type) {
+            if (simInterval) clearInterval(simInterval);
+            clearConsole();
+            
+            const timeline = [];
+            
+            if (type === 'outline') {
+                timeline.push({ step: 1, delay: 0, log: { src: "SYSTEM", txt: "Initializing Story Generation Pipeline...", type: "info" } });
+                timeline.push({ step: 1, delay: 1000, log: { src: "AI CALL", txt: '[AI Call - "Conceptual Development"] Starting request... Model: deepseek-v4-pro', type: "info" } });
+                timeline.push({ step: 2, delay: 2500, log: { src: "AI CALL", txt: '[AI Call - "Character Developer"] Created cast records and voice interviews for Kelly and Marcus.', type: "success" } });
+                timeline.push({ step: 3, delay: 4000, log: { src: "AI CALL", txt: '[AI Call - "Story Arc Planner"] Succeeded. Established A/B plots and inciting incident.', type: "success" } });
+                timeline.push({ step: 4, delay: 5000, log: { src: "AI CALL", txt: '[AI Call - "Story Arc Reviewer"] SUCCESS: status PASS', type: "success" } });
+                
+                timeline.push({ step: 5, delay: 6000, log: { src: "PIPELINE", txt: '[Pipeline - Act Agent] Attempt 1 Started', type: "agent" } });
+                timeline.push({ step: 6, delay: 7500, log: { src: "AI CALL", txt: '[AI Call - Act Planner] Succeeded. Act Reviewer: PASS.', type: "success" } });
+                
+                timeline.push({ step: 7, delay: 8500, log: { src: "PIPELINE", txt: '[Pipeline - Chapter Agent] Attempt 1 Started', type: "agent" } });
+                timeline.push({ step: 8, delay: 10000, log: { src: "SYSTEM", txt: 'Chapter Planner Reviewer: PASS. 5 chapters seeded.', type: "success" } });
+                
+                timeline.push({ step: 9, delay: 11000, log: { src: "PIPELINE", txt: '[Pipeline - Scene Agent] Attempt 1 Started', type: "agent" } });
+                timeline.push({ step: 10, delay: 12500, log: { src: "SYSTEM", txt: "Scene Planner Reviewer: PASS. Outlining phases complete.", type: "success" } });
+            } 
+            else if (type === 'clean') {
+                timeline.push({ step: 11, delay: 0, log: { src: "PIPELINE", txt: '[Pipeline - Beat Agent] Attempt 1 Started', type: "agent" } });
+                timeline.push({ step: 12, delay: 1000, log: { src: "AI CALL", txt: '[AI Call - "Beat Agent Reviewer"] SUCCESS: status PASS', type: "success" } });
+                
+                timeline.push({ step: 13, delay: 2000, log: { src: "AI CALL", txt: '[AI Call - "Query Expansion"] SUCCESS in 0.8s | Tokens: 102', type: "success" } });
+                
+                timeline.push({ step: 14, delay: 3000, log: { src: "PIPELINE", txt: '[Pipeline - Writing Agent] Attempt 1 Started', type: "agent" } });
+                timeline.push({ step: 14, delay: 4000, log: { src: "AI CALL", txt: '[AI Call - "Writing Agent Generator"] SUCCESS', type: "success" } });
+                
+                timeline.push({ step: 15, delay: 5000, log: { src: "AI CALL", txt: '[AI Call - "Continuity Reviewer"] Starting request...', type: "info" } });
+                timeline.push({ step: 15.5, delay: 6000, log: { src: "AI CALL", txt: '[AI Call - "Continuity Reviewer"] SUCCESS | Output: status: PASS', type: "success" } });
+                
+                timeline.push({ step: 17, delay: 7000, log: { src: "SYSTEM", txt: "Banned words check passed successfully.", type: "success" } });
+                timeline.push({ step: 18, delay: 8000, log: { src: "AI CALL", txt: '[AI Call - "Archivist"] SUCCESS in 1.2s | JSON registry updated.', type: "success" } });
+            } 
+            else if (type === 'editor') {
+                timeline.push({ step: 15.6, delay: 0, log: { src: "AI CALL", txt: '[AI Call - "Continuity Reviewer"] SUCCESS | Output: status: FAIL | Reasons: ["Marcus is in the wrong room"]', type: "warn" } });
+                timeline.push({ step: 16, delay: 1000, log: { src: "PIPELINE", txt: "Continuity Check Failed! Invoking Continuity Editor...", type: "warn" } });
+                timeline.push({ step: 16, delay: 1500, log: { src: "AI CALL", txt: '[AI Call - "Continuity Editor"] Starting request... Model: deepseek-v4-pro', type: "info" } });
+                timeline.push({ step: 16, delay: 3000, log: { src: "AI CALL", txt: '[AI Call - "Continuity Editor"] SUCCESS in 1.5s', type: "success" } });
+                timeline.push({ step: 17, delay: 4000, log: { src: "SYSTEM", txt: "Surgical patch [search_replace] applied successfully.", type: "success" } });
+                timeline.push({ step: 18, delay: 5000, log: { src: "AI CALL", txt: '[AI Call - "Archivist"] SUCCESS in 1.1s', type: "success" } });
+            }
+            else if (type === 'rewrite') {
+                timeline.push({ step: 15.6, delay: 0, log: { src: "AI CALL", txt: '[AI Call - "Continuity Reviewer"] SUCCESS | Output: status: FAIL | Severity: CRITICAL', type: "error" } });
+                timeline.push({ step: 14, delay: 1000, log: { src: "PIPELINE", txt: "Critical issue detected! Bypassing editor. Regenerating prose...", type: "warn" } });
+                timeline.push({ step: 14, delay: 1500, log: { src: "PIPELINE", txt: '[Pipeline - Writing Agent] Attempt 2 Started', type: "agent" } });
+                timeline.push({ step: 14, delay: 2800, log: { src: "AI CALL", txt: '[AI Call - "Writing Agent Generator"] SUCCESS', type: "success" } });
+                timeline.push({ step: 15, delay: 3800, log: { src: "AI CALL", txt: '[AI Call - "Continuity Reviewer"] SUCCESS | Output: status: PASS', type: "success" } });
+                timeline.push({ step: 17, delay: 4800, log: { src: "SYSTEM", txt: "Banned words check passed.", type: "success" } });
+                timeline.push({ step: 18, delay: 5800, log: { src: "AI CALL", txt: '[AI Call - "Archivist"] SUCCESS', type: "success" } });
+            }
+
+            // Run timeline
+            timeline.forEach(event => {
+                setTimeout(() => {
+                    inspectStep(event.step);
+                    writeLog(event.log.src, event.log.txt, event.log.type);
+                }, event.delay);
+            });
+        }
+
+        // Initialize Layout
+        window.addEventListener('load', () => {
+            toggleFlowMode('detailed');
+            inspectStep(1);
+            
+            // Adjust SVG sizing dynamically on window resize
+            window.addEventListener('resize', updateConnectors);
+            
+            // Trigger initial lines drawing
+            setTimeout(updateConnectors, 200);
+        });
+    </script>
+</body>
+</html>
