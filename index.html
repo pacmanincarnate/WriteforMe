@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EllipsisProse 1.0 - AI Story Architect</title>
+    <title>EllipsisProse 0.5 - AI Story Architect</title>
 
     <!-- 1. Tailwind CSS (Styling) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -442,6 +442,7 @@
         const Image = (p) => <Icon name="image" {...p} />;
         const BookOpen = (p) => <Icon name="book-open" {...p} />;
         const Library = (p) => <Icon name="library" {...p} />;
+        const Bookmark = (p) => <Icon name="bookmark" {...p} />;
 
 
         /* ----------------------------------------------------------------------
@@ -556,14 +557,75 @@
         };
 
         /* ----------------------------------------------------------------------
-          GEMINI PROMPTS
-          ----------------------------------------------------------------------
+           REASONING & THINKING PARSER (Qwen 3 / DeepSeek / KoboldCPP / cloud)
+           ----------------------------------------------------------------------
         */
+        const extractReasoningAndContent = (rawText, initialReasoning = "") => {
+            let text = (rawText !== null && rawText !== undefined) ? String(rawText) : "";
+            const reasoningParts = [];
+
+            if (initialReasoning && String(initialReasoning).trim()) {
+                reasoningParts.push(String(initialReasoning).trim());
+            }
+
+            if (!text) {
+                return {
+                    text: "",
+                    reasoningText: reasoningParts.join("\n\n")
+                };
+            }
+
+            // 1. Paired tags: <think>...</think>, <reasoning>...</reasoning>, <thought>...</thought>, <analysis>...</analysis>
+            const pairedTagRegex = /<(think|reasoning|thought|analysis)>([\s\S]*?)<\/\1>/gi;
+            let match;
+            while ((match = pairedTagRegex.exec(text)) !== null) {
+                if (match[2] && match[2].trim()) {
+                    reasoningParts.push(match[2].trim());
+                }
+            }
+            text = text.replace(pairedTagRegex, "");
+
+            // 2. Implicit opening tag: Text starts directly with thinking and ends with </think> (or </reasoning>, etc.)
+            // Extremely common in KoboldCPP / Qwen 3 / DeepSeek R1 where <think> is pre-filled in prompt template header.
+            const closingOnlyRegex = /^([\s\S]*?)<\/(think|reasoning|thought|analysis)>/i;
+            const closingMatch = text.match(closingOnlyRegex);
+            if (closingMatch) {
+                if (closingMatch[1] && closingMatch[1].trim()) {
+                    reasoningParts.push(closingMatch[1].trim());
+                }
+                text = text.substring(closingMatch[0].length);
+            }
+
+            // 3. Unclosed thinking tag: Text contains <think> (or <reasoning>, etc.) without a closing tag
+            const openingOnlyRegex = /<(think|reasoning|thought|analysis)>([\s\S]*)$/i;
+            const openingMatch = text.match(openingOnlyRegex);
+            if (openingMatch) {
+                const tagIndex = text.search(/<(think|reasoning|thought|analysis)>/i);
+                if (openingMatch[2] && openingMatch[2].trim()) {
+                    reasoningParts.push(openingMatch[2].trim());
+                }
+                text = text.substring(0, tagIndex);
+            }
+
+            // 4. Standalone leftover closing tags if any remain
+            text = text.replace(/<\/(think|reasoning|thought|analysis)>/gi, "");
+
+            return {
+                text: text.trim(),
+                reasoningText: reasoningParts.join("\n\n")
+            };
+        };
+
         const cleanJson = (text) => {
             if (!text) return "";
+            
+            // Extract reasoning/thinking if present before parsing JSON
+            const extracted = extractReasoningAndContent(text);
+            const contentToClean = extracted.text || extracted.reasoningText || String(text).trim();
+
             // Try matching markdown code blocks first
-            const match = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-            let cleaned = match ? match[1].trim() : text.trim();
+            const match = contentToClean.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+            let cleaned = match ? match[1].trim() : contentToClean.trim();
 
             // Try to find the JSON object {...} first and validate it
             const firstBrace = cleaned.indexOf('{');
@@ -715,25 +777,100 @@
 
         const parseYaml = (text) => {
             if (!text) return null;
-            let clean = text.trim();
+            let clean = String(text).trim();
             // Remove markdown code block wrappers
-            clean = clean.replace(/^```(?:yaml)?\n/i, "");
-            clean = clean.replace(/\n```$/, "");
+            clean = clean.replace(/^```(?:yaml)?\s*\n/i, "");
+            clean = clean.replace(/\n\s*```$/i, "");
             clean = clean.trim();
-            try {
-                return jsyaml.load(clean);
-            } catch (err) {
-                // Fallback: try to extract yaml if there was leading/trailing chatter
-                const match = clean.match(/```(?:yaml)?([\s\S]*?)```/i);
-                if (match) {
-                    try {
-                        return jsyaml.load(match[1].trim());
-                    } catch (e2) {
-                        throw new Error(`YAML parsing failed: ${err.message}. Raw output: ${text}`);
-                    }
-                }
-                throw new Error(`YAML parsing failed: ${err.message}. Raw output: ${text}`);
+
+            const tryLoad = (str) => {
+                try {
+                    const res = jsyaml.load(str);
+                    if (res && typeof res === 'object') return res;
+                } catch (e) {}
+                return null;
+            };
+
+            // 1. Direct parse attempt
+            let result = tryLoad(clean);
+            if (result) return result;
+
+            // 2. Extract from code block if chatter exists
+            const codeBlockMatch = clean.match(/```(?:yaml)?([\s\S]*?)```/i);
+            if (codeBlockMatch) {
+                result = tryLoad(codeBlockMatch[1].trim());
+                if (result) return result;
             }
+
+            // 3. Extract starting from root YAML key (e.g. 'beats:' or 'acts:' or 'scenes:' or '-')
+            const rootKeyMatch = clean.match(/(?:^|\n)([a-z0-9_]+:\s*|-[\s\S]*)/i);
+            const targetStr = (codeBlockMatch ? codeBlockMatch[1] : (rootKeyMatch ? rootKeyMatch[1] : clean)).trim();
+
+            // 4. Truncation Recovery: Pop incomplete trailing lines from bottom (up to 20 lines)
+            const lines = targetStr.split('\n');
+            for (let i = lines.length - 1; i >= Math.max(0, lines.length - 20); i--) {
+                const candidate = lines.slice(0, i).join('\n').trim();
+                if (!candidate) break;
+                result = tryLoad(candidate);
+                if (result) {
+                    console.warn("Recovered truncated YAML by trimming incomplete trailing output.");
+                    return result;
+                }
+            }
+
+            // 5. Regex Fallback Parser for `beats:` lists if js-yaml failed due to quotes or syntax errors
+            if (clean.includes("beats:") || clean.includes("scene_id") || clean.includes("beat_id")) {
+                try {
+                    const beats = [];
+                    const beatBlocks = clean.split(/(?=- (?:scene_id|beat_id|beat_structure))/i);
+                    for (const block of beatBlocks) {
+                        if (!block.trim() || !block.includes("beat_")) continue;
+                        
+                        const getField = (pattern) => {
+                            const m = block.match(pattern);
+                            return m ? m[1].replace(/^["']|["']$/g, '').trim() : "";
+                        };
+
+                        const scene_id = getField(/scene_id:\s*["']?([^"\n\r]+)["']?/i);
+                        const beat_id = getField(/beat_id:\s*["']?([^"\n\r]+)["']?/i);
+                        const start = getField(/start:\s*["']?([^"\n\r]+)["']?/i);
+                        const pivot = getField(/pivot:\s*["']?([^"\n\r]+)["']?/i);
+                        const end = getField(/end:\s*["']?([^"\n\r]+)["']?/i);
+                        const tactic = getField(/char_A_tactic:\s*["']?([^"\n\r]+)["']?/i);
+                        const action = getField(/char_A_action:\s*["']?([^"\n\r]+)["']?/i);
+                        const reaction = getField(/char_B_reaction:\s*["']?([^"\n\r]+)["']?/i);
+                        const power_shift = getField(/power_shift:\s*["']?([^"\n\r]+)["']?/i);
+                        const valenceMatch = block.match(/valence:\s*(-?\d+)/i);
+                        const valence = valenceMatch ? parseInt(valenceMatch[1], 10) : 0;
+                        const mode_override = getField(/mode_override:\s*["']?([^"\n\r]+)["']?/i);
+
+                        if (beat_id || scene_id || start) {
+                            beats.push({
+                                scene_id,
+                                beat_id,
+                                beat_structure: { start, pivot, end },
+                                char_A_tactic: tactic,
+                                char_A_action: action,
+                                char_B_reaction: reaction,
+                                power_shift,
+                                valence,
+                                mode_override
+                            });
+                        }
+                    }
+                    if (beats.length > 0) {
+                        console.warn("Recovered beats array using Regex Fallback Parser.");
+                        return { beats };
+                    }
+                } catch (fallbackErr) {
+                    console.error("Regex Fallback Parser failed:", fallbackErr);
+                }
+            }
+
+            // If all recovery attempts failed, throw informative error with original message
+            let origMsg = "Unknown error";
+            try { jsyaml.load(clean); } catch (e) { origMsg = e.message; }
+            throw new Error(`YAML parsing failed: ${origMsg}. Raw output: ${text}`);
         };
         window.parseYaml = parseYaml;
 
@@ -1800,6 +1937,9 @@ Output Schema:
         };
 
         const fetchWithTimeout = async (url, options = {}, timeoutMs = 120000) => {
+            if (timeoutMs === 0 || timeoutMs === false || timeoutMs === null) {
+                return await fetch(url, options);
+            }
             const finalTimeout = (timeoutMs !== undefined && timeoutMs !== null && timeoutMs > 0) ? timeoutMs : 120000;
             const controller = new AbortController();
             const id = setTimeout(() => controller.abort(), finalTimeout);
@@ -1867,22 +2007,33 @@ Output Schema:
                     throw new Error(`Gemini returned invalid JSON: ${responseText.substring(0, 200)}`);
                 }
 
-                let text = "";
-                let reasoningText = "";
+                let rawText = "";
+                let initialReasoning = "";
                 const parts = data.candidates?.[0]?.content?.parts;
                 if (parts && parts.length > 0) {
                     for (const part of parts) {
                         if (part.thought) {
-                            reasoningText += (part.text || "");
+                            initialReasoning += (part.text || "");
                         } else {
-                            text += (part.text || "");
+                            rawText += (part.text || "");
                         }
                     }
                 }
                 
-                // Fallback in case no explicit thought flags were set but content is present
-                if (!text && parts && parts[0]) {
-                    text = parts[0].text || "";
+                if (!rawText && parts && parts[0]) {
+                    rawText = parts[0].text || "";
+                }
+
+                const extracted = extractReasoningAndContent(rawText, initialReasoning);
+                let text = extracted.text;
+                const reasoningText = extracted.reasoningText;
+
+                if (!text && reasoningText) {
+                    if (isJson) {
+                        text = reasoningText;
+                    } else {
+                        throw new Error(`Gemini model completed thinking phase but produced no final prose content. Please try again.`);
+                    }
                 }
 
                 // Call callback with metrics and reasoning text
@@ -2026,23 +2177,20 @@ Output Schema:
                     throw new Error(`OpenRouter API returned error: ${data.error.message || JSON.stringify(data.error)}`);
                 }
 
-                let text = data.choices?.[0]?.message?.content || "";
                 const msg = data.choices?.[0]?.message || {};
-                let reasoningText = msg.reasoning || msg.reasoning_content || "";
+                const rawText = msg.content || "";
+                const initialReasoning = msg.reasoning || msg.reasoning_content || "";
 
-                // Fallback for inline `<think>` tags within content
-                if (!reasoningText && text.includes("<think>")) {
-                    const thinkStart = text.indexOf("<think>");
-                    const thinkEnd = text.indexOf("</think>");
-                    if (thinkStart !== -1 && thinkEnd !== -1 && thinkEnd > thinkStart) {
-                        reasoningText = text.substring(thinkStart + 7, thinkEnd).trim();
-                        text = (text.substring(0, thinkStart) + text.substring(thinkEnd + 8)).trim();
-                    }
-                }
+                const extracted = extractReasoningAndContent(rawText, initialReasoning);
+                let text = extracted.text;
+                const reasoningText = extracted.reasoningText;
 
-                // If content is empty but reasoning is present, use reasoning as fallback content
                 if (!text && reasoningText) {
-                    text = reasoningText;
+                    if (isJson) {
+                        text = reasoningText;
+                    } else {
+                        throw new Error(`OpenRouter model completed thinking phase but produced no final prose content. Please increase max tokens or try again.`);
+                    }
                 }
 
                 if (text === undefined || text === null || String(text).trim() === "" || String(text) === "null") {
@@ -2075,6 +2223,299 @@ Output Schema:
             }
         };
 
+        const callNanoGPT = async (apiKey, model, prompt, systemPrompt, isJson = true, options = {}) => {
+            try {
+                const key = apiKey ? apiKey.trim() : "";
+                if (!key) throw new Error("nano-GPT API Key is missing. Please add it in Settings.");
+
+                const opts = (typeof options === 'object' && options !== null) ? options : {};
+
+                const modelId = model || "gpt-4o";
+                const messages = [];
+                if (systemPrompt && String(systemPrompt).trim()) {
+                    messages.push({ role: "system", content: systemPrompt });
+                }
+                messages.push({ role: "user", content: prompt });
+
+                const payload = {
+                    model: modelId,
+                    messages: messages,
+                    max_tokens: opts.max_tokens || 4096,
+                    response_format: isJson ? { type: "json_object" } : undefined
+                };
+
+                // Handle reasoning effort configuration if enabled
+                if (opts.thinking && opts.thinking.enabled) {
+                    const effort = opts.thinking.effort || "medium";
+                    payload.reasoning_effort = effort;
+                }
+
+                const response = await fetchWithTimeout("https://nano-gpt.com/api/v1/chat/completions", {
+                    method: "POST",
+                    headers: {
+                        "Authorization": `Bearer ${key}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify(payload)
+                }, opts.timeout);
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    try {
+                        const errJson = JSON.parse(errText);
+                        if (response.status === 401) {
+                            throw new Error(`nano-GPT Authorization Failed (401). Please check your API Key in Settings. Details: ${errJson.error?.message || errJson.message || errText}`);
+                        }
+                        throw new Error(`nano-GPT Error: ${response.status} - ${errJson.error?.message || errJson.message || errText}`);
+                    } catch (e) {
+                        if (e.message.startsWith("nano-GPT")) throw e;
+                        throw new Error(`nano-GPT Error: ${response.status} - ${errText}`);
+                    }
+                }
+
+                const responseText = await response.text();
+                if (!responseText || !responseText.trim()) {
+                    throw new Error("nano-GPT returned an empty response body.");
+                }
+
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (e) {
+                    throw new Error(`nano-GPT returned invalid JSON: ${responseText.substring(0, 200)}`);
+                }
+
+                if (data.error) {
+                    throw new Error(`nano-GPT API returned error: ${data.error.message || JSON.stringify(data.error)}`);
+                }
+
+                const msg = data.choices?.[0]?.message || {};
+                const delta = data.choices?.[0]?.delta || {};
+                const rawText = msg.content || delta.content || "";
+                const initialReasoning = msg.reasoning || delta.reasoning || msg.reasoning_content || delta.reasoning_content || "";
+
+                const extracted = extractReasoningAndContent(rawText, initialReasoning);
+                let text = extracted.text;
+                const reasoningText = extracted.reasoningText;
+
+                if (!text && reasoningText) {
+                    if (isJson) {
+                        text = reasoningText;
+                    } else {
+                        throw new Error(`nano-GPT model completed thinking phase but produced no final prose content. Please increase max tokens or try again.`);
+                    }
+                }
+
+                if (text === undefined || text === null || String(text).trim() === "" || String(text) === "null") {
+                    throw new Error(`nano-GPT returned no content. Response payload: ${JSON.stringify(data)}`);
+                }
+
+                if (opts.onSuccess) {
+                    const usage = data.usage || {};
+                    opts.onSuccess({
+                        modelUsed: data.model || modelId,
+                        tokensUsed: usage.total_tokens || null,
+                        reasoningTokensUsed: usage.completion_tokens_details?.reasoning_tokens || null,
+                        reasoningText: reasoningText
+                    });
+                }
+
+                if (isJson) {
+                    try {
+                        return JSON.parse(cleanJson(text));
+                    } catch (e) {
+                        console.error("nano-GPT JSON Parse Error. Raw Text:", text);
+                        throw new Error(`Failed to parse nano-GPT response as JSON. Check console for details. Raw snippet: ${String(text).substring(0, 150)}`);
+                    }
+                }
+
+                return text;
+            } catch (error) {
+                console.error("nano-GPT Error:", error);
+                throw error;
+            }
+        };
+
+        const callKoboldCPP = async (baseUrlOrModel, modelOrPrompt, promptOrSys, systemPromptOrIsJson, isJsonOrOptions = true, optionsOrUndefined = {}) => {
+            try {
+                let baseUrl = 'http://localhost:5001';
+                let model = 'koboldcpp';
+                let prompt = '';
+                let systemPrompt = '';
+                let isJson = true;
+                let options = {};
+
+                let firstArg = baseUrlOrModel;
+                if (typeof firstArg === 'string' && !firstArg.startsWith('http://') && !firstArg.startsWith('https://')) {
+                    if (firstArg.includes(':') || firstArg.includes('.') || firstArg.startsWith('localhost')) {
+                        firstArg = 'http://' + firstArg;
+                    }
+                }
+
+                if (typeof firstArg === 'string' && (firstArg.startsWith('http://') || firstArg.startsWith('https://'))) {
+                    baseUrl = firstArg;
+                    model = modelOrPrompt;
+                    prompt = promptOrSys;
+                    systemPrompt = systemPromptOrIsJson;
+                    isJson = isJsonOrOptions;
+                    options = optionsOrUndefined || {};
+                } else {
+                    model = baseUrlOrModel;
+                    prompt = modelOrPrompt;
+                    systemPrompt = promptOrSys;
+                    isJson = systemPromptOrIsJson !== undefined ? systemPromptOrIsJson : true;
+                    options = isJsonOrOptions || {};
+                }
+
+                const opts = (typeof options === 'object' && options !== null) ? options : {};
+
+                const cleanBaseUrl = (baseUrl && String(baseUrl).trim()) 
+                    ? String(baseUrl).trim().replace(/\/+$/, '') 
+                    : 'http://localhost:5001';
+                const modelId = model || "koboldcpp";
+
+                const messages = [];
+                if (systemPrompt && String(systemPrompt).trim()) {
+                    messages.push({ role: "system", content: systemPrompt });
+                }
+                messages.push({ role: "user", content: prompt });
+
+                const payload = {
+                    model: modelId,
+                    messages: messages,
+                    max_tokens: opts.max_tokens || 4096
+                };
+
+                if (isJson) {
+                    payload.response_format = { type: "json_object" };
+                }
+
+                const gbnfGrammar = opts.grammar || opts.gbnf;
+                if (gbnfGrammar) {
+                    payload.grammar = gbnfGrammar;
+                }
+
+                let response;
+                const koboldTimeout = 0; // Local KoboldCPP requests have NO timeout (0 = unlimited wait)
+                try {
+                    response = await fetchWithTimeout(`${cleanBaseUrl}/v1/chat/completions`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(payload)
+                    }, koboldTimeout);
+                } catch (fetchErr) {
+                    if (fetchErr.name === 'AbortError') {
+                        throw new Error(`KoboldCPP request timed out after ${koboldTimeout / 1000} seconds.`);
+                    }
+                    if (fetchErr.message && (
+                        fetchErr.message.includes('Failed to fetch') || 
+                        fetchErr.message.includes('NetworkError') ||
+                        fetchErr.message.includes('ECONNREFUSED') ||
+                        fetchErr.name === 'TypeError'
+                    )) {
+                        throw new Error(`Could not connect to KoboldCPP at ${cleanBaseUrl}. Please ensure KoboldCPP is running locally.`);
+                    }
+                    throw fetchErr;
+                }
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    try {
+                        const errJson = JSON.parse(errText);
+                        throw new Error(`KoboldCPP Error (${response.status}): ${errJson.error?.message || errText}`);
+                    } catch (e) {
+                        if (e.message.startsWith("KoboldCPP Error")) throw e;
+                        throw new Error(`KoboldCPP Error (${response.status}): ${errText}`);
+                    }
+                }
+
+                const responseText = await response.text();
+                if (!responseText || !responseText.trim()) {
+                    throw new Error("KoboldCPP returned an empty response body.");
+                }
+
+                let data;
+                try {
+                    data = JSON.parse(responseText);
+                } catch (e) {
+                    throw new Error(`KoboldCPP returned invalid JSON from API: ${responseText.substring(0, 200)}`);
+                }
+
+                if (data.error) {
+                    throw new Error(`KoboldCPP API returned error: ${data.error.message || JSON.stringify(data.error)}`);
+                }
+
+                const msg = data.choices?.[0]?.message || {};
+                const delta = data.choices?.[0]?.delta || {};
+                const rawText = msg.content || delta.content || "";
+                const initialReasoning = msg.reasoning || delta.reasoning || msg.reasoning_content || delta.reasoning_content || "";
+
+                const extracted = extractReasoningAndContent(rawText, initialReasoning);
+                let text = extracted.text;
+                const reasoningText = extracted.reasoningText;
+
+                if (!text && reasoningText) {
+                    if (isJson) {
+                        text = reasoningText;
+                    } else {
+                        throw new Error(`KoboldCPP model completed thinking phase but produced no final prose content. Please increase max tokens or try again.`);
+                    }
+                }
+
+                if (text === undefined || text === null || String(text).trim() === "" || String(text) === "null") {
+                    throw new Error(`KoboldCPP returned no content. Response payload: ${JSON.stringify(data)}`);
+                }
+
+                if (opts.onSuccess) {
+                    const usage = data.usage || {};
+                    opts.onSuccess({
+                        modelUsed: data.model || modelId,
+                        tokensUsed: usage.total_tokens || null,
+                        reasoningTokensUsed: usage.completion_tokens_details?.reasoning_tokens || null,
+                        reasoningText: reasoningText
+                    });
+                }
+
+                if (isJson) {
+                    try {
+                        return JSON.parse(cleanJson(text));
+                    } catch (e) {
+                        console.error("KoboldCPP JSON Parse Error. Raw Text:", text);
+                        throw new Error(`Failed to parse KoboldCPP response as JSON. Check console for details. Raw snippet: ${String(text).substring(0, 150)}`);
+                    }
+                }
+
+                return text;
+            } catch (error) {
+                console.error("KoboldCPP Error:", error);
+                throw error;
+            }
+        };
+
+        const checkKoboldCPPStatus = async (baseUrl = 'http://localhost:5001') => {
+            const cleanUrl = (baseUrl && String(baseUrl).trim()) 
+                ? String(baseUrl).trim().replace(/\/+$/, '') 
+                : 'http://localhost:5001';
+            try {
+                const response = await fetchWithTimeout(`${cleanUrl}/v1/models`, {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                }, 3000);
+
+                if (!response.ok) {
+                    return { online: false, model: null, error: `HTTP ${response.status}` };
+                }
+
+                const data = await response.json();
+                const modelName = data?.data?.[0]?.id || "KoboldCPP Loaded Model";
+                return { online: true, model: modelName, error: null };
+            } catch (error) {
+                return { online: false, model: null, error: "Connection Refused / Server Offline" };
+            }
+        };
+
         /* ----------------------------------------------------------------------
            RAG & EMBEDDINGS INFRASTRUCTURE
            ----------------------------------------------------------------------
@@ -2096,15 +2537,20 @@ Output Schema:
         };
 
         class EmbeddingService {
-            constructor(apiKey, provider = 'gemini') {
+            constructor(apiKey, provider = 'gemini', baseUrl = 'http://localhost:5001') {
                 this.apiKey = apiKey;
                 this.provider = provider;
+                this.baseUrl = baseUrl;
             }
 
             async getEmbedding(text) {
                 if (!text || !text.trim()) return null;
                 if (this.provider === 'gemini') {
                     return await this.getGeminiEmbedding(text);
+                } else if (this.provider === 'nanogpt') {
+                    return await this.getNanoGPTEmbedding(text);
+                } else if (this.provider === 'koboldcpp') {
+                    return await this.getKoboldCPPEmbedding(text);
                 } else {
                     return await this.getOpenRouterEmbedding(text);
                 }
@@ -2158,6 +2604,55 @@ Output Schema:
 
                 const data = await response.json();
                 // Standard OpenAI format: { data: [{ embedding: [...] }] }
+                return data.data?.[0]?.embedding;
+            }
+
+            async getNanoGPTEmbedding(text) {
+                const key = this.apiKey ? this.apiKey.trim() : "";
+                if (!key) throw new Error("nano-GPT API Key is missing. Please add it in Settings.");
+
+                const response = await fetch("https://nano-gpt.com/api/v1/embeddings", {
+                    method: 'POST',
+                    headers: {
+                        "Authorization": `Bearer ${key}`,
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: "text-embedding-3-small",
+                        input: text
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.text();
+                    throw new Error(`nano-GPT Embedding Failed: ${response.status} - ${err}`);
+                }
+
+                const data = await response.json();
+                return data.data?.[0]?.embedding;
+            }
+
+            async getKoboldCPPEmbedding(text) {
+                const cleanUrl = (this.baseUrl && String(this.baseUrl).trim()) 
+                    ? String(this.baseUrl).trim().replace(/\/+$/, '') 
+                    : 'http://localhost:5001';
+                const response = await fetch(`${cleanUrl}/v1/embeddings`, {
+                    method: 'POST',
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({
+                        model: "default",
+                        input: text
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.text();
+                    throw new Error(`KoboldCPP Embedding Failed: ${response.status} - ${err}. Please ensure KoboldCPP is running on port 5001 with --embedding flag enabled.`);
+                }
+
+                const data = await response.json();
                 return data.data?.[0]?.embedding;
             }
         }
@@ -3055,9 +3550,524 @@ Output Schema:
         ];
 
         /* ----------------------------------------------------------------------
+          MODEL CATALOG & SEARCH HELPERS (Requirement R3)
+          ----------------------------------------------------------------------
+        */
+        const NANO_GPT_DEFAULT_MODELS = [
+            { id: "gpt-4o", name: "GPT-4o", description: "Flagship OpenAI model", contextLength: 128000, capabilities: { vision: true, json: true } },
+            { id: "gpt-4o-mini", name: "GPT-4o Mini", description: "Fast, lightweight model", contextLength: 128000, capabilities: { vision: true, json: true } },
+            { id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet", description: "Anthropic flagship model", contextLength: 200000, capabilities: { vision: true, json: true } },
+            { id: "deepseek/deepseek-r1", name: "DeepSeek R1", description: "Open-weight reasoning model", contextLength: 64000, capabilities: { reasoning: true, json: true } },
+            { id: "deepseek/deepseek-chat", name: "DeepSeek V3", description: "General language model", contextLength: 64000, capabilities: { json: true } }
+        ];
+
+        const parseNanoGPTModelMetadata = (item) => {
+            if (!item) return null;
+            if (typeof item === 'string') {
+                return {
+                    id: item,
+                    name: item,
+                    description: "",
+                    contextLength: null,
+                    maxOutputTokens: null,
+                    capabilities: { vision: false, reasoning: false, json: false },
+                    pricing: null
+                };
+            }
+
+            const id = item.id || item.model || item.name || "unknown-model";
+            const name = item.name || item.display_name || item.title || id;
+            const description = item.description || item.summary || "";
+            
+            const rawContext = item.context_length ?? item.context_window ?? item.max_context_length;
+            const contextLength = typeof rawContext === 'number' ? rawContext : (parseInt(rawContext, 10) || null);
+            
+            const rawMaxOut = item.max_output_tokens ?? item.max_tokens ?? item.max_completion_tokens;
+            const maxOutputTokens = typeof rawMaxOut === 'number' ? rawMaxOut : (parseInt(rawMaxOut, 10) || null);
+
+            const capabilities = { vision: false, reasoning: false, json: false };
+            if (Array.isArray(item.capabilities)) {
+                item.capabilities.forEach(cap => {
+                    const c = String(cap).toLowerCase();
+                    if (c.includes('vision') || c.includes('image')) capabilities.vision = true;
+                    if (c.includes('reasoning') || c.includes('thinking')) capabilities.reasoning = true;
+                    if (c.includes('json') || c.includes('structured')) capabilities.json = true;
+                });
+            } else if (typeof item.capabilities === 'object' && item.capabilities !== null) {
+                capabilities.vision = Boolean(item.capabilities.vision || item.capabilities.image);
+                capabilities.reasoning = Boolean(item.capabilities.reasoning || item.capabilities.thinking);
+                capabilities.json = Boolean(item.capabilities.json || item.capabilities.json_mode);
+            }
+            if (item.supports_vision || item.vision) capabilities.vision = true;
+            if (item.supports_reasoning || item.reasoning) capabilities.reasoning = true;
+            if (item.supports_json || item.json_mode) capabilities.json = true;
+
+            let pricing = null;
+            if (typeof item.pricing === 'object' && item.pricing !== null) {
+                pricing = {
+                    prompt: item.pricing.prompt ?? item.pricing.input ?? item.pricing.prompt_tokens ?? null,
+                    completion: item.pricing.completion ?? item.pricing.output ?? item.pricing.completion_tokens ?? null
+                };
+            } else if (item.cost || item.price) {
+                pricing = { summary: String(item.cost || item.price) };
+            }
+
+            return {
+                id,
+                name,
+                description,
+                contextLength,
+                maxOutputTokens,
+                capabilities,
+                pricing,
+                raw: item
+            };
+        };
+
+        const filterModelsClientSide = (catalog = [], query = "") => {
+            if (!query || !query.trim()) return catalog;
+            const term = query.trim().toLowerCase();
+            return catalog.filter(m => {
+                if (typeof m === 'string') return m.toLowerCase().includes(term);
+                const idMatch = m.id && m.id.toLowerCase().includes(term);
+                const nameMatch = m.name && m.name.toLowerCase().includes(term);
+                const descMatch = m.description && m.description.toLowerCase().includes(term);
+                return idMatch || nameMatch || descMatch;
+            });
+        };
+
+        const fetchNanoGPTModels = async (apiKey = "") => {
+            const headers = { "Accept": "application/json" };
+            if (apiKey && apiKey.trim()) {
+                headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+            }
+
+            try {
+                const response = await fetchWithTimeout(
+                    "https://nano-gpt.com/api/v1/models?detailed=true",
+                    { method: "GET", headers },
+                    15000
+                );
+
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`nano-GPT Catalog Error ${response.status}: ${errText}`);
+                }
+
+                const data = await response.json();
+                const rawList = Array.isArray(data) 
+                    ? data 
+                    : (data.data || data.models || data.results || []);
+
+                const parsedList = rawList
+                    .map(parseNanoGPTModelMetadata)
+                    .filter(Boolean);
+
+                return parsedList.length > 0 ? parsedList : NANO_GPT_DEFAULT_MODELS;
+            } catch (error) {
+                console.error("fetchNanoGPTModels failed:", error);
+                return NANO_GPT_DEFAULT_MODELS;
+            }
+        };
+
+        const searchNanoGPTModels = async (query = "", apiKey = "", cachedCatalog = [], signal = null) => {
+            const trimmedQuery = query.trim();
+
+            if (!trimmedQuery) {
+                return { results: cachedCatalog, isFallback: false };
+            }
+
+            const headers = { "Accept": "application/json" };
+            if (apiKey && apiKey.trim()) {
+                headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+            }
+
+            try {
+                const searchUrl = `https://nano-gpt.com/api/explore/search?type=text&q=${encodeURIComponent(trimmedQuery)}`;
+                const response = await fetchWithTimeout(
+                    searchUrl,
+                    { method: "GET", headers, signal },
+                    10000
+                );
+
+                if (!response.ok) {
+                    throw new Error(`nano-GPT search returned HTTP status ${response.status}`);
+                }
+
+                const data = await response.json();
+                const rawResults = Array.isArray(data) 
+                    ? data 
+                    : (data.results || data.data || data.models || []);
+
+                if (Array.isArray(rawResults) && rawResults.length > 0) {
+                    const parsedResults = rawResults.map(parseNanoGPTModelMetadata).filter(Boolean);
+                    return { results: parsedResults, isFallback: false };
+                }
+
+                const fallbackResults = filterModelsClientSide(cachedCatalog, trimmedQuery);
+                return { results: fallbackResults, isFallback: false };
+
+            } catch (err) {
+                if (err.name === 'AbortError') throw err;
+
+                console.warn("nano-GPT search API call failed; engaging client-side fallback filtering:", err.message);
+                
+                const fallbackResults = filterModelsClientSide(cachedCatalog, trimmedQuery);
+                return { 
+                    results: fallbackResults, 
+                    isFallback: true, 
+                    error: err.message 
+                };
+            }
+        };
+
+        const fetchOpenRouterModels = async (apiKey = "") => {
+            const headers = { "Accept": "application/json" };
+            if (apiKey && apiKey.trim()) {
+                headers["Authorization"] = `Bearer ${apiKey.trim()}`;
+            }
+            try {
+                const response = await fetchWithTimeout("https://openrouter.ai/api/v1/models", { method: "GET", headers }, 15000);
+                if (!response.ok) {
+                    throw new Error(`OpenRouter HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                const rawList = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []);
+                const models = rawList.map(m => ({
+                    id: m.id || m.name,
+                    name: m.name || m.id,
+                    description: m.description || "",
+                    contextLength: m.context_length || null,
+                    pricing: m.pricing || null
+                })).filter(m => m.id);
+                return models;
+            } catch (err) {
+                console.error("fetchOpenRouterModels failed:", err);
+                throw err;
+            }
+        };
+
+        function useDebounce(value, delay = 300) {
+            const [debouncedValue, setDebouncedValue] = React.useState(value);
+
+            React.useEffect(() => {
+                const handler = setTimeout(() => {
+                    setDebouncedValue(value);
+                }, delay);
+
+                return () => {
+                    clearTimeout(handler);
+                };
+            }, [value, delay]);
+
+            return debouncedValue;
+        }
+
+        function UniversalModelSearch({
+            apiProvider,
+            activeModel,
+            onSelectModel,
+            savedModels = [],
+            onSaveModel,
+            onDeleteModel,
+            searchQuery,
+            setSearchQuery,
+            isSearching,
+            searchResults = [],
+            isDropdownOpen,
+            setIsDropdownOpen,
+            label = "Model Selection",
+            koboldStatus = 'idle',
+            koboldError = null,
+            koboldLoadedModel = "koboldcpp",
+            onRefreshCatalog = null
+        }) {
+            const dropdownRef = React.useRef(null);
+
+            React.useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                        setIsDropdownOpen(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, [setIsDropdownOpen]);
+
+            if (apiProvider === 'koboldcpp') {
+                const isConnected = koboldStatus === 'connected';
+                const isChecking = koboldStatus === 'checking';
+
+                return (
+                    <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                            <label className="block text-sm font-bold text-slate-400">{label}</label>
+                            {onRefreshCatalog && (
+                                <button
+                                    type="button"
+                                    onClick={onRefreshCatalog}
+                                    disabled={isChecking}
+                                    className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+                                >
+                                    <RefreshCw size={12} className={isChecking ? "animate-spin" : ""} />
+                                    Check Connection
+                                </button>
+                            )}
+                        </div>
+                        <div className="bg-slate-950 border border-slate-800 rounded-lg p-3 space-y-2">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-xs text-slate-500 font-medium">Loaded Model:</span>
+                                    <span className="font-mono text-sm text-indigo-300 font-semibold truncate max-w-[240px]">
+                                        {koboldLoadedModel || activeModel || "koboldcpp"}
+                                    </span>
+                                </div>
+                                <span className={`text-xs px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 font-medium ${
+                                    isConnected 
+                                        ? 'bg-emerald-950/60 border-emerald-800 text-emerald-400'
+                                        : isChecking
+                                        ? 'bg-amber-950/60 border-amber-800 text-amber-400'
+                                        : 'bg-rose-950/60 border-rose-800 text-rose-400'
+                                }`}>
+                                    <span className={`w-1.5 h-1.5 rounded-full ${
+                                        isConnected 
+                                            ? 'bg-emerald-400 animate-pulse' 
+                                            : isChecking 
+                                            ? 'bg-amber-400 animate-pulse' 
+                                            : 'bg-rose-400'
+                                    }`} />
+                                    {isConnected ? 'Connected' : isChecking ? 'Checking...' : 'Offline'}
+                                </span>
+                            </div>
+                            {koboldError && (
+                                <p className="text-xs text-rose-400 bg-rose-950/30 border border-rose-900/40 p-2 rounded">
+                                    {koboldError}
+                                </p>
+                            )}
+                            <p className="text-[11px] text-slate-500 italic">
+                                KoboldCPP hosts a single active model on localhost:5001. Model catalog search is disabled.
+                            </p>
+                        </div>
+                    </div>
+                );
+            }
+
+            const isCurrentSaved = activeModel && savedModels.includes(activeModel);
+
+            return (
+                <div className="space-y-3 relative" ref={dropdownRef}>
+                    <div className="flex items-center justify-between">
+                        <label className="block text-sm font-bold text-slate-400">{label}</label>
+                        {onRefreshCatalog && (
+                            <button
+                                type="button"
+                                onClick={onRefreshCatalog}
+                                className="text-xs text-indigo-400 hover:text-indigo-300 flex items-center gap-1 transition-colors"
+                                title="Refresh model catalog from server"
+                            >
+                                <RefreshCw size={12} className={isSearching ? "animate-spin" : ""} />
+                                Refresh Catalog
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Search Input Box */}
+                    <div className="relative">
+                        <div className="relative flex items-center">
+                            <Search size={16} className="absolute left-3 text-slate-500 pointer-events-none" />
+                            <input
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => {
+                                    setSearchQuery(e.target.value);
+                                    setIsDropdownOpen(true);
+                                }}
+                                onFocus={() => setIsDropdownOpen(true)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && searchQuery.trim()) {
+                                        onSelectModel(searchQuery.trim());
+                                        setIsDropdownOpen(false);
+                                    }
+                                }}
+                                placeholder={`Search or enter ${apiProvider} model ID...`}
+                                className="w-full bg-slate-950 border border-slate-800 rounded-lg pl-9 pr-24 py-2 text-sm text-slate-200 focus:border-indigo-500 outline-none transition-colors font-mono"
+                            />
+                            <div className="absolute right-3 flex items-center gap-1.5">
+                                {isSearching && (
+                                    <Loader2 size={15} className="animate-spin text-indigo-400" />
+                                )}
+                                {searchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSearchQuery("")}
+                                        className="text-slate-500 hover:text-slate-300 p-0.5"
+                                        title="Clear search"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
+                                {searchQuery && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            onSelectModel(searchQuery.trim());
+                                            setIsDropdownOpen(false);
+                                        }}
+                                        className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs px-2 py-1 rounded transition-colors"
+                                        title="Use entered model ID"
+                                    >
+                                        Use
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Dropdown Menu Results */}
+                        {isDropdownOpen && (
+                            <div className="absolute z-50 left-0 right-0 mt-1 bg-slate-900 border border-slate-800 rounded-lg shadow-2xl max-h-64 overflow-y-auto custom-scrollbar">
+                                {searchResults.length === 0 ? (
+                                    <div className="p-3 text-xs text-slate-500 text-center italic">
+                                        {isSearching ? "Fetching models..." : "No matching models found. Press Enter to use typed ID."}
+                                    </div>
+                                ) : (
+                                    <div className="py-1 divide-y divide-slate-800/40">
+                                        {searchResults.slice(0, 50).map((m) => {
+                                            const modelId = m.id || m.name;
+                                            const isSelected = activeModel === modelId;
+                                            const isSaved = savedModels.includes(modelId);
+
+                                            return (
+                                                <div
+                                                    key={modelId}
+                                                    onClick={() => {
+                                                        onSelectModel(modelId);
+                                                        setIsDropdownOpen(false);
+                                                    }}
+                                                    className={`px-3 py-2 text-xs flex items-center justify-between cursor-pointer hover:bg-slate-800/80 transition-colors ${
+                                                        isSelected ? 'bg-indigo-950/50 text-indigo-300 font-semibold' : 'text-slate-300'
+                                                    }`}
+                                                >
+                                                    <div className="flex flex-col min-w-0 pr-2">
+                                                        <span className="font-mono text-xs truncate">{modelId}</span>
+                                                        {m.name && m.name !== modelId && (
+                                                            <span className="text-[10px] text-slate-500 truncate">{m.name}</span>
+                                                        )}
+                                                        {m.description && (
+                                                            <span className="text-[10px] text-slate-500 line-clamp-1">{m.description}</span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-2 flex-shrink-0">
+                                                        {m.capabilities && (
+                                                            <div className="flex gap-1">
+                                                                {m.capabilities.vision && <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-800 px-1 rounded">Vision</span>}
+                                                                {m.capabilities.reasoning && <span className="text-[9px] bg-amber-950 text-amber-300 border border-amber-800 px-1 rounded">Reasoning</span>}
+                                                            </div>
+                                                        )}
+                                                        {m.contextLength && (
+                                                            <span className="text-[10px] bg-slate-950 border border-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">
+                                                                {Math.round(m.contextLength / 1024)}k ctx
+                                                            </span>
+                                                        )}
+                                                        {onSaveModel && onDeleteModel && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (isSaved) {
+                                                                        onDeleteModel(modelId);
+                                                                    } else {
+                                                                        onSaveModel(modelId);
+                                                                    }
+                                                                }}
+                                                                className={`p-1 rounded hover:bg-slate-700 transition-colors ${
+                                                                    isSaved ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'
+                                                                }`}
+                                                                title={isSaved ? "Remove from saved models" : "Save model to quick chips"}
+                                                            >
+                                                                <Bookmark size={13} fill={isSaved ? "currentColor" : "none"} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Active Selection Info Badge */}
+                    <div className="flex items-center justify-between text-xs text-slate-400 bg-slate-950/60 border border-slate-800/80 rounded px-3 py-1.5">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-slate-500 font-semibold text-[11px] flex-shrink-0">Active Model:</span>
+                            <span className="font-mono text-indigo-300 font-semibold truncate">
+                                {activeModel || "(None selected)"}
+                            </span>
+                        </div>
+                        {activeModel && onSaveModel && onDeleteModel && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (isCurrentSaved) {
+                                        onDeleteModel(activeModel);
+                                    } else {
+                                        onSaveModel(activeModel);
+                                    }
+                                }}
+                                className={`text-[11px] flex items-center gap-1 px-2 py-0.5 rounded border transition-colors ${
+                                    isCurrentSaved 
+                                        ? 'bg-indigo-950/50 border-indigo-800 text-indigo-300 hover:bg-indigo-900/50' 
+                                        : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+                                }`}
+                            >
+                                <Bookmark size={11} fill={isCurrentSaved ? "currentColor" : "none"} />
+                                {isCurrentSaved ? 'Saved' : 'Save Chip'}
+                            </button>
+                        )}
+                    </div>
+
+                    {/* Saved Models Chip List Integration */}
+                    {savedModels.length > 0 && onDeleteModel && (
+                        <div className="space-y-1.5 pt-1">
+                            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Saved Model Chips</label>
+                            <div className="flex flex-wrap gap-1.5">
+                                {savedModels.map((model) => (
+                                    <div
+                                        key={model}
+                                        onClick={() => onSelectModel(model)}
+                                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer hover:bg-slate-800 transition-colors ${
+                                            activeModel === model
+                                                ? 'bg-indigo-900/40 border-indigo-500/60 text-indigo-300 font-medium'
+                                                : 'bg-slate-950 border-slate-800 text-slate-400'
+                                        }`}
+                                    >
+                                        <span className="truncate max-w-[180px] font-mono text-[11px]">{model}</span>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDeleteModel(model);
+                                            }}
+                                            className="hover:text-red-400 p-0.5 rounded-full hover:bg-slate-900"
+                                            title="Remove model chip"
+                                        >
+                                            <X size={12} />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        /* ----------------------------------------------------------------------
           MAIN APP COMPONENT
           ----------------------------------------------------------------------
         */
+
         function EllipsisProsef() {
             const [activeStoryId, setActiveStoryId] = useState(() => localStorage.getItem("ellipsisprose_active_story_id") || "story_default");
             const [libraryStories, setLibraryStories] = useState([]);
@@ -3319,15 +4329,48 @@ Output Schema:
             const [geminiModelsList, setGeminiModelsList] = useState([]);
             const [openRouterKey, setOpenRouterKey] = useState(() => localStorage.getItem("ellipsisprose_openrouter_key") || "");
             const [openRouterModel, setOpenRouterModel] = useState(() => localStorage.getItem("ellipsisprose_openrouter_model") || "google/gemini-2.0-flash-001");
+            const [nanoGptKey, setNanoGptKey] = useState(() => localStorage.getItem("ellipsisprose_nanogpt_key") || "");
+            const [nanoGptModel, setNanoGptModel] = useState(() => localStorage.getItem("ellipsisprose_nanogpt_model") || "gpt-4o");
+            const [koboldUrl, setKoboldUrl] = useState(() => localStorage.getItem("ellipsisprose_kobold_url") || "http://localhost:5001");
+            const [koboldModel, setKoboldModel] = useState(() => localStorage.getItem("ellipsisprose_kobold_model") || "koboldcpp");
             const [savedModels, setSavedModels] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_saved_models");
                 return saved ? JSON.parse(saved) : ["google/gemini-2.0-flash-001"];
             });
 
+            // Model Catalog & Universal Search State (Requirement R3)
+            const [openRouterModelsList, setOpenRouterModelsList] = useState(() => {
+                const cached = localStorage.getItem("ellipsisprose_openrouter_models_cache");
+                return cached ? JSON.parse(cached) : [];
+            });
+            const [nanoGptModelsList, setNanoGptModelsList] = useState(() => {
+                const cached = localStorage.getItem("ellipsisprose_nanogpt_models_cache");
+                return cached ? JSON.parse(cached) : NANO_GPT_DEFAULT_MODELS;
+            });
+            const [koboldStatus, setKoboldStatus] = useState('idle');
+            const [koboldLoadedModel, setKoboldLoadedModel] = useState(koboldModel || "koboldcpp");
+            const [koboldError, setKoboldError] = useState(null);
+
+            // Structure Model Search State
+            const [modelSearchQuery, setModelSearchQuery] = useState("");
+            const debouncedModelSearchQuery = useDebounce(modelSearchQuery, 300);
+            const [isSearchingModels, setIsSearchingModels] = useState(false);
+            const [searchResults, setSearchResults] = useState([]);
+            const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+
+            // Prose Model Search State
+            const [proseModelSearchQuery, setProseModelSearchQuery] = useState("");
+            const debouncedProseModelSearchQuery = useDebounce(proseModelSearchQuery, 300);
+            const [isSearchingProseModels, setIsSearchingProseModels] = useState(false);
+            const [proseSearchResults, setProseSearchResults] = useState([]);
+            const [isProseModelDropdownOpen, setIsProseModelDropdownOpen] = useState(false);
+
+
             // Dual Model State (Structure vs Prose)
             const [useProseModel, setUseProseModel] = useState(() => localStorage.getItem("ellipsisprose_use_prose_model") === 'true');
             const [geminiProseModel, setGeminiProseModel] = useState(() => localStorage.getItem("ellipsisprose_gemini_prose_model") || "");
             const [openRouterProseModel, setOpenRouterProseModel] = useState(() => localStorage.getItem("ellipsisprose_openrouter_prose_model") || "");
+            const [nanoGptProseModel, setNanoGptProseModel] = useState(() => localStorage.getItem("ellipsisprose_nanogpt_prose_model") || "");
 
             // Thinking / Reasoning State variables
             const [enableThinkingAct, setEnableThinkingAct] = useState(() => {
@@ -5505,12 +6548,29 @@ beats_per_scene:
 
             // Persistence Effects
             useEffect(() => { localStorage.setItem("ellipsisprose_api_provider", apiProvider); }, [apiProvider]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_embedding_provider", embeddingProvider); }, [embeddingProvider]);
             useEffect(() => { localStorage.setItem("gemini_api_key", apiKey); }, [apiKey]);
             useEffect(() => { localStorage.setItem("ellipsisprose_api_timeout", apiTimeout); }, [apiTimeout]);
             useEffect(() => { localStorage.setItem("ellipsisprose_gemini_model", geminiModel); }, [geminiModel]);
             useEffect(() => { localStorage.setItem("ellipsisprose_openrouter_key", openRouterKey); }, [openRouterKey]);
             useEffect(() => { localStorage.setItem("ellipsisprose_openrouter_model", openRouterModel); }, [openRouterModel]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_nanogpt_key", nanoGptKey); }, [nanoGptKey]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_nanogpt_model", nanoGptModel); }, [nanoGptModel]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_nanogpt_prose_model", nanoGptProseModel); }, [nanoGptProseModel]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_kobold_url", koboldUrl); }, [koboldUrl]);
+            useEffect(() => { localStorage.setItem("ellipsisprose_kobold_model", koboldModel); }, [koboldModel]);
             useEffect(() => { localStorage.setItem("ellipsisprose_saved_models", JSON.stringify(savedModels)); }, [savedModels]);
+            useEffect(() => {
+                if (openRouterModelsList.length > 0) {
+                    localStorage.setItem("ellipsisprose_openrouter_models_cache", JSON.stringify(openRouterModelsList));
+                }
+            }, [openRouterModelsList]);
+            useEffect(() => {
+                if (nanoGptModelsList.length > 0) {
+                    localStorage.setItem("ellipsisprose_nanogpt_models_cache", JSON.stringify(nanoGptModelsList));
+                }
+            }, [nanoGptModelsList]);
+
             useEffect(() => { localStorage.setItem("ellipsisprose_use_prose_model", useProseModel); }, [useProseModel]);
             useEffect(() => { localStorage.setItem("ellipsisprose_gemini_prose_model", geminiProseModel); }, [geminiProseModel]);
             useEffect(() => { localStorage.setItem("ellipsisprose_openrouter_prose_model", openRouterProseModel); }, [openRouterProseModel]);
@@ -5556,9 +6616,14 @@ beats_per_scene:
 
             // Instantiate/Update Embedding Service
             useEffect(() => {
-                const key = embeddingProvider === 'gemini' ? apiKey : openRouterKey;
-                embeddingService.current = new EmbeddingService(key, embeddingProvider);
-            }, [apiKey, openRouterKey, embeddingProvider]);
+                let key = "";
+                if (embeddingProvider === 'gemini') key = apiKey;
+                else if (embeddingProvider === 'openrouter') key = openRouterKey;
+                else if (embeddingProvider === 'nanogpt') key = nanoGptKey;
+                else if (embeddingProvider === 'koboldcpp') key = "";
+
+                embeddingService.current = new EmbeddingService(key, embeddingProvider, koboldUrl);
+            }, [apiKey, openRouterKey, nanoGptKey, koboldUrl, embeddingProvider]);
 
             useEffect(() => {
                 localStorage.setItem("ellipsisprose_view", view);
@@ -6178,18 +7243,24 @@ Please write a highly descriptive and specific image generation prompt focusing 
                 }
             };
 
-            const deleteBeatImage = async (actIdx, sceneIdx, beatIdx) => {
-                if (!window.confirm(`Are you sure you want to remove the image for Beat ${beatIdx + 1}?`)) return;
-                const sId = `${actIdx}-${sceneIdx}`;
-                const bId = `${sId}-${beatIdx}`;
+            const deleteBeatImage = async (actIdx, chapIdx, sceneIdx, beatIdx) => {
+                let a = actIdx, c = chapIdx, s = sceneIdx, b = beatIdx;
+                if (b === undefined) {
+                    c = selectedChapter !== null ? selectedChapter : 0;
+                    s = chapIdx;
+                    b = sceneIdx;
+                }
+                if (!window.confirm(`Are you sure you want to remove the image for Beat ${b + 1}?`)) return;
+                const sId = `${a}-${c}-${s}`;
+                const bId = `${sId}-${b}`;
                 try {
-                    await imageStore.deleteImage(`beat_${story.id}_${sId}_${beatIdx}`);
+                    await imageStore.deleteImage(`beat_${story.id}_${sId}_${b}`);
                     setLoadedImages(prev => {
                         const copy = { ...prev };
                         delete copy[bId];
                         return copy;
                     });
-                    showToast(`Beat ${beatIdx + 1} image removed.`);
+                    showToast(`Beat ${b + 1} image removed.`);
                 } catch (err) {
                     console.error(err);
                     alert("Failed to delete beat image: " + err.message);
@@ -6795,11 +7866,16 @@ ${sceneBody}
 
                 // Determine model based on modelSize and dual-model settings
                 const getModel = () => {
+                    if (apiProvider === 'koboldcpp') {
+                        return koboldModel || 'koboldcpp';
+                    }
                     if (modelSize === 'large' && useProseModel) {
                         if (apiProvider === 'gemini') return geminiProseModel || geminiModel;
+                        if (apiProvider === 'nanogpt') return nanoGptProseModel || nanoGptModel;
                         return openRouterProseModel || openRouterModel;
                     }
                     if (apiProvider === 'gemini') return geminiModel;
+                    if (apiProvider === 'nanogpt') return nanoGptModel;
                     return openRouterModel;
                 };
                 const modelToUse = getModel();
@@ -6839,7 +7915,7 @@ ${sceneBody}
 
                 const options = {
                     thinking: thinkingConfig,
-                    timeout: apiTimeout * 1000,
+                    timeout: apiProvider === 'koboldcpp' ? 0 : (apiTimeout * 1000),
                     onSuccess: (metadata) => {
                         const duration = ((performance.now() - startTime) / 1000).toFixed(2);
                         console.log(`[AI Call - "${logName}"] SUCCESS in ${duration}s | Model: ${metadata.modelUsed} | Tokens: ${metadata.tokensUsed || 'unknown'} | Reasoning Tokens: ${metadata.reasoningTokensUsed || 'none'}`);
@@ -6862,6 +7938,10 @@ ${sceneBody}
                     try {
                         if (apiProvider === 'gemini') {
                             return await callGemini(apiKey, modelToUse, prompt, systemPrompt, isJson, options);
+                        } else if (apiProvider === 'nanogpt') {
+                            return await callNanoGPT(nanoGptKey, modelToUse, prompt, systemPrompt, isJson, options);
+                        } else if (apiProvider === 'koboldcpp') {
+                            return await callKoboldCPP(koboldUrl || 'http://localhost:5001', modelToUse, prompt, systemPrompt, isJson, options);
                         } else {
                             return await callOpenRouter(openRouterKey, modelToUse, prompt, systemPrompt, isJson, options);
                         }
@@ -6960,53 +8040,76 @@ ${charName}
                 return beats.every((b, i) => story.prose[`${sId}-${i}`]?.final);
             };
 
-            const handleBeatChange = (actIdx, sceneIdx, beatIdx, newText) => {
-                const sId = `${actIdx}-${sceneIdx}`;
+            const handleBeatChange = (actIdx, chapIdx, sceneIdx, beatIdx, newText) => {
+                let a = actIdx, c = chapIdx, s = sceneIdx, b = beatIdx, txt = newText;
+                if (newText === undefined) {
+                    c = selectedChapter !== null ? selectedChapter : 0;
+                    s = chapIdx;
+                    b = sceneIdx;
+                    txt = beatIdx;
+                }
+                const sId = `${a}-${c}-${s}`;
                 setStory(prev => {
-                    const newBeats = [...prev.beats[sId]];
-                    newBeats[beatIdx] = { ...newBeats[beatIdx], description: newText };
+                    const beatsList = prev.beats[sId] ? [...prev.beats[sId]] : [];
+                    if (beatsList[b]) {
+                        beatsList[b] = { ...beatsList[b], description: txt };
+                    }
                     return {
                         ...prev,
                         beats: {
                             ...prev.beats,
-                            [sId]: newBeats
+                            [sId]: beatsList
                         }
                     };
                 });
             };
 
 
-            const handleAddBeat = (actIdx, sceneIdx, insertAfterIdx) => {
-                const sId = `${actIdx}-${sceneIdx}`;
+            const handleAddBeat = (actIdx, chapIdx, sceneIdx, insertAfterIdx) => {
+                let a = actIdx, c = chapIdx, s = sceneIdx, ins = insertAfterIdx;
+                if (insertAfterIdx === undefined) {
+                    c = selectedChapter !== null ? selectedChapter : 0;
+                    s = chapIdx;
+                    ins = sceneIdx;
+                }
+                const sId = `${a}-${c}-${s}`;
                 setStory(prev => {
                     const currentBeats = prev.beats[sId] ? [...prev.beats[sId]] : [];
                     const newBeat = {
-                        number: insertAfterIdx + 2,
+                        number: ins + 2,
                         type: "Action",
                         description: "",
                         emotional_shift: "",
                         valence: 0,
                         mode_override: null
                     };
-                    currentBeats.splice(insertAfterIdx + 1, 0, newBeat);
+                    currentBeats.splice(ins + 1, 0, newBeat);
                     // Renumber all beats
-                    const renumbered = currentBeats.map((b, i) => ({ ...b, number: i + 1 }));
+                    const renumbered = currentBeats.map((bItem, i) => ({ ...bItem, number: i + 1 }));
                     return { ...prev, beats: { ...prev.beats, [sId]: renumbered } };
                 });
-                showToast(`Beat added after Beat ${insertAfterIdx + 1}`);
+                showToast(`Beat added after Beat ${ins + 1}`);
             };
 
-            const handleDeleteBeat = (actIdx, sceneIdx, beatIdx) => {
-                if (!window.confirm(`Delete Beat ${beatIdx + 1}? This will also remove its prose. This cannot be undone.`)) return;
-                const sId = `${actIdx}-${sceneIdx}`;
+            const handleDeleteBeat = (actIdx, chapIdx, sceneIdx, beatIdx) => {
+                let a = actIdx, c = chapIdx, s = sceneIdx, b = beatIdx;
+                if (b === undefined) {
+                    c = selectedChapter !== null ? selectedChapter : 0;
+                    s = chapIdx;
+                    b = sceneIdx;
+                }
+                if (!window.confirm(`Delete Beat ${b + 1}? This will also remove its prose. This cannot be undone.`)) return;
+                const sId = `${a}-${c}-${s}`;
                 setStory(prev => {
-                    const currentBeats = [...prev.beats[sId]];
-                    currentBeats.splice(beatIdx, 1);
+                    const currentBeats = prev.beats[sId] ? [...prev.beats[sId]] : [];
+                    if (currentBeats.length > b) {
+                        currentBeats.splice(b, 1);
+                    }
                     // Renumber remaining beats
-                    const renumbered = currentBeats.map((b, i) => ({ ...b, number: i + 1 }));
+                    const renumbered = currentBeats.map((bItem, i) => ({ ...bItem, number: i + 1 }));
                     // Remove prose for deleted beat and re-key subsequent prose
                     const newProse = {};
-                    Object.keys(prev.prose).forEach(key => {
+                    Object.keys(prev.prose || {}).forEach(key => {
                         if (!key.startsWith(`${sId}-`)) {
                             newProse[key] = prev.prose[key];
                         }
@@ -7014,7 +8117,7 @@ ${charName}
                     // Re-add prose for remaining beats with correct keys
                     let proseIdx = 0;
                     for (let i = 0; i < (prev.beats[sId]?.length || 0); i++) {
-                        if (i === beatIdx) continue; // skip deleted
+                        if (i === b) continue; // skip deleted
                         const oldKey = `${sId}-${i}`;
                         const newKey = `${sId}-${proseIdx}`;
                         if (prev.prose[oldKey]) {
@@ -7024,7 +8127,7 @@ ${charName}
                     }
                     return { ...prev, beats: { ...prev.beats, [sId]: renumbered }, prose: newProse };
                 });
-                showToast(`Beat ${beatIdx + 1} deleted`);
+                showToast(`Beat ${b + 1} deleted`);
             };
 
             const handleDeleteScene = (actIdx, chapIdx, sceneIdx) => {
@@ -7484,9 +8587,28 @@ ${genOutput}
             };
 
             const generateBeats = async (actIdx, chapIdx, sceneIdx, currentStory = story, isAutopilot = false, directiveInstruction = "") => {
-                const storyToUse = currentStory || story;
-                const sId = `${actIdx}-${chapIdx}-${sceneIdx}`;
-                const sceneData = storyToUse.scenes[`${actIdx}-${chapIdx}`][sceneIdx];
+                let a = actIdx, c = chapIdx, s = sceneIdx;
+                let cStory = currentStory, autoP = isAutopilot, dInst = directiveInstruction;
+
+                if (typeof s !== 'number' && typeof c === 'number') {
+                    dInst = typeof autoP === 'string' ? autoP : (typeof cStory === 'string' ? cStory : "");
+                    autoP = typeof cStory === 'boolean' ? cStory : false;
+                    cStory = typeof s === 'object' ? s : story;
+                    s = c;
+                    c = selectedChapter !== null ? selectedChapter : 0;
+                }
+
+                const storyToUse = cStory || story;
+                const sId = `${a}-${c}-${s}`;
+                const scenesList = storyToUse.scenes?.[`${a}-${c}`] || [];
+                const sceneData = scenesList[s] || {
+                    title: `Act ${a + 1} Scene ${s + 1}`,
+                    location: "Unknown",
+                    cast_names: [],
+                    objective: "Advance narrative",
+                    description: "Scene description",
+                    active_thread_ids: []
+                };
                 const activeThreads = sceneData.active_thread_ids || sceneData.thread_ids || [];
 
                 const beatsRange = (storyToUse.generation_ranges && storyToUse.generation_ranges.beats_per_scene)
@@ -7750,13 +8872,27 @@ ${genOutput}
             };
 
             const writeProse = async (actIdx, chapIdx, sceneIdx, beatIdx, currentStory = story, isAutopilot = false, directiveInstruction = "") => {
-                const storyToUse = currentStory || story;
+                let a = actIdx, c = chapIdx, s = sceneIdx, b = beatIdx;
+                let cStory = currentStory, autoP = isAutopilot, dInst = directiveInstruction;
+                
+                if (typeof b !== 'number' && typeof s === 'number' && typeof c === 'number') {
+                    dInst = typeof autoP === 'string' ? autoP : "";
+                    autoP = typeof cStory === 'boolean' ? cStory : false;
+                    cStory = typeof b === 'object' ? b : story;
+                    b = s;
+                    s = c;
+                    c = selectedChapter !== null ? selectedChapter : 0;
+                }
+
+                const storyToUse = cStory || story;
                 setLoading(true);
-                const sId = `${actIdx}-${chapIdx}-${sceneIdx}`;
-                const bId = `${sId}-${beatIdx}`;
-                const beat = storyToUse.beats[sId]?.[beatIdx];
-                if (!beat) throw new Error(`Beat not found at index ${beatIdx} for ${sId}`);
-                const scene = storyToUse.scenes[`${actIdx}-${chapIdx}`][sceneIdx];
+                const sId = `${a}-${c}-${s}`;
+                const bId = `${sId}-${b}`;
+                const beat = storyToUse.beats[sId]?.[b];
+                if (!beat) throw new Error(`Beat not found at index ${(b !== undefined ? b + 1 : '?')} for ${sId}`);
+                
+                const scenesList = storyToUse.scenes?.[`${a}-${c}`] || [];
+                const scene = scenesList[s] || { title: "Scene", description: "Scene", cast_names: [] };
 
                 // Ensure Character Profiles (Tier 0.2)
                 let castWasUpdated = false;
@@ -8399,15 +9535,20 @@ ${currentLoreList}
             }, [continuousAutopilot, story, loading]);
 
             const handleAutoGenerateScene = async (actIdx, chapIdx, sceneIdx) => {
+                let a = actIdx, c = chapIdx, s = sceneIdx;
+                if (s === undefined) {
+                    c = selectedChapter !== null ? selectedChapter : 0;
+                    s = chapIdx;
+                }
                 if (!window.confirm("Auto-Write this entire scene? This will generate beats (if missing) and write prose for every beat.")) return;
 
                 try {
                     let currentStory = story;
 
                     // Check if beats exist, if not generate them
-                    const sId = `${actIdx}-${chapIdx}-${sceneIdx}`;
+                    const sId = `${a}-${c}-${s}`;
                     if (!currentStory.beats[sId]) {
-                        currentStory = await generateBeats(actIdx, chapIdx, sceneIdx, currentStory, true);
+                        currentStory = await generateBeats(a, c, s, currentStory, true);
                     }
 
                     if (!currentStory.beats[sId] || currentStory.beats[sId].length === 0) throw new Error("No beats found or generated.");
@@ -8415,7 +9556,7 @@ ${currentLoreList}
                     let i = 0;
                     let beatsProcessed = 0;
                     while (currentStory.beats[sId] && i < currentStory.beats[sId].length) {
-                        currentStory = await writeProse(actIdx, chapIdx, sceneIdx, i, currentStory, true);
+                        currentStory = await writeProse(a, c, s, i, currentStory, true);
                         if (!currentStory.beats[sId]) {
                             setStory(currentStory);
                             throw new Error("Prose writing failed. Cascading deletion rolled back to Beat Agent.");
@@ -8438,9 +9579,10 @@ ${currentLoreList}
                 }
             };
 
-            const saveModel = () => {
-                if (openRouterModel && !savedModels.includes(openRouterModel)) {
-                    setSavedModels([...savedModels, openRouterModel]);
+            const saveModel = (modelToSave) => {
+                const target = typeof modelToSave === 'string' ? modelToSave : (openRouterModel || geminiModel || nanoGptModel);
+                if (target && typeof target === 'string' && !savedModels.includes(target.trim())) {
+                    setSavedModels([...savedModels, target.trim()]);
                 }
             };
 
@@ -8458,22 +9600,176 @@ ${currentLoreList}
                         .filter(m => m.supportedGenerationMethods.includes("generateContent"))
                         .map(m => m.name.replace("models/", ""));
                     setGeminiModelsList(models);
-                    // If current model is not in list (and list is not empty), default to first available
-                    if (models.length > 0 && !models.includes(geminiModel)) {
-                        /* Optional logic: could setGeminiModel(models[0]); but safer to leave it if it might be valid but unlisted */
-                    }
                 } catch (e) {
                     console.error("Error fetching Gemini models:", e);
-                    alert("Failed to fetch Gemini models. Check your API Key.");
                 }
             };
 
-            // Fetch models when entering settings or when API key changes
-            useEffect(() => {
-                if (view === 'settings' && apiProvider === 'gemini' && apiKey) {
-                    fetchGeminiModels();
+            const refreshOpenRouterModels = async (force = false) => {
+                try {
+                    const models = await fetchOpenRouterModels(openRouterKey);
+                    if (models && models.length > 0) {
+                        setOpenRouterModelsList(models);
+                        localStorage.setItem("ellipsisprose_openrouter_models_cache", JSON.stringify(models));
+                    }
+                } catch (e) {
+                    console.warn("Failed to fetch OpenRouter model catalog:", e);
                 }
-            }, [view, apiProvider, apiKey]);
+            };
+
+            const refreshNanoGptModels = async (force = false) => {
+                try {
+                    const models = await fetchNanoGPTModels(nanoGptKey);
+                    if (models && models.length > 0) {
+                        setNanoGptModelsList(models);
+                        localStorage.setItem("ellipsisprose_nanogpt_models_cache", JSON.stringify(models));
+                    }
+                } catch (e) {
+                    console.warn("Failed to fetch nano-GPT model catalog:", e);
+                }
+            };
+
+            const checkKoboldStatus = async () => {
+                setKoboldStatus('checking');
+                setKoboldError(null);
+                try {
+                    const res = await checkKoboldCPPStatus(koboldUrl);
+                    if (res.online) {
+                        setKoboldStatus('connected');
+                        const mName = res.model || "KoboldCPP Loaded Model";
+                        setKoboldLoadedModel(mName);
+                        setKoboldModel(mName);
+                    } else {
+                        setKoboldStatus('offline');
+                        setKoboldError(res.error || "Connection Refused / Server Offline");
+                    }
+                } catch (err) {
+                    setKoboldStatus('offline');
+                    setKoboldError(err.message || "Failed to connect to KoboldCPP");
+                }
+            };
+
+            const handleCatalogRefresh = async () => {
+                if (apiProvider === 'gemini') {
+                    await fetchGeminiModels();
+                } else if (apiProvider === 'openrouter') {
+                    await refreshOpenRouterModels(true);
+                } else if (apiProvider === 'nanogpt') {
+                    await refreshNanoGptModels(true);
+                } else if (apiProvider === 'koboldcpp') {
+                    await checkKoboldStatus();
+                }
+            };
+
+            // Trigger catalog fetch when entering settings or changing provider/key
+            useEffect(() => {
+                if (view === 'settings') {
+                    if (apiProvider === 'gemini' && apiKey && geminiModelsList.length === 0) {
+                        fetchGeminiModels();
+                    } else if (apiProvider === 'openrouter' && openRouterModelsList.length === 0) {
+                        refreshOpenRouterModels();
+                    } else if (apiProvider === 'nanogpt' && nanoGptModelsList.length === 0) {
+                        refreshNanoGptModels();
+                    } else if (apiProvider === 'koboldcpp') {
+                        checkKoboldStatus();
+                    }
+                }
+            }, [view, apiProvider, apiKey, openRouterKey, nanoGptKey, koboldUrl]);
+
+            // Structure Model search execution effect (300ms debounced)
+            useEffect(() => {
+                let active = true;
+
+                const runSearch = async () => {
+                    if (apiProvider === 'koboldcpp') {
+                        setSearchResults([]);
+                        setIsSearchingModels(false);
+                        return;
+                    }
+
+                    setIsSearchingModels(true);
+                    const query = debouncedModelSearchQuery.trim();
+
+                    try {
+                        if (apiProvider === 'gemini') {
+                            let catalog = geminiModelsList;
+                            if (catalog.length === 0 && apiKey) {
+                                await fetchGeminiModels();
+                                catalog = geminiModelsList;
+                            }
+                            const formattedCatalog = catalog.map(m => (typeof m === 'string' ? { id: m, name: m } : m));
+                            const filtered = filterModelsClientSide(formattedCatalog, query);
+                            if (active) setSearchResults(filtered);
+                        } else if (apiProvider === 'openrouter') {
+                            let catalog = openRouterModelsList;
+                            if (catalog.length === 0) {
+                                catalog = await fetchOpenRouterModels(openRouterKey).catch(() => []);
+                            }
+                            const filtered = filterModelsClientSide(catalog, query);
+                            if (active) setSearchResults(filtered);
+                        } else if (apiProvider === 'nanogpt') {
+                            const { results } = await searchNanoGPTModels(query, nanoGptKey, nanoGptModelsList);
+                            if (active) setSearchResults(results);
+                        }
+                    } catch (e) {
+                        console.error("Structure model search error:", e);
+                        if (active) setSearchResults([]);
+                    } finally {
+                        if (active) setIsSearchingModels(false);
+                    }
+                };
+
+                runSearch();
+                return () => { active = false; };
+            }, [debouncedModelSearchQuery, apiProvider, apiKey, openRouterKey, nanoGptKey, geminiModelsList, openRouterModelsList, nanoGptModelsList]);
+
+            // Prose Model search execution effect (300ms debounced)
+            useEffect(() => {
+                let active = true;
+
+                const runSearch = async () => {
+                    if (apiProvider === 'koboldcpp') {
+                        setProseSearchResults([]);
+                        setIsSearchingProseModels(false);
+                        return;
+                    }
+
+                    setIsSearchingProseModels(true);
+                    const query = debouncedProseModelSearchQuery.trim();
+
+                    try {
+                        if (apiProvider === 'gemini') {
+                            let catalog = geminiModelsList;
+                            if (catalog.length === 0 && apiKey) {
+                                await fetchGeminiModels();
+                                catalog = geminiModelsList;
+                            }
+                            const formattedCatalog = catalog.map(m => (typeof m === 'string' ? { id: m, name: m } : m));
+                            const filtered = filterModelsClientSide(formattedCatalog, query);
+                            if (active) setProseSearchResults(filtered);
+                        } else if (apiProvider === 'openrouter') {
+                            let catalog = openRouterModelsList;
+                            if (catalog.length === 0) {
+                                catalog = await fetchOpenRouterModels(openRouterKey).catch(() => []);
+                            }
+                            const filtered = filterModelsClientSide(catalog, query);
+                            if (active) setProseSearchResults(filtered);
+                        } else if (apiProvider === 'nanogpt') {
+                            const { results } = await searchNanoGPTModels(query, nanoGptKey, nanoGptModelsList);
+                            if (active) setProseSearchResults(results);
+                        }
+                    } catch (e) {
+                        console.error("Prose model search error:", e);
+                        if (active) setProseSearchResults([]);
+                    } finally {
+                        if (active) setIsSearchingProseModels(false);
+                    }
+                };
+
+                runSearch();
+                return () => { active = false; };
+            }, [debouncedProseModelSearchQuery, apiProvider, apiKey, openRouterKey, nanoGptKey, geminiModelsList, openRouterModelsList, nanoGptModelsList]);
+
 
             return (
                 <div className="flex h-screen bg-slate-950 text-slate-200 overflow-hidden">
@@ -10097,8 +11393,8 @@ ${currentLoreList}
                                             </div>
                                             <div className="flex flex-row md:flex-col gap-2 shrink-0 flex-wrap">
                                                 <button onClick={copyFullScene} className="bg-slate-800 p-2 rounded hover:bg-slate-700 transition-colors"><Copy size={18} /></button>
-                                                <button onClick={() => requestBeatGeneration(selectedAct, selectedScene)} disabled={loading} className="bg-emerald-600 px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><Sparkles size={16} /> {story.beats[writerBeatKey] ? 'Re-Do Beats' : 'Beats'}</button>
-                                                <button onClick={() => handleAutoGenerateScene(selectedAct, selectedScene)} disabled={loading} className="bg-purple-600 px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" title="Auto-write prose for all beats"><Zap size={16} /> Auto-Write</button>
+                                                <button onClick={() => requestBeatGeneration(selectedAct, selectedChapter, selectedScene)} disabled={loading} className="bg-emerald-600 px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"><Sparkles size={16} /> {story.beats[writerBeatKey] ? 'Re-Do Beats' : 'Beats'}</button>
+                                                <button onClick={() => handleAutoGenerateScene(selectedAct, selectedChapter, selectedScene)} disabled={loading} className="bg-purple-600 px-4 py-2 rounded font-bold shadow-lg flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed" title="Auto-write prose for all beats"><Zap size={16} /> Auto-Write</button>
                                             </div>
                                         </div>
                                     </div>
@@ -10128,13 +11424,13 @@ ${currentLoreList}
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <ValenceBadge score={beat.valence} />
-                                                    <button onClick={() => handleDeleteBeat(selectedAct, selectedScene, bi)} className="text-slate-600 hover:text-red-400 transition-colors p-0.5" title="Delete Beat"><Trash2 size={12} /></button>
+                                                    <button onClick={() => handleDeleteBeat(selectedAct, selectedChapter, selectedScene, bi)} className="text-slate-600 hover:text-red-400 transition-colors p-0.5" title="Delete Beat"><Trash2 size={12} /></button>
                                                 </div>
                                             </div>
                                                             <textarea
                                                                 className="w-full bg-slate-950 text-sm font-medium mb-4 p-2 rounded border border-transparent hover:border-slate-700 focus:border-indigo-500 outline-none resize-none transition-colors field-sizing-content"
                                                                 value={beat.description}
-                                                                onChange={(e) => handleBeatChange(selectedAct, selectedScene, bi, e.target.value)}
+                                                                onChange={(e) => handleBeatChange(selectedAct, selectedChapter, selectedScene, bi, e.target.value)}
                                                                 rows={4}
                                                             />
                                                             <div className="text-[10px] text-slate-500 uppercase font-bold italic mb-4 flex items-center gap-2">
@@ -10172,7 +11468,7 @@ ${currentLoreList}
                                                                         <img src={loadedImages[bId]} className="w-full h-full object-cover" alt={`Beat ${bi + 1}`} />
                                                                         <div className="absolute inset-0 bg-slate-950/80 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                                                                             <button
-                                                                                onClick={() => deleteBeatImage(selectedAct, selectedScene, bi)}
+                                                                                onClick={() => deleteBeatImage(selectedAct, selectedChapter, selectedScene, bi)}
                                                                                 className="bg-red-600 hover:bg-red-500 text-white p-2 rounded-full text-xs font-bold transition-colors"
                                                                                 title="Delete Image"
                                                                             >
@@ -10185,7 +11481,7 @@ ${currentLoreList}
 
                                                             {!prose ? (
                                                                 <div className="flex gap-2 pt-4 border-t border-slate-800">
-                                                                    <button onClick={() => writeProse(selectedAct, selectedScene, bi)} disabled={loading} className="flex-[3] bg-indigo-600 py-2 rounded font-bold text-sm hover:bg-indigo-500 flex justify-center items-center gap-2"><Feather size={14} /> Write</button>
+                                                                    <button onClick={() => writeProse(selectedAct, selectedChapter, selectedScene, bi)} disabled={loading} className="flex-[3] bg-indigo-600 py-2 rounded font-bold text-sm hover:bg-indigo-500 flex justify-center items-center gap-2"><Feather size={14} /> Write</button>
                                                                     <button
                                                                         onClick={() => generateBeatImage(selectedAct, selectedChapter, selectedScene, bi)}
                                                                         disabled={loadingImages[bId] || loading}
@@ -10203,7 +11499,7 @@ ${currentLoreList}
                                                                                 audioCache[bId] ? <Play size={16} fill="currentColor" /> :
                                                                                     <Volume2 size={16} />}
                                                                     </button>
-                                                                    <button onClick={() => writeProse(selectedAct, selectedScene, bi)} disabled={loading} className="flex-1 py-2 bg-slate-950 rounded text-indigo-400 border border-slate-800 hover:text-indigo-300 flex justify-center items-center disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw size={16} /></button>
+                                                                    <button onClick={() => writeProse(selectedAct, selectedChapter, selectedScene, bi)} disabled={loading} className="flex-1 py-2 bg-slate-950 rounded text-indigo-400 border border-slate-800 hover:text-indigo-300 flex justify-center items-center disabled:opacity-50 disabled:cursor-not-allowed"><RefreshCw size={16} /></button>
                                                                     <button onClick={() => toggleProse(bId)} className="flex-1 py-2 bg-slate-950 rounded text-slate-400 border border-slate-800 hover:text-slate-200 flex justify-center items-center">
                                                                         {isCollapsed ? <ChevronRight size={16} /> : <ChevronDown size={16} />}
                                                                     </button>
@@ -10580,18 +11876,34 @@ ${currentLoreList}
                                         {/* API Provider Toggle */}
                                         <div>
                                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Text Generation Provider</label>
-                                            <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
                                                 <button
+                                                    type="button"
                                                     onClick={() => setApiProvider('gemini')}
-                                                    className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${apiProvider === 'gemini' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                                    className={`py-2 px-2 rounded-md text-xs font-bold transition-all ${apiProvider === 'gemini' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 bg-slate-900/40'}`}
                                                 >
                                                     Gemini (Google)
                                                 </button>
                                                 <button
+                                                    type="button"
                                                     onClick={() => setApiProvider('openrouter')}
-                                                    className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${apiProvider === 'openrouter' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                                    className={`py-2 px-2 rounded-md text-xs font-bold transition-all ${apiProvider === 'openrouter' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 bg-slate-900/40'}`}
                                                 >
                                                     OpenRouter
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setApiProvider('nanogpt')}
+                                                    className={`py-2 px-2 rounded-md text-xs font-bold transition-all ${apiProvider === 'nanogpt' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 bg-slate-900/40'}`}
+                                                >
+                                                    nano-GPT
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setApiProvider('koboldcpp')}
+                                                    className={`py-2 px-2 rounded-md text-xs font-bold transition-all ${apiProvider === 'koboldcpp' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 bg-slate-900/40'}`}
+                                                >
+                                                    KoboldCPP
                                                 </button>
                                             </div>
                                         </div>
@@ -10599,129 +11911,145 @@ ${currentLoreList}
                                         {/* Embedding Provider Toggle */}
                                         <div>
                                             <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Embedding Provider (RAG)</label>
-                                            <div className="flex bg-slate-950 p-1 rounded-lg border border-slate-800">
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800">
                                                 <button
+                                                    type="button"
                                                     onClick={() => setEmbeddingProvider('gemini')}
-                                                    className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${embeddingProvider === 'gemini' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                                    className={`py-2 px-2 rounded-md text-xs font-bold transition-all ${embeddingProvider === 'gemini' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 bg-slate-900/40'}`}
                                                 >
-                                                    Gemini (Recommended)
+                                                    Gemini
                                                 </button>
                                                 <button
+                                                    type="button"
                                                     onClick={() => setEmbeddingProvider('openrouter')}
-                                                    className={`flex-1 py-2 rounded-md text-sm font-bold transition-all ${embeddingProvider === 'openrouter' ? 'bg-slate-800 text-white shadow' : 'text-slate-500 hover:text-slate-300'}`}
+                                                    className={`py-2 px-2 rounded-md text-xs font-bold transition-all ${embeddingProvider === 'openrouter' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 bg-slate-900/40'}`}
                                                 >
                                                     OpenRouter
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEmbeddingProvider('nanogpt')}
+                                                    className={`py-2 px-2 rounded-md text-xs font-bold transition-all ${embeddingProvider === 'nanogpt' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 bg-slate-900/40'}`}
+                                                >
+                                                    nano-GPT
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEmbeddingProvider('koboldcpp')}
+                                                    className={`py-2 px-2 rounded-md text-xs font-bold transition-all ${embeddingProvider === 'koboldcpp' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-slate-200 bg-slate-900/40'}`}
+                                                >
+                                                    KoboldCPP
                                                 </button>
                                             </div>
                                         </div>
 
-                                        {/* Gemini Settings */}
+                                        {/* Gemini API Key */}
                                         {(apiProvider === 'gemini' || embeddingProvider === 'gemini') && (
-                                            <div className="animate-fade-in">
-                                                <label className="block text-sm font-bold text-slate-400 mb-2">Gemini API Key</label>
-                                                <p className="text-xs text-slate-500 mb-2">Required for all AI features. Your key is stored locally.</p>
+                                            <div className="animate-fade-in space-y-2">
+                                                <label className="block text-sm font-bold text-slate-400">Gemini API Key</label>
                                                 <input
                                                     type="password"
                                                     value={apiKey}
                                                     onChange={(e) => setApiKey(e.target.value)}
-                                                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors mb-4"
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors"
                                                     placeholder="AIzaSy..."
                                                 />
-
-                                                {/* Only show Model Selector if Gemini is the Text Provider */}
-                                                {apiProvider === 'gemini' && (
-                                                    <div>
-                                                        <label className="block text-sm font-bold text-slate-400 mb-2">Gemini Model (Structure / Small)</label>
-                                                        <div className="flex gap-2">
-                                                            <div className="relative flex-1">
-                                                                <select
-                                                                    value={geminiModel}
-                                                                    onChange={(e) => setGeminiModel(e.target.value)}
-                                                                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none appearance-none transition-colors"
-                                                                >
-                                                                    {geminiModelsList.length > 0 ? (
-                                                                        geminiModelsList.map(m => <option key={m} value={m}>{m}</option>)
-                                                                    ) : (
-                                                                        <option value={geminiModel}>{geminiModel}</option>
-                                                                    )}
-                                                                </select>
-                                                                <ChevronDown className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" size={14} />
-                                                            </div>
-                                                            <button onClick={fetchGeminiModels} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 rounded border border-slate-700 transition-colors" title="Refresh Models">
-                                                                <RefreshCw size={16} />
-                                                            </button>
-                                                        </div>
-                                                    </div>
-                                                )}
-
-                                                <p className="text-xs text-slate-500 mt-2">
-                                                    Don't have a key? <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-indigo-400 hover:underline">Get one from Google AI Studio</a>.
+                                                <p className="text-xs text-slate-500">
+                                                    Get key from <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-indigo-400 hover:underline">Google AI Studio</a>.
                                                 </p>
                                             </div>
                                         )}
 
-                                        {/* OpenRouter Settings */}
+                                        {/* OpenRouter API Key */}
                                         {(apiProvider === 'openrouter' || embeddingProvider === 'openrouter') && (
-                                            <div className="space-y-4 animate-fade-in">
-                                                <div>
-                                                    <label className="block text-sm font-bold text-slate-400 mb-2">OpenRouter API Key</label>
-                                                    <input
-                                                        type="password"
-                                                        value={openRouterKey}
-                                                        onChange={(e) => setOpenRouterKey(e.target.value)}
-                                                        className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors"
-                                                        placeholder="sk-or-..."
-                                                    />
-                                                </div>
-
-                                                {/* Only show Model Selector if OpenRouter is the Text Provider */}
-                                                {apiProvider === 'openrouter' && (
-                                                    <div>
-                                                        <label className="block text-sm font-bold text-slate-400 mb-2">Model ID (Structure / Small)</label>
-                                                        <div className="flex gap-2">
-                                                            <input
-                                                                type="text"
-                                                                value={openRouterModel}
-                                                                onChange={(e) => setOpenRouterModel(e.target.value)}
-                                                                className="flex-1 bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors"
-                                                                placeholder="google/gemini-2.0-flash-001"
-                                                            />
-                                                            <button onClick={saveModel} className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 rounded border border-slate-700 transition-colors" title="Save Model">
-                                                                <Save size={16} />
-                                                            </button>
-                                                        </div>
-
-                                                        {savedModels.length > 0 && (
-                                                            <div className="mt-3 space-y-2">
-                                                                <label className="text-xs font-bold text-slate-500 uppercase">Saved Models</label>
-                                                                <div className="flex flex-wrap gap-2">
-                                                                    {savedModels.map((model) => (
-                                                                        <div key={model} className={`flex items-center gap-2 px-3 py-1 rounded-full border text-xs cursor-pointer hover:bg-slate-800 transition-colors ${openRouterModel === model ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-300' : 'bg-slate-950 border-slate-800 text-slate-400'}`} onClick={() => setOpenRouterModel(model)}>
-                                                                            <span className="truncate max-w-[200px]">{model}</span>
-                                                                            <button onClick={(e) => { e.stopPropagation(); deleteModel(model); }} className="hover:text-red-400 p-0.5 rounded-full hover:bg-slate-900/50">
-                                                                                <X size={12} />
-                                                                            </button>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-
-                                                <div className="mt-4 pt-4 border-t border-slate-800">
-                                                    <p className="text-xs text-slate-500">
-                                                        Get your key from <a href="https://openrouter.ai/keys" target="_blank" className="text-indigo-400 hover:underline">OpenRouter.ai</a>.
-                                                    </p>
-                                                </div>
+                                            <div className="animate-fade-in space-y-2">
+                                                <label className="block text-sm font-bold text-slate-400">OpenRouter API Key</label>
+                                                <input
+                                                    type="password"
+                                                    value={openRouterKey}
+                                                    onChange={(e) => setOpenRouterKey(e.target.value)}
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors"
+                                                    placeholder="sk-or-..."
+                                                />
+                                                <p className="text-xs text-slate-500">
+                                                    Get key from <a href="https://openrouter.ai/keys" target="_blank" className="text-indigo-400 hover:underline">OpenRouter.ai</a>.
+                                                </p>
                                             </div>
                                         )}
+
+                                        {/* nano-GPT API Key */}
+                                        {(apiProvider === 'nanogpt' || embeddingProvider === 'nanogpt') && (
+                                            <div className="animate-fade-in space-y-2">
+                                                <label className="block text-sm font-bold text-slate-400">nano-GPT API Key</label>
+                                                <input
+                                                    type="password"
+                                                    value={nanoGptKey}
+                                                    onChange={(e) => setNanoGptKey(e.target.value)}
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors"
+                                                    placeholder="sk-nano-..."
+                                                />
+                                                <p className="text-xs text-slate-500">
+                                                    Get key from <a href="https://nano-gpt.com" target="_blank" className="text-indigo-400 hover:underline">nano-gpt.com</a>.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {/* KoboldCPP Base URL */}
+                                        {(apiProvider === 'koboldcpp' || embeddingProvider === 'koboldcpp') && (
+                                            <div className="animate-fade-in space-y-2">
+                                                <label className="block text-sm font-bold text-slate-400">KoboldCPP Server URL</label>
+                                                <input
+                                                    type="text"
+                                                    value={koboldUrl}
+                                                    onChange={(e) => setKoboldUrl(e.target.value)}
+                                                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors font-mono"
+                                                    placeholder="http://localhost:5001"
+                                                />
+                                                <p className="text-xs text-slate-500">
+                                                    Default URL: <code className="text-indigo-300">http://localhost:5001</code>. KoboldCPP must be running locally.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {/* Structure Model Selection (Universal Search Component) */}
+                                        <div className="pt-2 border-t border-slate-800">
+                                            <UniversalModelSearch
+                                                label="Structure / Primary Model"
+                                                apiProvider={apiProvider}
+                                                activeModel={
+                                                    apiProvider === 'gemini' ? geminiModel :
+                                                    apiProvider === 'openrouter' ? openRouterModel :
+                                                    apiProvider === 'nanogpt' ? nanoGptModel :
+                                                    apiProvider === 'koboldcpp' ? koboldModel : ""
+                                                }
+                                                onSelectModel={(id) => {
+                                                    if (apiProvider === 'gemini') setGeminiModel(id);
+                                                    else if (apiProvider === 'openrouter') setOpenRouterModel(id);
+                                                    else if (apiProvider === 'nanogpt') setNanoGptModel(id);
+                                                    else if (apiProvider === 'koboldcpp') setKoboldModel(id);
+                                                }}
+                                                savedModels={savedModels}
+                                                onSaveModel={(id) => saveModel(id)}
+                                                onDeleteModel={(id) => deleteModel(id)}
+                                                searchQuery={modelSearchQuery}
+                                                setSearchQuery={setModelSearchQuery}
+                                                isSearching={isSearchingModels}
+                                                searchResults={searchResults}
+                                                isDropdownOpen={isModelDropdownOpen}
+                                                setIsDropdownOpen={setIsModelDropdownOpen}
+                                                koboldStatus={koboldStatus}
+                                                koboldError={koboldError}
+                                                koboldLoadedModel={koboldLoadedModel}
+                                                onRefreshCatalog={handleCatalogRefresh}
+                                            />
+                                        </div>
 
                                         {/* Dual Model: Large Model Allocation */}
                                         <div className="pt-4 border-t border-slate-800">
                                             <div className="flex items-center justify-between mb-3">
                                                 <label className="block text-xs font-bold text-slate-500 uppercase">Separate Large Model Allocation</label>
                                                 <button
+                                                    type="button"
                                                     onClick={() => setUseProseModel(!useProseModel)}
                                                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useProseModel ? 'bg-indigo-600' : 'bg-slate-700'}`}
                                                 >
@@ -10730,38 +12058,40 @@ ${currentLoreList}
                                             </div>
                                             <p className="text-xs text-slate-500 mb-3">Allocate a larger, more powerful model for heavy reasoning/creative tasks (Concept, Character, Arc, Act, Scene, and Writing Agents) and a smaller model for evaluations and beat directors.</p>
                                             {useProseModel && (
-                                                <div className="animate-fade-in space-y-3">
-                                                    {apiProvider === 'gemini' && (
-                                                        <div>
-                                                            <label className="block text-xs font-bold text-slate-500 mb-1">Large Model (Gemini)</label>
-                                                            <div className="relative">
-                                                                <select
-                                                                    value={geminiProseModel}
-                                                                    onChange={(e) => setGeminiProseModel(e.target.value)}
-                                                                    className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none appearance-none transition-colors"
-                                                                >
-                                                                    <option value="">Same as Structure Model</option>
-                                                                    {geminiModelsList.map(m => <option key={m} value={m}>{m}</option>)}
-                                                                </select>
-                                                                <ChevronDown className="absolute right-3 top-2.5 text-slate-500 pointer-events-none" size={14} />
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                    {apiProvider === 'openrouter' && (
-                                                        <div>
-                                                            <label className="block text-xs font-bold text-slate-500 mb-1">Large Model (OpenRouter)</label>
-                                                            <input
-                                                                type="text"
-                                                                value={openRouterProseModel}
-                                                                onChange={(e) => setOpenRouterProseModel(e.target.value)}
-                                                                className="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-sm focus:border-indigo-500 outline-none transition-colors"
-                                                                placeholder="e.g. google/gemini-2.5-pro"
-                                                            />
-                                                        </div>
-                                                    )}
+                                                <div className="animate-fade-in pt-2">
+                                                    <UniversalModelSearch
+                                                        label="Prose / Large Model Allocation"
+                                                        apiProvider={apiProvider}
+                                                        activeModel={
+                                                            apiProvider === 'gemini' ? geminiProseModel :
+                                                            apiProvider === 'openrouter' ? openRouterProseModel :
+                                                            apiProvider === 'nanogpt' ? nanoGptProseModel :
+                                                            apiProvider === 'koboldcpp' ? koboldModel : ""
+                                                        }
+                                                        onSelectModel={(id) => {
+                                                            if (apiProvider === 'gemini') setGeminiProseModel(id);
+                                                            else if (apiProvider === 'openrouter') setOpenRouterProseModel(id);
+                                                            else if (apiProvider === 'nanogpt') setNanoGptProseModel(id);
+                                                            else if (apiProvider === 'koboldcpp') setKoboldModel(id);
+                                                        }}
+                                                        savedModels={savedModels}
+                                                        onSaveModel={(id) => saveModel(id)}
+                                                        onDeleteModel={(id) => deleteModel(id)}
+                                                        searchQuery={proseModelSearchQuery}
+                                                        setSearchQuery={setProseModelSearchQuery}
+                                                        isSearching={isSearchingProseModels}
+                                                        searchResults={proseSearchResults}
+                                                        isDropdownOpen={isProseModelDropdownOpen}
+                                                        setIsDropdownOpen={setIsProseModelDropdownOpen}
+                                                        koboldStatus={koboldStatus}
+                                                        koboldError={koboldError}
+                                                        koboldLoadedModel={koboldLoadedModel}
+                                                        onRefreshCatalog={handleCatalogRefresh}
+                                                    />
                                                 </div>
                                             )}
                                         </div>
+
 
                                          {/* API Request Timeout Setting */}
                                          <div className="pt-4 border-t border-slate-800 space-y-2">
@@ -10810,7 +12140,8 @@ ${currentLoreList}
                                                                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Level (Gemini 3+)</label>
                                                                      <select
                                                                          value={thinkingLevelAct}
-                                                                         onCh                                                                         className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500"
+                                                                         onChange={(e) => setThinkingLevelAct(e.target.value)}
+                                                                         className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500"
                                                                      >
                                                                          <option value="MINIMAL">Minimal</option>
                                                                          <option value="LOW">Low</option>
@@ -10832,15 +12163,18 @@ ${currentLoreList}
                                                          ) : (
                                                              <>
                                                                  <div>
-                                                                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Effort (OpenRouter)</label>
+                                                                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Effort Level</label>
                                                                      <select
                                                                          value={thinkingEffortAct}
                                                                          onChange={(e) => setThinkingEffortAct(e.target.value)}
                                                                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500"
                                                                      >
+                                                                         {apiProvider === 'nanogpt' && <option value="none">None</option>}
+                                                                         {apiProvider === 'nanogpt' && <option value="minimal">Minimal</option>}
                                                                          <option value="low">Low</option>
                                                                          <option value="medium">Medium</option>
                                                                          <option value="high">High</option>
+                                                                         {apiProvider === 'nanogpt' && <option value="xhigh">Extra High</option>}
                                                                      </select>
                                                                  </div>
                                                                  <div>
@@ -10904,15 +12238,18 @@ ${currentLoreList}
                                                          ) : (
                                                              <>
                                                                  <div>
-                                                                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Effort (OpenRouter)</label>
+                                                                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Effort Level</label>
                                                                      <select
                                                                          value={thinkingEffortScene}
                                                                          onChange={(e) => setThinkingEffortScene(e.target.value)}
                                                                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500"
                                                                      >
+                                                                         {apiProvider === 'nanogpt' && <option value="none">None</option>}
+                                                                         {apiProvider === 'nanogpt' && <option value="minimal">Minimal</option>}
                                                                          <option value="low">Low</option>
                                                                          <option value="medium">Medium</option>
                                                                          <option value="high">High</option>
+                                                                         {apiProvider === 'nanogpt' && <option value="xhigh">Extra High</option>}
                                                                      </select>
                                                                  </div>
                                                                  <div>
@@ -10976,15 +12313,18 @@ ${currentLoreList}
                                                          ) : (
                                                              <>
                                                                  <div>
-                                                                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Effort (OpenRouter)</label>
+                                                                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Effort Level</label>
                                                                      <select
                                                                          value={thinkingEffortWriting}
                                                                          onChange={(e) => setThinkingEffortWriting(e.target.value)}
                                                                          className="w-full bg-slate-900 border border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500"
                                                                      >
+                                                                         {apiProvider === 'nanogpt' && <option value="none">None</option>}
+                                                                         {apiProvider === 'nanogpt' && <option value="minimal">Minimal</option>}
                                                                          <option value="low">Low</option>
                                                                          <option value="medium">Medium</option>
                                                                          <option value="high">High</option>
+                                                                         {apiProvider === 'nanogpt' && <option value="xhigh">Extra High</option>}
                                                                      </select>
                                                                  </div>
                                                                  <div>
