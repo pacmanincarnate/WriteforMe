@@ -3,8 +3,31 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>EllipsisProse 1.5 - AI Story Architect</title>
+
+    <!-- Icons & Favicons -->
+    <link rel="icon" type="image/jpeg" href="ELPIcon2.jpg">
+    <link rel="shortcut icon" href="favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="favicon-16x16.png">
+
+    <!-- Web App Manifest (PWA) -->
+    <link rel="manifest" href="manifest.webmanifest">
+
+    <!-- iOS / Safari Home Screen & Standalone App Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="EllipsisProse">
+    <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+    <link rel="apple-touch-icon" href="ELPIcon2.jpg">
+
+    <!-- Mobile Browser Theme Color -->
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#F7F5F0">
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#141416">
+    <meta name="theme-color" content="#141416">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="application-name" content="EllipsisProse">
 
     <!-- 1. Tailwind CSS (Styling) -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -14992,8 +15015,8 @@ ${currentLoreList}
                         {/* Studio Logo Header */}
                         <div className="p-4 flex justify-between items-center border-b border-black/[0.06] bg-white/70 backdrop-blur-sm">
                             <div className="flex items-center gap-2.5">
-                                <div className="p-2 rounded-xl bg-[#B8935A]/10 border border-[#B8935A]/25 text-[#8C6B32] shadow-sm">
-                                    <Book size={18} />
+                                <div className="w-9 h-9 rounded-xl overflow-hidden border border-[#B8935A]/30 shadow-sm flex-shrink-0 bg-stone-900 flex items-center justify-center">
+                                    <img src="ELPIcon2.jpg" alt="EllipsisProse Icon" className="w-full h-full object-cover" />
                                 </div>
                                 <div>
                                     <h2 className="font-bold text-sm text-stone-900 tracking-tight flex items-center gap-1.5 font-display">
@@ -19593,6 +19616,34 @@ ${currentLoreList}
             window.reactRoot = ReactDOM.createRoot(container);
         }
         window.reactRoot.render(<EllipsisProsef />);
+    </script>
+
+    <!-- Progressive Web App (PWA) Service Worker Registration -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then((reg) => {
+                        console.log('[PWA] Service Worker registered successfully with scope:', reg.scope);
+                    })
+                    .catch((err) => {
+                        console.warn('[PWA] Service Worker registration failed:', err);
+                    });
+            });
+        }
+
+        // Global PWA installation event listener
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            window.deferredPWAInstallPrompt = e;
+            window.dispatchEvent(new CustomEvent('pwa-installable'));
+            console.log('[PWA] App is ready for installation');
+        });
+
+        window.addEventListener('appinstalled', () => {
+            window.deferredPWAInstallPrompt = null;
+            console.log('[PWA] EllipsisProse was installed successfully');
+        });
     </script>
 </body>
 
