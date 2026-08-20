@@ -10647,7 +10647,7 @@ Output Schema:
                             });
                         }
 
-                        await ingestLoreBatch(chunks);
+                        await ingestLoreBatch(chunks, { clearExisting: true });
                         setLoading(false);
                         showToast("Lore distilled and ingested into RAG.", "success");
                     } else {
@@ -10691,7 +10691,7 @@ Output Schema:
                         // Re-index full list including new chunks
                         const currentLore = story.lore || [];
                         const combinedList = [...currentLore, ...chunks];
-                        const processedList = await ingestLoreBatch(combinedList);
+                        const processedList = await ingestLoreBatch(combinedList, { clearExisting: true });
 
                         setStory(prev => ({
                             ...prev,
@@ -12571,7 +12571,7 @@ ${genOutput}
 
                     // Archive baseline world bible in RAG
                     console.log("[initStory] Archiving baseline world lore in RAG...");
-                    await ingestLoreBatch(initialStoryState.lore);
+                    await ingestLoreBatch(initialStoryState.lore, { clearExisting: true });
 
                     const finalStory = {
                         ...initialStoryState,
@@ -13210,17 +13210,16 @@ BEGIN SEQUENCE CRITIQUE REVIEW
 
                     console.log("[generateActsAndSequences] Tier 2.2 Sequence Agent complete.");
 
-                    // Archive world lore
+                    // Archive world lore additively - regenerating acts must not wipe lore
+                    // accumulated from imports or the archivist (vectors or story.lore)
                     setLoadingStep("Archiving world lore...");
-                    const loreList = [
-                        {
-                            topic: "World Bible Setting",
-                            detail: storyToUse.status_quo || "",
-                            valid_from_act: 1,
-                            valid_from_scene: 1
-                        }
-                    ];
-                    await ingestLoreBatch(loreList);
+                    const worldBibleEntry = {
+                        topic: "World Bible Setting",
+                        detail: storyToUse.status_quo || "",
+                        valid_from_act: 1,
+                        valid_from_scene: 1
+                    };
+                    await ingestLoreBatch([worldBibleEntry]);
 
                     // TIER 2.3: Pacing Architect (Deterministic Local Pacing Ranges - A1)
                     const parsedPacing = computePacingRanges(storyToUse.style?.genre || storyToUse.genre, storyToUse.target_word_count || 80000);
@@ -13231,7 +13230,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         acts: actsData,
                         sequences: normalizedSequences,
                         relationships: nextRels,
-                        lore: loreList,
+                        lore: [...(storyToUse.lore || []).filter(l => l && l.topic !== "World Bible Setting"), worldBibleEntry],
                         thread_statuses: actResult.parsedData.thread_statuses || [],
                         generation_ranges: parsedPacing,
                         continuity_ledger: Array.isArray(storyToUse.continuity_ledger) ? storyToUse.continuity_ledger : []
@@ -13337,10 +13336,11 @@ BEGIN SEQUENCE CRITIQUE REVIEW
             };
 
             // Batch Ingest (for Init or Import)
-            const ingestLoreBatch = async (loreList) => {
+            const ingestLoreBatch = async (loreList, { clearExisting = false } = {}) => {
                 setRagStatus("indexing_batch");
-                // Clear old store if re-initializing? Maybe not if we want persistence, but for now yes to avoid stale ghosts
-                await vectorStore.current.clear();
+                // Full rebuilds (init, reindex, full-list imports) clear the store first;
+                // mid-story ingestions merge additively via ingestLore so accumulated lore vectors survive.
+                if (clearExisting) await vectorStore.current.clear();
 
                 let processedList = [];
                 for (const item of loreList) {
@@ -19304,7 +19304,7 @@ ${currentLoreList}
                                                 <Plus size={14} /> Add Fact
                                             </button>
                                             <button
-                                                onClick={() => ingestLoreBatch(story.lore)}
+                                                onClick={() => ingestLoreBatch(story.lore, { clearExisting: true })}
                                                 disabled={ragStatus === 'indexing' || (!apiKey && !openRouterKey)}
                                                 className="text-xs bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50"
                                                 title="Re-embed all lore items into vector database"
