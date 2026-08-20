@@ -15501,12 +15501,12 @@ ${chapterBody}
 <!DOCTYPE ncx PUBLIC "-//NISO//DTD ncx 2005-1//EN" "http://www.daisy.org/z3986/2005/ncx-2005-1.dtd">
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
    <head>
-      <meta name="dtb:uid" content="urn:uuid:12345"/>
+      <meta name="dtb:uid" content="urn:ellipsisprose:${escapeXml(story.id || 'untitled')}"/>
       <meta name="dtb:depth" content="2"/>
       <meta name="dtb:totalPageCount" content="0"/>
       <meta name="dtb:maxPageNumber" content="0"/>
    </head>
-   <docTitle><text>${story.title ? story.title.replace(/&/g, "&amp;") : "Untitled Story"}</text></docTitle>
+   <docTitle><text>${escapeXml(story.title || "Untitled Story")}</text></docTitle>
    <navMap>
       ${tocPoints.join('\n')}
    </navMap>
@@ -15515,10 +15515,10 @@ ${chapterBody}
 
                     // 6. OPF
                     let opfMetadata = `
-      <dc:title>${story.title ? story.title.replace(/&/g, "&amp;") : "Untitled Story"}</dc:title>
-      <dc:creator opf:role="aut">EllipsisProse User</dc:creator>
+      <dc:title>${escapeXml(story.title || "Untitled Story")}</dc:title>
+      <dc:creator opf:role="aut">${escapeXml(story.author || "EllipsisProse User")}</dc:creator>
       <dc:language>en</dc:language>
-      <dc:identifier id="BookId" opf:scheme="UUID">urn:uuid:12345</dc:identifier>
+      <dc:identifier id="BookId">urn:ellipsisprose:${escapeXml(story.id || 'untitled')}</dc:identifier>
 `;
                     if (imagesMap.cover) {
                         opfMetadata += `      <meta name="cover" content="cover-image"/>\n`;
