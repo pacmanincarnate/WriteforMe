@@ -9194,6 +9194,56 @@ Output Schema:
           ----------------------------------------------------------------------
         */
 
+        // Toast presentation extracted from the app shell; state stays with showToast in the component.
+        const ToastNotification = ({ toast, onDismiss }) => {
+            if (!toast) return null;
+            return (
+                <div
+                    className={`fixed z-50 px-5 py-3.5 rounded-2xl shadow-xl border flex items-center gap-3 animate-fade-in backdrop-blur-xl transition-all max-w-md ${
+                        toast.type === 'error'
+                            ? 'bg-rose-50 border-rose-200 text-rose-900 shadow-rose-900/10'
+                            : toast.type === 'warning'
+                            ? 'bg-amber-50 border-amber-200 text-amber-900 shadow-amber-900/10'
+                            : toast.type === 'info'
+                            ? 'bg-stone-900 border-stone-800 text-white shadow-stone-950/20'
+                            : 'bg-emerald-50 border-emerald-200 text-emerald-900 shadow-emerald-900/10'
+                    }`}
+                    style={{
+                        bottom: 'max(1.5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))',
+                        right: 'max(1rem, calc(1rem + env(safe-area-inset-right, 0px)))',
+                        left: 'max(1rem, calc(1rem + env(safe-area-inset-left, 0px)))',
+                        margin: '0 auto'
+                    }}
+                    role="alert"
+                >
+                    <div className="shrink-0 p-1.5 rounded-xl bg-black/5">
+                        {toast.type === 'error' ? (
+                            <AlertTriangle size={18} className="text-rose-600" />
+                        ) : toast.type === 'warning' ? (
+                            <AlertCircle size={18} className="text-amber-600" />
+                        ) : toast.type === 'info' ? (
+                            <Sparkles size={18} className="text-[#B8935A]" />
+                        ) : (
+                            <CheckCircle size={18} className="text-emerald-600" />
+                        )}
+                    </div>
+                    <div className="flex-1 min-w-0 pr-2">
+                        <h4 className="font-bold text-xs uppercase tracking-wider font-mono opacity-90">
+                            {toast.type === 'error' ? 'Error' : toast.type === 'warning' ? 'Notice' : toast.type === 'info' ? 'System' : 'Success'}
+                        </h4>
+                        <p className="text-xs leading-snug break-words mt-0.5 opacity-95">{toast.message}</p>
+                    </div>
+                    <button
+                        onClick={onDismiss}
+                        className="text-stone-400 hover:text-stone-700 p-1 rounded-lg hover:bg-black/5 transition-colors shrink-0"
+                        title="Dismiss"
+                    >
+                        <X size={14} />
+                    </button>
+                </div>
+            );
+        };
+
         // Static defaults hoisted out of EllipsisProsef - they were re-declared on every render.
         const DEFAULT_BANNED_PHRASES = [
             "Shivers down her spine",
@@ -22606,51 +22656,7 @@ ${currentLoreList}
                             )}
                         </main>
                         {/* TOAST NOTIFICATION */}
-                        {toast && (
-                            <div
-                                className={`fixed z-50 px-5 py-3.5 rounded-2xl shadow-xl border flex items-center gap-3 animate-fade-in backdrop-blur-xl transition-all max-w-md ${
-                                    toast.type === 'error'
-                                        ? 'bg-rose-50 border-rose-200 text-rose-900 shadow-rose-900/10'
-                                        : toast.type === 'warning'
-                                        ? 'bg-amber-50 border-amber-200 text-amber-900 shadow-amber-900/10'
-                                        : toast.type === 'info'
-                                        ? 'bg-stone-900 border-stone-800 text-white shadow-stone-950/20'
-                                        : 'bg-emerald-50 border-emerald-200 text-emerald-900 shadow-emerald-900/10'
-                                }`}
-                                style={{
-                                    bottom: 'max(1.5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))',
-                                    right: 'max(1rem, calc(1rem + env(safe-area-inset-right, 0px)))',
-                                    left: 'max(1rem, calc(1rem + env(safe-area-inset-left, 0px)))',
-                                    margin: '0 auto'
-                                }}
-                                role="alert"
-                            >
-                                <div className="shrink-0 p-1.5 rounded-xl bg-black/5">
-                                    {toast.type === 'error' ? (
-                                        <AlertTriangle size={18} className="text-rose-600" />
-                                    ) : toast.type === 'warning' ? (
-                                        <AlertCircle size={18} className="text-amber-600" />
-                                    ) : toast.type === 'info' ? (
-                                        <Sparkles size={18} className="text-[#B8935A]" />
-                                    ) : (
-                                        <CheckCircle size={18} className="text-emerald-600" />
-                                    )}
-                                </div>
-                                <div className="flex-1 min-w-0 pr-2">
-                                    <h4 className="font-bold text-xs uppercase tracking-wider font-mono opacity-90">
-                                        {toast.type === 'error' ? 'Error' : toast.type === 'warning' ? 'Notice' : toast.type === 'info' ? 'System' : 'Success'}
-                                    </h4>
-                                    <p className="text-xs leading-snug break-words mt-0.5 opacity-95">{toast.message}</p>
-                                </div>
-                                <button
-                                    onClick={() => setToast(null)}
-                                    className="text-stone-400 hover:text-stone-700 p-1 rounded-lg hover:bg-black/5 transition-colors shrink-0"
-                                    title="Dismiss"
-                                >
-                                    <X size={14} />
-                                </button>
-                            </div>
-                        )}
+                        <ToastNotification toast={toast} onDismiss={() => setToast(null)} />
                     </div >
                     {/* GLOBAL EDIT MODAL */}
                     <EditModal
