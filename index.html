@@ -2133,7 +2133,7 @@
                     .replace(/&apos;/g, "'")
                     .replace(/&#(\d+);/g, function(match, dec) { return String.fromCharCode(parseInt(dec, 10)); })
                     .replace(/&#x([0-9a-fA-F]+);/g, function(match, hex) { return String.fromCharCode(parseInt(hex, 16)); })
-                    .replace(/&amp/g, "&");
+                    .replace(/&amp(?![a-zA-Z0-9#])/g, "&");
             };
 
             const extractTag = function(text, tag) {
@@ -2682,7 +2682,7 @@
                 .replace(/&apos;/g, "'")
                 .replace(/&#(\d+);/g, (match, dec) => String.fromCharCode(parseInt(dec, 10)))
                 .replace(/&#x([0-9a-fA-F]+);/g, (match, hex) => String.fromCharCode(parseInt(hex, 16)))
-                .replace(/&amp/g, "&"); // Handle malformed &amp without semicolon
+                .replace(/&amp(?![a-zA-Z0-9#])/g, "&"); // Handle malformed &amp without semicolon (but not "&amperage")
         };
 
         const extractTag = (text, tag) => {
@@ -16524,7 +16524,7 @@ You MUST adapt the beat choreography to address this specific instruction:
 
                 const scenesList = storyToUse.scenes?.[`${seq}`] || storyToUse.scenes?.[`${seq}-0`] || storyToUse.scenes?.[`0-${seq}`] || storyToUse.scenes?.['0-0'] || [];
                 const scene = scenesList[s] || (Array.isArray(scenesList) ? scenesList[0] : null) || { title: "Scene", description: "Scene", cast_names: [] };
-                const sequenceData = (storyToUse.sequences || [])[seq] || { number: seq + 1, parent_act: 1 };
+                const sequenceData = (storyToUse.sequences || [])[seq] || { number: seq + 1, parent_act: actForSequence(seq + 1) };
 
                 // STEP 1: Character Profile Pre-fetching
                 let castWasUpdated = false;
