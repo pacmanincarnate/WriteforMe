@@ -12876,11 +12876,53 @@ BEGIN ACT CRITIQUE REVIEW
                     // TIER 2.2: Sequence Agent (Unified 8 Sequences across Novel)
                     console.log("[generateActsAndSequences] Starting Tier 2.2: Sequence Agent...");
                     setLoadingStep("Weaving 8 Sequences across novel (Tier 2.2)...");
+                    // Shared context for the Sequence Agent's generator AND reviewer prompts -
+                    // previously duplicated verbatim inside both promptFns.
+                    const getSequenceContext = () => `<overall_story_information>
+Concept: ${storyToUse.concept || ""}
+Status Quo: ${storyToUse.status_quo || ""}
+Inciting Incident: ${storyToUse.inciting_incident || ""}
+Themes: ${storyToUse.themes || ""}
+Threads:
+${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
+Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
+Story Starting Value State (Full Story): ${storyToUse.starting_value_state || ""}
+Story Ending Value State (Full Story): ${storyToUse.ending_value_state || ""}
+</overall_story_information>
+
+<character_psychological_arcs>
+${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
+</character_psychological_arcs>
+
+<active_character_profiles>
+${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
+</active_character_profiles>
+
+<character_relationships>
+${buildRelationshipFrictionBlock(storyToUse.cast || [], storyToUse.relationships || {})}
+</character_relationships>
+
+<continuity_ledger>
+${formatContinuityLedgerForPrompt(storyToUse)}
+</continuity_ledger>
+
+<act_descriptions>
+${actsData.map(a => `## Act ${a.number}: ${a.title}
+Mandate: ${a.act_mandate || a.description}
+World Developments: ${a.world_building_developments || ""}
+Knots: ${(a.knots || []).map(k => `${k.description} (${k.interaction})`).join("; ")}`).join('\n\n')}
+</act_descriptions>
+
+<style_and_tone>
+Genre: ${storyToUse.style?.genre || ""}
+Mood: ${storyToUse.style?.mood || ""}
+Writing Guide: ${storyToUse.style?.writing_guide || ""}
+</style_and_tone>`;
+
                     const seqResult = await runAgentWithEscalation({
                         tierName: "Sequence Agent",
                         isAutopilot,
-                        generatorPromptFn: () => {
-                            const getSequenceContext = () => `
+                        generatorPromptFn: () => `
 <input_payload_schema>
 This prompt provides the following context blocks. Your responsibility is to generate exactly 8 sequences that span the novel:
 - <overall_story_information>: The macro narrative framework. Ensure your sequences align with the overall themes and plot.
@@ -12890,126 +12932,52 @@ This prompt provides the following context blocks. Your responsibility is to gen
 - <continuity_ledger>: Hard facts established in the story.
 - <act_descriptions>: The macro Act structure. Ensure your sequences fulfill the mandates of their respective Acts.
 - <style_and_tone>: The genre and style guidelines.
-- <output_format_description>: The required YAML output schema.
+- <output_format_description>: The required XML output schema.
 </input_payload_schema>
 
-<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State (Full Story): ${storyToUse.starting_value_state || ""}
-Story Ending Value State (Full Story): ${storyToUse.ending_value_state || ""}
-</overall_story_information>
-
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
-
-<active_character_profiles>
-${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
-</active_character_profiles>
-
-<character_relationships>
-${buildRelationshipFrictionBlock(storyToUse.cast || [], storyToUse.relationships || {})}
-</character_relationships>
-
-<continuity_ledger>
-${formatContinuityLedgerForPrompt(storyToUse)}
-</continuity_ledger>
-
-<act_descriptions>
-${actsData.map(a => `## Act ${a.number}: ${a.title}
-Mandate: ${a.act_mandate || a.description}
-World Developments: ${a.world_building_developments || ""}
-Knots: ${(a.knots || []).map(k => `${k.description} (${k.interaction})`).join("; ")}`).join('\n\n')}
-</act_descriptions>
-
-<style_and_tone>
-Genre: ${storyToUse.style?.genre || ""}
-Mood: ${storyToUse.style?.mood || ""}
-Writing Guide: ${storyToUse.style?.writing_guide || ""}
-</style_and_tone>
+${getSequenceContext()}
 
 <output_format_description>
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: For ANY field value longer than a short phrase (like the description), use block scalar style (the | operator).
+FORMATTING DIRECTIVE: Return your sequences strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-sequences:
-  - number: 1
-    parent_act: 1 # 1, 2, or 3
-    title: "Sequence Title"
-    sequence_function: "Status Quo & Setup" # From the 8-sequence framework
-    tactical_question: "The localized dramatic question driving this sequence."
-    description: |
-      - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this sequence. Explain its role in the global value shift.
-      - **DRAMATIC ARC & PACING CURVES:** Map the sequence-level narrative movement. Detail starting state, rising action, and tactical climax.
-      - **THREAD PROGRESSION & CONVERGENCE:** Describe how active plot threads evolve and intersect within this sequence.
-      - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on internal struggles, tactical tests, and shifting motivations.
-      - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems for downstream scene planners to navigate.
-    sequence_objective: "The single most important narrative goal this sequence accomplishes."
-    threads_advanced:
-      - T1
-    characters_in_focus:
-      - "Character Name"
-    sequence_climax: "The specific moment of resolution or reversal for this sequence's tactical question."
-    ending_hook: "How the sequence ends — what compels the characters into the next tactical strategy."
+<response>
+  <sequences>
+    <sequence>
+      <number>1</number>
+      <parent_act>1</parent_act> <!-- 1, 2, or 3 -->
+      <title>Sequence Title</title>
+      <sequence_function>Status Quo & Setup</sequence_function> <!-- From the 8-sequence framework -->
+      <tactical_question>The localized dramatic question driving this sequence.</tactical_question>
+      <description>
+        - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this sequence. Explain its role in the global value shift.
+        - **DRAMATIC ARC & PACING CURVES:** Map the sequence-level narrative movement. Detail the starting state, rising action, and tactical climax.
+        - **THREAD PROGRESSION & CONVERGENCE:** Describe how active plot threads evolve and intersect within this sequence.
+        - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on internal struggles, tactical tests, and shifting motivations.
+        - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems for downstream scene planners to navigate.
+      </description>
+      <sequence_objective>The single most important narrative goal this sequence accomplishes.</sequence_objective>
+      <threads_advanced>
+        <thread>T1</thread>
+      </threads_advanced>
+      <characters_in_focus>
+        <character>Character Name</character>
+      </characters_in_focus>
+      <sequence_climax>The specific moment of resolution or reversal for this sequence's tactical question.</sequence_climax>
+      <ending_hook>How the sequence ends — what compels the characters into the next tactical strategy.</ending_hook>
+    </sequence>
+    <!-- Add all 8 sequences -->
+  </sequences>
+</response>
 </output_format_description>
 
 BEGIN DEVELOPING STORY SEQUENCES
-`;
-                            return getSequenceContext();
-                        },
+`,
                         systemPrompt: PROMPTS.sequenceAgent,
                         reviewerSystemPrompt: PROMPTS.sequenceReview,
                         reviewerPromptFn: (genOutput) => {
-                            const getSequenceContext = () => `
-<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State (Full Story): ${storyToUse.starting_value_state || ""}
-Story Ending Value State (Full Story): ${storyToUse.ending_value_state || ""}
-</overall_story_information>
-
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
-
-<active_character_profiles>
-${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
-</active_character_profiles>
-
-<character_relationships>
-${buildRelationshipFrictionBlock(storyToUse.cast || [], storyToUse.relationships || {})}
-</character_relationships>
-
-<continuity_ledger>
-${formatContinuityLedgerForPrompt(storyToUse)}
-</continuity_ledger>
-
-<act_descriptions>
-${actsData.map(a => `## Act ${a.number}: ${a.title}
-Mandate: ${a.act_mandate || a.description}
-World Developments: ${a.world_building_developments || ""}
-Knots: ${(a.knots || []).map(k => `${k.description} (${k.interaction})`).join("; ")}`).join('\n\n')}
-</act_descriptions>
-
-<style_and_tone>
-Genre: ${storyToUse.style?.genre || ""}
-Mood: ${storyToUse.style?.mood || ""}
-Writing Guide: ${storyToUse.style?.writing_guide || ""}
-</style_and_tone>
-`;
-                            return `${getSequenceContext()}
+                            return `\n${getSequenceContext()}\n
 <generated_sequences>
 ${genOutput}
 </generated_sequences>
@@ -15123,128 +15091,96 @@ ${charName}
                 }
                 setLoading(true); setLoadingStep("Weaving 8 Sequences across the novel...");
                 try {
+                    // Shared context for the Sequence Agent's generator AND reviewer prompts -
+                    // previously duplicated verbatim inside both promptFns.
+                    const getSequenceContext = () => `<overall_story_information>
+Concept: ${storyToUse.concept || ""}
+Status Quo: ${storyToUse.status_quo || ""}
+Inciting Incident: ${storyToUse.inciting_incident || ""}
+Themes: ${storyToUse.themes || ""}
+Threads:
+${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
+Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
+Story Starting Value State (Full Story): ${storyToUse.starting_value_state || ""}
+Story Ending Value State (Full Story): ${storyToUse.ending_value_state || ""}
+</overall_story_information>
+
+<character_psychological_arcs>
+${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
+</character_psychological_arcs>
+
+<active_character_profiles>
+${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
+</active_character_profiles>
+
+<character_relationships>
+${buildRelationshipFrictionBlock(storyToUse.cast || [], storyToUse.relationships || {})}
+</character_relationships>
+
+<continuity_ledger>
+${formatContinuityLedgerForPrompt(storyToUse)}
+</continuity_ledger>
+
+<act_descriptions>
+${storyToUse.acts.map(a => `## Act ${a.number}: ${a.title}
+Mandate: ${a.act_mandate || a.description}
+World Developments: ${a.world_building_developments || ""}
+Knots: ${(a.knots || []).map(k => `${k.description} (${k.interaction})`).join("; ")}`).join('\n\n')}
+</act_descriptions>
+
+<style_and_tone>
+Genre: ${storyToUse.style?.genre || ""}
+Mood: ${storyToUse.style?.mood || ""}
+Writing Guide: ${storyToUse.style?.writing_guide || ""}
+</style_and_tone>`;
+
                     const seqResult = await runAgentWithEscalation({
                         tierName: "Sequence Agent",
                         isAutopilot,
-                        generatorPromptFn: () => {
-                            const getSequenceContext = () => `
-<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State (Full Story): ${storyToUse.starting_value_state || ""}
-Story Ending Value State (Full Story): ${storyToUse.ending_value_state || ""}
-</overall_story_information>
-
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
-
-<active_character_profiles>
-${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
-</active_character_profiles>
-
-<character_relationships>
-${buildRelationshipFrictionBlock(storyToUse.cast || [], storyToUse.relationships || {})}
-</character_relationships>
-
-<continuity_ledger>
-${formatContinuityLedgerForPrompt(storyToUse)}
-</continuity_ledger>
-
-<act_descriptions>
-${storyToUse.acts.map(a => `## Act ${a.number}: ${a.title}
-Mandate: ${a.act_mandate || a.description}
-World Developments: ${a.world_building_developments || ""}
-Knots: ${(a.knots || []).map(k => `${k.description} (${k.interaction})`).join("; ")}`).join('\n\n')}
-</act_descriptions>
-
-<style_and_tone>
-Genre: ${storyToUse.style?.genre || ""}
-Mood: ${storyToUse.style?.mood || ""}
-Writing Guide: ${storyToUse.style?.writing_guide || ""}
-</style_and_tone>
+                        generatorPromptFn: () => `
+${getSequenceContext()}
 
 <output_format_description>
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: For ANY field value longer than a short phrase (like the description), use block scalar style (the | operator).
+FORMATTING DIRECTIVE: Return your sequences strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-sequences:
-  - number: 1
-    parent_act: 1 # 1, 2, or 3
-    title: "Sequence Title"
-    sequence_function: "Status Quo & Setup" # From the 8-sequence framework
-    tactical_question: "The localized dramatic question driving this sequence."
-    description: |
-      - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this sequence. Explain its role in the global value shift.
-      - **DRAMATIC ARC & PACING CURVES:** Map the sequence-level narrative movement. Detail starting state, rising action, and tactical climax.
-      - **THREAD PROGRESSION & CONVERGENCE:** Describe how active plot threads evolve and intersect within this sequence.
-      - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on internal struggles, tactical tests, and shifting motivations.
-      - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems for downstream scene planners to navigate.
-    sequence_objective: "The single most important narrative goal this sequence accomplishes."
-    threads_advanced:
-      - T1
-    characters_in_focus:
-      - "Character Name"
-    sequence_climax: "The specific moment of resolution or reversal for this sequence's tactical question."
-    ending_hook: "How the sequence ends — what compels the characters into the next tactical strategy."
+<response>
+  <sequences>
+    <sequence>
+      <number>1</number>
+      <parent_act>1</parent_act> <!-- 1, 2, or 3 -->
+      <title>Sequence Title</title>
+      <sequence_function>Status Quo & Setup</sequence_function> <!-- From the 8-sequence framework -->
+      <tactical_question>The localized dramatic question driving this sequence.</tactical_question>
+      <description>
+        - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this sequence. Explain its role in the global value shift.
+        - **DRAMATIC ARC & PACING CURVES:** Map the sequence-level narrative movement. Detail the starting state, rising action, and tactical climax.
+        - **THREAD PROGRESSION & CONVERGENCE:** Describe how active plot threads evolve and intersect within this sequence.
+        - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on internal struggles, tactical tests, and shifting motivations.
+        - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems for downstream scene planners to navigate.
+      </description>
+      <sequence_objective>The single most important narrative goal this sequence accomplishes.</sequence_objective>
+      <threads_advanced>
+        <thread>T1</thread>
+      </threads_advanced>
+      <characters_in_focus>
+        <character>Character Name</character>
+      </characters_in_focus>
+      <sequence_climax>The specific moment of resolution or reversal for this sequence's tactical question.</sequence_climax>
+      <ending_hook>How the sequence ends — what compels the characters into the next tactical strategy.</ending_hook>
+    </sequence>
+    <!-- Add all 8 sequences -->
+  </sequences>
+</response>
 </output_format_description>
 
 BEGIN DEVELOPING STORY SEQUENCES
-`;
-                            return getSequenceContext();
-                        },
+`,
                         systemPrompt: PROMPTS.sequenceAgent,
                         reviewerSystemPrompt: PROMPTS.sequenceReview,
                         reviewerPromptFn: (genOutput) => {
-                            const getSequenceContext = () => `
-<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State (Full Story): ${storyToUse.starting_value_state || ""}
-Story Ending Value State (Full Story): ${storyToUse.ending_value_state || ""}
-</overall_story_information>
-
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
-
-<active_character_profiles>
-${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
-</active_character_profiles>
-
-<character_relationships>
-${buildRelationshipFrictionBlock(storyToUse.cast || [], storyToUse.relationships || {})}
-</character_relationships>
-
-<continuity_ledger>
-${formatContinuityLedgerForPrompt(storyToUse)}
-</continuity_ledger>
-
-<act_descriptions>
-${storyToUse.acts.map(a => `## Act ${a.number}: ${a.title}
-Mandate: ${a.act_mandate || a.description}
-World Developments: ${a.world_building_developments || ""}
-Knots: ${(a.knots || []).map(k => `${k.description} (${k.interaction})`).join("; ")}`).join('\n\n')}
-</act_descriptions>
-
-<style_and_tone>
-Genre: ${storyToUse.style?.genre || ""}
-Mood: ${storyToUse.style?.mood || ""}
-Writing Guide: ${storyToUse.style?.writing_guide || ""}
-</style_and_tone>
-`;
-                            return `${getSequenceContext()}\n\n<generated_sequences>\n${genOutput}\n</generated_sequences>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.\n\nOutput Schema:\ncritique_analysis: |\n  Analyze each sequence's tactical question, dramatic purpose, pacing contribution, and causal linkage. Verify formatting requirements are met.\nstatus: PASS # or FAIL\ndeviation_reasons:\n  - "Explain the exact issue and how to fix it."\n</output_format_description>\n\nBEGIN SEQUENCE CRITIQUE REVIEW`;
+                            return `\n${getSequenceContext()}\n\n\n<generated_sequences>\n${genOutput}\n</generated_sequences>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Analyze each sequence's tactical question, dramatic purpose, pacing contribution, and causal linkage. Verify formatting requirements are met.</critique_analysis>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SEQUENCE CRITIQUE REVIEW`;
                         },
                         parserFn: (text) => {
                             const parsed = parseYaml(text) || {};
@@ -15957,12 +15893,114 @@ ${followingScene.objective ? `Objective: ${followingScene.objective}\n` : ''}${f
                         chunkCount++;
                         setLoadingStep(`Choreographing Beats for Scene ${sceneData.number} (Chunk ${chunkCount})...`);
 
+                        // Shared context segments for the Beat Agent's generator AND reviewer
+                        // prompts - previously duplicated verbatim inside both promptFns.
+                        const getBeatContextHead = () => `<overall_story_information>
+Concept: ${storyToUse.concept || ""}
+Status Quo: ${storyToUse.status_quo || ""}
+Inciting Incident: ${storyToUse.inciting_incident || ""}
+Themes: ${storyToUse.themes || ""}
+Threads:
+${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
+Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
+Story Starting Value State: ${storyToUse.starting_value_state || ""}
+Story Ending Value State: ${storyToUse.ending_value_state || ""}
+</overall_story_information>
+
+<character_psychological_arcs>
+${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
+</character_psychological_arcs>
+
+<active_character_profiles>
+${activeCast.map(c => `<character_profile>
+  <name>${c.name}</name>
+  <role>${c.role || 'Character'}</role>
+  <core_flaw>${c.core_flaw || c.details?.history || 'Unspecified flaw'}</core_flaw>
+  <core_desire>${c.core_desire || c.details?.goals || 'Unspecified desire'}</core_desire>
+  <vocal_cadence>${c.vocal_cadence || c.voice_sample || 'Standard rhythm and tone'}</vocal_cadence>
+  <interview_psychology>
+${c.details?.deep_profile || 'No profile available.'}
+  </interview_psychology>
+</character_profile>`).join('\n')}
+</active_character_profiles>
+
+<character_relationships>
+${buildRelationshipFrictionBlock(activeCast, storyToUse.relationships || {})}
+</character_relationships>
+
+<continuity_ledger>
+${formatContinuityLedgerForPrompt(storyToUse, { sequence: sequenceData.number, scene: scene + 1, act: sequenceData.parent_act })}
+</continuity_ledger>`;
+
+                        // Acts + previous-sequence bridge: generator-only (the reviewer omits them).
+                        const beatGeneratorActsBlock = () => `<act_descriptions>
+${storyToUse.acts.map(a => `## Act ${a.number}: ${a.title} ${(a.number === (sequenceData.parent_act || 1)) ? "[[CURRENT ACT]]" : ""}
+Mandate: ${a.act_mandate || a.description}
+${(a.number === (sequenceData.parent_act || 1)) ? `<sequence_descriptions>
+${(storyToUse.sequences || []).filter(seq => seq.parent_act === a.number).map(seq => `  - Sequence ${seq.number}: ${seq.title} ${(seq.number === sequenceData.number) ? "[[CURRENT SEQUENCE]]" : ""}
+    Function: ${seq.sequence_function || ""}
+    Objective: ${seq.sequence_objective || ""}
+    Description: ${seq.description || ""}
+`).join('\n')}
+</sequence_descriptions>` : ""}
+`).join('\n')}
+</act_descriptions>
+${(sequenceData.number > 1 && sceneData.number.endsWith(".1")) ? `
+<previous_sequence_last_scene>
+${(storyToUse.scenes[String(sequenceData.number - 2)] || []).slice(-1).map(s => `Scene ${s.number}: ${s.title}\nDescription: ${s.description}`).join('\n')}
+</previous_sequence_last_scene>
+` : ""}`;
+
+                        const getBeatContextBody = () => `<sequence_scene_objectives>
+${(scenesList || []).map(sc => `Scene ${sc.number}: ${sc.title} ${(sc.number === sceneData.number) ? "[[CURRENT SCENE]]" : ""}
+Objective: ${sc.objective || ""}`).join('\n')}
+</sequence_scene_objectives>
+${accumulatedBeats.length > 0 ? `
+<previous_scene_beats>
+${accumulatedBeats.map(b => `[Beat ${b.number}] (${b.beat_type || 'DRAMATIC'}): ${b.action || ''} -> ${b.reaction || ''}\nAction Summary: ${b.description}`).join('\n\n')}
+</previous_scene_beats>
+` : ''}
+
+<current_scene_full_description>
+Scene ID: ${sceneData.number || `${sequenceData.number}.${scene + 1}`}
+Title: ${sceneData.title}
+Scene Type: ${sceneData.scene_type || (scene % 2 === 0 ? "PROACTIVE" : "REACTIVE")}
+Transition Jump (Starting Situation): ${sceneData.transition_jump || "Seamless temporal/spatial continuation"}
+Entrance Conditions: ${sceneData.entrance_conditions || "Starting position in scene environment"}
+Exit Conditions: ${sceneData.exit_conditions || "Ending position and state in scene environment"}
+Value Shift: ${sceneData.start_valence || "Neutral"} -> ${sceneData.end_valence || "Shifted"}
+Objective: ${sceneData.objective || ""}
+Dramatic Blueprint & Description:
+${sceneData.description}
+</current_scene_full_description>
+${followingSceneContext}
+<style_and_tone>
+Genre: ${storyToUse.style?.genre || 'Unspecified'}
+Mood: ${storyToUse.style?.mood || 'Unspecified'}
+Writing Guide: ${storyToUse.style?.writing_guide || 'Standard'}
+World Lore Context:
+${ragContext}
+</style_and_tone>
+
+<writing_lens>
+<lens_id>${sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"}</lens_id>
+<lens_context>${(allNarrativeModes[sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"] || allNarrativeModes.BASELINE_NEUTRAL)?.context || "Default writing style"}</lens_context>
+<lens_instructions>
+${(allNarrativeModes[sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"] || allNarrativeModes.BASELINE_NEUTRAL)?.prompt || "Standard narrative rhythm and focus."}
+</lens_instructions>
+</writing_lens>
+${dInst ? `
+<directive_requirement>
+You MUST adapt the beat choreography to address this specific instruction:
+"${dInst}"
+</directive_requirement>
+` : ""}`;
+
                         const beatResult = await runAgentWithEscalation({
                             tierName: "Beat Agent",
                             chunkContext: `Chunk ${chunkCount}`,
                             isAutopilot: autoP,
-                            generatorPromptFn: () => {
-                            const getBeatContext = () => `
+                            generatorPromptFn: () => `
 <input_payload_schema>
 This prompt provides the following context blocks. Your responsibility is to choreograph the micro-level beats (Motivation-Reaction Units) for this specific scene:
 - <overall_story_information>: The macro narrative framework.
@@ -15979,263 +16017,47 @@ This prompt provides the following context blocks. Your responsibility is to cho
 - <style_and_tone>: The genre and style guidelines, including lore.
 - <writing_lens>: The narrative lens for this scene.
 - <target_beats_for_chunk>: Structural constraints for this chunk of beats.
-- <output_format_description>: The required YAML output schema.
+- <output_format_description>: The required XML output schema.
 </input_payload_schema>
 
-<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State: ${storyToUse.starting_value_state || ""}
-Story Ending Value State: ${storyToUse.ending_value_state || ""}
-</overall_story_information>
+${getBeatContextHead()}
 
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
+${beatGeneratorActsBlock()}
 
-<active_character_profiles>
-${activeCast.map(c => `<character_profile>
-  <name>${c.name}</name>
-  <role>${c.role || 'Character'}</role>
-  <core_flaw>${c.core_flaw || c.details?.history || 'Unspecified flaw'}</core_flaw>
-  <core_desire>${c.core_desire || c.details?.goals || 'Unspecified desire'}</core_desire>
-  <vocal_cadence>${c.vocal_cadence || c.voice_sample || 'Standard rhythm and tone'}</vocal_cadence>
-  <interview_psychology>
-${c.details?.deep_profile || 'No profile available.'}
-  </interview_psychology>
-</character_profile>`).join('\n')}
-</active_character_profiles>
-
-<character_relationships>
-${buildRelationshipFrictionBlock(activeCast, storyToUse.relationships || {})}
-</character_relationships>
-
-<continuity_ledger>
-${formatContinuityLedgerForPrompt(storyToUse, { sequence: sequenceData.number, scene: scene + 1, act: sequenceData.parent_act })}
-</continuity_ledger>
-
-<act_descriptions>
-${storyToUse.acts.map(a => `## Act ${a.number}: ${a.title} ${(a.number === (sequenceData.parent_act || 1)) ? "[[CURRENT ACT]]" : ""}
-Mandate: ${a.act_mandate || a.description}
-${(a.number === (sequenceData.parent_act || 1)) ? `<sequence_descriptions>
-${(storyToUse.sequences || []).filter(seq => seq.parent_act === a.number).map(seq => `  - Sequence ${seq.number}: ${seq.title} ${(seq.number === sequenceData.number) ? "[[CURRENT SEQUENCE]]" : ""}
-    Function: ${seq.sequence_function || ""}
-    Objective: ${seq.sequence_objective || ""}
-    Description: ${seq.description || ""}
-`).join('\n')}
-</sequence_descriptions>` : ""}
-`).join('\n')}
-</act_descriptions>
-${(sequenceData.number > 1 && sceneData.number.endsWith(".1")) ? `
-<previous_sequence_last_scene>
-${(storyToUse.scenes[String(sequenceData.number - 2)] || []).slice(-1).map(s => `Scene ${s.number}: ${s.title}\nDescription: ${s.description}`).join('\n')}
-</previous_sequence_last_scene>
-` : ""}
-
-<sequence_scene_objectives>
-${(scenesList || []).map(sc => `Scene ${sc.number}: ${sc.title} ${(sc.number === sceneData.number) ? "[[CURRENT SCENE]]" : ""}
-Objective: ${sc.objective || ""}`).join('\n')}
-</sequence_scene_objectives>
-${accumulatedBeats.length > 0 ? `
-<previous_scene_beats>
-${accumulatedBeats.map(b => `[Beat ${b.number}] (${b.beat_type || 'DRAMATIC'}): ${b.action || ''} -> ${b.reaction || ''}\nAction Summary: ${b.description}`).join('\n\n')}
-</previous_scene_beats>
-` : ''}
-
-<current_scene_full_description>
-Scene ID: ${sceneData.number || `${sequenceData.number}.${scene + 1}`}
-Title: ${sceneData.title}
-Scene Type: ${sceneData.scene_type || (scene % 2 === 0 ? "PROACTIVE" : "REACTIVE")}
-Transition Jump (Starting Situation): ${sceneData.transition_jump || "Seamless temporal/spatial continuation"}
-Entrance Conditions: ${sceneData.entrance_conditions || "Starting position in scene environment"}
-Exit Conditions: ${sceneData.exit_conditions || "Ending position and state in scene environment"}
-Value Shift: ${sceneData.start_valence || "Neutral"} -> ${sceneData.end_valence || "Shifted"}
-Objective: ${sceneData.objective || ""}
-Dramatic Blueprint & Description:
-${sceneData.description}
-</current_scene_full_description>
-${followingSceneContext}
-<style_and_tone>
-Genre: ${storyToUse.style?.genre || 'Unspecified'}
-Mood: ${storyToUse.style?.mood || 'Unspecified'}
-Writing Guide: ${storyToUse.style?.writing_guide || 'Standard'}
-World Lore Context:
-${ragContext}
-</style_and_tone>
-
-<writing_lens>
-<lens_id>${sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"}</lens_id>
-<lens_context>${(allNarrativeModes[sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"] || allNarrativeModes.BASELINE_NEUTRAL)?.context || "Default writing style"}</lens_context>
-<lens_instructions>
-${(allNarrativeModes[sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"] || allNarrativeModes.BASELINE_NEUTRAL)?.prompt || "Standard narrative rhythm and focus."}
-</lens_instructions>
-</writing_lens>
-${dInst ? `
-<directive_requirement>
-You MUST adapt the beat choreography to address this specific instruction:
-"${dInst}"
-</directive_requirement>
-` : ""}
+${getBeatContextBody()}
 
 <target_beats_for_chunk>
 Generate a cohesive chunk of up to 15 Motivation-Reaction Unit (MRU) beats for this scene (Target total for scene: ${beatsRange.min} - ${beatsRange.max} beats).
-If the scene choreography is fully resolved in this chunk, set has_more: false. If subsequent beats are needed to complete the scene's dramatic arc, set has_more: true.
+If the scene choreography is fully resolved in this chunk, set <has_more>false</has_more>. If subsequent beats are needed to complete the scene's dramatic arc, set <has_more>true</has_more>.
 </target_beats_for_chunk>
 
 <output_format_description>
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: Use block scalar style (| operator) for the action_description, pivot, character_intent, authorial_intent, epistemic_boundaries, and subtext.
+FORMATTING DIRECTIVE: Return your choreography strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-has_more: true # Set to false if the scene's narrative blueprint is completely finished in this chunk.
-beats:
-  - scene_id: "${sceneData.number || `${sequenceData.number}.${scene + 1}`}"
-    beat_id: "${sceneData.number || `${sequenceData.number}.${scene + 1}`}.1"
-    beat_type: "DRAMATIC" # or TRANSITIONAL
-    action_description: |
-      A crisp, vivid 1-2 sentence description clearly stating the concrete physical and dramatic action occurring in this beat.
-    beat_structure:
-      pivot: |
-        Identify the exact turning point of this beat. Categorize explicitly as Peripeteia (reversal of fortune) or Anagnorisis (reversal of knowledge).
-    character_intent: |
-      [Character A Name]:
-        Approach & Goal: Strategy, posture, and motive.
-        Locutionary / Surface Dialogue: Surface words or visible signal.
-        Illocutionary Force: Performative action intended (Striking, Shielding, Evading, Provoking, Demanding, Confessing).
-        Perlocutionary Effect: Actual result on listener and tension gap.
-        MRU Reaction Sequence:
-          1. Feeling/Thought: Involuntary reflex or visceral sensation.
-          2. Action: Voluntary physical movement.
-          3. Speech: Verbal response.
-        Hidden Subtext: Real calculation or emotional truth.
-      [Character B Name]:
-        Approach & Goal: Micro-goal/defenses.
-        Locutionary / Surface Dialogue: Visible response or deflection.
-        Illocutionary Force: Performative counter-action.
-        Perlocutionary Effect: Actual result on Character A.
-        MRU Reaction Sequence:
-          1. Feeling/Thought: Involuntary reflex.
-          2. Action: Physical reaction.
-          3. Speech: Counter-dialogue.
-        Hidden Subtext: Real calculation or emotional truth.
-    atmosphere_and_feel:
-      mood: "The exact emotional vibe/frequency of the beat"
-      cognitive_sensory_filters:
-        - "Non-visual detail 1 filtered strictly through focal character's current state"
-        - "Non-visual detail 2 filtered through character mindset"
-        - "Visual detail filtered through character mindset"
-  - beat_id: "${sceneData.number}.1"
-    character_focus: "Character Name"
-    goal: "What the focus character wants right now in this moment"
-    conflict: "The immediate obstacle, opposition, or resistance they face"
-    action: "Physical action, spoken dialogue, or internal realization"
-    reaction: "Immediate physical or emotional reaction to what just occurred"
-    subtext: "What is unspoken, hidden, or bubbling beneath the surface"
-    dominant_narrative_mode:
-      mode_id: "MODE_ID"
-      justification: "Why this mode applies to this specific beat"
-    description: |
-      Detailed choreographic narrative description of the beat.
-    expected_word_count: 100
-has_more: false # Set true ONLY if more beats are needed to complete this scene's dramatic arc
+<response>
+  <has_more>true</has_more> <!-- Set to false if the scene's narrative blueprint is completely finished in this chunk. -->
+  <beats>
+    <beat>
+      <beat_id>${sceneData.number || `${sequenceData.number}.${scene + 1}`}.1</beat_id>
+      <beat_type>DRAMATIC</beat_type> <!-- or TRANSITIONAL -->
+      <action>A vivid 1-2 sentence description of the concrete physical and verbal action launched in this beat.</action>
+      <reaction>The visceral reaction (Feeling -> Action -> Speech) of the receiving character.</reaction>
+      <tactic>The specific underlying tactic used (e.g. Provokes, Evades, Shields, Demands).</tactic>
+      <subtext>The unsaid friction happening beneath the surface, including the real calculation or emotional truth.</subtext>
+    </beat>
+    <!-- Add more <beat> blocks as needed, up to 15 -->
+  </beats>
+</response>
 </output_format_description>
 
 BEGIN BEAT CHOREOGRAPHY
-`;
-                                return getBeatContext();
-                        },
+`,
                             systemPrompt: PROMPTS.beatAgent,
                             reviewerSystemPrompt: PROMPTS.beatReview,
                             reviewerPromptFn: (genOutput) => {
-                                const getBeatContext = () => `
-<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State: ${storyToUse.starting_value_state || ""}
-Story Ending Value State: ${storyToUse.ending_value_state || ""}
-</overall_story_information>
-
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
-
-<active_character_profiles>
-${activeCast.map(c => `<character_profile>
-  <name>${c.name}</name>
-  <role>${c.role || 'Character'}</role>
-  <core_flaw>${c.core_flaw || c.details?.history || 'Unspecified flaw'}</core_flaw>
-  <core_desire>${c.core_desire || c.details?.goals || 'Unspecified desire'}</core_desire>
-  <vocal_cadence>${c.vocal_cadence || c.voice_sample || 'Standard rhythm and tone'}</vocal_cadence>
-  <interview_psychology>
-${c.details?.deep_profile || 'No profile available.'}
-  </interview_psychology>
-</character_profile>`).join('\n')}
-</active_character_profiles>
-
-<character_relationships>
-${buildRelationshipFrictionBlock(activeCast, storyToUse.relationships || {})}
-</character_relationships>
-
-<continuity_ledger>
-${formatContinuityLedgerForPrompt(storyToUse, { sequence: sequenceData.number, scene: scene + 1, act: sequenceData.parent_act })}
-</continuity_ledger>
-
-<sequence_scene_objectives>
-${(scenesList || []).map(sc => `Scene ${sc.number}: ${sc.title} ${(sc.number === sceneData.number) ? "[[CURRENT SCENE]]" : ""}
-Objective: ${sc.objective || ""}`).join('\n')}
-</sequence_scene_objectives>
-${accumulatedBeats.length > 0 ? `
-<previous_scene_beats>
-${accumulatedBeats.map(b => `[Beat ${b.number}] (${b.beat_type || 'DRAMATIC'}): ${b.action || ''} -> ${b.reaction || ''}\nAction Summary: ${b.description}`).join('\n\n')}
-</previous_scene_beats>
-` : ''}
-
-<current_scene_full_description>
-Scene ID: ${sceneData.number || `${sequenceData.number}.${scene + 1}`}
-Title: ${sceneData.title}
-Scene Type: ${sceneData.scene_type || (scene % 2 === 0 ? "PROACTIVE" : "REACTIVE")}
-Transition Jump (Starting Situation): ${sceneData.transition_jump || "Seamless temporal/spatial continuation"}
-Entrance Conditions: ${sceneData.entrance_conditions || "Starting position in scene environment"}
-Exit Conditions: ${sceneData.exit_conditions || "Ending position and state in scene environment"}
-Value Shift: ${sceneData.start_valence || "Neutral"} -> ${sceneData.end_valence || "Shifted"}
-Objective: ${sceneData.objective || ""}
-Dramatic Blueprint & Description:
-${sceneData.description}
-</current_scene_full_description>
-${followingSceneContext}
-<style_and_tone>
-Genre: ${storyToUse.style?.genre || 'Unspecified'}
-Mood: ${storyToUse.style?.mood || 'Unspecified'}
-Writing Guide: ${storyToUse.style?.writing_guide || 'Standard'}
-World Lore Context:
-${ragContext}
-</style_and_tone>
-
-<writing_lens>
-<lens_id>${sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"}</lens_id>
-<lens_context>${(allNarrativeModes[sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"] || allNarrativeModes.BASELINE_NEUTRAL)?.context || "Default writing style"}</lens_context>
-<lens_instructions>
-${(allNarrativeModes[sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"] || allNarrativeModes.BASELINE_NEUTRAL)?.prompt || "Standard narrative rhythm and focus."}
-</lens_instructions>
-</writing_lens>
-${dInst ? `
-<directive_requirement>
-You MUST adapt the beat choreography to address this specific instruction:
-"${dInst}"
-</directive_requirement>
-` : ""}
-`;
-                                return `${getBeatContext()}\n\n<generated_beat_choreography>\n${genOutput}\n</generated_beat_choreography>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.\n\nOutput Schema:\ncritique_analysis: |\n  Verify every beat's scene boundary compliance (starting situation, transition jump, ending disaster/decision, anti-overextension), action clarity, tactic, MRU reaction order, physical actions, inventory constraints, Aristotelian pivot type, speech act alignment, cognitive filters, and epistemic boundaries.\nstatus: PASS # or FAIL\ndeviation_reasons:\n  - "Explain the exact issue and how to fix it."\nnew_character_briefs: []\n</output_format_description>\n\nBEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`;
+                                return `\n${getBeatContextHead()}\n\n${getBeatContextBody()}\n\n\n<generated_beat_choreography>\n${genOutput}\n</generated_beat_choreography>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.\n\nOutput Schema:\ncritique_analysis: |\n  Verify every beat's scene boundary compliance (starting situation, transition jump, ending disaster/decision, anti-overextension), action clarity, tactic, MRU reaction order, physical actions, inventory constraints, Aristotelian pivot type, speech act alignment, cognitive filters, and epistemic boundaries.\nstatus: PASS # or FAIL\ndeviation_reasons:\n  - "Explain the exact issue and how to fix it."\nnew_character_briefs: []\n</output_format_description>\n\nBEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`;
                             },
                             parserFn: (text) => {
                                 const hasMoreMatch = text.match(/<has_more>\s*(true|false)\s*<\/has_more>/i);
