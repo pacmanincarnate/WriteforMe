@@ -2345,6 +2345,7 @@
         const AlignJustify = (p) => <Icon name="align-justify" {...p} />;
         const Check = (p) => <Icon name="check" {...p} />;
         const SlidersHorizontal = (p) => <Icon name="sliders-horizontal" {...p} />;
+        const ListPlus = (p) => <Icon name="list-plus" {...p} />;
 
 
 
@@ -2719,11 +2720,11 @@
                             if (edit.type === 'search_replace' || edit.search !== undefined) {
                                 const searchStr = chomp(String(edit.search || edit.original || ""));
                                 const repStr = chomp(String(edit.replace || edit.rewritten || ""));
-                                if (updated.includes(searchStr)) {
+                                if (searchStr && updated.includes(searchStr)) {
                                     updated = updated.replace(searchStr, () => repStr);
                                 } else {
                                     const trimmed = searchStr.trim();
-                                    if (updated.includes(trimmed)) {
+                                    if (trimmed && updated.includes(trimmed)) {
                                         updated = updated.replace(trimmed, () => repStr.trim());
                                     }
                                 }
@@ -3836,7 +3837,11 @@
                     if (!rawType || (!rawType.includes("PROACTIVE") && !rawType.includes("REACTIVE") && !rawType.includes("SCENE") && !rawType.includes("SEQUEL"))) {
                         errors.push(`${tierName}: Scene ${sc.number || i + 1} missing valid scene_type (PROACTIVE/REACTIVE)`);
                     }
-                    const presentList = sc.cast_ids || sc.characters_present || [];
+                    // Prefer the raw characters_present list: cast_ids only ever holds names the parser
+                    // already matched to the cast, so hallucinated characters never appear in it.
+                    const presentList = (Array.isArray(sc.characters_present) && sc.characters_present.length)
+                        ? sc.characters_present
+                        : ((Array.isArray(sc.cast_ids) && sc.cast_ids.length) ? sc.cast_ids : (sc.cast_names || []));
                     if (validCast.size > 0 && Array.isArray(presentList)) {
                         for (const cid of presentList) {
                             const cleanCid = String(cid || "").trim().toLowerCase();
@@ -4857,64 +4862,6 @@
             }
         };
 
-        const NARRATIVE_MODES_XML = `<narrative_modes>
-  <mode>
-    <id>BASELINE_NEUTRAL</id>
-    <context>Default writing style, standard pacing and narration without specific thematic exaggeration.</context>
-  </mode>
-  <mode>
-    <id>KINETIC_ACTION</id>
-    <context>Combat, chases, escapes, or physical struggles. Requires visceral momentum and physical focus.</context>
-  </mode>
-  <mode>
-    <id>BUILDING_ROMANCE</id>
-    <context>Establishing chemistry, yearning, and romantic tension. Focus on the "slow burn" and gravity between characters.</context>
-  </mode>
-  <mode>
-    <id>ATMOSPHERIC_SUSPENSE</id>
-    <context>Stealth, hunting, creeping dread. Focus on paranoia and the dilation of time.</context>
-  </mode>
-  <mode>
-    <id>VERBAL_SPARRING</id>
-    <context>High-stakes arguments, negotiations, interrogations. Dialogue is the primary weapon.</context>
-  </mode>
-  <mode>
-    <id>PROCEDURAL_MYSTERY</id>
-    <context>Investigations, analyzing clues, logical deduction. Focus on objective reality and empirical thought.</context>
-  </mode>
-  <mode>
-    <id>GRAND_SCALE</id>
-    <context>In-the-moment macro-scale events (e.g., troop movements, docking shuttles, arriving crowds).</context>
-  </mode>
-  <mode>
-    <id>WORLD_BUILDING</id>
-    <context>Zooming in to creatively invent/explain specific details about histories, cultural practices, systems, or environments.</context>
-  </mode>
-  <mode>
-    <id>LIGHTHEARTED</id>
-    <context>Comedic relief, joyful banter, whimsical situations providing a breather from heavy stakes.</context>
-  </mode>
-  <mode>
-    <id>ORGANIC_EXPOSITION</id>
-    <context>Characters organically explaining context, plot, or plans to one another (e.g., heist planning).</context>
-  </mode>
-  <mode>
-    <id>REVELATION</id>
-    <context>Major plot twists or the climax of a character arc where the truth shatters established reality.</context>
-  </mode>
-  <mode>
-    <id>UNCERTAINTY</id>
-    <context>Facing the terrifying unknown, groping in the dark, trying to understand a completely alien situation.</context>
-  </mode>
-  <mode>
-    <id>REFLECTION</id>
-    <context>The aftermath of an event, processing grief, trauma, or complex emotions internally.</context>
-  </mode>
-  <mode>
-    <id>RELATIONAL</id>
-    <context>Non-romantic dialogue sequences deepening platonic, familial, or allied bonds; revealing backstory.</context>
-  </mode>
-</narrative_modes>`;
 
         // ===
         // CENTRALIZED BANNED CHARACTER NAMES REGISTRY
@@ -13236,16 +13183,36 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         valid_from_scene: 1
                     };
                     const existingWorldBible = (storyToUse.lore || []).find(l => l && l.topic === "World Bible Setting");
-                    let persistedWorldBible = worldBibleEntry;
-                    if (!worldBibleEntry.detail) {
-                        // No status_quo to archive - keep whatever world bible entry already exists
-                        if (existingWorldBible) persistedWorldBible = existingWorldBible;
-                    } else if (existingWorldBible && existingWorldBible.detail === worldBibleEntry.detail) {
-                        // Unchanged since the last archive - skip the embedding round-trip entirely
-                        persistedWorldBible = existingWorldBible;
-                    } else {
-                        const processedWB = await ingestLoreBatch([worldBibleEntry]);
-                        if (processedWB && processedWB[0]) persistedWorldBible = processedWB[0];
+                    let persistedWorldBible = existingWorldBible || null;
+                    if (worldBibleEntry.detail && (!existingWorldBible || existingWorldBible.detail !== worldBibleEntry.detail)) {
+                        // Upsert under a stable vector id: overwrites the previous World Bible vector in place
+                        // (no stale duplicates, no similarity-merge against unrelated lore) and only records the
+                        // entry as archived when the vector write succeeded, so a transient embedding failure is
+                        // retried on the next regeneration instead of being skipped as already-archived.
+                        try {
+                            setRagStatus("indexing_batch");
+                            const wbText = `${worldBibleEntry.topic}: ${worldBibleEntry.detail}`;
+                            const emb = embeddingService.current ? await embeddingService.current.getEmbedding(wbText) : null;
+                            if (emb && vectorStore.current) {
+                                await vectorStore.current.add("lore_world_bible_setting", wbText, emb, {
+                                    topic: worldBibleEntry.topic,
+                                    valid_from_act: 1,
+                                    valid_from_scene: 1,
+                                    category: "General",
+                                    detail: worldBibleEntry.detail
+                                });
+                                persistedWorldBible = worldBibleEntry;
+                            } else if (!existingWorldBible) {
+                                // No embedding service configured - keep the lore entry visible anyway;
+                                // the load-time re-index rebuilds vectors from story.lore once one exists.
+                                persistedWorldBible = worldBibleEntry;
+                            }
+                        } catch (e) {
+                            console.warn("[generateActsAndSequences] World Bible vector archival failed; will retry on next regeneration:", e);
+                            if (!existingWorldBible) persistedWorldBible = worldBibleEntry;
+                        } finally {
+                            setRagStatus("ready");
+                        }
                     }
 
                     // TIER 2.3: Pacing Architect (Deterministic Local Pacing Ranges - A1)
@@ -13257,7 +13224,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         acts: actsData,
                         sequences: normalizedSequences,
                         relationships: nextRels,
-                        lore: persistedWorldBible.detail
+                        lore: (persistedWorldBible && persistedWorldBible.detail)
                             ? [...(storyToUse.lore || []).filter(l => l && l.topic !== "World Bible Setting"), persistedWorldBible]
                             : (storyToUse.lore || []),
                         thread_statuses: actResult.parsedData.thread_statuses || [],
@@ -15007,7 +14974,10 @@ ${chapterBody}
                         console.error(`[AI Call - "${logName}"] Error (Attempt ${attempt}/${maxRetries}):`, errMsg, error);
                         
                         const isAuthError = errMsg.includes("401") || errMsg.includes("Authorization Failed") || errMsg.includes("API Key is missing");
-                        const isClientTimeout = errMsg.includes("Request timed out") || errMsg.includes("timed out after") || errMsg.includes("timed out") || error?.name === 'AbortError';
+                        // Client-side aborts only: fetchWithTimeout/KoboldCPP throw "... request timed out after Ns".
+                        // Server-side gateway timeouts ("upstream request timed out", 504) must NOT match -
+                        // they are handled by the generic transient clauses with accurate messaging.
+                        const isClientTimeout = error?.name === 'AbortError' || errMsg.toLowerCase().includes("request timed out after");
                         const isTransient = !isAuthError && ((isClientTimeout && timeoutRetries < 1) ||
                             errMsg.includes("500") || errMsg.includes("502") || errMsg.includes("503") || errMsg.includes("504") ||
                             errMsg.includes("Internal Server Error") || errMsg.includes("Bad Gateway") || errMsg.includes("Service Unavailable") ||
@@ -15734,6 +15704,7 @@ Pacing Justification: ${scenesRange.justification}
                                     entrance_conditions: extractTag(sData, 'entrance_conditions') || "",
                                     exit_conditions: extractTag(sData, 'exit_conditions') || "",
                                     temporal_scope: extractTag(sData, 'temporal_scope') || "",
+                                    characters_present: charPres,
                                     cast_ids: castIds,
                                     cast_names: castNames,
                                     thread_ids: threadIds,
