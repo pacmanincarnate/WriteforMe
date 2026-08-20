@@ -8160,6 +8160,235 @@ Output Schema:
             );
         };
 
+        /* Pipeline & prompt log view. promptLog state and openLogDetailModal live in
+           EllipsisProsef (the log is written by the generation pipeline and the detail
+           modal is mounted at app level); this is the pure list view over them. */
+        const LogsView = ({ promptLog, setPromptLog, logFilter, setLogFilter, openLogDetailModal, showToast }) => {
+            return (
+                <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
+                    <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
+                        <div className="flex items-center gap-3">
+                            <h2 className="text-2xl sm:text-3xl font-serif font-bold text-stone-900 flex items-center gap-2.5">
+                                <History className="text-[#8C6B32]" /> Pipeline & Prompt Log
+                            </h2>
+                            <span className="text-xs font-mono font-bold text-stone-500 bg-stone-100 px-3 py-1 rounded-full border border-stone-200">
+                                {promptLog.length} entries
+                            </span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 bg-white p-1 rounded-xl border border-stone-200 shadow-2xs text-xs">
+                            {['all', 'calls', 'validations', 'delays', 'errors'].map(filterKey => (
+                                <button
+                                    key={filterKey}
+                                    onClick={() => setLogFilter(filterKey)}
+                                    className={`px-3 py-1.5 rounded-lg font-bold capitalize transition-all ${logFilter === filterKey ? 'bg-[#1C1917] text-white shadow-2xs' : 'text-stone-600 hover:text-stone-900 hover:bg-stone-50'}`}
+                                >
+                                    {filterKey}
+                                </button>
+                            ))}
+                            {promptLog.length > 0 && (
+                                <button
+                                    onClick={() => setPromptLog([])}
+                                    className="px-2.5 py-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ml-1"
+                                    title="Clear logs"
+                                >
+                                    <Trash2 size={14} />
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="space-y-4">
+                        {promptLog.length === 0 ? (
+                            <div className="text-center text-stone-400 py-20 italic bg-white rounded-2xl border border-black/[0.07] shadow-sm">
+                                No pipeline logs or prompt dispatches yet. Start generating!
+                            </div>
+                        ) : (
+                            promptLog
+                                .filter(entry => {
+                                    if (logFilter === 'calls') return !entry.isDelay && !entry.isValidation;
+                                    if (logFilter === 'validations') return entry.isValidation;
+                                    if (logFilter === 'delays') return entry.isDelay;
+                                    if (logFilter === 'errors') return entry.status === 'error' || entry.status === 'validation_failed';
+                                    return true;
+                                })
+                                .map((entry) => {
+                                    const isSuccess = entry.status === 'success';
+                                    const isDelay = entry.isDelay || entry.status === 'delay';
+                                    const isValidation = entry.isValidation;
+                                    const isError = entry.status === 'error' || entry.status === 'validation_failed';
+
+                                    return (
+                                        <div key={entry.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${isError ? 'border-rose-200' : isDelay ? 'border-sky-200' : isValidation ? 'border-amber-200' : 'border-black/[0.07]'}`}>
+                                            <div className="p-4 sm:p-5 bg-stone-50/70 border-b border-stone-200/80 flex flex-wrap justify-between items-center gap-2">
+                                                <div className="flex flex-wrap items-center gap-2.5">
+                                                    <span className="text-xs font-mono text-stone-500">{entry.timestamp}</span>
+                                                    <span className="text-xs font-bold text-stone-800 uppercase tracking-wider bg-stone-200/80 px-2.5 py-0.5 rounded-full border border-stone-300/60 font-mono">
+                                                        {entry.function}
+                                                    </span>
+                                                    {entry.durationSec !== null && entry.durationSec !== undefined && (
+                                                        <span className="text-xs font-mono text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1 font-bold">
+                                                            <Clock size={11} /> {entry.durationSec}s {entry.durationMs ? `(${entry.durationMs}ms)` : ''}
+                                                        </span>
+                                                    )}
+                                                    {isDelay && (
+                                                        <span className="text-[11px] font-bold text-sky-800 bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200 font-mono">
+                                                            ⏱️ DELAY TIMER
+                                                        </span>
+                                                    )}
+                                                    {isValidation && (
+                                                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border font-mono ${isSuccess ? 'text-emerald-800 bg-emerald-50 border-emerald-200' : 'text-rose-800 bg-rose-50 border-rose-200'}`}>
+                                                            {isSuccess ? '✓ PASS GATE' : '✗ FAIL GATE'}
+                                                        </span>
+                                                    )}
+                                                    {!isDelay && !isValidation && (
+                                                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border font-mono ${entry.status === 'pending' ? 'text-amber-800 bg-amber-50 border-amber-200' : isError ? 'text-rose-800 bg-rose-50 border-rose-200' : 'text-emerald-800 bg-emerald-50 border-emerald-200'}`}>
+                                                            {entry.status === 'pending' ? 'RUNNING...' : isError ? 'ERROR' : 'VALID RESPONSE'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {!isDelay && (
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <button
+                                                            onClick={() => openLogDetailModal('thinking', entry)}
+                                                            className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold font-sans transition-all border shadow-2xs ${
+                                                                entry.reasoningText || (entry.thinkingTokens && entry.thinkingTokens > 0)
+                                                                    ? 'bg-purple-50 hover:bg-purple-100 text-purple-900 border-purple-200 hover:border-purple-300'
+                                                                    : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200/80 hover:text-stone-700'
+                                                            }`}
+                                                            title="View AI Thinking Trace in Pop-up Window"
+                                                        >
+                                                            <Brain size={12} className={entry.reasoningText || (entry.thinkingTokens && entry.thinkingTokens > 0) ? 'text-purple-600' : 'text-stone-400'} />
+                                                            <span>Thinking</span>
+                                                            {(entry.thinkingTokens !== null && entry.thinkingTokens !== undefined && entry.thinkingTokens > 0) && (
+                                                                <span className="text-[10px] font-mono font-normal opacity-85">({entry.thinkingTokens} tok)</span>
+                                                            )}
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() => openLogDetailModal('response', entry)}
+                                                            className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold font-sans transition-all border shadow-2xs ${
+                                                                entry.response || entry.responseSnippet
+                                                                    ? 'bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-200 hover:border-blue-300'
+                                                                    : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200/80 hover:text-stone-700'
+                                                            }`}
+                                                            title="View Full AI Response in Pop-up Window"
+                                                        >
+                                                            <MessageSquare size={12} className={entry.response || entry.responseSnippet ? 'text-blue-600' : 'text-stone-400'} />
+                                                            <span>Response</span>
+                                                            {(entry.responseTokens !== null && entry.responseTokens !== undefined) && (
+                                                                <span className="text-[10px] font-mono font-normal opacity-85">({entry.responseTokens} tok)</span>
+                                                            )}
+                                                        </button>
+
+                                                        <button
+                                                            onClick={() => { navigator.clipboard.writeText(`System: ${entry.systemPrompt}\n\nUser: ${entry.prompt}`); showToast("Copied full context!"); }}
+                                                            className="text-xs flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-stone-500 hover:text-stone-900 hover:bg-stone-100 transition-colors font-medium border border-transparent hover:border-stone-200"
+                                                            title="Copy System & User Prompt Context"
+                                                        >
+                                                            <Copy size={12} /> Context
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="p-4 sm:p-5 space-y-3 text-xs font-mono leading-relaxed">
+                                                {entry.validationSummary && (
+                                                    <div className={`p-3 rounded-xl border text-xs font-sans ${isError ? 'bg-rose-50 border-rose-200 text-rose-900' : isDelay ? 'bg-sky-50 border-sky-200 text-sky-900' : isValidation ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-[#FAF8F5] border-stone-200 text-stone-800'}`}>
+                                                        <span className="font-bold uppercase tracking-wider text-[10px] opacity-75 mr-2 font-mono">[Step Status]</span>
+                                                        {entry.validationSummary}
+                                                    </div>
+                                                )}
+
+                                                {entry.modelUsed && (
+                                                    <div className="flex flex-wrap gap-4 text-xs text-stone-600 bg-[#FAF8F5] p-3 rounded-xl border border-stone-200/80 font-sans">
+                                                        <div>Model: <span className="text-stone-900 font-bold font-mono">{entry.modelUsed}</span></div>
+                                                        {entry.modelSize && <div>Size Target: <span className="text-[#8C6B32] font-bold uppercase font-mono">{entry.modelSize}</span></div>}
+                                                        {entry.provider && <div>Provider: <span className="text-stone-800 uppercase font-bold">{entry.provider}</span></div>}
+                                                        {(entry.thinkingTokens !== null && entry.thinkingTokens !== undefined) ? (
+                                                            <div className="flex items-center gap-1 text-purple-900 font-bold">
+                                                                <Brain size={12} className="text-purple-600" />
+                                                                Thinking Tokens: <span className="font-mono text-purple-800">{entry.thinkingTokens}</span>
+                                                            </div>
+                                                        ) : (entry.reasoningTokensUsed !== null && entry.reasoningTokensUsed !== undefined) ? (
+                                                            <div className="flex items-center gap-1 text-purple-900 font-bold">
+                                                                <Brain size={12} className="text-purple-600" />
+                                                                Thinking Tokens: <span className="font-mono text-purple-800">{entry.reasoningTokensUsed}</span>
+                                                            </div>
+                                                        ) : null}
+                                                        {entry.responseTokens !== null && entry.responseTokens !== undefined && (
+                                                            <div className="flex items-center gap-1 text-blue-900 font-bold">
+                                                                <MessageSquare size={12} className="text-blue-600" />
+                                                                Response Tokens: <span className="font-mono text-blue-800">{entry.responseTokens}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
+                                                {(entry.response || entry.responseSnippet) && (
+                                                    <div>
+                                                        <div className="text-[10px] text-stone-400 font-bold uppercase mb-1 flex items-center justify-between font-mono">
+                                                            <div className="flex items-center gap-1">
+                                                                <CheckCircle2 size={11} className="text-emerald-600" /> Response Output Preview
+                                                            </div>
+                                                            <button
+                                                                onClick={() => openLogDetailModal('response', entry)}
+                                                                className="text-[11px] text-blue-700 hover:text-blue-900 flex items-center gap-1 font-sans font-bold hover:underline"
+                                                            >
+                                                                Pop-up Response Window <Maximize2 size={11} />
+                                                            </button>
+                                                        </div>
+                                                        <div className="text-stone-800 text-xs bg-[#FAF8F5] p-3 rounded-xl border border-stone-200 whitespace-pre-wrap max-h-36 overflow-y-auto custom-scrollbar">
+                                                            {entry.responseSnippet || entry.response}
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                {entry.reasoningText && (
+                                                    <div>
+                                                        <div className="text-[10px] text-stone-400 font-bold uppercase mb-1 flex items-center justify-between font-mono">
+                                                            <div className="flex items-center gap-1">
+                                                                <Brain size={11} className="text-[#8C6B32]" /> Model Reasoning / Thoughts
+                                                            </div>
+                                                            <button
+                                                                onClick={() => openLogDetailModal('thinking', entry)}
+                                                                className="text-[11px] text-purple-700 hover:text-purple-900 flex items-center gap-1 font-sans font-bold hover:underline"
+                                                            >
+                                                                Pop-up Thinking Window <Maximize2 size={11} />
+                                                            </button>
+                                                        </div>
+                                                        <details className="group bg-[#FAF8F5] p-3 rounded-xl border border-stone-200">
+                                                            <summary className="text-xs text-stone-600 cursor-pointer select-none outline-none group-open:mb-2 hover:text-stone-900 transition-colors flex items-center gap-1 justify-between font-sans">
+                                                                <span>Click to expand inline thoughts ({entry.reasoningText.split(/\s+/).length} words)</span>
+                                                                <ChevronDown size={14} className="transform transition-transform group-open:rotate-180 text-stone-400" />
+                                                            </summary>
+                                                            <div className="text-stone-700 text-xs whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar border-t border-stone-200 pt-2 leading-relaxed font-mono">{entry.reasoningText}</div>
+                                                        </details>
+                                                    </div>
+                                                )}
+
+                                                {!isDelay && entry.systemPrompt && (
+                                                    <div>
+                                                        <div className="text-[10px] text-stone-400 font-bold uppercase mb-1 font-mono">System Prompt</div>
+                                                        <div className="text-stone-700 whitespace-pre-wrap max-h-28 overflow-y-auto bg-[#FAF8F5] p-3 rounded-xl border border-stone-200 custom-scrollbar text-xs leading-relaxed">{entry.systemPrompt}</div>
+                                                    </div>
+                                                )}
+
+                                                {!isDelay && entry.prompt && (
+                                                    <div>
+                                                        <div className="text-[10px] text-stone-400 font-bold uppercase mb-1 font-mono">User Prompt</div>
+                                                        <div className="text-stone-800 whitespace-pre-wrap max-h-40 overflow-y-auto bg-[#FAF8F5] p-3 rounded-xl border border-stone-200 text-xs custom-scrollbar leading-relaxed">{entry.prompt}</div>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
         const CharacterCard = ({ c, onEdit }) => {
             const [isExpanded, setIsExpanded] = useState(false);
             if (!c) return null;
@@ -20825,227 +21054,14 @@ ${currentLoreList}
                             })()}
 
                             {view === 'logs' && (
-                                <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
-                                    <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
-                                        <div className="flex items-center gap-3">
-                                            <h2 className="text-2xl sm:text-3xl font-serif font-bold text-stone-900 flex items-center gap-2.5">
-                                                <History className="text-[#8C6B32]" /> Pipeline & Prompt Log
-                                            </h2>
-                                            <span className="text-xs font-mono font-bold text-stone-500 bg-stone-100 px-3 py-1 rounded-full border border-stone-200">
-                                                {promptLog.length} entries
-                                            </span>
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-1.5 bg-white p-1 rounded-xl border border-stone-200 shadow-2xs text-xs">
-                                            {['all', 'calls', 'validations', 'delays', 'errors'].map(filterKey => (
-                                                <button
-                                                    key={filterKey}
-                                                    onClick={() => setLogFilter(filterKey)}
-                                                    className={`px-3 py-1.5 rounded-lg font-bold capitalize transition-all ${logFilter === filterKey ? 'bg-[#1C1917] text-white shadow-2xs' : 'text-stone-600 hover:text-stone-900 hover:bg-stone-50'}`}
-                                                >
-                                                    {filterKey}
-                                                </button>
-                                            ))}
-                                            {promptLog.length > 0 && (
-                                                <button
-                                                    onClick={() => setPromptLog([])}
-                                                    className="px-2.5 py-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors ml-1"
-                                                    title="Clear logs"
-                                                >
-                                                    <Trash2 size={14} />
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <div className="space-y-4">
-                                        {promptLog.length === 0 ? (
-                                            <div className="text-center text-stone-400 py-20 italic bg-white rounded-2xl border border-black/[0.07] shadow-sm">
-                                                No pipeline logs or prompt dispatches yet. Start generating!
-                                            </div>
-                                        ) : (
-                                            promptLog
-                                                .filter(entry => {
-                                                    if (logFilter === 'calls') return !entry.isDelay && !entry.isValidation;
-                                                    if (logFilter === 'validations') return entry.isValidation;
-                                                    if (logFilter === 'delays') return entry.isDelay;
-                                                    if (logFilter === 'errors') return entry.status === 'error' || entry.status === 'validation_failed';
-                                                    return true;
-                                                })
-                                                .map((entry) => {
-                                                    const isSuccess = entry.status === 'success';
-                                                    const isDelay = entry.isDelay || entry.status === 'delay';
-                                                    const isValidation = entry.isValidation;
-                                                    const isError = entry.status === 'error' || entry.status === 'validation_failed';
-
-                                                    return (
-                                                        <div key={entry.id} className={`bg-white rounded-2xl border shadow-sm overflow-hidden transition-all ${isError ? 'border-rose-200' : isDelay ? 'border-sky-200' : isValidation ? 'border-amber-200' : 'border-black/[0.07]'}`}>
-                                                            <div className="p-4 sm:p-5 bg-stone-50/70 border-b border-stone-200/80 flex flex-wrap justify-between items-center gap-2">
-                                                                <div className="flex flex-wrap items-center gap-2.5">
-                                                                    <span className="text-xs font-mono text-stone-500">{entry.timestamp}</span>
-                                                                    <span className="text-xs font-bold text-stone-800 uppercase tracking-wider bg-stone-200/80 px-2.5 py-0.5 rounded-full border border-stone-300/60 font-mono">
-                                                                        {entry.function}
-                                                                    </span>
-                                                                    {entry.durationSec !== null && entry.durationSec !== undefined && (
-                                                                        <span className="text-xs font-mono text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1 font-bold">
-                                                                            <Clock size={11} /> {entry.durationSec}s {entry.durationMs ? `(${entry.durationMs}ms)` : ''}
-                                                                        </span>
-                                                                    )}
-                                                                    {isDelay && (
-                                                                        <span className="text-[11px] font-bold text-sky-800 bg-sky-50 px-2.5 py-0.5 rounded-full border border-sky-200 font-mono">
-                                                                            ⏱️ DELAY TIMER
-                                                                        </span>
-                                                                    )}
-                                                                    {isValidation && (
-                                                                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border font-mono ${isSuccess ? 'text-emerald-800 bg-emerald-50 border-emerald-200' : 'text-rose-800 bg-rose-50 border-rose-200'}`}>
-                                                                            {isSuccess ? '✓ PASS GATE' : '✗ FAIL GATE'}
-                                                                        </span>
-                                                                    )}
-                                                                    {!isDelay && !isValidation && (
-                                                                        <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border font-mono ${entry.status === 'pending' ? 'text-amber-800 bg-amber-50 border-amber-200' : isError ? 'text-rose-800 bg-rose-50 border-rose-200' : 'text-emerald-800 bg-emerald-50 border-emerald-200'}`}>
-                                                                            {entry.status === 'pending' ? 'RUNNING...' : isError ? 'ERROR' : 'VALID RESPONSE'}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                {!isDelay && (
-                                                                    <div className="flex flex-wrap items-center gap-2">
-                                                                        <button
-                                                                            onClick={() => openLogDetailModal('thinking', entry)}
-                                                                            className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold font-sans transition-all border shadow-2xs ${
-                                                                                entry.reasoningText || (entry.thinkingTokens && entry.thinkingTokens > 0)
-                                                                                    ? 'bg-purple-50 hover:bg-purple-100 text-purple-900 border-purple-200 hover:border-purple-300'
-                                                                                    : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200/80 hover:text-stone-700'
-                                                                            }`}
-                                                                            title="View AI Thinking Trace in Pop-up Window"
-                                                                        >
-                                                                            <Brain size={12} className={entry.reasoningText || (entry.thinkingTokens && entry.thinkingTokens > 0) ? 'text-purple-600' : 'text-stone-400'} />
-                                                                            <span>Thinking</span>
-                                                                            {(entry.thinkingTokens !== null && entry.thinkingTokens !== undefined && entry.thinkingTokens > 0) && (
-                                                                                <span className="text-[10px] font-mono font-normal opacity-85">({entry.thinkingTokens} tok)</span>
-                                                                            )}
-                                                                        </button>
-
-                                                                        <button
-                                                                            onClick={() => openLogDetailModal('response', entry)}
-                                                                            className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold font-sans transition-all border shadow-2xs ${
-                                                                                entry.response || entry.responseSnippet
-                                                                                    ? 'bg-blue-50 hover:bg-blue-100 text-blue-900 border-blue-200 hover:border-blue-300'
-                                                                                    : 'bg-stone-100 text-stone-500 border-stone-200 hover:bg-stone-200/80 hover:text-stone-700'
-                                                                            }`}
-                                                                            title="View Full AI Response in Pop-up Window"
-                                                                        >
-                                                                            <MessageSquare size={12} className={entry.response || entry.responseSnippet ? 'text-blue-600' : 'text-stone-400'} />
-                                                                            <span>Response</span>
-                                                                            {(entry.responseTokens !== null && entry.responseTokens !== undefined) && (
-                                                                                <span className="text-[10px] font-mono font-normal opacity-85">({entry.responseTokens} tok)</span>
-                                                                            )}
-                                                                        </button>
-
-                                                                        <button
-                                                                            onClick={() => { navigator.clipboard.writeText(`System: ${entry.systemPrompt}\n\nUser: ${entry.prompt}`); showToast("Copied full context!"); }}
-                                                                            className="text-xs flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-stone-500 hover:text-stone-900 hover:bg-stone-100 transition-colors font-medium border border-transparent hover:border-stone-200"
-                                                                            title="Copy System & User Prompt Context"
-                                                                        >
-                                                                            <Copy size={12} /> Context
-                                                                        </button>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-
-                                                            <div className="p-4 sm:p-5 space-y-3 text-xs font-mono leading-relaxed">
-                                                                {entry.validationSummary && (
-                                                                    <div className={`p-3 rounded-xl border text-xs font-sans ${isError ? 'bg-rose-50 border-rose-200 text-rose-900' : isDelay ? 'bg-sky-50 border-sky-200 text-sky-900' : isValidation ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-[#FAF8F5] border-stone-200 text-stone-800'}`}>
-                                                                        <span className="font-bold uppercase tracking-wider text-[10px] opacity-75 mr-2 font-mono">[Step Status]</span>
-                                                                        {entry.validationSummary}
-                                                                    </div>
-                                                                )}
-
-                                                                {entry.modelUsed && (
-                                                                    <div className="flex flex-wrap gap-4 text-xs text-stone-600 bg-[#FAF8F5] p-3 rounded-xl border border-stone-200/80 font-sans">
-                                                                        <div>Model: <span className="text-stone-900 font-bold font-mono">{entry.modelUsed}</span></div>
-                                                                        {entry.modelSize && <div>Size Target: <span className="text-[#8C6B32] font-bold uppercase font-mono">{entry.modelSize}</span></div>}
-                                                                        {entry.provider && <div>Provider: <span className="text-stone-800 uppercase font-bold">{entry.provider}</span></div>}
-                                                                        {(entry.thinkingTokens !== null && entry.thinkingTokens !== undefined) ? (
-                                                                            <div className="flex items-center gap-1 text-purple-900 font-bold">
-                                                                                <Brain size={12} className="text-purple-600" />
-                                                                                Thinking Tokens: <span className="font-mono text-purple-800">{entry.thinkingTokens}</span>
-                                                                            </div>
-                                                                        ) : (entry.reasoningTokensUsed !== null && entry.reasoningTokensUsed !== undefined) ? (
-                                                                            <div className="flex items-center gap-1 text-purple-900 font-bold">
-                                                                                <Brain size={12} className="text-purple-600" />
-                                                                                Thinking Tokens: <span className="font-mono text-purple-800">{entry.reasoningTokensUsed}</span>
-                                                                            </div>
-                                                                        ) : null}
-                                                                        {entry.responseTokens !== null && entry.responseTokens !== undefined && (
-                                                                            <div className="flex items-center gap-1 text-blue-900 font-bold">
-                                                                                <MessageSquare size={12} className="text-blue-600" />
-                                                                                Response Tokens: <span className="font-mono text-blue-800">{entry.responseTokens}</span>
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                )}
-
-                                                                {(entry.response || entry.responseSnippet) && (
-                                                                    <div>
-                                                                        <div className="text-[10px] text-stone-400 font-bold uppercase mb-1 flex items-center justify-between font-mono">
-                                                                            <div className="flex items-center gap-1">
-                                                                                <CheckCircle2 size={11} className="text-emerald-600" /> Response Output Preview
-                                                                            </div>
-                                                                            <button
-                                                                                onClick={() => openLogDetailModal('response', entry)}
-                                                                                className="text-[11px] text-blue-700 hover:text-blue-900 flex items-center gap-1 font-sans font-bold hover:underline"
-                                                                            >
-                                                                                Pop-up Response Window <Maximize2 size={11} />
-                                                                            </button>
-                                                                        </div>
-                                                                        <div className="text-stone-800 text-xs bg-[#FAF8F5] p-3 rounded-xl border border-stone-200 whitespace-pre-wrap max-h-36 overflow-y-auto custom-scrollbar">
-                                                                            {entry.responseSnippet || entry.response}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-
-                                                                {entry.reasoningText && (
-                                                                    <div>
-                                                                        <div className="text-[10px] text-stone-400 font-bold uppercase mb-1 flex items-center justify-between font-mono">
-                                                                            <div className="flex items-center gap-1">
-                                                                                <Brain size={11} className="text-[#8C6B32]" /> Model Reasoning / Thoughts
-                                                                            </div>
-                                                                            <button
-                                                                                onClick={() => openLogDetailModal('thinking', entry)}
-                                                                                className="text-[11px] text-purple-700 hover:text-purple-900 flex items-center gap-1 font-sans font-bold hover:underline"
-                                                                            >
-                                                                                Pop-up Thinking Window <Maximize2 size={11} />
-                                                                            </button>
-                                                                        </div>
-                                                                        <details className="group bg-[#FAF8F5] p-3 rounded-xl border border-stone-200">
-                                                                            <summary className="text-xs text-stone-600 cursor-pointer select-none outline-none group-open:mb-2 hover:text-stone-900 transition-colors flex items-center gap-1 justify-between font-sans">
-                                                                                <span>Click to expand inline thoughts ({entry.reasoningText.split(/\s+/).length} words)</span>
-                                                                                <ChevronDown size={14} className="transform transition-transform group-open:rotate-180 text-stone-400" />
-                                                                            </summary>
-                                                                            <div className="text-stone-700 text-xs whitespace-pre-wrap max-h-60 overflow-y-auto custom-scrollbar border-t border-stone-200 pt-2 leading-relaxed font-mono">{entry.reasoningText}</div>
-                                                                        </details>
-                                                                    </div>
-                                                                )}
-
-                                                                {!isDelay && entry.systemPrompt && (
-                                                                    <div>
-                                                                        <div className="text-[10px] text-stone-400 font-bold uppercase mb-1 font-mono">System Prompt</div>
-                                                                        <div className="text-stone-700 whitespace-pre-wrap max-h-28 overflow-y-auto bg-[#FAF8F5] p-3 rounded-xl border border-stone-200 custom-scrollbar text-xs leading-relaxed">{entry.systemPrompt}</div>
-                                                                    </div>
-                                                                )}
-
-                                                                {!isDelay && entry.prompt && (
-                                                                    <div>
-                                                                        <div className="text-[10px] text-stone-400 font-bold uppercase mb-1 font-mono">User Prompt</div>
-                                                                        <div className="text-stone-800 whitespace-pre-wrap max-h-40 overflow-y-auto bg-[#FAF8F5] p-3 rounded-xl border border-stone-200 text-xs custom-scrollbar leading-relaxed">{entry.prompt}</div>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })
-                                        )}
-                                    </div>
-                                </div>
+                                <LogsView
+                                    promptLog={promptLog}
+                                    setPromptLog={setPromptLog}
+                                    logFilter={logFilter}
+                                    setLogFilter={setLogFilter}
+                                    openLogDetailModal={openLogDetailModal}
+                                    showToast={showToast}
+                                />
                             )}
 
                             {view === 'pipeline' && (
