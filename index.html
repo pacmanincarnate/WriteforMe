@@ -2699,6 +2699,16 @@
             return matches.map(m => decodeXmlEntities(m[1].trim()));
         };
 
+        // Replace the FIRST occurrence of a literal needle: exact match first, then a trimmed
+        // fallback (which also trims the replacement). The replacement is inserted via function
+        // form so $-patterns in model-authored text stay inert; empty needles are a no-op.
+        const replaceOnceLiteral = (text, needle, replacement) => {
+            if (needle && text.includes(needle)) return text.replace(needle, () => replacement);
+            const trimmedNeedle = (needle || "").trim();
+            if (trimmedNeedle && text.includes(trimmedNeedle)) return text.replace(trimmedNeedle, () => String(replacement).trim());
+            return text;
+        };
+
         const applySearchAndReplaceBlocks = (originalText, text) => {
             if (!text) return originalText;
 
@@ -2720,14 +2730,7 @@
                             if (edit.type === 'search_replace' || edit.search !== undefined) {
                                 const searchStr = chomp(String(edit.search || edit.original || ""));
                                 const repStr = chomp(String(edit.replace || edit.rewritten || ""));
-                                if (searchStr && updated.includes(searchStr)) {
-                                    updated = updated.replace(searchStr, () => repStr);
-                                } else {
-                                    const trimmed = searchStr.trim();
-                                    if (trimmed && updated.includes(trimmed)) {
-                                        updated = updated.replace(trimmed, () => repStr.trim());
-                                    }
-                                }
+                                updated = replaceOnceLiteral(updated, searchStr, repStr);
                             }
                         }
                         return updated;
@@ -2752,14 +2755,7 @@
                 replaceVal = cleanCdata(replaceVal);
                 
                 if (searchVal && replaceVal) {
-                    if (updatedText.includes(searchVal)) {
-                        updatedText = updatedText.replace(searchVal, () => replaceVal);
-                    } else {
-                        const trimmedSearch = searchVal.trim();
-                        if (updatedText.includes(trimmedSearch)) {
-                            updatedText = updatedText.replace(trimmedSearch, () => replaceVal);
-                        }
-                    }
+                    updatedText = replaceOnceLiteral(updatedText, searchVal, replaceVal);
                 }
             }
             return updatedText;
@@ -3224,14 +3220,7 @@
                 if (originalVal !== undefined && rewrittenVal !== undefined) {
                     const origStr = chomp(String(originalVal));
                     const rewStr = chomp(String(rewrittenVal));
-                    if (origStr && updatedText.includes(origStr)) {
-                        updatedText = updatedText.replace(origStr, () => rewStr);
-                    } else {
-                        const trimmedOrig = origStr.trim();
-                        if (trimmedOrig && updatedText.includes(trimmedOrig)) {
-                            updatedText = updatedText.replace(trimmedOrig, () => rewStr.trim());
-                        }
-                    }
+                    updatedText = replaceOnceLiteral(updatedText, origStr, rewStr);
                 }
             }
 
@@ -3279,14 +3268,7 @@
                 if (searchVal !== undefined && replaceVal !== undefined) {
                     const searchStr = chomp(String(searchVal));
                     const repStr = chomp(String(replaceVal));
-                    if (searchStr && updatedText.includes(searchStr)) {
-                        updatedText = updatedText.replace(searchStr, () => repStr);
-                    } else {
-                        const trimmedSearch = searchStr.trim();
-                        if (trimmedSearch && updatedText.includes(trimmedSearch)) {
-                            updatedText = updatedText.replace(trimmedSearch, () => repStr.trim());
-                        }
-                    }
+                    updatedText = replaceOnceLiteral(updatedText, searchStr, repStr);
                 }
             }
 
@@ -4224,6 +4206,9 @@
         // FEATURE D10: Structural Normalizers (Acts, Sequences, Scenes, Beats)
         // ======
         const SEQUENCE_ACT_MAP = [1, 1, 2, 2, 2, 2, 3, 3];
+        // Single source of truth for inferring a sequence's act when parent_act is absent.
+        // Takes the 1-based sequence number; sequences beyond the 8-sequence model default to Act 3.
+        const actForSequence = (seqNumber) => SEQUENCE_ACT_MAP[seqNumber - 1] || 3;
 
         function normalizeSequences(rawSequences) {
             if (!rawSequences || !Array.isArray(rawSequences) || rawSequences.length === 0) {
@@ -4231,7 +4216,7 @@
             }
             return rawSequences.slice(0, 8).map((seq, idx) => {
                 const seqNum = idx + 1;
-                const parentAct = SEQUENCE_ACT_MAP[idx] || (idx < 2 ? 1 : (idx < 6 ? 2 : 3));
+                const parentAct = actForSequence(idx + 1);
                 const defaultFn = (typeof SEQUENCE_DEFAULT_FUNCTIONS !== 'undefined' && SEQUENCE_DEFAULT_FUNCTIONS[idx % 8]) || `Sequence ${seqNum}`;
                 const desc = seq.description || seq.summary || `Narrative developments for Sequence ${seqNum} in Act ${parentAct}.`;
                 const summ = seq.summary || seq.description || `Narrative developments for Sequence ${seqNum} in Act ${parentAct}.`;
@@ -4307,7 +4292,7 @@
                 if (act !== null || seq !== null || scn !== null) {
                     const finalSeq = seq || 1;
                     const seqObj = (storyState.sequences || []).find(s => s.number === finalSeq);
-                    const finalAct = act || (seqObj ? seqObj.parent_act : (SEQUENCE_ACT_MAP[finalSeq - 1] || 3));
+                    const finalAct = act || (seqObj ? seqObj.parent_act : actForSequence(finalSeq));
                     return {
                         act: finalAct || 1,
                         sequence: finalSeq,
@@ -4322,7 +4307,7 @@
                 const seq = parseInt(seqSceneMatch[2], 10) || 1;
                 const scn = parseInt(seqSceneMatch[3], 10) || 1;
                 const seqObj = (storyState.sequences || []).find(s => s.number === seq);
-                const act = seqObj ? seqObj.parent_act : (SEQUENCE_ACT_MAP[seq - 1] || 3);
+                const act = seqObj ? seqObj.parent_act : actForSequence(seq);
                 return { act: act || 1, sequence: seq, scene: scn };
             }
             // Match "Act 2, Scene 3" or "Act 2 Scene 3"
@@ -4423,7 +4408,7 @@
             if (!scene) return storyState.continuity_ledger || [];
 
             const coords = parseSceneCoordinates(scene.number || scene.id || scene, storyState);
-            const validFromAct = scene.parent_act || (scene.parent_sequence ? ((storyState.sequences || []).find(s => s.number === scene.parent_sequence)?.parent_act || SEQUENCE_ACT_MAP[scene.parent_sequence - 1] || 3) : coords.act) || 1;
+            const validFromAct = scene.parent_act || (scene.parent_sequence ? ((storyState.sequences || []).find(s => s.number === scene.parent_sequence)?.parent_act || actForSequence(scene.parent_sequence)) : coords.act) || 1;
             const validFromSeq = scene.parent_sequence || scene.sequence || coords.sequence || 1;
             const validFromScn = coords.scene || 1;
             const sceneRef = scene.number ? `Scene ${scene.number}` : (scene.id ? `Scene ${scene.id}` : `Scene ${validFromSeq}.${validFromScn}`);
@@ -8551,7 +8536,7 @@ Output Schema:
                     return {
                         ...seq,
                         number: seq.number || (i + 1),
-                        parent_act: seq.parent_act || (i < 2 ? 1 : (i < 6 ? 2 : 3)),
+                        parent_act: seq.parent_act || actForSequence(i + 1),
                         description: desc,
                         summary: summ
                     };
@@ -9492,7 +9477,7 @@ Output Schema:
 
                 // Calculate stats per sequence
                 for (let sq = 0; sq < (sequencesList.length || 8); sq++) {
-                    const seqInfo = sequencesList[sq] || { number: sq + 1, title: `Sequence ${sq + 1}`, parent_act: sq < 2 ? 1 : sq < 6 ? 2 : 3 };
+                    const seqInfo = sequencesList[sq] || { number: sq + 1, title: `Sequence ${sq + 1}`, parent_act: actForSequence(sq + 1) };
                     const sceneList = s.scenes?.[`${sq}`] || [];
                     let seqTotal = Array.isArray(sceneList) ? sceneList.length : 0;
                     let seqCompleted = 0;
@@ -9525,7 +9510,7 @@ Output Schema:
                         index: sq,
                         number: sq + 1,
                         title: seqInfo.title || `Seq ${sq + 1}`,
-                        act: seqInfo.parent_act || (sq < 2 ? 1 : sq < 6 ? 2 : 3),
+                        act: seqInfo.parent_act || actForSequence(sq + 1),
                         total: seqTotal,
                         completed: seqCompleted,
                         drafted: seqDrafted,
@@ -12451,10 +12436,6 @@ ${genOutput}
 </generated_story_arc>
 `,
                             parserFn: (text) => {
-                                const extractTag = (xml, tag) => {
-                                    const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
-                                    return match ? match[1].trim() : "";
-                                };
 
                                 const globalArcMatch = /<global_arc>([\s\S]*?)<\/global_arc>/i.exec(text);
                                 const globalArc = globalArcMatch ? globalArcMatch[1] : text;
@@ -12852,10 +12833,6 @@ Output Schema:
 BEGIN ACT CRITIQUE REVIEW
 `,
                         parserFn: (text) => {
-                            const extractTag = (xml, tag) => {
-                                const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
-                                return match ? match[1].trim() : "";
-                            };
                             
                             const actsMatch = /<acts>([\s\S]*?)<\/acts>/i.exec(text);
                             const actsXML = actsMatch ? actsMatch[1] : "";
@@ -13120,10 +13097,6 @@ BEGIN SEQUENCE CRITIQUE REVIEW
 `;
                         },
                         parserFn: (text) => {
-                            const extractTag = (xml, tag) => {
-                                const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
-                                return match ? match[1].trim() : "";
-                            };
                             const sequencesMatch = /<sequences>([\s\S]*?)<\/sequences>/i.exec(text);
                             const sequencesXML = sequencesMatch ? sequencesMatch[1] : text;
                             const seqRegex = /<sequence>([\s\S]*?)<\/sequence>/gi;
@@ -13146,7 +13119,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                                 
                                 parsedSequences.push({
                                     number: parseInt(extractTag(seqData, 'number'), 10) || (idx + 1),
-                                    parent_act: parseInt(extractTag(seqData, 'parent_act'), 10) || (idx < 2 ? 1 : (idx < 6 ? 2 : 3)),
+                                    parent_act: parseInt(extractTag(seqData, 'parent_act'), 10) || actForSequence(idx + 1),
                                     title: extractTag(seqData, 'title') || `Sequence ${idx + 1}`,
                                     sequence_function: extractTag(seqData, 'sequence_function') || SEQUENCE_DEFAULT_FUNCTIONS[idx % 8],
                                     tactical_question: extractTag(seqData, 'tactical_question') || "",
@@ -14331,7 +14304,7 @@ Please write a highly descriptive and specific image generation prompt focusing 
                                     parent_act: actNum
                                 }))
                                 : []);
-                        const actSequences = seqList.map((seq, sIdx) => ({ ...seq, origIdx: sIdx })).filter(seq => (seq.parent_act || (seq.number <= 2 ? 1 : seq.number <= 6 ? 2 : 3)) === actNum);
+                        const actSequences = seqList.map((seq, sIdx) => ({ ...seq, origIdx: sIdx })).filter(seq => (seq.parent_act || actForSequence(seq.number)) === actNum);
                         if (actSequences.length === 0) return;
 
                         const actFilename = `Act_${actNum}.xhtml`;
@@ -14694,7 +14667,7 @@ ${chapterBody}
             window.handleImport = handleImport;
 
             // RAG Retrieval Engine
-            const retrieveContext = async (query, threshold = 0.5, filterFn = null) => {
+            const retrieveContext = async (query, threshold = 0.5, filterFn = null, loreList = null) => {
                 if (!embeddingService.current || !vectorStore.current) return [];
 
                 try {
@@ -14723,7 +14696,9 @@ ${chapterBody}
                                 // Since VectorStore currently stores by ID primarily, we might need to scan or keep a topic-map.
                                 // Optimization: For now, we search memory 'story.lore' as fallback or query DB by topic index if strict.
                                 // Simple approach: Check In-Memory Story.Lore for content
-                                const neighborItem = story.lore.find(l => l.topic === neighborTopic);
+                                // Pipelines pass the story they are actively generating (loreList) so graph
+                                // augmentation sees lore added mid-run instead of the render-time snapshot.
+                                const neighborItem = (loreList || story.lore || []).find(l => l && l.topic === neighborTopic);
                                 if (neighborItem) {
                                     augmentedResults.push({
                                         text: `${neighborItem.topic}: ${neighborItem.detail}`,
@@ -15362,7 +15337,7 @@ Writing Guide: ${storyToUse.style?.writing_guide || ""}
                             const parsed = parseYaml(text) || {};
                             const parsedSequences = (parsed.sequences || []).map((seq, idx) => ({
                                 number: parseInt(seq.number, 10) || (idx + 1),
-                                parent_act: parseInt(seq.parent_act, 10) || (idx < 2 ? 1 : (idx < 6 ? 2 : 3)),
+                                parent_act: parseInt(seq.parent_act, 10) || actForSequence(idx + 1),
                                 title: seq.title || `Sequence ${idx + 1}`,
                                 sequence_function: seq.sequence_function || SEQUENCE_DEFAULT_FUNCTIONS[idx % 8],
                                 tactical_question: seq.tactical_question || "",
@@ -15431,8 +15406,8 @@ Writing Guide: ${storyToUse.style?.writing_guide || ""}
                     return;
                 }
 
-                const currentSequence = storyToUse.sequences[seqIdx] || { number: seqIdx + 1, title: `Sequence ${seqIdx + 1}`, parent_act: (seqIdx < 2 ? 1 : (seqIdx < 6 ? 2 : 3)), sequence_function: SEQUENCE_DEFAULT_FUNCTIONS[seqIdx % 8] };
-                const actNumber = currentSequence.parent_act || (seqIdx < 2 ? 1 : (seqIdx < 6 ? 2 : 3));
+                const currentSequence = storyToUse.sequences[seqIdx] || { number: seqIdx + 1, title: `Sequence ${seqIdx + 1}`, parent_act: actForSequence(seqIdx + 1), sequence_function: SEQUENCE_DEFAULT_FUNCTIONS[seqIdx % 8] };
+                const actNumber = currentSequence.parent_act || actForSequence(seqIdx + 1);
                 const parentAct = (storyToUse.acts || [])[actNumber - 1] || { number: actNumber, title: `Act ${actNumber}`, description: "" };
 
                 setLoading(true);
@@ -15461,7 +15436,7 @@ Writing Guide: ${storyToUse.style?.writing_guide || ""}
                     const query = `Sequence ${currentSequence.number}: ${currentSequence.title}. ${currentSequence.description}. Themes: ${storyToUse.themes}`;
                     const ragLoreDocs = await retrieveContext(query, 0.6, (meta) => {
                         return !meta.valid_from_act || meta.valid_from_act <= actNumber;
-                    });
+                    }, storyToUse.lore);
                     const ragContext = ragLoreDocs.length > 0
                         ? ragLoreDocs.map(d => `- [${d.metadata.topic}]: ${d.text}`).join('\n')
                         : `World Bible: ${storyToUse.status_quo || ""}`;
@@ -15642,10 +15617,6 @@ Pacing Justification: ${scenesRange.justification}
                             return `${getSceneContext()}\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Critique the generated scenes based on narrative modes, dramatic conflict, and character flaws. Verify formatting requirements are met.</critique_analysis>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`;
                         },
                         parserFn: (text) => {
-                            const extractTag = (xml, tag) => {
-                                const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
-                                return match ? match[1].trim() : "";
-                            };
                             const scenesMatch = /<scenes>([\s\S]*?)<\/scenes>/i.exec(text);
                             const scenesXML = scenesMatch ? scenesMatch[1] : text;
                             const sceneRegex = /<scene>([\s\S]*?)<\/scene>/gi;
@@ -15752,6 +15723,7 @@ Pacing Justification: ${scenesRange.justification}
                             return `
 <input_payload_schema>
 Expand this single scene.
+- <continuity_ledger>: Hard facts already established in the story (appearances, objects, places, agreements). Your blueprint must not contradict them.
 </input_payload_schema>
 
 <target_lean_scene>
@@ -15777,6 +15749,10 @@ Entrance Conditions: ${nextScene.entrance_conditions}
 </next_scene_lean_target>` : "<next_scene_lean_target>Sequence End</next_scene_lean_target>"}
 </adjacent_context>
 
+<continuity_ledger>
+${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}
+</continuity_ledger>
+
 <available_narrative_modes>
 ${allNarrativeModesXml}
 </available_narrative_modes>
@@ -15793,10 +15769,6 @@ BEGIN EXPANDING SCENE
                             reviewerSystemPrompt: null, // Reviewed as a batch in Tier 4.4
                             reviewerPromptFn: null,
                             parserFn: (text) => {
-                                const extractTag = (xml, tag) => {
-                                    const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
-                                    return match ? match[1].trim() : "";
-                                };
                                 
                                 const modeData = extractTag(text, 'dominant_narrative_mode');
                                 const modeId = extractTag(modeData, 'mode_id') || extractTag(text, 'dominant_narrative_mode') || 'SCENE_DRAMATIC';
@@ -16015,7 +15987,7 @@ BEGIN EXPANSION CRITIQUE REVIEW
                 const storyToUse = cStory || story;
                 const sId = `${seq}-${scene}`;
                 const scenesList = storyToUse.scenes?.[`${seq}`] || [];
-                const sequenceData = (storyToUse.sequences || [])[seq] || { title: `Sequence ${seq + 1}`, number: seq + 1, sequence_function: SEQUENCE_DEFAULT_FUNCTIONS[seq % 8] || "Action & Reaction", parent_act: (seq < 2 ? 1 : (seq < 6 ? 2 : 3)) };
+                const sequenceData = (storyToUse.sequences || [])[seq] || { title: `Sequence ${seq + 1}`, number: seq + 1, sequence_function: SEQUENCE_DEFAULT_FUNCTIONS[seq % 8] || "Action & Reaction", parent_act: actForSequence(seq + 1) };
                 const sceneData = scenesList[scene] || {
                     id: `${sequenceData.number}.${scene + 1}`,
                     number: `${sequenceData.number}.${scene + 1}`,
@@ -16042,7 +16014,7 @@ BEGIN EXPANSION CRITIQUE REVIEW
                     const query = `Sequence ${sequenceData.number} Scene ${sceneData.number}: ${sceneData.title}. Location: ${sceneData.location || "Setting"}. Characters: ${(sceneData.cast_names || []).join(", ")}. Threads: ${activeThreadsData.map(t => t.name).join(", ")}`;
                     const ragLoreDocs = await retrieveContext(query, 0.65, (meta) => {
                         return !meta.valid_from_act || meta.valid_from_act <= (sequenceData.parent_act || 1);
-                    });
+                    }, storyToUse.lore);
                     const ragContext = ragLoreDocs.length > 0
                         ? ragLoreDocs.map(d => `- [${d.metadata.topic}]: ${d.text}`).join('\n')
                         : `World Bible: ${storyToUse.status_quo || ""}`;
@@ -16663,7 +16635,7 @@ You MUST adapt the beat choreography to address this specific instruction:
                     const sceneQuery = `Scene Action: ${scene.description}.`;
                     const ragLoreDocs = await retrieveContext(sceneQuery, 0.65, (meta) => {
                         return !meta.valid_from_act || meta.valid_from_act <= (sequenceData.parent_act || 1);
-                    });
+                    }, storyToUse.lore);
                     const loreContext = ragLoreDocs.length > 0
                         ? ragLoreDocs.map(d => `### ${d.metadata.topic}\n${d.text}`).join('\n\n')
                         : "No specific relevant world lore found for this moment.";
@@ -17675,7 +17647,7 @@ ${currentLoreList}
 
                                     {story.acts.map((act, actIdx) => {
                                         const actNum = act.number || actIdx + 1;
-                                        const actSequences = (story.sequences || []).map((seq, sIdx) => ({ ...seq, origIdx: sIdx })).filter(seq => (seq.parent_act || (seq.number <= 2 ? 1 : seq.number <= 6 ? 2 : 3)) === actNum);
+                                        const actSequences = (story.sequences || []).map((seq, sIdx) => ({ ...seq, origIdx: sIdx })).filter(seq => (seq.parent_act || actForSequence(seq.number)) === actNum);
                                         return (
                                             <div key={actIdx} className="ml-1">
                                                 <button
@@ -20427,7 +20399,7 @@ ${currentLoreList}
                                     {story.acts && story.acts.map((act, idx) => {
                                         if (idx !== activeActTab) return null;
                                         const actNum = act.number || idx + 1;
-                                        const actSequences = (story.sequences || []).map((seq, sIdx) => ({ ...seq, origIdx: sIdx })).filter(seq => (seq.parent_act || (seq.number <= 2 ? 1 : seq.number <= 6 ? 2 : 3)) === actNum);
+                                        const actSequences = (story.sequences || []).map((seq, sIdx) => ({ ...seq, origIdx: sIdx })).filter(seq => (seq.parent_act || actForSequence(seq.number)) === actNum);
                                         return (
                                             <div key={idx} className="bg-white rounded-2xl border border-black/[0.07] shadow-sm overflow-hidden animate-fade-in space-y-0">
                                                 {/* Act Banner Header */}
@@ -20689,7 +20661,7 @@ ${currentLoreList}
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex flex-wrap items-center gap-2 mb-2">
                                                         <span className="text-[10px] font-mono font-bold text-[#8C6B32] dark:text-[#C9A96E] uppercase bg-[#B8935A]/10 border border-[#B8935A]/30 px-2.5 py-0.5 rounded-full">
-                                                            Act {sequence.parent_act || (sequence.number <= 2 ? 1 : sequence.number <= 6 ? 2 : 3)} — Sequence {sequence.number || selectedSequence + 1}
+                                                            Act {sequence.parent_act || actForSequence(sequence.number)} — Sequence {sequence.number || selectedSequence + 1}
                                                         </span>
                                                         {sequence.sequence_function && (
                                                             <span className="text-[10px] font-bold text-stone-700 dark:text-stone-300 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-white/[0.08] px-2.5 py-0.5 rounded-full">
@@ -21549,7 +21521,7 @@ ${currentLoreList}
                                                 <Workflow className="text-[#8C6B32]" /> Narrative Generation Visual Pipeline
                                             </h2>
                                             <p className="text-xs text-stone-500">
-                                                Interactive 18-step cascading multi-agent workflow architecture & real-time log inspector.
+                                                Interactive 20-step cascading multi-agent workflow architecture & real-time log inspector.
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-3">
@@ -21609,11 +21581,12 @@ ${currentLoreList}
                                                     { id: 20, tier: "Post-Process", title: "Archivist (End of Scene)", icon: Save, iconColor: "text-emerald-600", badge: "large-model", inputs: "Concatenated text of all beats in scene, current cast profiles.", gate: "JSON registry parsed & state updated" }
                                                 ].filter(s => s.id >= phase.stepRange[0] && s.id <= phase.stepRange[1]);
 
+                                                let visibleSteps = phaseSteps;
                                                 if (pipelineViewMode === 'simplified') {
-                                                    // In simplified mode, hide reviewer nodes
+                                                    // In simplified mode, hide reviewer/support nodes
                                                     const reviewIds = [4, 6, 10, 12, 14, 16, 17, 19];
-                                                    const filtered = phaseSteps.filter(s => !reviewIds.includes(s.id));
-                                                    if (filtered.length === 0) return null;
+                                                    visibleSteps = phaseSteps.filter(s => !reviewIds.includes(s.id));
+                                                    if (visibleSteps.length === 0) return null;
                                                 }
 
                                                 return (
@@ -21623,7 +21596,7 @@ ${currentLoreList}
                                                         </div>
 
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                                                            {phaseSteps.map((step) => {
+                                                            {visibleSteps.map((step) => {
                                                                 const IconComp = step.icon;
                                                                 const activeStepId = inspectedStepId || currentPipelineStep || 1;
                                                                 const isActiveStep = currentPipelineStep === step.id;
