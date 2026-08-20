@@ -2173,11 +2173,11 @@
                                     var searchStr = chomp(String(edit.search || edit.original || ""));
                                     var repStr = chomp(String(edit.replace || edit.rewritten || ""));
                                     if (updated.indexOf(searchStr) !== -1) {
-                                        updated = updated.replace(searchStr, repStr);
+                                        updated = updated.replace(searchStr, () => repStr);
                                     } else {
                                         var trimmed = searchStr.trim();
                                         if (updated.indexOf(trimmed) !== -1) {
-                                            updated = updated.replace(trimmed, repStr.trim());
+                                            updated = updated.replace(trimmed, () => repStr.trim());
                                         }
                                     }
                                 }
@@ -2206,11 +2206,11 @@
 
                     if (searchVal && replaceVal) {
                         if (updatedText.indexOf(searchVal) !== -1) {
-                            updatedText = updatedText.replace(searchVal, replaceVal);
+                            updatedText = updatedText.replace(searchVal, () => replaceVal);
                         } else {
                             var trimmedSearch = searchVal.trim();
                             if (updatedText.indexOf(trimmedSearch) !== -1) {
-                                updatedText = updatedText.replace(trimmedSearch, replaceVal);
+                                updatedText = updatedText.replace(trimmedSearch, () => replaceVal);
                             }
                         }
                     }
@@ -2720,11 +2720,11 @@
                                 const searchStr = chomp(String(edit.search || edit.original || ""));
                                 const repStr = chomp(String(edit.replace || edit.rewritten || ""));
                                 if (updated.includes(searchStr)) {
-                                    updated = updated.replace(searchStr, repStr);
+                                    updated = updated.replace(searchStr, () => repStr);
                                 } else {
                                     const trimmed = searchStr.trim();
                                     if (updated.includes(trimmed)) {
-                                        updated = updated.replace(trimmed, repStr.trim());
+                                        updated = updated.replace(trimmed, () => repStr.trim());
                                     }
                                 }
                             }
@@ -2752,11 +2752,11 @@
                 
                 if (searchVal && replaceVal) {
                     if (updatedText.includes(searchVal)) {
-                        updatedText = updatedText.replace(searchVal, replaceVal);
+                        updatedText = updatedText.replace(searchVal, () => replaceVal);
                     } else {
                         const trimmedSearch = searchVal.trim();
                         if (updatedText.includes(trimmedSearch)) {
-                            updatedText = updatedText.replace(trimmedSearch, replaceVal);
+                            updatedText = updatedText.replace(trimmedSearch, () => replaceVal);
                         }
                     }
                 }
@@ -3224,11 +3224,11 @@
                     const origStr = chomp(String(originalVal));
                     const rewStr = chomp(String(rewrittenVal));
                     if (updatedText.includes(origStr)) {
-                        updatedText = updatedText.replace(origStr, rewStr);
+                        updatedText = updatedText.replace(origStr, () => rewStr);
                     } else {
                         const trimmedOrig = origStr.trim();
                         if (updatedText.includes(trimmedOrig)) {
-                            updatedText = updatedText.replace(trimmedOrig, rewStr.trim());
+                            updatedText = updatedText.replace(trimmedOrig, () => rewStr.trim());
                         }
                     }
                 }
@@ -3243,11 +3243,11 @@
                     const anchStr = chomp(String(anchorVal));
                     const contStr = chomp(String(contentVal));
                     if (updatedText.includes(anchStr)) {
-                        updatedText = updatedText.replace(anchStr, anchStr + contStr);
+                        updatedText = updatedText.replace(anchStr, () => anchStr + contStr);
                     } else {
                         const trimmedAnch = anchStr.trim();
                         if (updatedText.includes(trimmedAnch)) {
-                            updatedText = updatedText.replace(trimmedAnch, trimmedAnch + contStr.trim());
+                            updatedText = updatedText.replace(trimmedAnch, () => trimmedAnch + contStr.trim());
                         }
                     }
                 }
@@ -3279,11 +3279,11 @@
                     const searchStr = chomp(String(searchVal));
                     const repStr = chomp(String(replaceVal));
                     if (updatedText.includes(searchStr)) {
-                        updatedText = updatedText.replace(searchStr, repStr);
+                        updatedText = updatedText.replace(searchStr, () => repStr);
                     } else {
                         const trimmedSearch = searchStr.trim();
                         if (updatedText.includes(trimmedSearch)) {
-                            updatedText = updatedText.replace(trimmedSearch, repStr.trim());
+                            updatedText = updatedText.replace(trimmedSearch, () => repStr.trim());
                         }
                     }
                 }
