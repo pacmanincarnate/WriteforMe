@@ -3439,6 +3439,28 @@
         };
 
         /**
+         * Shared <overall_story_information> prompt block used by the sequence, scene,
+         * beat, and prose context builders. fullStoryLabels appends the "(Full Story)"
+         * suffix the two sequence-tier builders historically used on the value-state lines.
+         */
+        const buildStoryInfoBlock = (story, { fullStoryLabels = false } = {}) => `<overall_story_information>
+Concept: ${story.concept || ""}
+Status Quo: ${story.status_quo || ""}
+Inciting Incident: ${story.inciting_incident || ""}
+Themes: ${story.themes || ""}
+Threads:
+${(story.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
+Core Thematic Argument: ${story.core_thematic_argument || ""}
+Story Starting Value State${fullStoryLabels ? ' (Full Story)' : ''}: ${story.starting_value_state || ""}
+Story Ending Value State${fullStoryLabels ? ' (Full Story)' : ''}: ${story.ending_value_state || ""}
+</overall_story_information>`;
+
+        /** Shared <character_psychological_arcs> prompt block (byte-identical at every tier). */
+        const buildCharacterArcsBlock = (story) => `<character_psychological_arcs>
+${(story.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
+</character_psychological_arcs>`;
+
+        /**
          * R2 Helper Function: buildRelationshipFrictionBlock
          * Formats surface dynamics, hidden tensions, and trust levels between character pairs.
          * If explicit relationship entries are absent, calculates implicit subtext friction based on
@@ -14013,21 +14035,9 @@ BEGIN ACT CRITIQUE REVIEW
                     setLoadingStep("Weaving 8 Sequences across novel (Tier 2.2)...");
                     // Shared context for the Sequence Agent's generator AND reviewer prompts -
                     // previously duplicated verbatim inside both promptFns.
-                    const getSequenceContext = () => `<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State (Full Story): ${storyToUse.starting_value_state || ""}
-Story Ending Value State (Full Story): ${storyToUse.ending_value_state || ""}
-</overall_story_information>
+                    const getSequenceContext = () => `${buildStoryInfoBlock(storyToUse, { fullStoryLabels: true })}
 
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
+${buildCharacterArcsBlock(storyToUse)}
 
 <active_character_profiles>
 ${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
@@ -16251,21 +16261,9 @@ ${charName}
                 try {
                     // Shared context for the Sequence Agent's generator AND reviewer prompts -
                     // previously duplicated verbatim inside both promptFns.
-                    const getSequenceContext = () => `<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State (Full Story): ${storyToUse.starting_value_state || ""}
-Story Ending Value State (Full Story): ${storyToUse.ending_value_state || ""}
-</overall_story_information>
+                    const getSequenceContext = () => `${buildStoryInfoBlock(storyToUse, { fullStoryLabels: true })}
 
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
+${buildCharacterArcsBlock(storyToUse)}
 
 <active_character_profiles>
 ${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
@@ -16466,21 +16464,9 @@ BEGIN DEVELOPING STORY SEQUENCES
                     // Shared context segments for the Scene Roster Agent's generator AND reviewer
                     // prompts - previously duplicated verbatim inside both promptFns. The reviewer
                     // additionally receives the continuity ledger and the narrative-mode library.
-                    const getSceneContextIntro = () => `<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State: ${storyToUse.starting_value_state || ""}
-Story Ending Value State: ${storyToUse.ending_value_state || ""}
-</overall_story_information>
+                    const getSceneContextIntro = () => `${buildStoryInfoBlock(storyToUse)}
 
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
+${buildCharacterArcsBlock(storyToUse)}
 
 <active_character_profiles>
 ${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || c.details?.history || 'Unspecified flaw'}, Desire: ${c.core_desire || c.details?.goals || 'Unspecified desire'}, Cadence: ${c.vocal_cadence || c.voice_sample || 'Standard'}`).join('\n')}
@@ -17012,21 +16998,9 @@ ${followingScene.objective ? `Objective: ${followingScene.objective}\n` : ''}${f
 
                         // Shared context segments for the Beat Agent's generator AND reviewer
                         // prompts - previously duplicated verbatim inside both promptFns.
-                        const getBeatContextHead = () => `<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State: ${storyToUse.starting_value_state || ""}
-Story Ending Value State: ${storyToUse.ending_value_state || ""}
-</overall_story_information>
+                        const getBeatContextHead = () => `${buildStoryInfoBlock(storyToUse)}
 
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
+${buildCharacterArcsBlock(storyToUse)}
 
 <active_character_profiles>
 ${activeCast.map(c => `<character_profile>
@@ -17507,21 +17481,9 @@ BEGIN BEAT CHOREOGRAPHY
 
                     // Shared context for the Writing Agent's generator AND reviewer prompts -
                     // previously duplicated verbatim inside both promptFns (~95 lines each).
-                    const getProseContext = () => `<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State: ${storyToUse.starting_value_state || ""}
-Story Ending Value State: ${storyToUse.ending_value_state || ""}
-</overall_story_information>
+                    const getProseContext = () => `${buildStoryInfoBlock(storyToUse)}
 
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
+${buildCharacterArcsBlock(storyToUse)}
 
 <active_characters_profiles>
 ${activeCast.map(ch => `<character_profile>
