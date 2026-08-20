@@ -4343,6 +4343,11 @@
             return chunks;
         };
 
+        // Chunk shape for setup-screen lore uploads. handleLoreImport ingests these at upload
+        // time for immediate RAG availability; initStory rebuilds them from the CURRENT text
+        // (respecting later edits or a cleared upload) to persist them into the new story's lore.
+        const buildUploadLoreChunks = (text) => chunkLoreText(text, (part) => `User Upload Segment ${part}`, ["Author Upload"], "Imported Lore Segment");
+
         function normalizeSequences(rawSequences) {
             if (!rawSequences || !Array.isArray(rawSequences) || rawSequences.length === 0) {
                 return [];
@@ -11781,7 +11786,7 @@ Output Schema:
                         await distillLore(text);
 
                         // 2. Chunk & Ingest (Simple chunking)
-                        const chunks = chunkLoreText(text, (part) => `User Upload Segment ${part}`, ["Author Upload"], "Imported Lore Segment");
+                        const chunks = buildUploadLoreChunks(text);
 
                         await ingestLoreBatch(chunks, { clearExisting: true });
                         setLoading(false);
@@ -13375,9 +13380,11 @@ ${critique ? `\ncritique_analysis: |\n  ${critique.replace(/\n/g, '\n  ')}\n` : 
                 setSelectedScene(null);
 
                 try {
-                    // Inject Imported Lore into the Concept Prompt
+                    // Inject Imported Lore into the Concept Prompt. The primer is a distillation
+                    // of a >20k-char upload; once the user edits the lore text down to or below
+                    // that threshold the primer is stale, so prefer the raw text again.
                     let finalPrompt = `<concept>${conceptToUse}</concept>`;
-                    if (worldPrimer) {
+                    if (worldPrimer && importedLoreText.length > 20000) {
                         finalPrompt += `\n\n<world_primer>${worldPrimer}</world_primer>`;
                         const relevantChunks = await retrieveContext(`Concept: ${conceptToUse} Themes and Tone`, 0.6);
                         if (relevantChunks.length > 0) {
@@ -13529,6 +13536,14 @@ ${char.name}
                         console.log(`[initStory] Parsed relationships using XML fallback (size: ${Object.keys(relationships).length})`);
                     }
 
+                    // Chunks from a large setup-screen lore upload, rebuilt from the CURRENT
+                    // text (so edits and a cleared upload are respected): without persisting
+                    // these into story.lore, the clearExisting reindex below wipes their
+                    // upload-time ingestion and the uploaded lore is lost.
+                    const uploadedLoreChunks = (importedLoreText && importedLoreText.length > 20000)
+                        ? buildUploadLoreChunks(importedLoreText)
+                        : [];
+
                     // Build baseline story state for the Edit Router
                     const newStoryId = `story_${Date.now()}`;
                     let initialStoryState = {
@@ -13554,7 +13569,8 @@ ${char.name}
                                 detail: worldBible,
                                 valid_from_act: 1,
                                 valid_from_scene: 1
-                            }
+                            },
+                            ...uploadedLoreChunks
                         ],
                         acts: [],
                         sequences: [],
@@ -13648,9 +13664,14 @@ ${genOutput}
                         showToast("Story Bible initialized! Story Arc failed to generate — click 'Run Story Arc Agent' in Overview to generate arcs.", "warning");
                     }
 
-                    // Archive baseline world bible in RAG
+                    // Archive baseline world bible in RAG. Keep the deduped/merged list the
+                    // ingestion returns as the story's lore so story.lore matches the vector
+                    // store (mirrors handlePostGenLoreImport).
                     console.log("[initStory] Archiving baseline world lore in RAG...");
-                    await ingestLoreBatch(initialStoryState.lore, { clearExisting: true });
+                    const processedLore = await ingestLoreBatch(initialStoryState.lore, { clearExisting: true });
+                    if (processedLore && processedLore.length > 0) {
+                        initialStoryState.lore = processedLore;
+                    }
 
                     const finalStory = {
                         ...initialStoryState,
@@ -18201,6 +18222,7 @@ ${currentLoreList}
                                     setInputConcept("");
                                     setInputThemes("");
                                     setImportedLoreText("");
+                                    setWorldPrimer(null);
                                     setView('setup');
                                 }} className={`nav-btn ${view === 'setup' ? 'active' : ''}`}>
                                     <Sparkles size={15} /> New Story Setup
@@ -18595,7 +18617,7 @@ ${currentLoreList}
                                                     placeholder="Uploaded lore content will appear here..."
                                                 />
                                                 <button
-                                                    onClick={() => setImportedLoreText("")}
+                                                    onClick={() => { setImportedLoreText(""); setWorldPrimer(null); }}
                                                     className="absolute top-2 right-2 text-stone-400 hover:text-rose-600 p-1"
                                                     title="Clear Lore"
                                                 >
@@ -21565,6 +21587,7 @@ ${currentLoreList}
                                                             setInputConcept("");
                                                             setInputThemes("");
                                                             setImportedLoreText("");
+                                                            setWorldPrimer(null);
                                                             setView('setup');
                                                         }}
                                                         className="lib-new-btn"
@@ -21615,6 +21638,7 @@ ${currentLoreList}
                                                             setInputConcept("");
                                                             setInputThemes("");
                                                             setImportedLoreText("");
+                                                            setWorldPrimer(null);
                                                             setView('setup');
                                                         }}
                                                         className="lib-empty-primary"
