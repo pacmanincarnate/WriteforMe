@@ -7498,6 +7498,668 @@ Output Schema:
             );
         };
 
+        /* Shared page-count math for the paginated reader: the column container is measured
+           against its parent's width, and the column gap must match the inline columnGap
+           style (24px at <=640px, 48px otherwise). Returns null while the container has no
+           measurable width (e.g. mid-layout). */
+        const measureReaderPages = (el) => {
+            const parentEl = el.parentElement;
+            const width = parentEl ? parentEl.clientWidth : el.clientWidth;
+            if (width <= 0) return null;
+            const gap = window.innerWidth <= 640 ? 24 : 48;
+            const pages = Math.max(1, Math.round((el.scrollWidth + gap) / (width + gap)));
+            return { width, pages };
+        };
+
+        /* Full-screen ebook reader view. All reader state stays in EllipsisProsef —
+           enterReaderMode and the pagination/HUD handlers are shared with other views —
+           and this component is the pure view over that state cluster, received via props. */
+        const ReaderView = ({
+            story, selectedSequence, selectedScene, currentReaderSceneItem, flatStoryScenes, currentFlatSceneIndex, readerSettings, updateReaderSetting, readerPageIndex, readerTotalPages, readerContainerWidth, readingProgress, saveReadingProgress, isReaderHudVisible, toggleReaderHud, resetReaderHudTimer, isTocOpen, setIsTocOpen, isAppearanceOpen, setIsAppearanceOpen, tocSearchQuery, setTocSearchQuery, isFullscreen, toggleFullscreen, pageSlideDirection, isSceneTransitioning, readerColumnsContainerRef, readerScrollContainerRef, handleReaderTouchStart, handleReaderTouchEnd, turnReaderPage, jumpToReaderScene, goToNextReaderScene, setView
+        }) => {
+            const activeItem = currentReaderSceneItem || flatStoryScenes[0] || null;
+            const currentSeqIndex = activeItem ? activeItem.seqIdx : 0;
+            const currentScIndex = activeItem ? activeItem.sceneIdx : 0;
+            const currentSeq = (story.sequences || [])[currentSeqIndex] || {};
+            const currentSceneObj = activeItem?.scene || {};
+            const proseContent = activeItem?.proseText || "";
+            const hasProse = !!proseContent;
+
+            const seqScenes = story.scenes?.[`${currentSeqIndex}`] || [];
+            const currentSceneNumberInSeq = currentScIndex + 1;
+            const totalScenesInSeq = seqScenes.length || 1;
+            const sequenceProgressPct = totalScenesInSeq > 0 ? Math.round((currentSceneNumberInSeq / totalScenesInSeq) * 100) : 0;
+
+            const sceneProgressPct = readerSettings.readingMode === 'paginated'
+                ? (readerTotalPages > 1 ? Math.min(100, Math.round(((readerPageIndex + 1) / readerTotalPages) * 100)) : 100)
+                : 100;
+
+            const remainingMinInSeq = seqScenes.slice(currentScIndex).reduce((acc, sc, i) => {
+                const sKey = `${currentSeqIndex}-${currentScIndex + i}`;
+                const pObj = story.prose?.[sKey];
+                const txt = (pObj?.final || pObj?.draft || "");
+                return acc + readingMinutes(countWords(txt));
+            }, 0);
+
+            const themeClass = readerSettings.readerTheme === 'sepia'
+                ? 'reader-theme-sepia'
+                : readerSettings.readerTheme === 'dark'
+                    ? 'reader-theme-dark'
+                    : readerSettings.readerTheme === 'oled'
+                        ? 'reader-theme-oled'
+                        : 'reader-theme-light';
+
+            const widthClass = readerSettings.contentWidth === 'compact'
+                ? 'max-w-xl'
+                : readerSettings.contentWidth === 'wide'
+                    ? 'max-w-4xl'
+                    : readerSettings.contentWidth === 'full'
+                        ? 'max-w-full px-4 md:px-12'
+                        : 'max-w-2xl';
+
+            const textStyle = {
+                fontFamily: readerSettings.fontFamily === 'Inter' ? "'Inter', sans-serif"
+                    : readerSettings.fontFamily === 'Plus Jakarta Sans' ? "'Plus Jakarta Sans', sans-serif"
+                    : readerSettings.fontFamily === 'JetBrains Mono' ? "'JetBrains Mono', monospace"
+                    : readerSettings.fontFamily === 'Cormorant Garamond' ? "'Cormorant Garamond', serif"
+                    : readerSettings.fontFamily === 'Newsreader' ? "'Newsreader', serif"
+                    : readerSettings.fontFamily === 'Playfair Display' ? "'Playfair Display', serif"
+                    : "'Merriweather', Georgia, serif",
+                fontSize: `${readerSettings.fontSize}px`,
+                lineHeight: readerSettings.lineHeight,
+                textAlign: readerSettings.textAlign === 'justify' ? 'justify' : 'left',
+                hyphens: readerSettings.textAlign === 'justify' ? 'auto' : 'none'
+            };
+
+            return (
+                <div 
+                    className={`fixed inset-0 z-50 flex flex-col select-none ${themeClass} transition-colors duration-300 overflow-hidden`}
+                    onMouseMove={resetReaderHudTimer}
+                    onTouchStart={handleReaderTouchStart}
+                    onTouchEnd={handleReaderTouchEnd}
+                >
+                    {/* TOP FLOATING HUD (Auto-Hides) */}
+                    <div className={`fixed top-0 inset-x-0 z-30 transition-all duration-300 ${isReaderHudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none'}`}>
+                        <div className="mx-auto max-w-4xl px-3 sm:px-6 pt-3 pb-2 flex items-center justify-between gap-2 backdrop-blur-md reader-ui-bg border-b reader-ui-border rounded-b-2xl shadow-sm">
+                            {/* Left Actions: Exit / Back to Studio */}
+                            <div className="flex items-center gap-1.5">
+                                <button 
+                                    onClick={() => {
+                                        saveReadingProgress(currentSeqIndex, currentScIndex, readerPageIndex);
+                                        setView('writer');
+                                    }}
+                                    className="flex items-center gap-1 px-3 py-1.5 rounded-xl reader-ui-card text-xs font-semibold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer border"
+                                    title="Return to Writer Studio"
+                                >
+                                    <ArrowLeft size={14} />
+                                    <span className="hidden sm:inline">Studio</span>
+                                </button>
+
+                                {/* TOC Button */}
+                                <button
+                                    onClick={() => {
+                                        setIsTocOpen(true);
+                                        setIsAppearanceOpen(false);
+                                    }}
+                                    className={`flex items-center gap-1 px-3 py-1.5 rounded-xl reader-ui-card text-xs font-semibold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer border ${isTocOpen ? 'ring-2 ring-[#B8935A]' : ''}`}
+                                    title="Table of Contents (T)"
+                                >
+                                    <List size={14} />
+                                    <span className="hidden sm:inline">Contents</span>
+                                </button>
+                            </div>
+
+                            {/* Center Chapter Telemetry (Subtle, never wasting space) */}
+                            <div className="text-center truncate px-2 max-w-[180px] sm:max-w-[320px]">
+                                <span className="text-[11px] font-mono font-bold opacity-60 uppercase tracking-wider block truncate">
+                                    {currentSeq.title ? `Seq ${currentSeq.number || currentSeqIndex + 1}: ${currentSeq.title}` : `Sequence ${currentSeqIndex + 1}`}
+                                </span>
+                            </div>
+
+                            {/* Right Actions: Appearance, Theme Toggle, Fullscreen */}
+                            <div className="flex items-center gap-1.5">
+                                {/* Appearance / Typography Menu Toggle */}
+                                <button
+                                    onClick={() => {
+                                        setIsAppearanceOpen(prev => !prev);
+                                        setIsTocOpen(false);
+                                    }}
+                                    className={`flex items-center gap-1 px-3 py-1.5 rounded-xl reader-ui-card text-xs font-bold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer border ${isAppearanceOpen ? 'ring-2 ring-[#B8935A]' : ''}`}
+                                    title="Typography & Appearance (A)"
+                                >
+                                    <Type size={14} />
+                                    <span>Aa</span>
+                                </button>
+
+                                {/* Quick Theme Cycle */}
+                                <button
+                                    onClick={() => {
+                                        const themes = ['light', 'sepia', 'dark', 'oled'];
+                                        const currIdx = themes.indexOf(readerSettings.readerTheme);
+                                        const nextTheme = themes[(currIdx + 1) % themes.length];
+                                        updateReaderSetting('readerTheme', nextTheme);
+                                    }}
+                                    className="p-1.5 rounded-xl reader-ui-card text-xs font-semibold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer border"
+                                    title={`Theme: ${readerSettings.readerTheme} (Click to change)`}
+                                >
+                                    {readerSettings.readerTheme === 'dark' || readerSettings.readerTheme === 'oled' ? (
+                                        <Sun size={15} />
+                                    ) : (
+                                        <Moon size={15} />
+                                    )}
+                                </button>
+
+                                {/* Fullscreen Toggle */}
+                                <button
+                                    onClick={toggleFullscreen}
+                                    className="p-1.5 rounded-xl reader-ui-card text-xs font-semibold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer hidden sm:flex border"
+                                    title="Toggle Fullscreen"
+                                >
+                                    {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* MAIN READING SURFACE */}
+                    <div className="flex-1 relative w-full h-full overflow-hidden flex flex-col justify-center items-center">
+                        {/* Click / Tap Zones */}
+                        {/* Left 20% (Previous Page) */}
+                        <div 
+                            onClick={() => turnReaderPage(-1)}
+                            className="absolute inset-y-0 left-0 w-[20%] sm:w-[18%] z-20 cursor-pointer opacity-0 hover:opacity-100 transition-opacity flex items-center justify-start pl-2 sm:pl-4 group"
+                            title="Previous Page (Left Arrow / Swipe Right)"
+                        >
+                            <div className="p-2 rounded-full reader-ui-card opacity-0 group-hover:opacity-70 transition-opacity shadow-md border">
+                                <ChevronLeft size={20} />
+                            </div>
+                        </div>
+
+                        {/* Right 20% (Next Page) */}
+                        <div 
+                            onClick={() => turnReaderPage(1)}
+                            className="absolute inset-y-0 right-0 w-[20%] sm:w-[18%] z-20 cursor-pointer opacity-0 hover:opacity-100 transition-opacity flex items-center justify-end pr-2 sm:pr-4 group"
+                            title="Next Page (Right Arrow / Space / Swipe Left)"
+                        >
+                            <div className="p-2 rounded-full reader-ui-card opacity-0 group-hover:opacity-70 transition-opacity shadow-md border">
+                                <ChevronRight size={20} />
+                            </div>
+                        </div>
+
+                        {/* Center 60% (Toggle HUD) */}
+                        <div 
+                            onClick={toggleReaderHud}
+                            className="absolute inset-y-0 left-[20%] right-[20%] sm:left-[18%] sm:right-[18%] z-10 cursor-default"
+                        />
+
+                        {/* Prose Content Area */}
+                        {readerSettings.readingMode === 'paginated' ? (
+                            /* PAGINATED BOOK MODE (Multi-column) */
+                            <div className={`w-full ${widthClass} mx-auto px-4 sm:px-8 py-10 sm:py-14 h-full flex flex-col justify-center overflow-hidden relative z-15`}>
+                                {hasProse ? (
+                                    <div className={`w-full h-full overflow-hidden relative ${pageSlideDirection === 'next' ? 'reader-page-slide-next' : pageSlideDirection === 'prev' ? 'reader-page-slide-prev' : ''}`}>
+                                        <div 
+                                            key={`${selectedSequence}-${selectedScene}`}
+                                            ref={readerColumnsContainerRef}
+                                            className={`reader-page-column-container ${readerSettings.paragraphStyle === 'indented' ? 'reader-indented' : ''} reader-drop-cap reader-prose`}
+                                            style={{
+                                                ...textStyle,
+                                                columnWidth: readerContainerWidth > 0 ? `${readerContainerWidth}px` : '100%',
+                                                columnGap: typeof window !== 'undefined' && window.innerWidth <= 640 ? '24px' : '48px',
+                                                transform: `translateX(-${readerPageIndex * ((readerContainerWidth || 600) + (typeof window !== 'undefined' && window.innerWidth <= 640 ? 24 : 48))}px)`,
+                                                transition: isSceneTransitioning ? 'none' : (typeof window !== 'undefined' && window.innerWidth <= 640 ? 'transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)' : 'transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)')
+                                            }}
+                                        >
+                                            {/* Pure Literary Narrative Flow (No scene boxes) */}
+                                            <div className="reader-text" dangerouslySetInnerHTML={{ __html: formatReaderProse(proseContent) }} />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    /* Empty Scene Notice */
+                                    <div className="text-center my-auto p-8 rounded-2xl reader-ui-card max-w-md mx-auto space-y-4 border">
+                                        <div className="w-12 h-12 rounded-2xl bg-[#B8935A]/15 text-[#B8935A] flex items-center justify-center mx-auto">
+                                            <PenTool size={22} />
+                                        </div>
+                                        <h3 className="text-lg font-bold font-serif">Prose Not Yet Drafted</h3>
+                                        <p className="text-xs opacity-70 leading-relaxed">
+                                            This section of the manuscript has not been written yet.
+                                        </p>
+                                        <div className="flex gap-2 justify-center pt-2">
+                                            <button 
+                                                onClick={() => { setView('writer'); }}
+                                                className="px-4 py-2 bg-[#1C1917] dark:bg-[#B8935A] text-white dark:text-stone-950 rounded-xl text-xs font-bold shadow-sm cursor-pointer"
+                                            >
+                                                Draft in Studio
+                                            </button>
+                                            {currentFlatSceneIndex < flatStoryScenes.length - 1 && (
+                                                <button 
+                                                    onClick={goToNextReaderScene}
+                                                    className="px-4 py-2 reader-ui-card rounded-xl text-xs font-bold border shadow-2xs cursor-pointer"
+                                                >
+                                                    Continue
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        ) : (
+                            /* CONTINUOUS SCROLL MODE */
+                            <div 
+                                ref={readerScrollContainerRef}
+                                className={`w-full ${widthClass} mx-auto px-4 sm:px-8 py-16 h-full overflow-y-auto z-15 touch-scroll ${pageSlideDirection === 'next' ? 'reader-page-slide-next' : pageSlideDirection === 'prev' ? 'reader-page-slide-prev' : ''}`}
+                            >
+                                {hasProse ? (
+                                    <div className={`space-y-6 ${readerSettings.paragraphStyle === 'indented' ? 'reader-indented' : ''} reader-drop-cap reader-prose`} style={textStyle}>
+                                        <div className="reader-text" dangerouslySetInnerHTML={{ __html: formatReaderProse(proseContent) }} />
+
+                                        {/* Natural Manuscript Flow Divider */}
+                                        {currentFlatSceneIndex < flatStoryScenes.length - 1 ? (
+                                            <div className="pt-16 pb-12 text-center">
+                                                <div className="text-stone-300 dark:text-stone-600 font-serif text-lg tracking-widest my-4">· · ·</div>
+                                                <button
+                                                    onClick={goToNextReaderScene}
+                                                    className="px-5 py-2 reader-ui-card text-stone-600 dark:text-stone-300 rounded-xl text-xs font-serif border shadow-2xs inline-flex items-center gap-1.5 hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+                                                >
+                                                    <span>Continue Reading</span>
+                                                    <ChevronRight size={13} />
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="pt-16 pb-12 text-center text-xs font-mono opacity-50 uppercase tracking-widest">
+                                                End of Manuscript
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="text-center my-auto p-8 rounded-2xl reader-ui-card max-w-md mx-auto space-y-4 border">
+                                        <h3 className="text-lg font-bold font-serif">Prose Not Yet Drafted</h3>
+                                        <button 
+                                            onClick={() => setView('writer')}
+                                            className="px-4 py-2 bg-[#1C1917] dark:bg-[#B8935A] text-white dark:text-stone-950 rounded-xl text-xs font-bold cursor-pointer"
+                                        >
+                                            Draft in Studio
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* BOTTOM FLOATING HUD & PROGRESS BAR (Auto-Hides) */}
+                    <div className={`fixed bottom-0 inset-x-0 z-30 transition-all duration-300 ${isReaderHudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-full pointer-events-none'}`}>
+                        <div className="mx-auto max-w-4xl px-3 sm:px-6 pt-2 pb-3 backdrop-blur-md reader-ui-bg border-t reader-ui-border rounded-t-2xl shadow-md space-y-2">
+                            {/* DUAL MINIMAL PROGRESS BAR */}
+                            <div className="space-y-1">
+                                {/* Track 1: Sequence Overall Progress */}
+                                <div className="w-full bg-black/10 dark:bg-white/10 h-1 rounded-full overflow-hidden" title={`Sequence Progress: ${sequenceProgressPct}%`}>
+                                    <div 
+                                        className="h-full bg-[#B8935A] rounded-full transition-all duration-300"
+                                        style={{ width: `${sequenceProgressPct}%` }}
+                                    />
+                                </div>
+
+                                {/* Track 2: Scene Internal Progress */}
+                                {readerSettings.readingMode === 'paginated' && readerTotalPages > 1 && (
+                                    <div className="w-full bg-black/5 dark:bg-white/5 h-0.5 rounded-full overflow-hidden" title={`Scene Progress: ${sceneProgressPct}%`}>
+                                        <div 
+                                            className="h-full bg-stone-500 dark:bg-stone-300 rounded-full transition-all duration-200"
+                                            style={{ width: `${sceneProgressPct}%` }}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Progress Telemetry Row */}
+                            <div className="flex items-center justify-between text-[10.5px] font-mono opacity-70">
+                                {/* Story / Chapter info */}
+                                <span className="truncate max-w-[140px] sm:max-w-[240px]">
+                                    {story.title ? story.title : "Manuscript"} • Chapter {currentSeq.number || currentSeqIndex + 1}
+                                </span>
+
+                                {/* Page counter */}
+                                {readerSettings.readingMode === 'paginated' && (
+                                    <span className="font-bold shrink-0 px-2">
+                                        Page {readerPageIndex + 1} of {readerTotalPages}
+                                    </span>
+                                )}
+
+                                {/* Estimated Reading Time Remaining */}
+                                <span className="shrink-0 text-right">
+                                    ~{remainingMinInSeq} min left
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* TABLE OF CONTENTS SLIDE-OVER DRAWER */}
+                    {isTocOpen && (
+                        <div className="fixed inset-0 z-50 flex">
+                            {/* Backdrop */}
+                            <div 
+                                onClick={() => setIsTocOpen(false)}
+                                className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+                            />
+
+                            {/* Drawer Content */}
+                            <div className="relative w-full max-w-sm sm:max-w-md h-full reader-ui-card border-r shadow-2xl flex flex-col z-10 animate-fade-in">
+                                {/* Header */}
+                                <div className="p-4 border-b flex items-center justify-between reader-ui-border">
+                                    <div className="flex items-center gap-2">
+                                        <BookOpen size={16} className="text-[#B8935A]" />
+                                        <h2 className="font-serif font-bold text-base">Table of Contents</h2>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsTocOpen(false)}
+                                        className="p-1.5 rounded-lg hover:opacity-70 transition-opacity cursor-pointer"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+
+                                {/* Search Input */}
+                                <div className="p-3 border-b reader-ui-border">
+                                    <div className="relative">
+                                        <Search size={13} className="absolute left-3 top-2.5 opacity-40" />
+                                        <input 
+                                            type="text"
+                                            value={tocSearchQuery}
+                                            onChange={(e) => setTocSearchQuery(e.target.value)}
+                                            placeholder="Search scenes & chapters..."
+                                            className="w-full bg-black/5 dark:bg-white/5 pl-8 pr-3 py-1.5 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#B8935A]"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Tree List */}
+                                <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                                    {(story.sequences || []).map((seq, sIdx) => {
+                                        const seqScenes = story.scenes?.[`${sIdx}`] || [];
+                                        const filteredScenes = seqScenes.filter(sc => 
+                                            !tocSearchQuery || 
+                                            (sc.title || '').toLowerCase().includes(tocSearchQuery.toLowerCase()) ||
+                                            (seq.title || '').toLowerCase().includes(tocSearchQuery.toLowerCase())
+                                        );
+
+                                        if (filteredScenes.length === 0 && tocSearchQuery) return null;
+
+                                        return (
+                                            <div key={sIdx} className="space-y-1">
+                                                <div className="px-2 py-1 text-[10px] font-bold font-mono uppercase opacity-50 tracking-wider flex items-center justify-between">
+                                                    <span>Sequence {seq.number || sIdx + 1}: {seq.title}</span>
+                                                    <span>{seqScenes.length} Scenes</span>
+                                                </div>
+
+                                                <div className="space-y-0.5 pl-1">
+                                                    {filteredScenes.map((scene, scIdx) => {
+                                                        const originalSceneIdx = seqScenes.indexOf(scene);
+                                                        const sId = `${sIdx}-${originalSceneIdx}`;
+                                                        const isCurrent = currentSeqIndex === sIdx && currentScIndex === originalSceneIdx;
+                                                        const isCompleted = !!readingProgress.completedScenes?.[sId];
+                                                        const proseObj = story.prose?.[sId];
+                                                        const pText = proseObj?.final || proseObj?.draft || "";
+                                                        const words = pText.trim() ? pText.trim().split(/\s+/).length : 0;
+
+                                                        return (
+                                                            <button
+                                                                key={scIdx}
+                                                                onClick={() => jumpToReaderScene(sIdx, originalSceneIdx, 0)}
+                                                                className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
+                                                                    isCurrent 
+                                                                        ? 'bg-[#B8935A]/20 font-bold text-[#8C6B32] dark:text-[#E5C38D] border border-[#B8935A]/30' 
+                                                                        : 'hover:bg-black/5 dark:hover:bg-white/5 opacity-80 hover:opacity-100'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center gap-2 truncate">
+                                                                    {isCompleted ? (
+                                                                        <Check size={13} className="text-emerald-500 shrink-0" />
+                                                                    ) : words > 0 ? (
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                                                                    ) : (
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-stone-300 dark:bg-stone-600 shrink-0" />
+                                                                    )}
+                                                                    <span className="truncate">
+                                                                        {scene.number || `${seq.number}.${originalSceneIdx + 1}`}. {scene.title}
+                                                                    </span>
+                                                                </div>
+                                                                {words > 0 && (
+                                                                    <span className="text-[10px] font-mono opacity-50 shrink-0 ml-2">
+                                                                        {words.toLocaleString()}w
+                                                                    </span>
+                                                                )}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* APPEARANCE & TYPOGRAPHY SETTINGS DRAWER / POPOVER */}
+                    {isAppearanceOpen && (
+                        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-6 animate-fade-in">
+                            {/* Backdrop */}
+                            <div 
+                                onClick={() => setIsAppearanceOpen(false)}
+                                className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
+                            />
+
+                            {/* Popover / Sheet Content */}
+                            <div className="relative w-full max-w-lg reader-ui-card border rounded-2xl shadow-2xl p-5 sm:p-6 z-10 space-y-5 max-h-[85vh] overflow-y-auto">
+                                {/* Header */}
+                                <div className="flex items-center justify-between pb-3 border-b reader-ui-border">
+                                    <div className="flex items-center gap-2">
+                                        <SlidersHorizontal size={16} className="text-[#B8935A]" />
+                                        <h3 className="font-serif font-bold text-base">Reading Appearance</h3>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsAppearanceOpen(false)}
+                                        className="p-1.5 rounded-lg hover:opacity-70 transition-opacity cursor-pointer"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+
+                                {/* Theme Selection */}
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold font-mono uppercase opacity-60 tracking-wider">Palette Theme</label>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {[
+                                            { id: 'light', label: 'Folio', bg: '#FAF8F5', text: '#1C1917', border: '#E5E0D8' },
+                                            { id: 'sepia', label: 'Sepia', bg: '#F5EEDB', text: '#382E24', border: '#E4D8BE' },
+                                            { id: 'dark', label: 'Atelier', bg: '#18181B', text: '#EDE8E0', border: '#27272A' },
+                                            { id: 'oled', label: 'Midnight', bg: '#000000', text: '#D4D0C8', border: '#1F1F1F' }
+                                        ].map(t => (
+                                            <button
+                                                key={t.id}
+                                                onClick={() => updateReaderSetting('readerTheme', t.id)}
+                                                className={`p-2.5 rounded-xl flex flex-col items-center gap-1 text-xs font-semibold border transition-all active:scale-95 cursor-pointer ${
+                                                    readerSettings.readerTheme === t.id ? 'ring-2 ring-[#B8935A] shadow-xs' : 'opacity-80 hover:opacity-100'
+                                                }`}
+                                                style={{ backgroundColor: t.bg, color: t.text, borderColor: t.border }}
+                                            >
+                                                <span className="font-serif font-bold">Aa</span>
+                                                <span className="text-[10px] font-sans">{t.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Font Family Selection */}
+                                <div className="space-y-2">
+                                    <label className="text-[10px] font-bold font-mono uppercase opacity-60 tracking-wider">Typeface</label>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                        {[
+                                            { id: 'Merriweather', label: 'Merriweather' },
+                                            { id: 'Cormorant Garamond', label: 'Cormorant' },
+                                            { id: 'Newsreader', label: 'Newsreader' },
+                                            { id: 'Playfair Display', label: 'Playfair' },
+                                            { id: 'Inter', label: 'Inter Sans' },
+                                            { id: 'Plus Jakarta Sans', label: 'Jakarta Sans' }
+                                        ].map(f => (
+                                            <button
+                                                key={f.id}
+                                                onClick={() => updateReaderSetting('fontFamily', f.id)}
+                                                className={`p-2 rounded-xl text-xs border text-left flex items-center justify-between transition-all cursor-pointer ${
+                                                    readerSettings.fontFamily === f.id ? 'bg-[#B8935A]/15 border-[#B8935A] font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'bg-black/5 dark:bg-white/5 border-transparent opacity-80 hover:opacity-100'
+                                                }`}
+                                            >
+                                                <span style={{ fontFamily: f.id }}>{f.label}</span>
+                                                {readerSettings.fontFamily === f.id && <Check size={12} />}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Font Size & Line Spacing Controls */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    {/* Font Size */}
+                                    <div className="space-y-1.5">
+                                        <div className="flex justify-between text-[10px] font-bold font-mono uppercase opacity-60">
+                                            <span>Font Size</span>
+                                            <span>{readerSettings.fontSize}px</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
+                                            <button
+                                                onClick={() => updateReaderSetting('fontSize', Math.max(14, readerSettings.fontSize - 1))}
+                                                className="flex-1 py-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 font-bold text-xs cursor-pointer"
+                                            >
+                                                A-
+                                            </button>
+                                            <button
+                                                onClick={() => updateReaderSetting('fontSize', Math.min(28, readerSettings.fontSize + 1))}
+                                                className="flex-1 py-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 font-bold text-sm cursor-pointer"
+                                            >
+                                                A+
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Line Spacing */}
+                                    <div className="space-y-1.5">
+                                        <div className="flex justify-between text-[10px] font-bold font-mono uppercase opacity-60">
+                                            <span>Line Spacing</span>
+                                            <span>{readerSettings.lineHeight}x</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
+                                            {[1.45, 1.75, 2.05].map(lh => (
+                                                <button
+                                                    key={lh}
+                                                    onClick={() => updateReaderSetting('lineHeight', lh)}
+                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                                                        readerSettings.lineHeight === lh ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold' : 'hover:bg-black/10 dark:hover:bg-white/10 opacity-70'
+                                                    }`}
+                                                >
+                                                    {lh === 1.45 ? 'Tight' : lh === 1.75 ? 'Mid' : 'Loose'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Reading Flow & Paragraph Layout */}
+                                <div className="grid grid-cols-2 gap-4 pt-2 border-t reader-ui-border">
+                                    {/* Reading Mode: Paginated vs Scroll */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold font-mono uppercase opacity-60">Flow Mode</label>
+                                        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
+                                            <button
+                                                onClick={() => updateReaderSetting('readingMode', 'paginated')}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                                                    readerSettings.readingMode === 'paginated' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'opacity-70'
+                                                }`}
+                                            >
+                                                Pages
+                                            </button>
+                                            <button
+                                                onClick={() => updateReaderSetting('readingMode', 'scroll')}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                                                    readerSettings.readingMode === 'scroll' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'opacity-70'
+                                                }`}
+                                            >
+                                                Scroll
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Paragraph Indent Style */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold font-mono uppercase opacity-60">Paragraphs</label>
+                                        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
+                                            <button
+                                                onClick={() => updateReaderSetting('paragraphStyle', 'indented')}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                                                    readerSettings.paragraphStyle === 'indented' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'opacity-70'
+                                                }`}
+                                            >
+                                                Indent
+                                            </button>
+                                            <button
+                                                onClick={() => updateReaderSetting('paragraphStyle', 'block')}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
+                                                    readerSettings.paragraphStyle === 'block' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'opacity-70'
+                                                }`}
+                                            >
+                                                Block
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Content Width & Alignment */}
+                                <div className="grid grid-cols-2 gap-4 pt-2 border-t reader-ui-border">
+                                    {/* Width */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold font-mono uppercase opacity-60">Margins</label>
+                                        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
+                                            {['compact', 'standard', 'wide'].map(w => (
+                                                <button
+                                                    key={w}
+                                                    onClick={() => updateReaderSetting('contentWidth', w)}
+                                                    className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold capitalize cursor-pointer ${
+                                                        readerSettings.contentWidth === w ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'opacity-70'
+                                                    }`}
+                                                >
+                                                    {w === 'compact' ? 'Narrow' : w === 'standard' ? 'Normal' : 'Wide'}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Alignment */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-bold font-mono uppercase opacity-60">Alignment</label>
+                                        <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
+                                            <button
+                                                onClick={() => updateReaderSetting('textAlign', 'left')}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer ${
+                                                    readerSettings.textAlign === 'left' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold' : 'opacity-70'
+                                                }`}
+                                            >
+                                                <AlignLeft size={13} /> Left
+                                            </button>
+                                            <button
+                                                onClick={() => updateReaderSetting('textAlign', 'justify')}
+                                                className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer ${
+                                                    readerSettings.textAlign === 'justify' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold' : 'opacity-70'
+                                                }`}
+                                            >
+                                                <AlignJustify size={13} /> Justify
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
         const CharacterCard = ({ c, onEdit }) => {
             const [isExpanded, setIsExpanded] = useState(false);
             if (!c) return null;
@@ -10497,24 +11159,18 @@ Output Schema:
                 
                 const calculatePages = () => {
                     if (!readerColumnsContainerRef.current) return;
-                    const el = readerColumnsContainerRef.current;
-                    const parentEl = el.parentElement;
-                    const width = parentEl ? parentEl.clientWidth : el.clientWidth;
-                    if (width <= 0) return;
-                    setReaderContainerWidth(width);
+                    const measured = measureReaderPages(readerColumnsContainerRef.current);
+                    if (!measured) return;
+                    setReaderContainerWidth(measured.width);
+                    setReaderTotalPages(measured.pages);
 
-                    const gap = window.innerWidth <= 640 ? 24 : 48;
-                    const scrollW = el.scrollWidth;
-                    const pages = Math.max(1, Math.round((scrollW + gap) / (width + gap)));
-                    setReaderTotalPages(pages);
-                    
                     if (pendingTargetPageRef.current === 'last') {
-                        const lastIdx = Math.max(0, pages - 1);
+                        const lastIdx = Math.max(0, measured.pages - 1);
                         setReaderPageIndex(lastIdx);
                         pendingTargetPageRef.current = null;
                         saveReadingProgress(selectedSequence, selectedScene, lastIdx);
-                    } else if (readerPageIndex >= pages) {
-                        setReaderPageIndex(Math.max(0, pages - 1));
+                    } else if (readerPageIndex >= measured.pages) {
+                        setReaderPageIndex(Math.max(0, measured.pages - 1));
                     }
                 };
 
@@ -10526,17 +11182,12 @@ Output Schema:
                 if (view !== 'reader' || readerSettings.readingMode !== 'paginated') return;
                 const handleResize = () => {
                     if (!readerColumnsContainerRef.current) return;
-                    const el = readerColumnsContainerRef.current;
-                    const parentEl = el.parentElement;
-                    const width = parentEl ? parentEl.clientWidth : el.clientWidth;
-                    if (width <= 0) return;
-                    setReaderContainerWidth(width);
-                    const gap = window.innerWidth <= 640 ? 24 : 48;
-                    const scrollW = el.scrollWidth;
-                    const pages = Math.max(1, Math.round((scrollW + gap) / (width + gap)));
-                    setReaderTotalPages(pages);
-                    if (readerPageIndex >= pages) {
-                        setReaderPageIndex(Math.max(0, pages - 1));
+                    const measured = measureReaderPages(readerColumnsContainerRef.current);
+                    if (!measured) return;
+                    setReaderContainerWidth(measured.width);
+                    setReaderTotalPages(measured.pages);
+                    if (readerPageIndex >= measured.pages) {
+                        setReaderPageIndex(Math.max(0, measured.pages - 1));
                     }
                 };
                 window.addEventListener('resize', handleResize);
@@ -17499,649 +18150,44 @@ ${currentLoreList}
                         )}
 
                         <main className={`flex-1 overflow-y-auto overflow-x-hidden ${view === 'reader' ? 'p-0 overflow-hidden' : 'p-4 md:p-8'}`}>
-                            {view === 'reader' && (() => {
-                                const activeItem = currentReaderSceneItem || flatStoryScenes[0] || null;
-                                const currentSeqIndex = activeItem ? activeItem.seqIdx : 0;
-                                const currentScIndex = activeItem ? activeItem.sceneIdx : 0;
-                                const currentSeq = (story.sequences || [])[currentSeqIndex] || {};
-                                const currentSceneObj = activeItem?.scene || {};
-                                const proseContent = activeItem?.proseText || "";
-                                const hasProse = !!proseContent;
-
-                                const seqScenes = story.scenes?.[`${currentSeqIndex}`] || [];
-                                const currentSceneNumberInSeq = currentScIndex + 1;
-                                const totalScenesInSeq = seqScenes.length || 1;
-                                const sequenceProgressPct = totalScenesInSeq > 0 ? Math.round((currentSceneNumberInSeq / totalScenesInSeq) * 100) : 0;
-
-                                const sceneProgressPct = readerSettings.readingMode === 'paginated'
-                                    ? (readerTotalPages > 1 ? Math.min(100, Math.round(((readerPageIndex + 1) / readerTotalPages) * 100)) : 100)
-                                    : 100;
-
-                                const remainingMinInSeq = seqScenes.slice(currentScIndex).reduce((acc, sc, i) => {
-                                    const sKey = `${currentSeqIndex}-${currentScIndex + i}`;
-                                    const pObj = story.prose?.[sKey];
-                                    const txt = (pObj?.final || pObj?.draft || "");
-                                    return acc + readingMinutes(countWords(txt));
-                                }, 0);
-
-                                const themeClass = readerSettings.readerTheme === 'sepia'
-                                    ? 'reader-theme-sepia'
-                                    : readerSettings.readerTheme === 'dark'
-                                        ? 'reader-theme-dark'
-                                        : readerSettings.readerTheme === 'oled'
-                                            ? 'reader-theme-oled'
-                                            : 'reader-theme-light';
-
-                                const widthClass = readerSettings.contentWidth === 'compact'
-                                    ? 'max-w-xl'
-                                    : readerSettings.contentWidth === 'wide'
-                                        ? 'max-w-4xl'
-                                        : readerSettings.contentWidth === 'full'
-                                            ? 'max-w-full px-4 md:px-12'
-                                            : 'max-w-2xl';
-
-                                const textStyle = {
-                                    fontFamily: readerSettings.fontFamily === 'Inter' ? "'Inter', sans-serif"
-                                        : readerSettings.fontFamily === 'Plus Jakarta Sans' ? "'Plus Jakarta Sans', sans-serif"
-                                        : readerSettings.fontFamily === 'JetBrains Mono' ? "'JetBrains Mono', monospace"
-                                        : readerSettings.fontFamily === 'Cormorant Garamond' ? "'Cormorant Garamond', serif"
-                                        : readerSettings.fontFamily === 'Newsreader' ? "'Newsreader', serif"
-                                        : readerSettings.fontFamily === 'Playfair Display' ? "'Playfair Display', serif"
-                                        : "'Merriweather', Georgia, serif",
-                                    fontSize: `${readerSettings.fontSize}px`,
-                                    lineHeight: readerSettings.lineHeight,
-                                    textAlign: readerSettings.textAlign === 'justify' ? 'justify' : 'left',
-                                    hyphens: readerSettings.textAlign === 'justify' ? 'auto' : 'none'
-                                };
-
-                                return (
-                                    <div 
-                                        className={`fixed inset-0 z-50 flex flex-col select-none ${themeClass} transition-colors duration-300 overflow-hidden`}
-                                        onMouseMove={resetReaderHudTimer}
-                                        onTouchStart={handleReaderTouchStart}
-                                        onTouchEnd={handleReaderTouchEnd}
-                                    >
-                                        {/* TOP FLOATING HUD (Auto-Hides) */}
-                                        <div className={`fixed top-0 inset-x-0 z-30 transition-all duration-300 ${isReaderHudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none'}`}>
-                                            <div className="mx-auto max-w-4xl px-3 sm:px-6 pt-3 pb-2 flex items-center justify-between gap-2 backdrop-blur-md reader-ui-bg border-b reader-ui-border rounded-b-2xl shadow-sm">
-                                                {/* Left Actions: Exit / Back to Studio */}
-                                                <div className="flex items-center gap-1.5">
-                                                    <button 
-                                                        onClick={() => {
-                                                            saveReadingProgress(currentSeqIndex, currentScIndex, readerPageIndex);
-                                                            setView('writer');
-                                                        }}
-                                                        className="flex items-center gap-1 px-3 py-1.5 rounded-xl reader-ui-card text-xs font-semibold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer border"
-                                                        title="Return to Writer Studio"
-                                                    >
-                                                        <ArrowLeft size={14} />
-                                                        <span className="hidden sm:inline">Studio</span>
-                                                    </button>
-
-                                                    {/* TOC Button */}
-                                                    <button
-                                                        onClick={() => {
-                                                            setIsTocOpen(true);
-                                                            setIsAppearanceOpen(false);
-                                                        }}
-                                                        className={`flex items-center gap-1 px-3 py-1.5 rounded-xl reader-ui-card text-xs font-semibold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer border ${isTocOpen ? 'ring-2 ring-[#B8935A]' : ''}`}
-                                                        title="Table of Contents (T)"
-                                                    >
-                                                        <List size={14} />
-                                                        <span className="hidden sm:inline">Contents</span>
-                                                    </button>
-                                                </div>
-
-                                                {/* Center Chapter Telemetry (Subtle, never wasting space) */}
-                                                <div className="text-center truncate px-2 max-w-[180px] sm:max-w-[320px]">
-                                                    <span className="text-[11px] font-mono font-bold opacity-60 uppercase tracking-wider block truncate">
-                                                        {currentSeq.title ? `Seq ${currentSeq.number || currentSeqIndex + 1}: ${currentSeq.title}` : `Sequence ${currentSeqIndex + 1}`}
-                                                    </span>
-                                                </div>
-
-                                                {/* Right Actions: Appearance, Theme Toggle, Fullscreen */}
-                                                <div className="flex items-center gap-1.5">
-                                                    {/* Appearance / Typography Menu Toggle */}
-                                                    <button
-                                                        onClick={() => {
-                                                            setIsAppearanceOpen(prev => !prev);
-                                                            setIsTocOpen(false);
-                                                        }}
-                                                        className={`flex items-center gap-1 px-3 py-1.5 rounded-xl reader-ui-card text-xs font-bold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer border ${isAppearanceOpen ? 'ring-2 ring-[#B8935A]' : ''}`}
-                                                        title="Typography & Appearance (A)"
-                                                    >
-                                                        <Type size={14} />
-                                                        <span>Aa</span>
-                                                    </button>
-
-                                                    {/* Quick Theme Cycle */}
-                                                    <button
-                                                        onClick={() => {
-                                                            const themes = ['light', 'sepia', 'dark', 'oled'];
-                                                            const currIdx = themes.indexOf(readerSettings.readerTheme);
-                                                            const nextTheme = themes[(currIdx + 1) % themes.length];
-                                                            updateReaderSetting('readerTheme', nextTheme);
-                                                        }}
-                                                        className="p-1.5 rounded-xl reader-ui-card text-xs font-semibold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer border"
-                                                        title={`Theme: ${readerSettings.readerTheme} (Click to change)`}
-                                                    >
-                                                        {readerSettings.readerTheme === 'dark' || readerSettings.readerTheme === 'oled' ? (
-                                                            <Sun size={15} />
-                                                        ) : (
-                                                            <Moon size={15} />
-                                                        )}
-                                                    </button>
-
-                                                    {/* Fullscreen Toggle */}
-                                                    <button
-                                                        onClick={toggleFullscreen}
-                                                        className="p-1.5 rounded-xl reader-ui-card text-xs font-semibold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer hidden sm:flex border"
-                                                        title="Toggle Fullscreen"
-                                                    >
-                                                        {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* MAIN READING SURFACE */}
-                                        <div className="flex-1 relative w-full h-full overflow-hidden flex flex-col justify-center items-center">
-                                            {/* Click / Tap Zones */}
-                                            {/* Left 20% (Previous Page) */}
-                                            <div 
-                                                onClick={() => turnReaderPage(-1)}
-                                                className="absolute inset-y-0 left-0 w-[20%] sm:w-[18%] z-20 cursor-pointer opacity-0 hover:opacity-100 transition-opacity flex items-center justify-start pl-2 sm:pl-4 group"
-                                                title="Previous Page (Left Arrow / Swipe Right)"
-                                            >
-                                                <div className="p-2 rounded-full reader-ui-card opacity-0 group-hover:opacity-70 transition-opacity shadow-md border">
-                                                    <ChevronLeft size={20} />
-                                                </div>
-                                            </div>
-
-                                            {/* Right 20% (Next Page) */}
-                                            <div 
-                                                onClick={() => turnReaderPage(1)}
-                                                className="absolute inset-y-0 right-0 w-[20%] sm:w-[18%] z-20 cursor-pointer opacity-0 hover:opacity-100 transition-opacity flex items-center justify-end pr-2 sm:pr-4 group"
-                                                title="Next Page (Right Arrow / Space / Swipe Left)"
-                                            >
-                                                <div className="p-2 rounded-full reader-ui-card opacity-0 group-hover:opacity-70 transition-opacity shadow-md border">
-                                                    <ChevronRight size={20} />
-                                                </div>
-                                            </div>
-
-                                            {/* Center 60% (Toggle HUD) */}
-                                            <div 
-                                                onClick={toggleReaderHud}
-                                                className="absolute inset-y-0 left-[20%] right-[20%] sm:left-[18%] sm:right-[18%] z-10 cursor-default"
-                                            />
-
-                                            {/* Prose Content Area */}
-                                            {readerSettings.readingMode === 'paginated' ? (
-                                                /* PAGINATED BOOK MODE (Multi-column) */
-                                                <div className={`w-full ${widthClass} mx-auto px-4 sm:px-8 py-10 sm:py-14 h-full flex flex-col justify-center overflow-hidden relative z-15`}>
-                                                    {hasProse ? (
-                                                        <div className={`w-full h-full overflow-hidden relative ${pageSlideDirection === 'next' ? 'reader-page-slide-next' : pageSlideDirection === 'prev' ? 'reader-page-slide-prev' : ''}`}>
-                                                            <div 
-                                                                key={`${selectedSequence}-${selectedScene}`}
-                                                                ref={readerColumnsContainerRef}
-                                                                className={`reader-page-column-container ${readerSettings.paragraphStyle === 'indented' ? 'reader-indented' : ''} reader-drop-cap reader-prose`}
-                                                                style={{
-                                                                    ...textStyle,
-                                                                    columnWidth: readerContainerWidth > 0 ? `${readerContainerWidth}px` : '100%',
-                                                                    columnGap: typeof window !== 'undefined' && window.innerWidth <= 640 ? '24px' : '48px',
-                                                                    transform: `translateX(-${readerPageIndex * ((readerContainerWidth || 600) + (typeof window !== 'undefined' && window.innerWidth <= 640 ? 24 : 48))}px)`,
-                                                                    transition: isSceneTransitioning ? 'none' : (typeof window !== 'undefined' && window.innerWidth <= 640 ? 'transform 0.24s cubic-bezier(0.22, 1, 0.36, 1)' : 'transform 0.28s cubic-bezier(0.22, 1, 0.36, 1)')
-                                                                }}
-                                                            >
-                                                                {/* Pure Literary Narrative Flow (No scene boxes) */}
-                                                                <div className="reader-text" dangerouslySetInnerHTML={{ __html: formatReaderProse(proseContent) }} />
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        /* Empty Scene Notice */
-                                                        <div className="text-center my-auto p-8 rounded-2xl reader-ui-card max-w-md mx-auto space-y-4 border">
-                                                            <div className="w-12 h-12 rounded-2xl bg-[#B8935A]/15 text-[#B8935A] flex items-center justify-center mx-auto">
-                                                                <PenTool size={22} />
-                                                            </div>
-                                                            <h3 className="text-lg font-bold font-serif">Prose Not Yet Drafted</h3>
-                                                            <p className="text-xs opacity-70 leading-relaxed">
-                                                                This section of the manuscript has not been written yet.
-                                                            </p>
-                                                            <div className="flex gap-2 justify-center pt-2">
-                                                                <button 
-                                                                    onClick={() => { setView('writer'); }}
-                                                                    className="px-4 py-2 bg-[#1C1917] dark:bg-[#B8935A] text-white dark:text-stone-950 rounded-xl text-xs font-bold shadow-sm cursor-pointer"
-                                                                >
-                                                                    Draft in Studio
-                                                                </button>
-                                                                {currentFlatSceneIndex < flatStoryScenes.length - 1 && (
-                                                                    <button 
-                                                                        onClick={goToNextReaderScene}
-                                                                        className="px-4 py-2 reader-ui-card rounded-xl text-xs font-bold border shadow-2xs cursor-pointer"
-                                                                    >
-                                                                        Continue
-                                                                    </button>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                /* CONTINUOUS SCROLL MODE */
-                                                <div 
-                                                    ref={readerScrollContainerRef}
-                                                    className={`w-full ${widthClass} mx-auto px-4 sm:px-8 py-16 h-full overflow-y-auto z-15 touch-scroll ${pageSlideDirection === 'next' ? 'reader-page-slide-next' : pageSlideDirection === 'prev' ? 'reader-page-slide-prev' : ''}`}
-                                                >
-                                                    {hasProse ? (
-                                                        <div className={`space-y-6 ${readerSettings.paragraphStyle === 'indented' ? 'reader-indented' : ''} reader-drop-cap reader-prose`} style={textStyle}>
-                                                            <div className="reader-text" dangerouslySetInnerHTML={{ __html: formatReaderProse(proseContent) }} />
-
-                                                            {/* Natural Manuscript Flow Divider */}
-                                                            {currentFlatSceneIndex < flatStoryScenes.length - 1 ? (
-                                                                <div className="pt-16 pb-12 text-center">
-                                                                    <div className="text-stone-300 dark:text-stone-600 font-serif text-lg tracking-widest my-4">· · ·</div>
-                                                                    <button
-                                                                        onClick={goToNextReaderScene}
-                                                                        className="px-5 py-2 reader-ui-card text-stone-600 dark:text-stone-300 rounded-xl text-xs font-serif border shadow-2xs inline-flex items-center gap-1.5 hover:opacity-90 active:scale-95 transition-all cursor-pointer"
-                                                                    >
-                                                                        <span>Continue Reading</span>
-                                                                        <ChevronRight size={13} />
-                                                                    </button>
-                                                                </div>
-                                                            ) : (
-                                                                <div className="pt-16 pb-12 text-center text-xs font-mono opacity-50 uppercase tracking-widest">
-                                                                    End of Manuscript
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    ) : (
-                                                        <div className="text-center my-auto p-8 rounded-2xl reader-ui-card max-w-md mx-auto space-y-4 border">
-                                                            <h3 className="text-lg font-bold font-serif">Prose Not Yet Drafted</h3>
-                                                            <button 
-                                                                onClick={() => setView('writer')}
-                                                                className="px-4 py-2 bg-[#1C1917] dark:bg-[#B8935A] text-white dark:text-stone-950 rounded-xl text-xs font-bold cursor-pointer"
-                                                            >
-                                                                Draft in Studio
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* BOTTOM FLOATING HUD & PROGRESS BAR (Auto-Hides) */}
-                                        <div className={`fixed bottom-0 inset-x-0 z-30 transition-all duration-300 ${isReaderHudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-full pointer-events-none'}`}>
-                                            <div className="mx-auto max-w-4xl px-3 sm:px-6 pt-2 pb-3 backdrop-blur-md reader-ui-bg border-t reader-ui-border rounded-t-2xl shadow-md space-y-2">
-                                                {/* DUAL MINIMAL PROGRESS BAR */}
-                                                <div className="space-y-1">
-                                                    {/* Track 1: Sequence Overall Progress */}
-                                                    <div className="w-full bg-black/10 dark:bg-white/10 h-1 rounded-full overflow-hidden" title={`Sequence Progress: ${sequenceProgressPct}%`}>
-                                                        <div 
-                                                            className="h-full bg-[#B8935A] rounded-full transition-all duration-300"
-                                                            style={{ width: `${sequenceProgressPct}%` }}
-                                                        />
-                                                    </div>
-
-                                                    {/* Track 2: Scene Internal Progress */}
-                                                    {readerSettings.readingMode === 'paginated' && readerTotalPages > 1 && (
-                                                        <div className="w-full bg-black/5 dark:bg-white/5 h-0.5 rounded-full overflow-hidden" title={`Scene Progress: ${sceneProgressPct}%`}>
-                                                            <div 
-                                                                className="h-full bg-stone-500 dark:bg-stone-300 rounded-full transition-all duration-200"
-                                                                style={{ width: `${sceneProgressPct}%` }}
-                                                            />
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Progress Telemetry Row */}
-                                                <div className="flex items-center justify-between text-[10.5px] font-mono opacity-70">
-                                                    {/* Story / Chapter info */}
-                                                    <span className="truncate max-w-[140px] sm:max-w-[240px]">
-                                                        {story.title ? story.title : "Manuscript"} • Chapter {currentSeq.number || currentSeqIndex + 1}
-                                                    </span>
-
-                                                    {/* Page counter */}
-                                                    {readerSettings.readingMode === 'paginated' && (
-                                                        <span className="font-bold shrink-0 px-2">
-                                                            Page {readerPageIndex + 1} of {readerTotalPages}
-                                                        </span>
-                                                    )}
-
-                                                    {/* Estimated Reading Time Remaining */}
-                                                    <span className="shrink-0 text-right">
-                                                        ~{remainingMinInSeq} min left
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* TABLE OF CONTENTS SLIDE-OVER DRAWER */}
-                                        {isTocOpen && (
-                                            <div className="fixed inset-0 z-50 flex">
-                                                {/* Backdrop */}
-                                                <div 
-                                                    onClick={() => setIsTocOpen(false)}
-                                                    className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
-                                                />
-
-                                                {/* Drawer Content */}
-                                                <div className="relative w-full max-w-sm sm:max-w-md h-full reader-ui-card border-r shadow-2xl flex flex-col z-10 animate-fade-in">
-                                                    {/* Header */}
-                                                    <div className="p-4 border-b flex items-center justify-between reader-ui-border">
-                                                        <div className="flex items-center gap-2">
-                                                            <BookOpen size={16} className="text-[#B8935A]" />
-                                                            <h2 className="font-serif font-bold text-base">Table of Contents</h2>
-                                                        </div>
-                                                        <button 
-                                                            onClick={() => setIsTocOpen(false)}
-                                                            className="p-1.5 rounded-lg hover:opacity-70 transition-opacity cursor-pointer"
-                                                        >
-                                                            <X size={16} />
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Search Input */}
-                                                    <div className="p-3 border-b reader-ui-border">
-                                                        <div className="relative">
-                                                            <Search size={13} className="absolute left-3 top-2.5 opacity-40" />
-                                                            <input 
-                                                                type="text"
-                                                                value={tocSearchQuery}
-                                                                onChange={(e) => setTocSearchQuery(e.target.value)}
-                                                                placeholder="Search scenes & chapters..."
-                                                                className="w-full bg-black/5 dark:bg-white/5 pl-8 pr-3 py-1.5 rounded-xl text-xs outline-none focus:ring-1 focus:ring-[#B8935A]"
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Tree List */}
-                                                    <div className="flex-1 overflow-y-auto p-3 space-y-4">
-                                                        {(story.sequences || []).map((seq, sIdx) => {
-                                                            const seqScenes = story.scenes?.[`${sIdx}`] || [];
-                                                            const filteredScenes = seqScenes.filter(sc => 
-                                                                !tocSearchQuery || 
-                                                                (sc.title || '').toLowerCase().includes(tocSearchQuery.toLowerCase()) ||
-                                                                (seq.title || '').toLowerCase().includes(tocSearchQuery.toLowerCase())
-                                                            );
-
-                                                            if (filteredScenes.length === 0 && tocSearchQuery) return null;
-
-                                                            return (
-                                                                <div key={sIdx} className="space-y-1">
-                                                                    <div className="px-2 py-1 text-[10px] font-bold font-mono uppercase opacity-50 tracking-wider flex items-center justify-between">
-                                                                        <span>Sequence {seq.number || sIdx + 1}: {seq.title}</span>
-                                                                        <span>{seqScenes.length} Scenes</span>
-                                                                    </div>
-
-                                                                    <div className="space-y-0.5 pl-1">
-                                                                        {filteredScenes.map((scene, scIdx) => {
-                                                                            const originalSceneIdx = seqScenes.indexOf(scene);
-                                                                            const sId = `${sIdx}-${originalSceneIdx}`;
-                                                                            const isCurrent = currentSeqIndex === sIdx && currentScIndex === originalSceneIdx;
-                                                                            const isCompleted = !!readingProgress.completedScenes?.[sId];
-                                                                            const proseObj = story.prose?.[sId];
-                                                                            const pText = proseObj?.final || proseObj?.draft || "";
-                                                                            const words = pText.trim() ? pText.trim().split(/\s+/).length : 0;
-
-                                                                            return (
-                                                                                <button
-                                                                                    key={scIdx}
-                                                                                    onClick={() => jumpToReaderScene(sIdx, originalSceneIdx, 0)}
-                                                                                    className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
-                                                                                        isCurrent 
-                                                                                            ? 'bg-[#B8935A]/20 font-bold text-[#8C6B32] dark:text-[#E5C38D] border border-[#B8935A]/30' 
-                                                                                            : 'hover:bg-black/5 dark:hover:bg-white/5 opacity-80 hover:opacity-100'
-                                                                                    }`}
-                                                                                >
-                                                                                    <div className="flex items-center gap-2 truncate">
-                                                                                        {isCompleted ? (
-                                                                                            <Check size={13} className="text-emerald-500 shrink-0" />
-                                                                                        ) : words > 0 ? (
-                                                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                                                                                        ) : (
-                                                                                            <span className="w-1.5 h-1.5 rounded-full bg-stone-300 dark:bg-stone-600 shrink-0" />
-                                                                                        )}
-                                                                                        <span className="truncate">
-                                                                                            {scene.number || `${seq.number}.${originalSceneIdx + 1}`}. {scene.title}
-                                                                                        </span>
-                                                                                    </div>
-                                                                                    {words > 0 && (
-                                                                                        <span className="text-[10px] font-mono opacity-50 shrink-0 ml-2">
-                                                                                            {words.toLocaleString()}w
-                                                                                        </span>
-                                                                                    )}
-                                                                                </button>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* APPEARANCE & TYPOGRAPHY SETTINGS DRAWER / POPOVER */}
-                                        {isAppearanceOpen && (
-                                            <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-3 sm:p-6 animate-fade-in">
-                                                {/* Backdrop */}
-                                                <div 
-                                                    onClick={() => setIsAppearanceOpen(false)}
-                                                    className="fixed inset-0 bg-black/40 backdrop-blur-xs transition-opacity"
-                                                />
-
-                                                {/* Popover / Sheet Content */}
-                                                <div className="relative w-full max-w-lg reader-ui-card border rounded-2xl shadow-2xl p-5 sm:p-6 z-10 space-y-5 max-h-[85vh] overflow-y-auto">
-                                                    {/* Header */}
-                                                    <div className="flex items-center justify-between pb-3 border-b reader-ui-border">
-                                                        <div className="flex items-center gap-2">
-                                                            <SlidersHorizontal size={16} className="text-[#B8935A]" />
-                                                            <h3 className="font-serif font-bold text-base">Reading Appearance</h3>
-                                                        </div>
-                                                        <button 
-                                                            onClick={() => setIsAppearanceOpen(false)}
-                                                            className="p-1.5 rounded-lg hover:opacity-70 transition-opacity cursor-pointer"
-                                                        >
-                                                            <X size={16} />
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Theme Selection */}
-                                                    <div className="space-y-2">
-                                                        <label className="text-[10px] font-bold font-mono uppercase opacity-60 tracking-wider">Palette Theme</label>
-                                                        <div className="grid grid-cols-4 gap-2">
-                                                            {[
-                                                                { id: 'light', label: 'Folio', bg: '#FAF8F5', text: '#1C1917', border: '#E5E0D8' },
-                                                                { id: 'sepia', label: 'Sepia', bg: '#F5EEDB', text: '#382E24', border: '#E4D8BE' },
-                                                                { id: 'dark', label: 'Atelier', bg: '#18181B', text: '#EDE8E0', border: '#27272A' },
-                                                                { id: 'oled', label: 'Midnight', bg: '#000000', text: '#D4D0C8', border: '#1F1F1F' }
-                                                            ].map(t => (
-                                                                <button
-                                                                    key={t.id}
-                                                                    onClick={() => updateReaderSetting('readerTheme', t.id)}
-                                                                    className={`p-2.5 rounded-xl flex flex-col items-center gap-1 text-xs font-semibold border transition-all active:scale-95 cursor-pointer ${
-                                                                        readerSettings.readerTheme === t.id ? 'ring-2 ring-[#B8935A] shadow-xs' : 'opacity-80 hover:opacity-100'
-                                                                    }`}
-                                                                    style={{ backgroundColor: t.bg, color: t.text, borderColor: t.border }}
-                                                                >
-                                                                    <span className="font-serif font-bold">Aa</span>
-                                                                    <span className="text-[10px] font-sans">{t.label}</span>
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Font Family Selection */}
-                                                    <div className="space-y-2">
-                                                        <label className="text-[10px] font-bold font-mono uppercase opacity-60 tracking-wider">Typeface</label>
-                                                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                            {[
-                                                                { id: 'Merriweather', label: 'Merriweather' },
-                                                                { id: 'Cormorant Garamond', label: 'Cormorant' },
-                                                                { id: 'Newsreader', label: 'Newsreader' },
-                                                                { id: 'Playfair Display', label: 'Playfair' },
-                                                                { id: 'Inter', label: 'Inter Sans' },
-                                                                { id: 'Plus Jakarta Sans', label: 'Jakarta Sans' }
-                                                            ].map(f => (
-                                                                <button
-                                                                    key={f.id}
-                                                                    onClick={() => updateReaderSetting('fontFamily', f.id)}
-                                                                    className={`p-2 rounded-xl text-xs border text-left flex items-center justify-between transition-all cursor-pointer ${
-                                                                        readerSettings.fontFamily === f.id ? 'bg-[#B8935A]/15 border-[#B8935A] font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'bg-black/5 dark:bg-white/5 border-transparent opacity-80 hover:opacity-100'
-                                                                    }`}
-                                                                >
-                                                                    <span style={{ fontFamily: f.id }}>{f.label}</span>
-                                                                    {readerSettings.fontFamily === f.id && <Check size={12} />}
-                                                                </button>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Font Size & Line Spacing Controls */}
-                                                    <div className="grid grid-cols-2 gap-4">
-                                                        {/* Font Size */}
-                                                        <div className="space-y-1.5">
-                                                            <div className="flex justify-between text-[10px] font-bold font-mono uppercase opacity-60">
-                                                                <span>Font Size</span>
-                                                                <span>{readerSettings.fontSize}px</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
-                                                                <button
-                                                                    onClick={() => updateReaderSetting('fontSize', Math.max(14, readerSettings.fontSize - 1))}
-                                                                    className="flex-1 py-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 font-bold text-xs cursor-pointer"
-                                                                >
-                                                                    A-
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => updateReaderSetting('fontSize', Math.min(28, readerSettings.fontSize + 1))}
-                                                                    className="flex-1 py-1.5 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 font-bold text-sm cursor-pointer"
-                                                                >
-                                                                    A+
-                                                                </button>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Line Spacing */}
-                                                        <div className="space-y-1.5">
-                                                            <div className="flex justify-between text-[10px] font-bold font-mono uppercase opacity-60">
-                                                                <span>Line Spacing</span>
-                                                                <span>{readerSettings.lineHeight}x</span>
-                                                            </div>
-                                                            <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
-                                                                {[1.45, 1.75, 2.05].map(lh => (
-                                                                    <button
-                                                                        key={lh}
-                                                                        onClick={() => updateReaderSetting('lineHeight', lh)}
-                                                                        className={`flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                                                                            readerSettings.lineHeight === lh ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold' : 'hover:bg-black/10 dark:hover:bg-white/10 opacity-70'
-                                                                        }`}
-                                                                    >
-                                                                        {lh === 1.45 ? 'Tight' : lh === 1.75 ? 'Mid' : 'Loose'}
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Reading Flow & Paragraph Layout */}
-                                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t reader-ui-border">
-                                                        {/* Reading Mode: Paginated vs Scroll */}
-                                                        <div className="space-y-1.5">
-                                                            <label className="text-[10px] font-bold font-mono uppercase opacity-60">Flow Mode</label>
-                                                            <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
-                                                                <button
-                                                                    onClick={() => updateReaderSetting('readingMode', 'paginated')}
-                                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                                                                        readerSettings.readingMode === 'paginated' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'opacity-70'
-                                                                    }`}
-                                                                >
-                                                                    Pages
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => updateReaderSetting('readingMode', 'scroll')}
-                                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                                                                        readerSettings.readingMode === 'scroll' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'opacity-70'
-                                                                    }`}
-                                                                >
-                                                                    Scroll
-                                                                </button>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Paragraph Indent Style */}
-                                                        <div className="space-y-1.5">
-                                                            <label className="text-[10px] font-bold font-mono uppercase opacity-60">Paragraphs</label>
-                                                            <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
-                                                                <button
-                                                                    onClick={() => updateReaderSetting('paragraphStyle', 'indented')}
-                                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                                                                        readerSettings.paragraphStyle === 'indented' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'opacity-70'
-                                                                    }`}
-                                                                >
-                                                                    Indent
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => updateReaderSetting('paragraphStyle', 'block')}
-                                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold cursor-pointer ${
-                                                                        readerSettings.paragraphStyle === 'block' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'opacity-70'
-                                                                    }`}
-                                                                >
-                                                                    Block
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Content Width & Alignment */}
-                                                    <div className="grid grid-cols-2 gap-4 pt-2 border-t reader-ui-border">
-                                                        {/* Width */}
-                                                        <div className="space-y-1.5">
-                                                            <label className="text-[10px] font-bold font-mono uppercase opacity-60">Margins</label>
-                                                            <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
-                                                                {['compact', 'standard', 'wide'].map(w => (
-                                                                    <button
-                                                                        key={w}
-                                                                        onClick={() => updateReaderSetting('contentWidth', w)}
-                                                                        className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold capitalize cursor-pointer ${
-                                                                            readerSettings.contentWidth === w ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold text-[#8C6B32] dark:text-[#E5C38D]' : 'opacity-70'
-                                                                        }`}
-                                                                    >
-                                                                        {w === 'compact' ? 'Narrow' : w === 'standard' ? 'Normal' : 'Wide'}
-                                                                    </button>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Alignment */}
-                                                        <div className="space-y-1.5">
-                                                            <label className="text-[10px] font-bold font-mono uppercase opacity-60">Alignment</label>
-                                                            <div className="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-1 rounded-xl">
-                                                                <button
-                                                                    onClick={() => updateReaderSetting('textAlign', 'left')}
-                                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer ${
-                                                                        readerSettings.textAlign === 'left' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold' : 'opacity-70'
-                                                                    }`}
-                                                                >
-                                                                    <AlignLeft size={13} /> Left
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => updateReaderSetting('textAlign', 'justify')}
-                                                                    className={`flex-1 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer ${
-                                                                        readerSettings.textAlign === 'justify' ? 'bg-white dark:bg-stone-800 shadow-2xs font-bold' : 'opacity-70'
-                                                                    }`}
-                                                                >
-                                                                    <AlignJustify size={13} /> Justify
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })()}
+                            {view === 'reader' && (
+                                <ReaderView
+                                    story={story}
+                                    selectedSequence={selectedSequence}
+                                    selectedScene={selectedScene}
+                                    currentReaderSceneItem={currentReaderSceneItem}
+                                    flatStoryScenes={flatStoryScenes}
+                                    currentFlatSceneIndex={currentFlatSceneIndex}
+                                    readerSettings={readerSettings}
+                                    updateReaderSetting={updateReaderSetting}
+                                    readerPageIndex={readerPageIndex}
+                                    readerTotalPages={readerTotalPages}
+                                    readerContainerWidth={readerContainerWidth}
+                                    readingProgress={readingProgress}
+                                    saveReadingProgress={saveReadingProgress}
+                                    isReaderHudVisible={isReaderHudVisible}
+                                    toggleReaderHud={toggleReaderHud}
+                                    resetReaderHudTimer={resetReaderHudTimer}
+                                    isTocOpen={isTocOpen}
+                                    setIsTocOpen={setIsTocOpen}
+                                    isAppearanceOpen={isAppearanceOpen}
+                                    setIsAppearanceOpen={setIsAppearanceOpen}
+                                    tocSearchQuery={tocSearchQuery}
+                                    setTocSearchQuery={setTocSearchQuery}
+                                    isFullscreen={isFullscreen}
+                                    toggleFullscreen={toggleFullscreen}
+                                    pageSlideDirection={pageSlideDirection}
+                                    isSceneTransitioning={isSceneTransitioning}
+                                    readerColumnsContainerRef={readerColumnsContainerRef}
+                                    readerScrollContainerRef={readerScrollContainerRef}
+                                    handleReaderTouchStart={handleReaderTouchStart}
+                                    handleReaderTouchEnd={handleReaderTouchEnd}
+                                    turnReaderPage={turnReaderPage}
+                                    jumpToReaderScene={jumpToReaderScene}
+                                    goToNextReaderScene={goToNextReaderScene}
+                                    setView={setView}
+                                />
+                            )}
 
                             {view === 'setup' && (
                                 <div className="max-w-xl mx-auto py-16 text-center animate-fade-in">
