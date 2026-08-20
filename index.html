@@ -35,7 +35,51 @@
     <script src="https://cdn.tailwindcss.com/3.4.16"></script>
     <script>
         tailwind.config = {
-            darkMode: 'class'
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    /* Semantic color tokens backed by the CSS custom properties defined in
+                       :root / .dark in the stylesheet below. Classes like bg-surface,
+                       text-ink-900, and border-edge resolve per-theme through the cascade,
+                       so views migrated to them need no entries in the `.dark ... !important`
+                       override block. Values are keyed to reproduce exactly what the legacy
+                       utilities + overrides render today. */
+                    colors: {
+                        void: 'var(--bg-void)',
+                        surface: 'var(--bg-surface)',
+                        'surface-elevated': 'var(--bg-surface-elevated)',
+                        'surface-active': 'var(--bg-surface-active)',
+                        'surface-subtle': 'var(--bg-surface-subtle)',
+                        sidebar: 'var(--bg-sidebar)',
+                        inset: 'var(--bg-inset)',
+                        edge: 'var(--border-subtle)',
+                        'edge-strong': 'var(--edge-strong)',
+                        'edge-highlight': 'var(--border-highlight)',
+                        gold: 'rgb(var(--accent-gold-rgb) / <alpha-value>)',
+                        'gold-ink': 'var(--gold-ink)',
+                        sage: 'var(--accent-emerald)',
+                        ink: {
+                            DEFAULT: 'var(--text-primary)',
+                            900: 'var(--ink-900)',
+                            800: 'var(--ink-800)',
+                            700: 'var(--ink-700)',
+                            600: 'var(--ink-600)',
+                            500: 'var(--ink-500)',
+                            400: 'var(--ink-400)',
+                        },
+                        btn: {
+                            DEFAULT: 'var(--btn-bg)',
+                            hover: 'var(--btn-bg-hover)',
+                            ink: 'var(--btn-ink)',
+                        },
+                        positive: {
+                            tint: 'var(--positive-tint)',
+                            edge: 'var(--positive-edge)',
+                            ink: 'var(--positive-ink)',
+                        },
+                    }
+                }
+            }
         }
     </script>
 
@@ -97,6 +141,28 @@
             --text-muted: #8A847C;            /* Stone-400 / Subdued stone */
             --text-subtle: #A8A29E;
 
+            /* Semantic token backing for the tailwind.config colors. Light values reproduce
+               the exact utilities they replace (stone text ramp, #FAF8F5 inset panels, the
+               primary button, the emerald "positive" badge); dark values reproduce what the
+               `.dark ... !important` override block renders for those same utilities, so
+               migrated views keep byte-identical colors in both themes. */
+            --bg-inset: #FAF8F5;
+            --edge-strong: #E7E5E4;
+            --accent-gold-rgb: 184 147 90;    /* --accent-gold as an R G B triplet for /opacity */
+            --gold-ink: #8C6B32;
+            --ink-900: #1C1917;
+            --ink-800: #292524;
+            --ink-700: #44403C;
+            --ink-600: #57534E;
+            --ink-500: #78716C;
+            --ink-400: #A8A29E;
+            --btn-bg: #1C1917;
+            --btn-bg-hover: #292524;
+            --btn-ink: #FFFFFF;
+            --positive-tint: #ECFDF5;
+            --positive-edge: #A7F3D0;
+            --positive-ink: #065F46;
+
             /* Apple / Emil Kowalski Precision Motion Easings */
             --ease-snappy: cubic-bezier(0.23, 1, 0.32, 1);
             --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
@@ -133,6 +199,25 @@
             --text-secondary: #A8A29E;        /* Warm light gray (Stone-400) */
             --text-muted: #78716C;            /* Muted stone */
             --text-subtle: #57534E;
+
+            /* Semantic token backing — dark values mirror the `.dark ... !important`
+               override block for the utilities these tokens replace. */
+            --bg-inset: #18181C;
+            --edge-strong: rgba(255, 255, 255, 0.08);
+            --accent-gold-rgb: 201 169 110;
+            --gold-ink: #D8B47A;
+            --ink-900: #FDFBFA;
+            --ink-800: #F0ECE4;
+            --ink-700: #DDD7CD;
+            --ink-600: #C5BEB3;
+            --ink-500: #ABA498;
+            --ink-400: #A0998D;
+            --btn-bg: #F5F0E8;
+            --btn-bg-hover: #FFFFFF;
+            --btn-ink: #141416;
+            --positive-tint: rgba(91, 138, 114, 0.18);
+            --positive-edge: rgba(91, 138, 114, 0.4);
+            --positive-ink: #A7F3D0;
         }
 
         * {
@@ -21343,22 +21428,22 @@ ${currentLoreList}
 
                             {view === 'inspector' && (
                                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-                                    <h2 className="text-2xl sm:text-3xl font-serif font-bold text-stone-900 mb-6 flex items-center gap-2.5">
-                                        <Search className="text-[#8C6B32]" /> RAG Inspector
+                                    <h2 className="text-2xl sm:text-3xl font-serif font-bold text-ink-900 mb-6 flex items-center gap-2.5">
+                                        <Search className="text-gold-ink" /> RAG Inspector
                                     </h2>
 
                                     {/* Test Input */}
-                                    <div className="bg-white p-6 sm:p-7 rounded-2xl border border-black/[0.07] shadow-sm">
-                                        <label className="block text-xs font-bold uppercase tracking-wider text-stone-500 mb-2 font-mono">Test Query</label>
+                                    <div className="bg-surface p-6 sm:p-7 rounded-2xl border border-edge shadow-sm">
+                                        <label className="block text-xs font-bold uppercase tracking-wider text-ink-500 mb-2 font-mono">Test Query</label>
                                         <div className="flex gap-2">
                                             <input
-                                                className="flex-1 bg-[#FAF8F5] border border-stone-200 rounded-xl px-4 py-2 text-xs text-stone-800 focus:border-[#B8935A] focus:ring-1 focus:ring-[#B8935A]/30 outline-none transition-colors"
+                                                className="flex-1 bg-inset border border-edge-strong rounded-xl px-4 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors"
                                                 placeholder="e.g., 'What acts of magic are illegal?'"
                                                 value={ragTestQuery}
                                                 onChange={e => setRagTestQuery(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && handleRagTest()}
                                             />
-                                            <button onClick={handleRagTest} disabled={ragTestLoading} className="bg-[#1C1917] hover:bg-[#292524] text-white px-6 py-2 rounded-xl font-bold text-xs shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
+                                            <button onClick={handleRagTest} disabled={ragTestLoading} className="bg-btn hover:bg-btn-hover text-btn-ink px-6 py-2 rounded-xl font-bold text-xs shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
                                                 {ragTestLoading ? <Loader2 className="animate-spin" size={14} /> : 'Search'}
                                             </button>
                                         </div>
@@ -21366,34 +21451,34 @@ ${currentLoreList}
 
                                     {/* World Primer Status */}
                                     {worldPrimer && (
-                                        <div className="bg-[#FAF8F5] border border-stone-200 p-5 rounded-2xl space-y-2">
-                                            <h3 className="text-xs font-bold text-stone-800 uppercase mb-2 flex items-center gap-2 font-mono"><Book size={14} className="text-[#8C6B32]" /> Active World Primer</h3>
-                                            <div className="text-xs text-stone-700 max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed font-serif">{worldPrimer}</div>
+                                        <div className="bg-inset border border-edge-strong p-5 rounded-2xl space-y-2">
+                                            <h3 className="text-xs font-bold text-ink-800 uppercase mb-2 flex items-center gap-2 font-mono"><Book size={14} className="text-gold-ink" /> Active World Primer</h3>
+                                            <div className="text-xs text-ink-700 max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed font-serif">{worldPrimer}</div>
                                         </div>
                                     )}
 
                                     {/* Results */}
                                     <div className="space-y-4">
-                                        <h3 className="text-xs font-bold text-stone-400 uppercase tracking-wider font-mono">Retrieval Results</h3>
+                                        <h3 className="text-xs font-bold text-ink-400 uppercase tracking-wider font-mono">Retrieval Results</h3>
                                         {ragTestResults.length === 0 ? (
-                                            <div className="text-center text-stone-400 italic py-12 bg-white rounded-2xl border border-black/[0.07] shadow-sm">
+                                            <div className="text-center text-ink-400 italic py-12 bg-surface rounded-2xl border border-edge shadow-sm">
                                                 Run a search to inspect vector matches.
                                             </div>
                                         ) : (
                                             ragTestResults.map((res, i) => (
-                                                <div key={i} className="bg-white rounded-2xl border border-black/[0.07] p-5 shadow-sm space-y-3">
+                                                <div key={i} className="bg-surface rounded-2xl border border-edge p-5 shadow-sm space-y-3">
                                                     <div className="flex justify-between items-start">
-                                                        <div className="text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full font-mono">
+                                                        <div className="text-xs font-bold text-positive-ink bg-positive-tint border border-positive-edge px-2.5 py-0.5 rounded-full font-mono">
                                                             Score: {(res.score * 100).toFixed(1)}%
                                                         </div>
-                                                        <div className="text-xs text-stone-500 font-mono">
+                                                        <div className="text-xs text-ink-500 font-mono">
                                                             Topic: {res.metadata.topic}
                                                         </div>
                                                     </div>
-                                                    <p className="text-stone-800 text-xs leading-relaxed font-serif">{res.text}</p>
+                                                    <p className="text-ink-800 text-xs leading-relaxed font-serif">{res.text}</p>
 
                                                     {/* Metadata Debug */}
-                                                    <div className="text-[10px] text-stone-500 font-mono bg-[#FAF8F5] p-2.5 rounded-xl border border-stone-200">
+                                                    <div className="text-[10px] text-ink-500 font-mono bg-inset p-2.5 rounded-xl border border-edge-strong">
                                                         {JSON.stringify(res.metadata)}
                                                     </div>
                                                 </div>
