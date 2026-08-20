@@ -2635,6 +2635,39 @@
         // standalone generateStoryArc regeneration path, which previously carried its own
         // YAML parser against the XML-demanding system prompt.
         const parseStoryArcXml = (text) => {
+            // Leniency fallback: if the model ignored the XML directive and answered in the
+            // pre-1.7 YAML schema, recover through the YAML/salvage path instead of silently
+            // returning empty fields (which the callers would mask with prior story values).
+            if (!/<(response|global_arc|character_arcs|narrative_threads)>/i.test(text || "")) {
+                let parsed = null;
+                try { parsed = parseYaml(text); } catch (e) { /* fall through to salvage */ }
+                if (!parsed || typeof parsed !== 'object') parsed = salvageStoryArc(text) || null;
+                if (parsed && typeof parsed === 'object') {
+                    const yamlArc = parsed.global_arc || parsed || {};
+                    const rawCharArcs = parsed.character_arcs || yamlArc.character_arcs || [];
+                    const rawThreads = parsed.narrative_threads || parsed.threads || yamlArc.narrative_threads || [];
+                    return {
+                        starting_value_state: yamlArc.starting_value_state || parsed.starting_value_state || "",
+                        ending_value_state: yamlArc.ending_value_state || parsed.ending_value_state || "",
+                        major_surprises_and_twists: yamlArc.major_surprises_and_twists || parsed.major_surprises_and_twists || "",
+                        core_thematic_argument: yamlArc.core_thematic_argument || parsed.core_thematic_argument || "",
+                        inciting_incident: yamlArc.inciting_incident || parsed.inciting_incident || "",
+                        character_arcs: (Array.isArray(rawCharArcs) ? rawCharArcs : []).map((ca, idx) => ({
+                            char_id: ca.char_id || ca.id || ca.character_id || `C${idx + 1}`,
+                            description: ca.arc_description || ca.description || `${ca.lie_believed || ''} -> ${ca.truth_needed || ''}`,
+                            lie_believed: ca.lie_believed || ca.lie || "",
+                            truth_needed: ca.truth_needed || ca.truth || "",
+                            arc_catalyst: ca.arc_catalyst || ca.catalyst || ""
+                        })),
+                        threads: (Array.isArray(rawThreads) ? rawThreads : []).map((t, idx) => ({
+                            id: t.thread_id || t.id || `T${idx + 1}`,
+                            name: t.name || t.title || `Thread ${idx + 1}`,
+                            description: t.description || t.summary || ""
+                        }))
+                    };
+                }
+            }
+
             const globalArcMatch = /<global_arc>([\s\S]*?)<\/global_arc>/i.exec(text);
             const globalArc = globalArcMatch ? globalArcMatch[1] : text;
 
@@ -9162,39 +9195,6 @@ Output Schema:
         */
 
         // Static defaults hoisted out of EllipsisProsef - they were re-declared on every render.
-        const STORY_STARTER_TEMPLATES = [
-            {
-                id: "cyberpunk_noir",
-                title: "Neon Rain & Synthetic Souls",
-                genre: "Cyberpunk / Tech-Noir",
-                mood: "Gritty, melancholic, suspenseful",
-                themes: "Identity, corporate hegemony, memory as currency",
-                concept: "In the rain-drenched megalopolis of New Kyoto, an unlicensed neuro-archivist discovers a murdered corporate heir whose memories have been surgically replaced with encrypted state secrets.",
-                status_quo: "Neuro-archivist Ren struggles to keep their subterranean memory clinic afloat amidst strict corporate sweeps.",
-                inciting_incident: "A dying syndicate courier leaves behind a black-market neuro-drive containing the fragmented soul of the Megacorp's lead architect."
-            },
-            {
-                id: "gothic_mystery",
-                title: "The Whispering Manor of Blackwood",
-                genre: "Gothic Mystery / Psychological",
-                mood: "Atmospheric, claustrophobic, eerie",
-                themes: "Obsession, ancestral guilt, perception of sanity",
-                concept: "An antique restorer travels to a secluded coastal estate to catalog the library of a reclusive occultist, only to find the architectural blueprints shift with each chiming of the grandfather clock.",
-                status_quo: "Evelyn travels to the foggy cliffs of Blackwood Point to appraise rare manuscripts for a hefty commission.",
-                inciting_incident: "She unlocks a hidden door behind a bookcase that leads to a wing that does not exist on any blueprint of the estate."
-            },
-            {
-                id: "epic_space_fantasy",
-                title: "The Crown of Shattered Stars",
-                genre: "Epic Space Fantasy",
-                mood: "Grand, mythical, perilous",
-                themes: "Duty vs freedom, legacy of forgotten civilizations, destiny",
-                concept: "When the Celestial Beacon of the Core Worlds flickers and dies, an outcast star-navigator and a deposed astral prince must traverse forbidden rift sectors to reignite the primary stellar forge before an ancient void entity awakens.",
-                status_quo: "Navigator Kael charts hazardous trade lanes on the galaxy's edge, avoiding imperial bounty hunters.",
-                inciting_incident: "The Core Star collapses into a dark-matter anomaly, sending psychic shockwaves across navigators across the arm."
-            }
-        ];
-
         const DEFAULT_BANNED_PHRASES = [
             "Shivers down her spine",
             "sternum",
@@ -9742,8 +9742,6 @@ Output Schema:
                     showToast("Export failed: " + e.message, "error");
                 }
             };
-
-            // Starter Template Presets
 
             // Settings State
             const [apiProvider, setApiProvider] = useState(() => localStorage.getItem("ellipsisprose_api_provider") || 'gemini');
