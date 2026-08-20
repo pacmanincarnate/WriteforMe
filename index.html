@@ -14283,7 +14283,11 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                             valid_from_act: mergedMetadata.valid_from_act,
                             valid_from_scene: mergedMetadata.valid_from_scene,
                             related_to: mergedMetadata.related_to,
-                            is_merged: true
+                            is_merged: true,
+                            // The store row we merged into keeps its id but takes item.topic, so
+                            // batch callers need the target's PRE-merge topic to find (and replace)
+                            // the list entry that row came from.
+                            merged_from_topic: redundancy.metadata?.topic
                         };
                     } else {
                         // TIER 3: NEW LORE ENTRY (score < 0.85)
@@ -14317,9 +14321,17 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                     if (!processed.is_merged) {
                         processedList.push(processed);
                     } else {
-                        // If merged, we update the existing item in the processedList
-                        const idx = processedList.findIndex(p => p.topic === processed.topic);
-                        if (idx !== -1) processedList[idx] = processed;
+                        // A merge replaces the target row's topic with the new item's topic, so
+                        // match the list entry by the target's pre-merge topic as well as the new
+                        // topic (first list match wins). If the merge target came from outside
+                        // this batch (additive ingestion), keep the entry rather than drop it —
+                        // callers persist processedList as story.lore.
+                        const idx = processedList.findIndex(p => p.topic === processed.merged_from_topic || p.topic === processed.topic);
+                        if (idx !== -1) {
+                            processedList[idx] = processed;
+                        } else {
+                            processedList.push(processed);
+                        }
                     }
                 }
                 setRagStatus("ready");
@@ -14650,9 +14662,16 @@ ${payload}
                 if (processedLoreStart && processedLoreStart.length > 0) {
                     processedLoreStart.forEach(pItem => {
                         if (pItem.is_merged) {
-                            const idx = newLore.findIndex(l => l.topic === pItem.topic);
+                            // A merge retitles the target store row to pItem.topic, so match the
+                            // list entry by the target's pre-merge topic as well (first list match
+                            // wins), and never drop the merged content — a later clearExisting
+                            // rebuild from story.lore would otherwise lose it. Spread pItem so the
+                            // merged detail, validity window, and related_to all land in the entry.
+                            const idx = newLore.findIndex(l => l.topic === pItem.merged_from_topic || l.topic === pItem.topic);
                             if (idx !== -1) {
-                                newLore[idx] = { ...newLore[idx], detail: pItem.detail };
+                                newLore[idx] = { ...newLore[idx], ...pItem };
+                            } else {
+                                newLore.push(pItem);
                             }
                         } else {
                             if (!newLore.find(l => l.topic === pItem.topic)) {
