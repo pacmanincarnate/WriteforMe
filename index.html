@@ -4910,6 +4910,10 @@
     <id>REFLECTION</id>
     <context>The aftermath of an event, processing grief, trauma, or complex emotions internally.</context>
   </mode>
+  <mode>
+    <id>RELATIONAL</id>
+    <context>Non-romantic dialogue sequences deepening platonic, familial, or allied bonds; revealing backstory.</context>
+  </mode>
 </narrative_modes>`;
 
         // ===
@@ -12568,6 +12572,7 @@ ${genOutput}
                         initialStoryState.starting_value_state = arcResult.parsedData.starting_value_state || "";
                         initialStoryState.ending_value_state = arcResult.parsedData.ending_value_state || "";
                         initialStoryState.core_thematic_argument = arcResult.parsedData.core_thematic_argument || "";
+                        initialStoryState.major_surprises_and_twists = arcResult.parsedData.major_surprises_and_twists || "";
                         initialStoryState.character_arcs = arcResult.parsedData.character_arcs || [];
                         initialStoryState.inciting_incident = arcResult.parsedData.inciting_incident || "To be wove in Acts";
                         if (arcResult.parsedData.threads && arcResult.parsedData.threads.length > 0) {
@@ -12767,6 +12772,7 @@ BEGIN STORY ARC CRITIQUE REVIEW
                         starting_value_state: arcResult.parsedData.starting_value_state || storyToUse.starting_value_state || "",
                         ending_value_state: arcResult.parsedData.ending_value_state || storyToUse.ending_value_state || "",
                         core_thematic_argument: arcResult.parsedData.core_thematic_argument || storyToUse.core_thematic_argument || "",
+                        major_surprises_and_twists: arcResult.parsedData.major_surprises_and_twists || storyToUse.major_surprises_and_twists || "",
                         character_arcs: arcResult.parsedData.character_arcs || storyToUse.character_arcs || [],
                         inciting_incident: arcResult.parsedData.inciting_incident || storyToUse.inciting_incident || "To be wove in Acts",
                         threads: (arcResult.parsedData.threads && arcResult.parsedData.threads.length > 0) ? arcResult.parsedData.threads : storyToUse.threads
@@ -17617,7 +17623,7 @@ ${currentLoreList}
                                 </div>
                                 <div>
                                     <h2 className="font-bold text-sm text-stone-900 tracking-tight flex items-center gap-1.5 font-display">
-                                        EllipsisProse <span className="text-[10px] font-mono font-bold bg-stone-200/80 text-stone-700 px-1.5 py-0.2 rounded-full">1.5</span>
+                                        EllipsisProse <span className="text-[10px] font-mono font-bold bg-stone-200/80 text-stone-700 px-1.5 py-0.2 rounded-full">1.7</span>
                                     </h2>
                                     <p className="text-[10px] text-stone-500 font-medium">AI Story Architect & Studio</p>
                                 </div>
