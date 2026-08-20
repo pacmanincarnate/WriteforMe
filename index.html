@@ -2623,6 +2623,68 @@
             return matches.map(m => decodeXmlEntities(m[1].trim()));
         };
 
+        // Contents of every <childTag> inside the first <parentTag> block - the list convention
+        // used by the XML pipeline schemas (was previously re-implemented inside each parserFn).
+        const extractTagList = (text, parentTag, childTag) => {
+            if (!text) return [];
+            const pMatch = new RegExp(`<${parentTag}>(.*?)</${parentTag}>`, 'si').exec(text);
+            return pMatch ? extractAllTags(pMatch[1], childTag) : [];
+        };
+
+        // Parses the Story Arc agent's XML response. Shared by initStory (Tier 1.1) and the
+        // standalone generateStoryArc regeneration path, which previously carried its own
+        // YAML parser against the XML-demanding system prompt.
+        const parseStoryArcXml = (text) => {
+            const globalArcMatch = /<global_arc>([\s\S]*?)<\/global_arc>/i.exec(text);
+            const globalArc = globalArcMatch ? globalArcMatch[1] : text;
+
+            const charArcs = [];
+            const charArcsMatch = /<character_arcs>([\s\S]*?)<\/character_arcs>/i.exec(text);
+            if (charArcsMatch) {
+                const arcRegex = /<arc>([\s\S]*?)<\/arc>/gi;
+                let match;
+                let idx = 0;
+                while ((match = arcRegex.exec(charArcsMatch[1])) !== null) {
+                    const arcXML = match[1];
+                    charArcs.push({
+                        char_id: extractTag(arcXML, 'char_id') || `C${idx + 1}`,
+                        description: extractTag(arcXML, 'arc_description'),
+                        lie_believed: extractTag(arcXML, 'lie_believed'),
+                        truth_needed: extractTag(arcXML, 'truth_needed'),
+                        arc_catalyst: extractTag(arcXML, 'arc_catalyst')
+                    });
+                    idx++;
+                }
+            }
+
+            const threads = [];
+            const threadsMatch = /<narrative_threads>([\s\S]*?)<\/narrative_threads>/i.exec(text);
+            if (threadsMatch) {
+                const threadRegex = /<thread>([\s\S]*?)<\/thread>/gi;
+                let match;
+                let idx = 0;
+                while ((match = threadRegex.exec(threadsMatch[1])) !== null) {
+                    const threadXML = match[1];
+                    threads.push({
+                        id: extractTag(threadXML, 'thread_id') || `T${idx + 1}`,
+                        name: extractTag(threadXML, 'name') || `Thread ${idx + 1}`,
+                        description: extractTag(threadXML, 'description')
+                    });
+                    idx++;
+                }
+            }
+
+            return {
+                starting_value_state: extractTag(globalArc, 'starting_value_state'),
+                ending_value_state: extractTag(globalArc, 'ending_value_state'),
+                major_surprises_and_twists: extractTag(globalArc, 'major_surprises_and_twists'),
+                core_thematic_argument: extractTag(globalArc, 'core_thematic_argument'),
+                inciting_incident: extractTag(globalArc, 'inciting_incident'),
+                character_arcs: charArcs,
+                threads: threads
+            };
+        };
+
         // Replace the FIRST occurrence of a literal needle: exact match first, then a trimmed
         // fallback (which also trims the replacement). The replacement is inserted via function
         // form so $-patterns in model-authored text stay inert; empty needles are a no-op.
@@ -2633,15 +2695,17 @@
             return text;
         };
 
+        // Strip one trailing newline (YAML block scalars append one that is never part of the
+        // searched prose). Shared by the edit appliers below.
+        const chomp = (str) => {
+            if (typeof str !== 'string') return str;
+            if (str.endsWith('\r\n')) return str.slice(0, -2);
+            if (str.endsWith('\n')) return str.slice(0, -1);
+            return str;
+        };
+
         const applySearchAndReplaceBlocks = (originalText, text) => {
             if (!text) return originalText;
-
-            const chomp = (str) => {
-                if (typeof str !== 'string') return str;
-                if (str.endsWith('\r\n')) return str.slice(0, -2);
-                if (str.endsWith('\n')) return str.slice(0, -1);
-                return str;
-            };
 
             if (text.includes("edits:") || !text.includes("<search_replace>")) {
                 try {
@@ -3129,13 +3193,6 @@
             let updatedText = originalText;
             if (!Array.isArray(edits)) return updatedText;
 
-            const chomp = (str) => {
-                if (typeof str !== 'string') return str;
-                if (str.endsWith('\r\n')) return str.slice(0, -2);
-                if (str.endsWith('\n')) return str.slice(0, -1);
-                return str;
-            };
-            
             // 1. Process rewrite_passage blocks
             const rewrites = edits.filter(e => e.type === 'rewrite_passage');
             for (const edit of rewrites) {
@@ -4134,6 +4191,40 @@
         // Takes the 1-based sequence number; sequences beyond the 8-sequence model default to Act 3.
         const actForSequence = (seqNumber) => SEQUENCE_ACT_MAP[seqNumber - 1] || 3;
 
+        // Legacy 'Valence Shift' / 'Emotional Arc' ledger entries are pruned everywhere the
+        // continuity ledger is consumed; one predicate replaces the same four-clause filter
+        // that was previously inlined at every site.
+        const isLegacyValenceEntry = (e) => !!e && (
+            e.category === "Valence Shift" || e.category === "Emotional Arc" ||
+            String(e.key || '').startsWith('Valence (') ||
+            String(e.key || '').startsWith('Scene Emotional Trajectory')
+        );
+
+        // 225wpm reading-speed estimate shared by the reader HUD, table of contents, and writer view.
+        const countWords = (text) => {
+            const t = (text || "").trim();
+            return t ? t.split(/\s+/).length : 0;
+        };
+        const readingMinutes = (words) => Math.max(1, Math.round(words / 225));
+
+        // Split an imported lore document into 2000-char RAG-ingestible entries.
+        // Shared by the setup-screen and post-generation lore importers.
+        const chunkLoreText = (text, topicForPart, relatedTo, description) => {
+            const chunkSize = 2000;
+            const chunks = [];
+            for (let i = 0; i < text.length; i += chunkSize) {
+                chunks.push({
+                    topic: topicForPart(Math.floor(i / chunkSize) + 1),
+                    detail: text.substring(i, i + chunkSize).trim(),
+                    valid_from_act: 1,
+                    valid_from_scene: 1,
+                    related_to: relatedTo,
+                    description: description
+                });
+            }
+            return chunks;
+        };
+
         function normalizeSequences(rawSequences) {
             if (!rawSequences || !Array.isArray(rawSequences) || rawSequences.length === 0) {
                 return [];
@@ -4344,11 +4435,7 @@
             };
 
             // Filter out any legacy or incoming valence shifts / emotional arcs
-            const existingLedger = (storyState.continuity_ledger || []).filter(e => 
-                e && e.category !== "Valence Shift" && e.category !== "Emotional Arc" &&
-                !String(e.key || '').startsWith('Valence (') &&
-                !String(e.key || '').startsWith('Scene Emotional Trajectory')
-            );
+            const existingLedger = (storyState.continuity_ledger || []).filter(e => e && !isLegacyValenceEntry(e));
             const newEntries = [];
 
             // 1. Ingest structured Hard Facts (Appearance, Object, Place, Opinion, Agreement, Lore)
@@ -4468,11 +4555,9 @@
         function formatContinuityLedgerForPrompt(storyState = {}, targetScope = null) {
             const ledger = storyState.continuity_ledger || [];
             if (!Array.isArray(ledger) || ledger.length === 0) return "No active continuity items.";
-            const activeEntries = ledger.filter(e => 
-                e && e.status !== "resolved" && 
-                e.category !== "Valence Shift" && e.category !== "Emotional Arc" &&
-                !String(e.key || '').startsWith('Valence (') &&
-                !String(e.key || '').startsWith('Scene Emotional Trajectory') &&
+            const activeEntries = ledger.filter(e =>
+                e && e.status !== "resolved" &&
+                !isLegacyValenceEntry(e) &&
                 isFactKnownAt(e, targetScope, storyState)
             );
             if (activeEntries.length === 0) return "No active continuity items.";
@@ -4490,11 +4575,9 @@
         function getContinuityContext(storyState = {}, targetScope = null) {
             const ledger = storyState.continuity_ledger || [];
             if (!Array.isArray(ledger) || ledger.length === 0) return "";
-            const activeEntries = ledger.filter(e => 
+            const activeEntries = ledger.filter(e =>
                 e && (e.status === "active" || !e.status) &&
-                e.category !== "Valence Shift" && e.category !== "Emotional Arc" &&
-                !String(e.key || '').startsWith('Valence (') &&
-                !String(e.key || '').startsWith('Scene Emotional Trajectory') &&
+                !isLegacyValenceEntry(e) &&
                 isFactKnownAt(e, targetScope, storyState)
             );
             if (activeEntries.length === 0) return "";
@@ -9141,6 +9224,58 @@ Output Schema:
             readingMode: "paginated"
         };
 
+        // The 20-step pipeline flowchart cards and the inspector spec live side by side so a
+        // tier change edits one place; both were previously inline in the Pipeline view render
+        // (the card table was rebuilt once per phase per render).
+        const PIPELINE_STEPS = [
+            { id: 1, tier: "Tier 0.1", title: "Conceptual Development Agent", icon: Sparkles, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "User raw outline text, style/genre guides, tone parameters, lore context.", gate: "YAML/XML structure parsed correctly" },
+            { id: 2, tier: "Tier 0.2", title: "Character Developer (Interviews)", icon: Users, iconColor: "text-purple-600", badge: "large-model", inputs: "World bible context, active character briefs (name, role, flaw, desire).", gate: "Dossiers generated for cast briefs" },
+            { id: 3, tier: "Tier 1.1", title: "Story Arc Agent", icon: GitBranch, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "World bible details, style guides, cast voice files, flaws/desires.", gate: "Valid YAML/XML story arc structure" },
+            { id: 4, tier: "Tier 1.2", title: "Story Arc Reviewer", icon: ShieldCheck, iconColor: "text-amber-600", badge: "small-model", inputs: "Raw concept outlines, world bible, generated Story Arc plan.", gate: "Reviewer status == 'PASS'" },
+
+            { id: 5, tier: "Tier 2.1", title: "Act Planner (Act Agent)", icon: Layers, iconColor: "text-purple-600", badge: "small-model", inputs: "Core narrative concept, theme milestones, character list, twists.", gate: ">= 3 Acts planned with descriptions" },
+            { id: 6, tier: "Tier 2.2", title: "Act Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Generated Act outlines array, major twists, inciting incidents.", gate: "Reviewer status == 'PASS'" },
+            { id: 7, tier: "RAG Archiving", title: "World Lore Archivist", icon: Globe, iconColor: "text-emerald-600", badge: "prog", inputs: "World bible text, character dossiers, lore notes.", gate: "Vector store indexing complete" },
+            { id: 8, tier: "Tier 2.3", title: "Pacing Architect", icon: Sliders, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "Act outline mandates and narrative density targets.", gate: "Pacing map ranges established" },
+
+            { id: 9, tier: "Tier 3.1", title: "Sequence Planner (Sequence Agent)", icon: Book, iconColor: "text-[#8C6B32]", badge: "small-model", inputs: "Detailed Act mandates, cast dossiers, story guidelines.", gate: "8 Sequences generated (2-4-2 distribution)" },
+            { id: 10, tier: "Tier 3.2", title: "Sequence Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Newly generated sequence plans list, parent Act objectives.", gate: "Reviewer status == 'PASS'" },
+            { id: 11, tier: "Tier 4.1", title: "Scene Roster Agent", icon: Film, iconColor: "text-stone-700", badge: "small-model", inputs: "Sequence outline schema, cast dossiers, world bible rules.", gate: ">= 4 Scenes generated per Sequence" },
+            { id: 12, tier: "Tier 4.2", title: "Scene Roster Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Generated lean scene roster, parent sequence objectives.", gate: "Reviewer status == 'PASS'" },
+            { id: 13, tier: "Tier 4.3", title: "Scene Expander Agent", icon: ListPlus, iconColor: "text-[#8C6B32]", badge: "small-model", inputs: "Lean scene row, adjacent scene context.", gate: "Rich description blueprint generated" },
+            { id: 14, tier: "Tier 4.4", title: "Scene Expander Reviewer", icon: ShieldCheck, iconColor: "text-amber-600", badge: "small-model", inputs: "List of expanded scenes.", gate: "Continuity validated" },
+            { id: 15, tier: "Tier 5.1", title: "Beat Planner (Beat Agent)", icon: Sparkles, iconColor: "text-purple-600", badge: "small-model", inputs: "Scene directives, cast dossiers, relationship ledger.", gate: ">= 3 Beats generated per Scene" },
+            { id: 16, tier: "Tier 5.2", title: "Beat Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Newly generated beats choreography plan, scene parameters.", gate: "Reviewer status == 'PASS'" },
+
+            { id: 17, tier: "RAG Preprocess", title: "Query Expansion & RAG Retriever", icon: Search, iconColor: "text-stone-700", badge: "small-model", inputs: "Raw beat description text, active cast list, scene location.", gate: "RAG context facts retrieved" },
+            { id: 18, tier: "Tier 5.3", title: "Writing Agent (Prose Generator)", icon: Feather, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "Scene beat sequence, cast cards, RAG lore details, style guides.", gate: "Passes prose length guidelines" },
+            { id: 19, tier: "Validation", title: "Continuity Reviewer & Surgical Editor", icon: ShieldCheck, iconColor: "text-amber-600", badge: "small-model", inputs: "Scene beat sequence, newly generated full scene prose draft.", gate: "Reviewer status == 'PASS' or patch applies" },
+            { id: 20, tier: "Post-Process", title: "Archivist (End of Scene)", icon: Save, iconColor: "text-emerald-600", badge: "large-model", inputs: "Concatenated text of all beats in scene, current cast profiles.", gate: "JSON registry parsed & state updated" }
+        ];
+
+        const PIPELINE_STEP_SPEC = {
+            1: { title: "Conceptual Development Agent", function: "initStory() - Tier 0.1", model: "Large Model Target (Dual-Model Settings)", inputs: "User raw outline text, style/genre guides, tone parameters, lore context.", output: "YAML object detailing core genre class, style guidelines, atmosphere guidelines, world bible status quo, and initial character briefs.", gate: "YAML or XML tags parse correctly, returning string blocks for genre, style, and world bible.", retries: "Direct UI correction loops. No automated cascading deletions above this stage.", constraints: "Cultivate core concept to logical extremes. Define status quo, inciting incident, and core thematic arguments." },
+            2: { title: "Character Developer (Interviews)", function: "initStory() - Tier 0.2", model: "Large Model Target (Sequential Loop)", inputs: "World bible context, active character brief (name, role, flaw, desire), and narrative tone guidelines.", output: "First-person narrative interview context, voice samples, and psychological dossiers.", gate: "A text interview block is successfully generated for every single character profile brief in the cast list.", retries: "Retries profile generation on failure. Aborts initialization if permanent API error occurs.", constraints: "Must produce 300-600 word 1st-person monologues spoken directly by the character." },
+            3: { title: "Story Arc Agent", function: "initStory() - Tier 1.1", model: "Large Model Target", inputs: "World bible, genre classification, style parameters, tone guidelines, character casts with flaws/desires.", output: "XML schema detailing starting and ending value states (inciting incident), character arcs, twists, and narrative threads.", gate: "Story Arc details parsed as valid XML structure. Maps character arcs and narrative threads.", retries: "Retries the Story Arc planner up to 3 times on reviewer FAIL status.", constraints: "Specify concrete Lie, Truth, and Catalyst for character arcs." },
+            4: { title: "Story Arc Reviewer", function: "runAgentWithEscalation() - Tier 1.2", model: "Small Model (Escalates to Large on Attempt 3)", inputs: "Story concept, world bible, generated Story Arc plan.", output: "XML status report: PASS or FAIL along with critiques/reasons.", gate: "Reviewer status == 'PASS'", retries: "Fails trigger a retry of Step 3 (Story Arc Agent), feeding the critique reasons as prompts.", constraints: "Strict audit of thematic arguments, thread tracking, and logical reversals." },
+            5: { title: "Act Planner (Act Agent)", function: "runAgentWithEscalation() - Tier 2.1", model: "Small Model Target (Escalates to Large)", inputs: "Story concept, theme milestones, character profiles list, and structural boundaries.", output: "XML list representing Acts: number, title, description, milestones, and knots.", gate: "Passes Programmatic Validation: at least 3 acts planned, and every act description has a length >= 50 characters.", retries: "Up to 3 attempts. Downstream failure in Sequence Agent plans triggers a rollback to this step.", constraints: "Map out exact intersections (knots) where multiple threads collide." },
+            6: { title: "Act Reviewer", function: "runAgentWithEscalation() - Tier 2.2", model: "Small Model Target", inputs: "Generated Act outlines, twists and surprises, inciting incidents.", output: "XML listing critique analysis, status (PASS or FAIL), and list of deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL status triggers retry of Step 5 (Act Planner).", constraints: "Validate act developments are earned and logical." },
+            7: { title: "World Lore Archivist", function: "initStory() - Lore RAG Archiving", model: "Vector DB & Graph Manager", inputs: "World bible text, character dossiers, lore notes.", output: "Indexed vector embeddings & entity graph nodes.", gate: "Vector store indexing complete.", retries: "Logs warning on indexing error and continues with raw text fallback.", constraints: "Ensure canon facts are indexed without duplication." },
+            8: { title: "Pacing Architect", function: "initStory() - Tier 2.3", model: "Large Model Target", inputs: "Act outline mandates and narrative density targets.", output: "XML output defining narrative density ranges (scenes per sequence, beats per scene).", gate: "Pacing ranges defined and stored in story state.", retries: "Uses default density ranges if call fails.", constraints: "Balance fast kinetic pacing with legato-staccato rhythm." },
+            9: { title: "Sequence Planner (Sequence Agent)", function: "generateSequences() - Tier 3.1", model: "Small Model Target (Escalates to Large)", inputs: "Detailed Act mandates, cast dossiers, story guidelines.", output: "XML schema detailing 8 Frank Daniel sequences: number, parent_act, title, sequence_function, tactical_question, and ending_hook.", gate: "Passes Programmatic Validation: 8 sequences generated in 2-4-2 distribution.", retries: "Up to 3 attempts. 3 failures trigger cascading rollback to Act Agent (Step 5).", constraints: "Each sequence must define its tactical question and sequence climax." },
+            10: { title: "Sequence Reviewer", function: "generateSequences() - Tier 3.2", model: "Small Model Target", inputs: "Newly generated sequence plans list, parent Act objectives.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 9 up to 3 times, then rolls back to Step 5.", constraints: "Verify Frank Daniel model alignment and tactical question sharpness." },
+            11: { title: "Scene Roster Agent", function: "generateScenes() - Tier 4.1", model: "Small Model Target (Escalates to Large)", inputs: "Sequence outline, active cast lists, target sequence scope, world bible rules.", output: "XML roster of lean scenes: scene_id, title, characters, threads, objective, scene_type, transition_jump, temporal_scope, entrance/exit conditions.", gate: "Passes Programmatic Validation: at least 4 scenes created per Sequence.", retries: "Up to 3 attempts. 3 failures trigger rollback to Sequence Agent (Step 9).", constraints: "Alternate proactive scenes and reactive sequels with explicit transition jumps." },
+            12: { title: "Scene Roster Reviewer", function: "generateScenes() - Tier 4.2", model: "Small Model Target", inputs: "Generated lean scene roster, parent sequence objectives.", output: "XML outlining status (PASS or FAIL) and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 11 up to 3 times, then rolls back to Step 9.", constraints: "Audit Swain Scene/Sequel alternation and causal linkage." },
+            13: { title: "Scene Expander Agent", function: "generateScenes() - Tier 4.3", model: "Small Model Target", inputs: "Lean scene row, adjacent scene context (previous exit / next entrance), narrative mode library.", output: "XML expansion: rich_scene_description blueprint, dominant narrative mode, value shift, hard facts, relationship shifts.", gate: "Rich description blueprint generated.", retries: "Up to 3 attempts via the escalation loop.", constraints: "Blueprint only - no prose or dialogue. Respect adjacent-scene continuity." },
+            14: { title: "Scene Expander Reviewer", function: "generateScenes() - Tier 4.4", model: "Small Model Target", inputs: "Full list of expanded scenes for the sequence.", output: "XML status report: PASS or FAIL with deviation reasons.", gate: "Continuity validated across the expanded scene flow.", retries: "FAIL is logged; scenes are kept (advisory batch review).", constraints: "Check teleportation, state collisions, and clinical tone." },
+            15: { title: "Beat Planner (Beat Agent)", function: "generateBeats() - Tier 5.1", model: "Small Model Target (Escalates to Large)", inputs: "Parent scene directives, character interview profiles, relationship ledger, preceding beats.", output: "XML containing detailed choreography: start entry states, pivot turning points, end exit states, tactical actions.", gate: "Passes Programmatic Validation: at least 3 beats created per Scene.", retries: "Up to 3 attempts. 3 failures trigger rollback to Scene Roster Agent (Step 11).", constraints: "Dialogue subtext planning: surface dialogue vs hidden desires." },
+            16: { title: "Beat Reviewer", function: "generateBeats() - Tier 5.2", model: "Small Model Target", inputs: "Generated beats choreography plan, parent scene description.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 15 up to 3 times, then rolls back to Step 11.", constraints: "Continuity logic gate: check inventory, posture, and physical continuity." },
+            17: { title: "Query Expansion & RAG Context Retriever", function: "retrieveContext()", model: "Small Model Query Preprocessor + Vector Store Search", inputs: "Beat choreography sequence, active cast list, scene location.", output: "Relevant canonical facts, lore notes, character relationships attached to prompt.", gate: "Preprocessed terms and RAG facts returned.", retries: "Falls back to raw action query on search exception.", constraints: "Ensure canonical facts are never contradicted." },
+            18: { title: "Writing Agent (Prose Generator)", function: "writeSceneProse()", model: "Large Model Target", inputs: "Full scene choreography, cast cards, RAG lore details, style guides, preceding prose.", output: "Story text paragraphs (400-600 words per beat). Text-only format.", gate: "Passes prose length and format guidelines.", retries: "Up to 3 attempts. 3 failures trigger rollback to Beat Agent (Step 15).", constraints: "Subtext over text, distinct character voices, terse defensive restraint." },
+            19: { title: "Continuity Reviewer & Surgical Editor", function: "writeSceneProse() Reviewer & Patch", model: "Small Model Reviewer + Large Model Surgical Editor", inputs: "Scene beat sequence, newly generated prose draft, banned words filter.", output: "PASS or FAIL status. If FAIL with minor issues, applies surgical search-replace patch.", gate: "Reviewer status == 'PASS' or surgical edit applies cleanly.", retries: "Critical fail triggers prose rewrite loop (Step 18). Surgical error rolls back to Step 15.", constraints: "Check for posture slips, teleportation, and dialogue bloat." },
+            20: { title: "Archivist (End of Scene)", function: "handleWorldUpdates() / Archivist", model: "Large Model Target (JSON output)", inputs: "Concatenated text of all beats in scene, current cast profiles, lore database topics.", output: "JSON object updating character goals, new lore entries, and relationship shifts.", gate: "JSON output parses successfully and updates state model.", retries: "Regex fallback on JSON parse failure.", constraints: "Assign unique IDs to all new character briefs immediately." }
+        };
+
         function EllipsisProsef() {
             const [activeStoryId, setActiveStoryId] = useState(() => localStorage.getItem("ellipsisprose_active_story_id") || "story_default");
             const [libraryStories, setLibraryStories] = useState([]);
@@ -9723,6 +9858,18 @@ Output Schema:
             });
             const [newBannedPhraseInput, setNewBannedPhraseInput] = useState("");
 
+            const handleAddBannedPhrase = () => {
+                const val = newBannedPhraseInput.trim();
+                if (!val) return;
+                if (bannedPhrases.includes(val)) {
+                    alert("Phrase is already in the list.");
+                } else {
+                    setBannedPhrases([...bannedPhrases, val]);
+                    setNewBannedPhraseInput("");
+                    showToast(`Added "${val}" to banned list.`);
+                }
+            };
+
             const allNarrativeModes = useMemo(() => ({
                 ...NARRATIVE_MODES,
                 ...customModes
@@ -9950,8 +10097,8 @@ Output Schema:
                         const sId = `${seqIdx}-${sceneIdx}`;
                         const proseObj = story.prose?.[sId];
                         const proseText = (proseObj && (proseObj.final || proseObj.draft)) ? (proseObj.final || proseObj.draft) : "";
-                        const words = proseText.trim() ? proseText.trim().split(/\s+/).length : 0;
-                        const readTime = Math.max(1, Math.round(words / 225));
+                        const words = countWords(proseText);
+                        const readTime = readingMinutes(words);
                         
                         list.push({
                             seqIdx,
@@ -10425,18 +10572,7 @@ Output Schema:
                         await distillLore(text);
 
                         // 2. Chunk & Ingest (Simple chunking)
-                        const chunkSize = 2000;
-                        const chunks = [];
-                        for (let i = 0; i < text.length; i += chunkSize) {
-                            chunks.push({
-                                topic: `User Upload Segment ${Math.floor(i / chunkSize) + 1}`,
-                                detail: text.substring(i, i + chunkSize),
-                                valid_from_act: 1,
-                                valid_from_scene: 1,
-                                related_to: ["Author Upload"],
-                                description: "Imported Lore Segment"
-                            });
-                        }
+                        const chunks = chunkLoreText(text, (part) => `User Upload Segment ${part}`, ["Author Upload"], "Imported Lore Segment");
 
                         await ingestLoreBatch(chunks, { clearExisting: true });
                         setLoading(false);
@@ -10465,19 +10601,8 @@ Output Schema:
                     setLoadingStep(`Processing '${filename}' for RAG ingestion...`);
                     try {
                         showToast(`Processing '${filename}' for RAG vector indexing...`, "info");
-                        const chunkSize = 2000;
-                        const chunks = [];
                         const docName = filename.replace(/\.[^/.]+$/, "");
-                        for (let i = 0; i < text.length; i += chunkSize) {
-                            chunks.push({
-                                topic: `${docName} (Part ${Math.floor(i / chunkSize) + 1})`,
-                                detail: text.substring(i, i + chunkSize).trim(),
-                                valid_from_act: 1,
-                                valid_from_scene: 1,
-                                related_to: [docName],
-                                description: `Imported from ${filename}`
-                            });
-                        }
+                        const chunks = chunkLoreText(text, (part) => `${docName} (Part ${part})`, [docName], `Imported from ${filename}`);
 
                         // Re-index full list including new chunks
                         const currentLore = story.lore || [];
@@ -12293,63 +12418,7 @@ ${conceptToUse}
 ${genOutput}
 </generated_story_arc>
 `,
-                            parserFn: (text) => {
-
-                                const globalArcMatch = /<global_arc>([\s\S]*?)<\/global_arc>/i.exec(text);
-                                const globalArc = globalArcMatch ? globalArcMatch[1] : text;
-
-                                const startingVal = extractTag(globalArc, 'starting_value_state');
-                                const endingVal = extractTag(globalArc, 'ending_value_state');
-                                const surprises = extractTag(globalArc, 'major_surprises_and_twists');
-                                const coreThematic = extractTag(globalArc, 'core_thematic_argument');
-                                const incitingIncident = extractTag(globalArc, 'inciting_incident');
-                                
-                                const charArcs = [];
-                                const charArcsMatch = /<character_arcs>([\s\S]*?)<\/character_arcs>/i.exec(text);
-                                if (charArcsMatch) {
-                                    const arcRegex = /<arc>([\s\S]*?)<\/arc>/gi;
-                                    let match;
-                                    let idx = 0;
-                                    while ((match = arcRegex.exec(charArcsMatch[1])) !== null) {
-                                        const arcXML = match[1];
-                                        charArcs.push({
-                                            char_id: extractTag(arcXML, 'char_id') || `C${idx + 1}`,
-                                            description: extractTag(arcXML, 'arc_description'),
-                                            lie_believed: extractTag(arcXML, 'lie_believed'),
-                                            truth_needed: extractTag(arcXML, 'truth_needed'),
-                                            arc_catalyst: extractTag(arcXML, 'arc_catalyst')
-                                        });
-                                        idx++;
-                                    }
-                                }
-
-                                const threads = [];
-                                const threadsMatch = /<narrative_threads>([\s\S]*?)<\/narrative_threads>/i.exec(text);
-                                if (threadsMatch) {
-                                    const threadRegex = /<thread>([\s\S]*?)<\/thread>/gi;
-                                    let match;
-                                    let idx = 0;
-                                    while ((match = threadRegex.exec(threadsMatch[1])) !== null) {
-                                        const threadXML = match[1];
-                                        threads.push({
-                                            id: extractTag(threadXML, 'thread_id') || `T${idx + 1}`,
-                                            name: extractTag(threadXML, 'name') || `Thread ${idx + 1}`,
-                                            description: extractTag(threadXML, 'description')
-                                        });
-                                        idx++;
-                                    }
-                                }
-                                
-                                return {
-                                    starting_value_state: startingVal,
-                                    ending_value_state: endingVal,
-                                    major_surprises_and_twists: surprises,
-                                    core_thematic_argument: coreThematic,
-                                    inciting_incident: incitingIncident,
-                                    character_arcs: charArcs,
-                                    threads: threads
-                                };
-                            },
+                            parserFn: parseStoryArcXml,
                             modelSize: "large",
                             spawningContext: "Story Arc planning"
                         });
@@ -12440,46 +12509,6 @@ ${toneAtmosphere}
 ${castList.map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw}, Desire: ${c.core_desire}`).join('\n')}
 </cast_list>
 
-<output_format_description>
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: For ANY field value longer than a short phrase, use block scalar style (the | operator) — NEVER double-quoted strings. Write: arc_description: | followed by a newline and indented text.
-
-Output Schema:
-global_arc:
-  core_thematic_argument: "A debatable philosophical thesis that the story explores — not a moral platitude."
-  starting_value_state: "The protagonist's starting belief/condition (aligned with the Lie)."
-  ending_value_state: "The protagonist's ending belief/condition (aligned with the Truth, or tragic rejection of it)."
-  inciting_incident: "The specific event that disrupts the status quo and forces the protagonist to act."
-  major_surprises_and_twists: |
-    Describe at least 2 major reversals. For each: what the audience expects, what actually happens, and why it's inevitable in hindsight.
-
-narrative_threads:
-  - thread_id: T1
-    name: "Main Plot Thread (A-Story) Name"
-    description: "Vivid description of the external conflict, physical stakes, and what drives the plot forward."
-  - thread_id: T2
-    name: "Relationship/Thematic Mirror (B-Story) Name"
-    description: "How this relationship thread tests the thematic argument and what it reveals about the protagonist's flaw."
-  - thread_id: T3
-    name: "Internal Transformation (C-Story) Name"
-    description: "The protagonist's inner journey from their Lie to their Truth."
-
-character_arcs:
-  - char_id: C1
-    lie_believed: "The specific false belief that governs their actions at the start."
-    truth_needed: "The specific truth they must accept (or tragically reject) by the end."
-    arc_catalyst: "The specific event or relationship that forces them to confront their lie."
-    arc_description: "Detailed explanation of their journey from lie to truth."
-
-new_character_briefs:
-  - id: NEW_C3
-    name: "Name"
-    role: "1-2 sentences on their role."
-    core_flaw: "The lie they believe."
-    core_desire: "What they consciously want."
-    vocal_cadence: "Rhythm, pitch, mannerisms, and speech patterns."
-</output_format_description>
-
 BEGIN DEVELOPING STORY ARC
 `,
                         systemPrompt: PROMPTS.storyArc,
@@ -12492,63 +12521,9 @@ ${conceptToUse}
 ${genOutput}
 </generated_story_arc>
 
-<output_format_description>
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-
-Output Schema:
-critique_analysis: |
-  Perform a step-by-step critical analysis of each criterion. Cite specific plot points, logic gaps, or elements that feel weak or uninspired.
-status: PASS # or FAIL
-deviation_reasons:
-  - "Explain the exact issue and how to fix it."
-</output_format_description>
-
 BEGIN STORY ARC CRITIQUE REVIEW
 `,
-                        parserFn: (text) => {
-                            let parsed = null;
-                            try {
-                                parsed = parseYaml(text);
-                            } catch (e) {
-                                console.warn("parseYaml failed in generateStoryArc parserFn, falling back to salvageStoryArc:", e);
-                            }
-                            if (!parsed || typeof parsed !== 'object') {
-                                parsed = salvageStoryArc(text) || {};
-                            }
-
-                            const globalArc = parsed.global_arc || parsed || {};
-                            const startingVal = globalArc.starting_value_state || parsed.starting_value_state || "";
-                            const endingVal = globalArc.ending_value_state || parsed.ending_value_state || "";
-                            const surprises = globalArc.major_surprises_and_twists || parsed.major_surprises_and_twists || "";
-                            const coreThematic = globalArc.core_thematic_argument || parsed.core_thematic_argument || "";
-                            const incitingIncident = globalArc.inciting_incident || parsed.inciting_incident || "";
-                            
-                            const rawCharArcs = parsed.character_arcs || globalArc.character_arcs || [];
-                            const charArcs = (Array.isArray(rawCharArcs) ? rawCharArcs : []).map((ca, idx) => ({
-                                char_id: ca.char_id || ca.id || ca.character_id || `C${idx + 1}`,
-                                description: ca.arc_description || ca.description || `${ca.lie_believed || ''} -> ${ca.truth_needed || ''}`,
-                                lie_believed: ca.lie_believed || ca.lie || "",
-                                truth_needed: ca.truth_needed || ca.truth || "",
-                                arc_catalyst: ca.arc_catalyst || ca.catalyst || ""
-                            }));
-                            
-                            const rawThreads = parsed.narrative_threads || parsed.threads || globalArc.narrative_threads || [];
-                            const threads = (Array.isArray(rawThreads) ? rawThreads : []).map((t, idx) => ({
-                                id: t.thread_id || t.id || `T${idx + 1}`,
-                                name: t.name || t.title || `Thread ${idx + 1}`,
-                                description: t.description || t.summary || ""
-                            }));
-                            
-                            return {
-                                starting_value_state: startingVal,
-                                ending_value_state: endingVal,
-                                major_surprises_and_twists: surprises,
-                                core_thematic_argument: coreThematic,
-                                inciting_incident: incitingIncident,
-                                character_arcs: charArcs,
-                                threads: threads
-                            };
-                        },
+                        parserFn: parseStoryArcXml,
                         modelSize: "large",
                         spawningContext: "Story Arc planning"
                     });
@@ -12963,18 +12938,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                             let idx = 0;
                             while ((match = seqRegex.exec(sequencesXML)) !== null) {
                                 const seqData = match[1];
-                                const extractList = (parentTag, childTag) => {
-                                    const pMatch = new RegExp(`<${parentTag}>([\\s\\S]*?)<\\/${parentTag}>`, 'i').exec(seqData);
-                                    if (!pMatch) return [];
-                                    const cRegex = new RegExp(`<${childTag}>([\\s\\S]*?)<\\/${childTag}>`, 'gi');
-                                    const items = [];
-                                    let cMatch;
-                                    while ((cMatch = cRegex.exec(pMatch[1])) !== null) {
-                                        items.push(cMatch[1].trim());
-                                    }
-                                    return items;
-                                };
-                                
+
                                 parsedSequences.push({
                                     number: parseInt(extractTag(seqData, 'number'), 10) || (idx + 1),
                                     parent_act: parseInt(extractTag(seqData, 'parent_act'), 10) || actForSequence(idx + 1),
@@ -12983,8 +12947,8 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                                     tactical_question: extractTag(seqData, 'tactical_question') || "",
                                     description: extractTag(seqData, 'description') || "",
                                     sequence_objective: extractTag(seqData, 'sequence_objective') || "",
-                                    threads_advanced: extractList('threads_advanced', 'thread'),
-                                    characters_in_focus: extractList('characters_in_focus', 'character'),
+                                    threads_advanced: extractTagList(seqData, 'threads_advanced', 'thread'),
+                                    characters_in_focus: extractTagList(seqData, 'characters_in_focus', 'character'),
                                     sequence_climax: extractTag(seqData, 'sequence_climax') || "",
                                     ending_hook: extractTag(seqData, 'ending_hook') || ""
                                 });
@@ -13215,6 +13179,9 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 if (entry.status === 'error') {
                     console.error(line);
                     showToast(`${entry.agent || 'Pipeline'}: ${entry.action || 'step failed'}`, 'warning');
+                    // Surface pipeline failures (e.g. the Tier 4.4 batch continuity FAIL) in the
+                    // Logs view's validation feed, not just the console.
+                    logPipelineValidation(`${entry.agent || 'Pipeline'}: ${entry.action || 'step'}`, false, entry.details || entry.action || 'Pipeline step failed');
                 } else {
                     console.log(line);
                 }
@@ -13536,11 +13503,7 @@ ${payload}
                 }
 
                 // Ingest Hard Facts from Archivist & prune legacy valence shifts
-                let newLedger = (baseStory.continuity_ledger || []).filter(e => 
-                    e && e.category !== "Valence Shift" && e.category !== "Emotional Arc" &&
-                    !String(e.key || '').startsWith('Valence (') &&
-                    !String(e.key || '').startsWith('Scene Emotional Trajectory')
-                );
+                let newLedger = (baseStory.continuity_ledger || []).filter(e => e && !isLegacyValenceEntry(e));
 
                 const cFacts = updates.continuity_facts || updates.continuity_updates || updates.hard_facts || [];
                 if (Array.isArray(cFacts) && cFacts.length > 0) {
@@ -15474,21 +15437,9 @@ Pacing Justification: ${scenesRange.justification}
                             
                             while ((match = sceneRegex.exec(scenesXML)) !== null) {
                                 const sData = match[1];
-                                
-                                const extractList = (parentTag, childTag) => {
-                                    const pMatch = new RegExp(`<${parentTag}>([\\s\\S]*?)<\\/${parentTag}>`, 'i').exec(sData);
-                                    if (!pMatch) return [];
-                                    const cRegex = new RegExp(`<${childTag}>([\\s\\S]*?)<\\/${childTag}>`, 'gi');
-                                    const items = [];
-                                    let cMatch;
-                                    while ((cMatch = cRegex.exec(pMatch[1])) !== null) {
-                                        items.push(cMatch[1].trim());
-                                    }
-                                    return items;
-                                };
 
-                                const charPres = extractList('characters_present', 'character');
-                                const threadAdv = extractList('threads_advanced', 'thread');
+                                const charPres = extractTagList(sData, 'characters_present', 'character');
+                                const threadAdv = extractTagList(sData, 'threads_advanced', 'thread');
 
                                 const castIds = [];
                                 const castNames = [];
@@ -17751,8 +17702,7 @@ ${currentLoreList}
                                     const sKey = `${currentSeqIndex}-${currentScIndex + i}`;
                                     const pObj = story.prose?.[sKey];
                                     const txt = (pObj?.final || pObj?.draft || "");
-                                    const wCount = txt.trim() ? txt.trim().split(/\s+/).length : 0;
-                                    return acc + Math.max(1, Math.round(wCount / 225));
+                                    return acc + readingMinutes(countWords(txt));
                                 }, 0);
 
                                 const themeClass = readerSettings.readerTheme === 'sepia'
@@ -18864,16 +18814,12 @@ ${currentLoreList}
                                                             <p className="text-xs text-stone-500 mt-0.5">Physical traits, objects, spatial layouts, opinions, and agreements tracked across scenes.</p>
                                                         </div>
                                                         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
-                                                            {story.continuity_ledger && story.continuity_ledger.some(e => e.category === 'Valence Shift' || e.category === 'Emotional Arc' || String(e.key || '').startsWith('Valence (') || String(e.key || '').startsWith('Scene Emotional Trajectory')) && (
+                                                            {story.continuity_ledger && story.continuity_ledger.some(isLegacyValenceEntry) && (
                                                                 <button
                                                                     onClick={() => {
                                                                         setStory(prev => ({
                                                                             ...prev,
-                                                                            continuity_ledger: (prev.continuity_ledger || []).filter(e => 
-                                                                                e && e.category !== "Valence Shift" && e.category !== "Emotional Arc" &&
-                                                                                !String(e.key || '').startsWith('Valence (') &&
-                                                                                !String(e.key || '').startsWith('Scene Emotional Trajectory')
-                                                                            )
+                                                                            continuity_ledger: (prev.continuity_ledger || []).filter(e => e && !isLegacyValenceEntry(e))
                                                                         }));
                                                                         showToast("Pruned redundant valence shift entries from ledger.", "info");
                                                                     }}
@@ -21046,8 +20992,8 @@ ${currentLoreList}
                                                 
                                                 if (sceneProse && (sceneProse.final || sceneProse.draft)) {
                                                     const proseText = sceneProse.final || sceneProse.draft || "";
-                                                    const wordCount = proseText.trim() ? proseText.trim().split(/\s+/).length : 0;
-                                                    const readingTime = Math.max(1, Math.round(wordCount / 225));
+                                                    const wordCount = countWords(proseText);
+                                                    const readingTime = readingMinutes(wordCount);
 
                                                     return !isCollapsed && (
                                                         <div className="relative animate-fade-in bg-[#FCFBF9] p-8 sm:p-12 rounded-2xl border border-black/[0.07] shadow-sm min-h-[70vh]">
@@ -21403,31 +21349,7 @@ ${currentLoreList}
                                                 { phaseName: "Phase 3: Sequence, Scene, & Micro-Beat Outlining", stepRange: [9, 16] },
                                                 { phaseName: "Phase 4: Prose Generation & Review", stepRange: [17, 20] }
                                             ].map((phase, phaseIdx) => {
-                                                const phaseSteps = [
-                                                    { id: 1, tier: "Tier 0.1", title: "Conceptual Development Agent", icon: Sparkles, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "User raw outline text, style/genre guides, tone parameters, lore context.", gate: "YAML/XML structure parsed correctly" },
-                                                    { id: 2, tier: "Tier 0.2", title: "Character Developer (Interviews)", icon: Users, iconColor: "text-purple-600", badge: "large-model", inputs: "World bible context, active character briefs (name, role, flaw, desire).", gate: "Dossiers generated for cast briefs" },
-                                                    { id: 3, tier: "Tier 1.1", title: "Story Arc Agent", icon: GitBranch, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "World bible details, style guides, cast voice files, flaws/desires.", gate: "Valid YAML/XML story arc structure" },
-                                                    { id: 4, tier: "Tier 1.2", title: "Story Arc Reviewer", icon: ShieldCheck, iconColor: "text-amber-600", badge: "small-model", inputs: "Raw concept outlines, world bible, generated Story Arc plan.", gate: "Reviewer status == 'PASS'" },
-
-                                                    { id: 5, tier: "Tier 2.1", title: "Act Planner (Act Agent)", icon: Layers, iconColor: "text-purple-600", badge: "small-model", inputs: "Core narrative concept, theme milestones, character list, twists.", gate: ">= 3 Acts planned with descriptions" },
-                                                    { id: 6, tier: "Tier 2.2", title: "Act Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Generated Act outlines array, major twists, inciting incidents.", gate: "Reviewer status == 'PASS'" },
-                                                    { id: 7, tier: "RAG Archiving", title: "World Lore Archivist", icon: Globe, iconColor: "text-emerald-600", badge: "prog", inputs: "World bible text, character dossiers, lore notes.", gate: "Vector store indexing complete" },
-                                                    { id: 8, tier: "Tier 2.3", title: "Pacing Architect", icon: Sliders, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "Act outline mandates and narrative density targets.", gate: "Pacing map ranges established" },
-
-                                                    { id: 9, tier: "Tier 3.1", title: "Sequence Planner (Sequence Agent)", icon: Book, iconColor: "text-[#8C6B32]", badge: "small-model", inputs: "Detailed Act mandates, cast dossiers, story guidelines.", gate: "8 Sequences generated (2-4-2 distribution)" },
-                                                    { id: 10, tier: "Tier 3.2", title: "Sequence Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Newly generated sequence plans list, parent Act objectives.", gate: "Reviewer status == 'PASS'" },
-                                                    { id: 11, tier: "Tier 4.1", title: "Scene Roster Agent", icon: Film, iconColor: "text-stone-700", badge: "small-model", inputs: "Sequence outline schema, cast dossiers, world bible rules.", gate: ">= 4 Scenes generated per Sequence" },
-                                                    { id: 12, tier: "Tier 4.2", title: "Scene Roster Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Generated lean scene roster, parent sequence objectives.", gate: "Reviewer status == 'PASS'" },
-                                                    { id: 13, tier: "Tier 4.3", title: "Scene Expander Agent", icon: ListPlus, iconColor: "text-[#8C6B32]", badge: "small-model", inputs: "Lean scene row, adjacent scene context.", gate: "Rich description blueprint generated" },
-                                                    { id: 14, tier: "Tier 4.4", title: "Scene Expander Reviewer", icon: ShieldCheck, iconColor: "text-amber-600", badge: "small-model", inputs: "List of expanded scenes.", gate: "Continuity validated" },
-                                                    { id: 15, tier: "Tier 5.1", title: "Beat Planner (Beat Agent)", icon: Sparkles, iconColor: "text-purple-600", badge: "small-model", inputs: "Scene directives, cast dossiers, relationship ledger.", gate: ">= 3 Beats generated per Scene" },
-                                                    { id: 16, tier: "Tier 5.2", title: "Beat Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Newly generated beats choreography plan, scene parameters.", gate: "Reviewer status == 'PASS'" },
-
-                                                    { id: 17, tier: "RAG Preprocess", title: "Query Expansion & RAG Retriever", icon: Search, iconColor: "text-stone-700", badge: "small-model", inputs: "Raw beat description text, active cast list, scene location.", gate: "RAG context facts retrieved" },
-                                                    { id: 18, tier: "Tier 5.3", title: "Writing Agent (Prose Generator)", icon: Feather, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "Scene beat sequence, cast cards, RAG lore details, style guides.", gate: "Passes prose length guidelines" },
-                                                    { id: 19, tier: "Validation", title: "Continuity Reviewer & Surgical Editor", icon: ShieldCheck, iconColor: "text-amber-600", badge: "small-model", inputs: "Scene beat sequence, newly generated full scene prose draft.", gate: "Reviewer status == 'PASS' or patch applies" },
-                                                    { id: 20, tier: "Post-Process", title: "Archivist (End of Scene)", icon: Save, iconColor: "text-emerald-600", badge: "large-model", inputs: "Concatenated text of all beats in scene, current cast profiles.", gate: "JSON registry parsed & state updated" }
-                                                ].filter(s => s.id >= phase.stepRange[0] && s.id <= phase.stepRange[1]);
+                                                const phaseSteps = PIPELINE_STEPS.filter(s => s.id >= phase.stepRange[0] && s.id <= phase.stepRange[1]);
 
                                                 let visibleSteps = phaseSteps;
                                                 if (pipelineViewMode === 'simplified') {
@@ -21515,28 +21437,7 @@ ${currentLoreList}
                                                 const activeStepId = inspectedStepId || currentPipelineStep || 1;
                                                 const isFollowingLive = currentPipelineStep !== null && inspectedStepId === null;
                                                 const isInspectingDifferent = currentPipelineStep !== null && inspectedStepId !== null && inspectedStepId !== currentPipelineStep;
-                                                const spec = {
-                                                    1: { title: "Conceptual Development Agent", function: "initStory() - Tier 0.1", model: "Large Model Target (Dual-Model Settings)", inputs: "User raw outline text, style/genre guides, tone parameters, lore context.", output: "YAML object detailing core genre class, style guidelines, atmosphere guidelines, world bible status quo, and initial character briefs.", gate: "YAML or XML tags parse correctly, returning string blocks for genre, style, and world bible.", retries: "Direct UI correction loops. No automated cascading deletions above this stage.", constraints: "Cultivate core concept to logical extremes. Define status quo, inciting incident, and core thematic arguments." },
-                                                    2: { title: "Character Developer (Interviews)", function: "initStory() - Tier 0.2", model: "Large Model Target (Sequential Loop)", inputs: "World bible context, active character brief (name, role, flaw, desire), and narrative tone guidelines.", output: "First-person narrative interview context, voice samples, and psychological dossiers.", gate: "A text interview block is successfully generated for every single character profile brief in the cast list.", retries: "Retries profile generation on failure. Aborts initialization if permanent API error occurs.", constraints: "Must produce 300-600 word 1st-person monologues spoken directly by the character." },
-                                                    3: { title: "Story Arc Agent", function: "initStory() - Tier 1.1", model: "Large Model Target", inputs: "World bible, genre classification, style parameters, tone guidelines, character casts with flaws/desires.", output: "XML schema detailing starting and ending value states (inciting incident), character arcs, twists, and narrative threads.", gate: "Story Arc details parsed as valid XML structure. Maps character arcs and narrative threads.", retries: "Retries the Story Arc planner up to 3 times on reviewer FAIL status.", constraints: "Specify concrete Lie, Truth, and Catalyst for character arcs." },
-                                                    4: { title: "Story Arc Reviewer", function: "runAgentWithEscalation() - Tier 1.2", model: "Small Model (Escalates to Large on Attempt 3)", inputs: "Story concept, world bible, generated Story Arc plan.", output: "XML status report: PASS or FAIL along with critiques/reasons.", gate: "Reviewer status == 'PASS'", retries: "Fails trigger a retry of Step 3 (Story Arc Agent), feeding the critique reasons as prompts.", constraints: "Strict audit of thematic arguments, thread tracking, and logical reversals." },
-                                                    5: { title: "Act Planner (Act Agent)", function: "runAgentWithEscalation() - Tier 2.1", model: "Small Model Target (Escalates to Large)", inputs: "Story concept, theme milestones, character profiles list, and structural boundaries.", output: "XML list representing Acts: number, title, description, milestones, and knots.", gate: "Passes Programmatic Validation: at least 3 acts planned, and every act description has a length >= 50 characters.", retries: "Up to 3 attempts. Downstream failure in Sequence Agent plans triggers a rollback to this step.", constraints: "Map out exact intersections (knots) where multiple threads collide." },
-                                                    6: { title: "Act Reviewer", function: "runAgentWithEscalation() - Tier 2.2", model: "Small Model Target", inputs: "Generated Act outlines, twists and surprises, inciting incidents.", output: "XML listing critique analysis, status (PASS or FAIL), and list of deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL status triggers retry of Step 5 (Act Planner).", constraints: "Validate act developments are earned and logical." },
-                                                    7: { title: "World Lore Archivist", function: "initStory() - Lore RAG Archiving", model: "Vector DB & Graph Manager", inputs: "World bible text, character dossiers, lore notes.", output: "Indexed vector embeddings & entity graph nodes.", gate: "Vector store indexing complete.", retries: "Logs warning on indexing error and continues with raw text fallback.", constraints: "Ensure canon facts are indexed without duplication." },
-                                                    8: { title: "Pacing Architect", function: "initStory() - Tier 2.3", model: "Large Model Target", inputs: "Act outline mandates and narrative density targets.", output: "XML output defining narrative density ranges (scenes per sequence, beats per scene).", gate: "Pacing ranges defined and stored in story state.", retries: "Uses default density ranges if call fails.", constraints: "Balance fast kinetic pacing with legato-staccato rhythm." },
-                                                    9: { title: "Sequence Planner (Sequence Agent)", function: "generateSequences() - Tier 3.1", model: "Small Model Target (Escalates to Large)", inputs: "Detailed Act mandates, cast dossiers, story guidelines.", output: "XML schema detailing 8 Frank Daniel sequences: number, parent_act, title, sequence_function, tactical_question, and ending_hook.", gate: "Passes Programmatic Validation: 8 sequences generated in 2-4-2 distribution.", retries: "Up to 3 attempts. 3 failures trigger cascading rollback to Act Agent (Step 5).", constraints: "Each sequence must define its tactical question and sequence climax." },
-                                                    10: { title: "Sequence Reviewer", function: "generateSequences() - Tier 3.2", model: "Small Model Target", inputs: "Newly generated sequence plans list, parent Act objectives.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 9 up to 3 times, then rolls back to Step 5.", constraints: "Verify Frank Daniel model alignment and tactical question sharpness." },
-                                                    11: { title: "Scene Roster Agent", function: "generateScenes() - Tier 4.1", model: "Small Model Target (Escalates to Large)", inputs: "Sequence outline, active cast lists, target sequence scope, world bible rules.", output: "XML roster of lean scenes: scene_id, title, characters, threads, objective, scene_type, transition_jump, temporal_scope, entrance/exit conditions.", gate: "Passes Programmatic Validation: at least 4 scenes created per Sequence.", retries: "Up to 3 attempts. 3 failures trigger rollback to Sequence Agent (Step 9).", constraints: "Alternate proactive scenes and reactive sequels with explicit transition jumps." },
-                                                    12: { title: "Scene Roster Reviewer", function: "generateScenes() - Tier 4.2", model: "Small Model Target", inputs: "Generated lean scene roster, parent sequence objectives.", output: "XML outlining status (PASS or FAIL) and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 11 up to 3 times, then rolls back to Step 9.", constraints: "Audit Swain Scene/Sequel alternation and causal linkage." },
-                                                    13: { title: "Scene Expander Agent", function: "generateScenes() - Tier 4.3", model: "Small Model Target", inputs: "Lean scene row, adjacent scene context (previous exit / next entrance), narrative mode library.", output: "XML expansion: rich_scene_description blueprint, dominant narrative mode, value shift, hard facts, relationship shifts.", gate: "Rich description blueprint generated.", retries: "Up to 3 attempts via the escalation loop.", constraints: "Blueprint only - no prose or dialogue. Respect adjacent-scene continuity." },
-                                                    14: { title: "Scene Expander Reviewer", function: "generateScenes() - Tier 4.4", model: "Small Model Target", inputs: "Full list of expanded scenes for the sequence.", output: "XML status report: PASS or FAIL with deviation reasons.", gate: "Continuity validated across the expanded scene flow.", retries: "FAIL is logged; scenes are kept (advisory batch review).", constraints: "Check teleportation, state collisions, and clinical tone." },
-                                                    15: { title: "Beat Planner (Beat Agent)", function: "generateBeats() - Tier 5.1", model: "Small Model Target (Escalates to Large)", inputs: "Parent scene directives, character interview profiles, relationship ledger, preceding beats.", output: "XML containing detailed choreography: start entry states, pivot turning points, end exit states, tactical actions.", gate: "Passes Programmatic Validation: at least 3 beats created per Scene.", retries: "Up to 3 attempts. 3 failures trigger rollback to Scene Roster Agent (Step 11).", constraints: "Dialogue subtext planning: surface dialogue vs hidden desires." },
-                                                    16: { title: "Beat Reviewer", function: "generateBeats() - Tier 5.2", model: "Small Model Target", inputs: "Generated beats choreography plan, parent scene description.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 15 up to 3 times, then rolls back to Step 11.", constraints: "Continuity logic gate: check inventory, posture, and physical continuity." },
-                                                    17: { title: "Query Expansion & RAG Context Retriever", function: "retrieveContext()", model: "Small Model Query Preprocessor + Vector Store Search", inputs: "Beat choreography sequence, active cast list, scene location.", output: "Relevant canonical facts, lore notes, character relationships attached to prompt.", gate: "Preprocessed terms and RAG facts returned.", retries: "Falls back to raw action query on search exception.", constraints: "Ensure canonical facts are never contradicted." },
-                                                    18: { title: "Writing Agent (Prose Generator)", function: "writeSceneProse()", model: "Large Model Target", inputs: "Full scene choreography, cast cards, RAG lore details, style guides, preceding prose.", output: "Story text paragraphs (400-600 words per beat). Text-only format.", gate: "Passes prose length and format guidelines.", retries: "Up to 3 attempts. 3 failures trigger rollback to Beat Agent (Step 15).", constraints: "Subtext over text, distinct character voices, terse defensive restraint." },
-                                                    19: { title: "Continuity Reviewer & Surgical Editor", function: "writeSceneProse() Reviewer & Patch", model: "Small Model Reviewer + Large Model Surgical Editor", inputs: "Scene beat sequence, newly generated prose draft, banned words filter.", output: "PASS or FAIL status. If FAIL with minor issues, applies surgical search-replace patch.", gate: "Reviewer status == 'PASS' or surgical edit applies cleanly.", retries: "Critical fail triggers prose rewrite loop (Step 18). Surgical error rolls back to Step 15.", constraints: "Check for posture slips, teleportation, and dialogue bloat." },
-                                                    20: { title: "Archivist (End of Scene)", function: "handleWorldUpdates() / Archivist", model: "Large Model Target (JSON output)", inputs: "Concatenated text of all beats in scene, current cast profiles, lore database topics.", output: "JSON object updating character goals, new lore entries, and relationship shifts.", gate: "JSON output parses successfully and updates state model.", retries: "Regex fallback on JSON parse failure.", constraints: "Assign unique IDs to all new character briefs immediately." }
-                                                }[activeStepId];
+                                                const spec = PIPELINE_STEP_SPEC[activeStepId];
                                                 if (!spec) return null;
 
                                                 return (
@@ -22710,33 +22611,14 @@ ${currentLoreList}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Enter') {
                                                             e.preventDefault();
-                                                            const val = newBannedPhraseInput.trim();
-                                                            if (val) {
-                                                                if (bannedPhrases.includes(val)) {
-                                                                    alert("Phrase is already in the list.");
-                                                                } else {
-                                                                    setBannedPhrases([...bannedPhrases, val]);
-                                                                    setNewBannedPhraseInput("");
-                                                                    showToast(`Added "${val}" to banned list.`);
-                                                                }
-                                                            }
+                                                            handleAddBannedPhrase();
                                                         }
                                                     }}
                                                     placeholder="Enter a word or phrase to ban..."
                                                     className="flex-1 bg-[#FAF8F5] border border-stone-200 rounded-xl px-3.5 py-2 text-xs text-stone-800 focus:border-[#B8935A] outline-none transition-colors placeholder-stone-400"
                                                 />
                                                 <button
-                                                    onClick={() => {
-                                                        const val = newBannedPhraseInput.trim();
-                                                        if (!val) return;
-                                                        if (bannedPhrases.includes(val)) {
-                                                            alert("Phrase is already in the list.");
-                                                        } else {
-                                                            setBannedPhrases([...bannedPhrases, val]);
-                                                            setNewBannedPhraseInput("");
-                                                            showToast(`Added "${val}" to banned list.`);
-                                                        }
-                                                    }}
+                                                    onClick={handleAddBannedPhrase}
                                                     className="bg-[#1C1917] hover:bg-[#292524] text-white font-bold px-4 py-2 rounded-xl text-xs transition-all shadow-sm flex items-center gap-1 active:scale-95"
                                                 >
                                                     <Plus size={14} /> Add
