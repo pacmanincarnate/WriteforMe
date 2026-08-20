@@ -16675,7 +16675,7 @@ You MUST adapt the beat choreography to address this specific instruction:
                         previousSceneProseText = previousSceneProseText.prose || previousSceneProseText.final || previousSceneProseText.draft;
                     }
                     if (previousSceneProseText && typeof previousSceneProseText === 'string') {
-                        const words = previousSceneProseText.split(/\\s+/);
+                        const words = previousSceneProseText.split(/\s+/);
                         if (words.length > 500) {
                             previousSceneProseText = "..." + words.slice(-500).join(" ");
                         }
