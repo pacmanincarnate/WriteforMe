@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>EllipsisProse 1.6 - AI Story Architect</title>
+    <title>EllipsisProse 1.7 - AI Story Architect</title>
 
     <!-- Icons & Favicons -->
     <link rel="icon" type="image/jpeg" href="ELPIcon2.jpg">
@@ -5001,43 +5001,51 @@ INSTRUCTIONS & PHILOSOPHY:
 6. **ANTAGONIST IDEOLOGICAL COLLAPSE RULE:** Rigid utilitarian or systemic antagonists must experience an **ideological collapse** when their doctrine fails, rather than an unearned sudden moral redemption. Their defeat occurs when the unpredictability of human/sentient choice shatters their systemic control.
 7. **FORESHADOWING CONSTRAINT:** Any major Act II emotional twist or revelation (e.g. secret heritage, past sabotage, or dormant memory) must have a corresponding physical artifact or unresolved behavioral anomaly seeded in Act I.
 
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: For ANY field value longer than a short phrase, use block scalar style (the | operator) — NEVER double-quoted strings. Double-quoted strings cause catastrophic truncation errors if the content contains special characters or exceeds a line. Write: arc_description: | followed by a newline and indented text. Do NOT write: arc_description: "Long text here".
+FORMATTING DIRECTIVE: Return your story arc strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-global_arc:
-  core_thematic_argument: "A debatable philosophical thesis that the story explores — not a moral platitude."
-  starting_value_state: "The protagonist's starting belief/condition (aligned with the Lie)."
-  ending_value_state: "The protagonist's ending belief/condition (aligned with the Truth, or tragic rejection of it)."
-  inciting_incident: "The specific event that disrupts the status quo and forces the protagonist to act."
-  major_surprises_and_twists: |
-    Describe at least 2 major reversals. For each: what the audience expects, what actually happens, and why it's inevitable in hindsight.
+<response>
+  <global_arc>
+    <core_thematic_argument>A debatable philosophical thesis that the story explores — not a moral platitude.</core_thematic_argument>
+    <starting_value_state>The protagonist's starting belief/condition (aligned with the Lie).</starting_value_state>
+    <ending_value_state>The protagonist's ending belief/condition (aligned with the Truth, or tragic rejection of it).</ending_value_state>
+    <inciting_incident>The specific event that disrupts the status quo and forces the protagonist to act.</inciting_incident>
+    <major_surprises_and_twists>Describe at least 2 major reversals. For each: what the audience expects, what actually happens, and why it's inevitable in hindsight.</major_surprises_and_twists>
+  </global_arc>
 
-narrative_threads:
-  - thread_id: T1
-    name: "Main Plot Thread (A-Story) Name"
-    description: "Vivid description of the external conflict, physical stakes, and what drives the plot forward."
-  - thread_id: T2
-    name: "Relationship/Thematic Mirror (B-Story) Name"
-    description: "How this relationship thread tests the thematic argument and what it reveals about the protagonist's flaw."
-  - thread_id: T3
-    name: "Internal Transformation (C-Story) Name"
-    description: "The protagonist's inner journey from their Lie to their Truth — the specific psychological shifts and catalysts."
+  <narrative_threads>
+    <thread>
+      <thread_id>T1</thread_id>
+      <name>Main Plot Thread (A-Story) Name</name>
+      <description>Vivid description of the external conflict, physical stakes, and what drives the plot forward.</description>
+    </thread>
+    <!-- Add more threads for B-Story, C-Story, etc. -->
+  </narrative_threads>
 
-character_arcs:
-  - char_id: C1
-    lie_believed: "The specific false belief that governs their actions at the start."
-    truth_needed: "The specific truth they must accept (or tragically reject) by the end."
-    arc_catalyst: "The specific event or relationship that forces them to confront their lie."
-    arc_description: "Detailed explanation of their journey from lie to truth, including the key moments of resistance and breakthrough."
+  <character_arcs>
+    <arc>
+      <char_id>C1</char_id>
+      <lie_believed>The specific false belief that governs their actions at the start.</lie_believed>
+      <truth_needed>The specific truth they must accept (or tragically reject) by the end.</truth_needed>
+      <arc_catalyst>The specific event or relationship that forces them to confront their lie.</arc_catalyst>
+      <arc_description>Detailed explanation of their journey from lie to truth, including the key moments of resistance and breakthrough.</arc_description>
+    </arc>
+    <!-- Add more arcs for each active character -->
+  </character_arcs>
 
-new_character_briefs:
-  - id: NEW_C3
-    name: "Name"
-    role: "1-2 sentences on their role."
-    core_flaw: "The lie they believe."
-    core_desire: "What they consciously want."
-    vocal_cadence: "Rhythm, pitch, mannerisms, and speech patterns."`,
+  <new_character_briefs>
+    <!-- ONLY IF NECESSARY -->
+    <brief>
+      <id>NEW_C_UniqueName</id>
+      <name>Name</name>
+      <role>1-2 sentences on their role.</role>
+      <core_flaw>The lie they believe.</core_flaw>
+      <core_desire>What they consciously want.</core_desire>
+      <vocal_cadence>Rhythm, pitch, mannerisms, and speech patterns.</vocal_cadence>
+    </brief>
+  </new_character_briefs>
+</response>`,
 
             // 1.2 Arc Review Agent (SMALL)
             arcReview: `You are a professional literary critic specializing in narrative structure. Your task is to evaluate the generated story arc for structural coherence, thematic depth, character agency, and surprise quality.
@@ -5053,16 +5061,17 @@ EVALUATION CRITERIA:
 
 CRITICAL PASS/FAIL DIRECTIVE:
 If the story arc has a debatable thematic argument, at least 3 threads with clear purposes, specific character arcs with lie/truth/catalyst, and plausible reversals, you MUST set status to PASS. Use FAIL only for: generic/platitude thematic arguments, fewer than 3 threads, character arcs missing lie/truth specificity, or plot-breaking logical errors. Provide suggestions in critique_analysis without failing for minor issues.
-
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: For ANY field value longer than a short phrase, use block scalar style (the | operator) — NEVER double-quoted strings. Write: act_mandate: | followed by a newline and indented text. Do NOT write: act_mandate: "Long text here".
+FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-critique_analysis: |
-  Perform a step-by-step critical analysis of each criterion. Cite specific plot points, logic gaps, or elements that feel weak or uninspired.
-status: PASS # or FAIL
-deviation_reasons:
-  - "Explain the exact issue and how to fix it."`,
+<response>
+  <critique_analysis>Perform a step-by-step critical analysis of each criterion. Cite specific plot points, logic gaps, or elements that feel weak or uninspired.</critique_analysis>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <reason>Explain the exact issue and how to fix it.</reason>
+  </deviation_reasons>
+</response>`,
 
             // 2.1 Act Agent (LARGE)
             actAgent: `You are a master of narrative pacing and macro-structural architecture. Your objective is to divide the global story arc into a profound, irreversible three-act structure.
@@ -5082,34 +5091,52 @@ INSTRUCTIONS:
 3. Review the character roster before inventing new characters. Only generate new_character_briefs if necessary.
 4. Declare macro relationship shifts in trust or dynamics.
 
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: For ANY field value longer than a short phrase, use block scalar style (the | operator) — NEVER double-quoted strings. Write: act_mandate: | followed by a newline and indented text. Do NOT write: act_mandate: "Long text".
+FORMATTING DIRECTIVE: Return your act structure strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-acts:
-  - number: 1
-    title: "Descriptive Title"
-    act_mandate: |
-      - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this act. Explain its role in the global value shift and Todorov equilibrium transition.
-      - **DRAMATIC ARC & PACING CURVES:** Map the act-level narrative movement. Detail the starting emotional/value state, the path of rising action, the sequence division plan (2 sequences in Act I, 4 in Act II, 2 in Act III), and the specific Point of No Return climax.
-      - **THREAD PROGRESSION & CONVERGENCE:** Describe how each active plot thread (A-story, subplots) evolves, intersects, and impacts one another across this act.
-      - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on how the characters' fatal flaws are tested, exposed, or synthesized. Detail internal struggles and shifting motivations.
-      - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems, pacing pitfalls, or logic constraints for downstream sequence and scene planners.
-    world_building_developments: "How the setting or lore expands here."
-    knots:
-      - description: "Event description..."
-        interaction: "Thread 1 event forces Thread 2 crisis."
+<response>
+  <acts>
+    <act>
+      <number>1</number>
+      <title>Descriptive Title</title>
+      <act_mandate>
+        - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this act. Explain its role in the global value shift and Todorov equilibrium transition.
+        - **DRAMATIC ARC & PACING CURVES:** Map the act-level narrative movement. Detail the starting emotional/value state, the path of rising action, the sequence division plan (2 sequences in Act I, 4 in Act II, 2 in Act III), and the specific Point of No Return climax.
+        - **THREAD PROGRESSION & CONVERGENCE:** Describe how each active plot thread (A-story, subplots) evolves, intersects, and impacts one another across this act.
+        - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on how the characters' fatal flaws are tested, exposed, or synthesized. Detail internal struggles and shifting motivations.
+        - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems, pacing pitfalls, or logic constraints for downstream sequence and scene planners.
+      </act_mandate>
+      <world_building_developments>How the setting or lore expands here.</world_building_developments>
+      <knots>
+        <knot>
+          <description>Event description...</description>
+          <interaction>Thread 1 event forces Thread 2 crisis.</interaction>
+        </knot>
+      </knots>
+    </act>
+    <!-- Act 2 and 3 -->
+  </acts>
 
-thread_statuses_at_end:
-  - thread_id: T1
-    status: "Exact status at the end of this act."
+  <thread_statuses_at_end>
+    <thread_status>
+      <thread_id>T1</thread_id>
+      <status>Exact status at the end of this act.</status>
+    </thread_status>
+  </thread_statuses_at_end>
 
-relationship_shifts:
-  - source_id: C1
-    target_id: C2
-    new_dynamic: "How their relationship fundamentally evolved in this Act."
+  <relationship_shifts>
+    <shift>
+      <source_id>C1</source_id>
+      <target_id>C2</target_id>
+      <new_dynamic>How their relationship fundamentally evolved in this Act.</new_dynamic>
+    </shift>
+  </relationship_shifts>
 
-new_character_briefs: []`,
+  <new_character_briefs>
+    <!-- ONLY IF NECESSARY -->
+  </new_character_briefs>
+</response>`,
 
             // 2.2 Act Review Agent (SMALL)
             actReview: `You are a structural editor and critic. Your task is to evaluate the act division for pacing, continuity, and compliance with structural rules.
@@ -5125,15 +5152,17 @@ EVALUATION CRITERIA:
 CRITICAL PASS/FAIL DIRECTIVE:
 You must maintain a high standard, but be constructive. If the acts are structurally sound, trace all threads, contain all required headings in the mandates, and are logically coherent, you MUST set status to PASS. Use FAIL ONLY if there are missing required headings, untracked threads, severe pacing gaps, or logical errors. Describe minor suggestions in critique_analysis without failing the review.
 
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: Use block scalar style (| operator) for ANY description, mandate, or multi-word text.
+FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-critique_analysis: |
-  Critically analyze each Act's mandate, structural points, and thread statuses. Specifically verify that all five mandate sections are present and robustly addressed. Verify every thread ID from the input is accounted for.
-status: PASS # or FAIL
-deviation_reasons:
-  - "Explain the exact issue and how to fix it."`,
+<response>
+  <critique_analysis>Critically analyze each Act's mandate, structural points, and thread statuses. Specifically verify that all five mandate sections are present and robustly addressed. Verify every thread ID from the input is accounted for.</critique_analysis>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <reason>Explain the exact issue and how to fix it.</reason>
+  </deviation_reasons>
+</response>`,
 
             // TIER 2: SEQUENCE STRUCTURE (MESO-STRUCTURE)
             // 2.2 Sequence Agent (LARGE)
@@ -5164,29 +5193,38 @@ INSTRUCTIONS:
 3. Clearly define each sequence's \`tactical_question\`, \`sequence_objective\`, and \`sequence_climax\`.
 4. Specify the \`ending_hook\` — what compels the narrative forward into the next sequence's tactical cycle.
 
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: For ANY field value longer than a short phrase (like the description), use block scalar style (the | operator).
+FORMATTING DIRECTIVE: Return your sequences strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-sequences:
-  - number: 1
-    parent_act: 1 # 1, 2, or 3
-    title: "Sequence Title"
-    sequence_function: "Status Quo & Setup" # From the 8-sequence framework
-    tactical_question: "The localized dramatic question driving this sequence."
-    description: |
-      - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this sequence. Explain its role in the global value shift.
-      - **DRAMATIC ARC & PACING CURVES:** Map the sequence-level narrative movement. Detail the starting state, rising action, and tactical climax.
-      - **THREAD PROGRESSION & CONVERGENCE:** Describe how active plot threads evolve and intersect within this sequence.
-      - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on internal struggles, tactical tests, and shifting motivations.
-      - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems for downstream scene planners to navigate.
-    sequence_objective: "The single most important narrative goal this sequence accomplishes."
-    threads_advanced:
-      - "Thread name or ID being developed in this sequence"
-    characters_in_focus:
-      - "Character name"
-    sequence_climax: "The specific moment of resolution or reversal for this sequence's tactical question."
-    ending_hook: "How the sequence ends — what compels the characters into the next tactical strategy."`,
+<response>
+  <sequences>
+    <sequence>
+      <number>1</number>
+      <parent_act>1</parent_act> <!-- 1, 2, or 3 -->
+      <title>Sequence Title</title>
+      <sequence_function>Status Quo & Setup</sequence_function> <!-- From the 8-sequence framework -->
+      <tactical_question>The localized dramatic question driving this sequence.</tactical_question>
+      <description>
+        - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this sequence. Explain its role in the global value shift.
+        - **DRAMATIC ARC & PACING CURVES:** Map the sequence-level narrative movement. Detail the starting state, rising action, and tactical climax.
+        - **THREAD PROGRESSION & CONVERGENCE:** Describe how active plot threads evolve and intersect within this sequence.
+        - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on internal struggles, tactical tests, and shifting motivations.
+        - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems for downstream scene planners to navigate.
+      </description>
+      <sequence_objective>The single most important narrative goal this sequence accomplishes.</sequence_objective>
+      <threads_advanced>
+        <thread>Thread name or ID being developed in this sequence</thread>
+      </threads_advanced>
+      <characters_in_focus>
+        <character>Character name</character>
+      </characters_in_focus>
+      <sequence_climax>The specific moment of resolution or reversal for this sequence's tactical question.</sequence_climax>
+      <ending_hook>How the sequence ends — what compels the characters into the next tactical strategy.</ending_hook>
+    </sequence>
+    <!-- Add all 8 sequences -->
+  </sequences>
+</response>`,
 
             // 2.2 Sequence Review Agent (SMALL)
             sequenceReview: `You are a structural editor specializing in sequence-level architecture and narrative pacing (Frank Daniel 8-Sequence Model). Evaluate the 8-sequence breakdown for dramatic momentum, tactical clarity, and structural coherence.
@@ -5201,18 +5239,21 @@ EVALUATION CRITERIA:
 CRITICAL PASS/FAIL DIRECTIVE:
 If the 8 sequences are structurally sound, use the required headings, establish distinct tactical questions, and flow causally, you MUST set status to PASS. Use FAIL only for: wrong number of sequences, missing headings in descriptions, redundant sequence functions, or severe causal gaps.
 
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
+FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-critique_analysis: |
-  Analyze each sequence's tactical question, dramatic purpose, pacing contribution, and causal linkage. Verify formatting requirements are met.
-status: PASS # or FAIL
-deviation_reasons:
-  - "Explain the exact issue and how to fix it."`,
+<response>
+  <critique_analysis>Analyze each sequence's tactical question, dramatic purpose, pacing contribution, and causal linkage. Verify formatting requirements are met.</critique_analysis>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <reason>Explain the exact issue and how to fix it.</reason>
+  </deviation_reasons>
+</response>`,
 
             // TIER 3: MICRO STRUCTURE
-            // 3.1 Scene Agent (LARGE)
-            sceneAgent: `You are an expert scene architect. Your goal is to design a sequence of profoundly impactful scenes for the current Sequence of the narrative.
+            // 3.1 Scene Roster Agent (LARGE)
+            sceneRosterAgent: `You are an expert scene architect. Your goal is to design a sequence of profoundly impactful scenes for the current Sequence of the narrative.
 
 SCENE DEVELOPMENT THEORY (D.V. SWAIN'S SCENE & SEQUEL THERMODYNAMIC LOOP):
 1. **The Continuous Action Unit:** A scene is an unbroken unit of continuous time and space where characters pursue an immediate goal, encounter resistance, and experience a localized shift.
@@ -5222,95 +5263,146 @@ SCENE DEVELOPMENT THEORY (D.V. SWAIN'S SCENE & SEQUEL THERMODYNAMIC LOOP):
    - Alternate between PROACTIVE and REACTIVE scenes to create an organic narrative breathing rhythm.
 3. **Genre-Flexible Conflict & Stakes:**
    - "Goal/Conflict/Disaster" must adapt naturally to the story's genre.
-   - In a **Romance or Drama**, "Conflict" is emotional vulnerability, awkward misunderstanding, or conflicting loyalties; "Disaster" is an unspoken confession, a painful boundary drawn, or a revealed secret.
-   - In a **Thriller or Sci-Fi**, "Conflict" is tactical opposition, ticking clocks, or physical peril; "Disaster" is weapon malfunction, ambush, or systemic failure.
-   - In a **Mystery**, "Conflict" is deception or uncooperative witnesses; "Disaster" is a contaminated clue, false lead, or witness silencing.
 4. **Scene Boundaries & Transitional Jumps:**
    - A scene boundary is drawn the moment there is a discontinuous jump in time, a shift in physical location, or the exact moment the character's immediate operational goal resolves/fails.
-   - Each scene must explicitly specify its \`transition_jump\` describing the temporal/spatial/character shift from the preceding scene (e.g. "2 minutes later in the hallway", "A week later at the coffee shop", or a character-baton change where one person leaves and another enters).
+   - Each scene must explicitly specify its \`transition_jump\` describing the temporal/spatial/character shift from the preceding scene.
 5. **Scale & Density Target:**
-   - Generate between 6 and 12 scenes for this sequence (minimum of 4). This scale ensures the novel accumulates sufficient narrative depth to achieve a standard 60,000–100,000 word length.
-6. **Strict Temporal Continuity:** A single scene is continuous real-time. Intra-scene time jumps (e.g. "three days later") are strictly forbidden within a scene; any temporal jump triggers a new scene boundary.
-7. **Aristotelian Reversals (*Peripeteia* & *Anagnorisis*):** Every scene's turning point must feature a distinct Aristotelian reversal: *Peripeteia* (radical reversal of external circumstances) or *Anagnorisis* (critical discovery or reversal of knowledge).
-8. **Speech Act & Performative Directives:** Treat character exchanges as performative speech acts (Locutionary Act vs Illocutionary Force vs Perlocutionary Effect). Specify beat choreography directives around what characters are doing *to* one another (striking, shielding, evading, provoking).
-9. **Cognitive Sensory Landscapes:** Sensory details must function as **Cognitive Filters** dictated by the scene focalizer's immediate psychological state.
-10. **Strict Epistemic Boundaries:** Frame scene setups and character dynamics strictly from what the focal character can perceive or deduce directly.
+   - Generate between 6 and 12 scenes for this sequence (minimum of 4). This scale ensures the novel accumulates sufficient narrative depth.
 
 INSTRUCTIONS:
-1. Ensure characters only act on information they possess (respect lore and graph states).
-2. Write a massive, highly detailed \`rich_scene_description\` for each scene.
-3. **CRITICAL NEGATIVE CONSTRAINT:** DO NOT write story prose, opening lines of narrative, or dialogue. This description is a structural blueprint, not draft pages.
-4. **Continuity & Hard Facts Ingestion:** Identify and record concrete, helpful hard facts established in this scene under \`hard_facts_introduced\` (e.g. hair color, scars, physical traits, objects/inventory acquired or hidden, room/location layout details, character opinions/suspicions, and agreements/deadlines). Do NOT record abstract emotional valence shifts or repetitive summaries.
-5. Only generate new character briefs if the role is entirely unfilled. Declare relationship shifts.
-6. **Narrative Mode Selection:** Choose the most appropriate dominant narrative mode for this scene from the provided library.
-7. **Entrance/Exit Conditions & Transition Jumps:** For each scene, explicitly specify entrance/exit conditions and the transitional jump from the previous scene.
+1. Write a lean structural roster of the scenes for this sequence.
+2. Ensure you alternate between PROACTIVE and REACTIVE scenes where appropriate.
+3. Keep the output strictly to the defined schema. Detailed paragraphs and hard facts will be generated by a downstream expander.
 
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: Use block scalar style (| operator) for rich_scene_description, character descriptions, and any multi-line text.
+FORMATTING DIRECTIVE: Return your scenes strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-scenes:
-  - scene_id: "1.1" # SequenceNum.SceneNum (e.g. 1.1)
-    title: "Scene Title"
-    characters_present:
-      - C1
-    threads_advanced:
-      - T1
-    scene_objective: "The protagonist's immediate goal in the scene."
-    scene_type: "PROACTIVE" # or REACTIVE (Swain's Scene vs Sequel)
-    transition_jump: "Specific temporal, spatial, or cast transition from the preceding scene (e.g., '10 minutes later in the archives' or 'Next morning at dawn')."
-    temporal_scope: "Continuous real-time duration of this scene (e.g., '15 contiguous minutes'). No internal time jumps permitted."
-    dominant_narrative_mode:
-      mode_id: "MODE_ID"
-      justification: "Reason based on scene's analytical subtext"
-    entrance_conditions: "Where are the characters physically when this scene opens? What is their emotional/physical state coming in?"
-    exit_conditions: "Where are the characters physically when this scene closes? What changed?"
-    rich_scene_description: |
-      - **DRAMATIC STRUCTURE & SEQUENCE:** The exact sequence of events. Detail the starting situation, the rising action/complications as characters seek their objective, the turning point (point of no return, categorized explicitly as Peripeteia or Anagnorisis), and the scene-ending disaster or decision.
-      - **BEAT CHOREOGRAPHY DIRECTIVES:** Outline the verbal tactics (e.g., deflects, interrogates, validates), performative speech acts (illocutionary forces vs perlocutionary effects), physical movements (e.g., pacing, closing distance), and key subtext (hidden tension, unsaid motivations, or lies) to guide downstream Beat Choreographers.
-      - **CHARACTER & RELATIONSHIP DYNAMICS:** Explain how this scene tests the characters' flaws and core desires. Detail specific psychological changes, epistemic boundaries (focalizer limitations), and relationship shifts.
-      - **SENSORY & ENVIRONMENTAL LANDSCAPE:** List the physical setting, lighting, temperature, key objects/props characters can interact with, and cognitive sensory filters (visuals, sounds, textures, smells filtered through character psychology).
-      - **THEMATIC CONNECTION:** How does this scene test, complicate, or illuminate the core_thematic_argument?
-    value_shift:
-      start_state: "Starting emotional valence"
-      end_state: "Ending emotional valence"
-    causality:
-      interaction_type: "Collision" # 'Collision' (threads cross), 'Resonance' (thematic echo), or 'Isolation'
-      justification: "Causal connection to other scenes/threads."
-    hard_facts_introduced:
-      - category: "Appearance" # Appearance (hair, eyes, scars, clothing), Object (items held, hidden, given, lost), Place (layout, secrets), Opinion (beliefs, suspicions), Agreement (promises, wagers, deadlines), Lore (world facts)
-        key: "Descriptive Label (e.g. Silas Hair Color, Vault Key Location, Kaelen's Stance)"
-        detail: "Helpful hard fact established in this scene with rich context."
-        entity_id: "C1" # Optional character ID or entity
-    relationship_shifts:
-      - source_id: C1
-        target_id: C2
-        new_dynamic: "String detailing how trust/tension changed due to this scene's events."
-    new_character_briefs: []`,
+<response>
+  <scenes>
+    <scene>
+      <scene_id>1.1</scene_id> <!-- SequenceNum.SceneNum (e.g. 1.1) -->
+      <title>Scene Title</title>
+      <characters_present>
+        <character>C1</character>
+      </characters_present>
+      <threads_advanced>
+        <thread>T1</thread>
+      </threads_advanced>
+      <scene_objective>The protagonist's immediate goal in the scene.</scene_objective>
+      <scene_type>PROACTIVE</scene_type> <!-- or REACTIVE -->
+      <transition_jump>Specific temporal, spatial, or cast transition from the preceding scene.</transition_jump>
+      <temporal_scope>Continuous real-time duration of this scene.</temporal_scope>
+      <entrance_conditions>Where are the characters physically when this scene opens?</entrance_conditions>
+      <exit_conditions>Where are the characters physically when this scene closes? What changed?</exit_conditions>
+    </scene>
+    <!-- Add more scenes -->
+  </scenes>
+</response>`,
 
-            // 3.2 Scene Review Agent (SMALL)
-            sceneReview: `You are a narrative physics and causality auditor. Your task is to evaluate the scene sequence for logical flow, dramatic progression, and adherence to Dwight V. Swain's Scene/Sequel thermodynamic loop.
+            // 3.2 Scene Roster Reviewer (SMALL)
+            sceneRosterReview: `You are a narrative physics and causality auditor. Your task is to evaluate the lean scene roster for logical flow, dramatic progression, and adherence to Dwight V. Swain's Scene/Sequel thermodynamic loop.
 
 EVALUATION CRITERIA:
 1. **Swain Scene/Sequel Flow:** Does the sequence alternate effectively between PROACTIVE (Action: Goal/Conflict/Disaster) and REACTIVE (Sequel: Reaction/Dilemma/Decision) scenes?
-2. **Genre-Appropriate Stakes:** Are the conflicts and complications properly attuned to the story's genre (e.g., emotional friction in romance vs physical jeopardy in thriller)?
+2. **Genre-Appropriate Stakes:** Are the objectives properly attuned to the story's genre?
 3. **Causal Linkage & Transition Jumps:** Does each scene logically originate from the outcome/decision of the previous scene? Are the \`transition_jump\` markers clear and plausible?
-4. **Value Shifts:** Did the scene valence change noticeably? (A flat valence shift is a failure).
-5. **Narrative Density & Scale:** Does the blueprint provide sufficient Goal/Conflict/Disaster choreography detail to generate 12-50 micro-beats?
-6. **Lore & Info Boundaries:** Do characters only act on information they possess?
-7. **Clinical Assessment:** Are there any characters or scenarios that feel overly analytical, strategic, or cold when they should be emotional and human? If so, this is a HARD FAIL.
+4. **Narrative Scale:** Are there between 4 and 12 scenes?
 
 CRITICAL PASS/FAIL DIRECTIVE:
-If the scene sequence is causally coherent, shows clear value shifts, respects lore boundaries, alternates proactive/reactive modes, and provides sufficient blueprint details, you MUST set status to PASS. Use status FAIL ONLY if there is a complete lack of causality, flat valence shifts, lore violations, or empty descriptions. Output minor polishing feedback in critique_analysis without failing the review.
+- If all criteria are met, set status to PASS.
+- If the causality breaks, the transition jumps teleport characters inexplicably, or the Swain pattern fails, set status to FAIL and list the exact reasons.
 
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
+FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-critique_analysis: |
-  Perform a step-by-step critical examination of the causal links between scenes, proactive/reactive alternation, valence shifts, and structural detail level. Check characters' knowledge limits against the graph.
-status: PASS # or FAIL
-deviation_reasons:
-  - "Explain the exact issue and how to fix it."`,
+<response>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <!-- Omit if PASS -->
+    <reason>Explain the exact issue and how to fix it.</reason>
+  </deviation_reasons>
+</response>`,
+
+            // 3.3 Scene Expander Agent (LARGE)
+            sceneExpanderAgent: `You are an expert scene architect and detailer. You will be provided with a lean scene skeleton, as well as context about the preceding sequence of scenes. Your job is to construct the massive \`rich_scene_description\` blueprint and extract its psychological state changes.
+
+INSTRUCTIONS:
+1. Write a massive, highly detailed \`rich_scene_description\` for the provided scene.
+2. **Continuity Awareness:** Read the provided context of the adjacent scenes (previous and next) carefully to avoid continuity errors, teleportation, or state collisions.
+3. **CRITICAL NEGATIVE CONSTRAINT:** DO NOT write story prose, opening lines of narrative, or dialogue. This description is a structural blueprint, not draft pages.
+4. **Continuity & Hard Facts Ingestion:** Identify and record concrete, helpful hard facts established in this scene under \`hard_facts_introduced\` (e.g. hair color, physical traits, objects/inventory acquired or hidden, room/location layout details).
+5. Only generate new character briefs if the role is entirely unfilled. Declare relationship shifts.
+6. **Narrative Mode Selection:** Choose the most appropriate dominant narrative mode for this scene from the provided library.
+
+FORMATTING DIRECTIVE: Return your expansion strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+Output Schema:
+<response>
+  <dominant_narrative_mode>
+    <mode_id>MODE_ID</mode_id>
+    <justification>Reason based on scene's analytical subtext</justification>
+  </dominant_narrative_mode>
+  <rich_scene_description>
+    - **DRAMATIC STRUCTURE & SEQUENCE:** The exact sequence of events. Detail the starting situation, the rising action/complications as characters seek their objective, the turning point (point of no return, categorized explicitly as Peripeteia or Anagnorisis), and the scene-ending disaster or decision.
+    - **BEAT CHOREOGRAPHY DIRECTIVES:** Outline the verbal tactics (e.g., deflects, interrogates, validates), performative speech acts (illocutionary forces vs perlocutionary effects), physical movements (e.g., pacing, closing distance), and key subtext (hidden tension, unsaid motivations, or lies) to guide downstream Beat Choreographers.
+    - **CHARACTER & RELATIONSHIP DYNAMICS:** Explain how this scene tests the characters' flaws and core desires. Detail specific psychological changes, epistemic boundaries (focalizer limitations), and relationship shifts.
+    - **SENSORY & ENVIRONMENTAL LANDSCAPE:** List the physical setting, lighting, temperature, key objects/props characters can interact with, and cognitive sensory filters.
+    - **THEMATIC CONNECTION:** How does this scene test, complicate, or illuminate the core_thematic_argument?
+  </rich_scene_description>
+  <value_shift>
+    <start_state>Starting emotional valence</start_state>
+    <end_state>Ending emotional valence</end_state>
+  </value_shift>
+  <causality>
+    <interaction_type>Collision</interaction_type> <!-- 'Collision' (threads cross), 'Resonance' (thematic echo), or 'Isolation' -->
+    <justification>Causal connection to other scenes/threads.</justification>
+  </causality>
+  <hard_facts_introduced>
+    <fact>
+      <category>Appearance</category> <!-- Appearance, Object, Place, Opinion, Agreement, Lore -->
+      <key>Descriptive Label</key>
+      <detail>Helpful hard fact established in this scene with rich context.</detail>
+      <entity_id>C1</entity_id> <!-- Optional character ID or entity -->
+    </fact>
+  </hard_facts_introduced>
+  <relationship_shifts>
+    <shift>
+      <source_id>C1</source_id>
+      <target_id>C2</target_id>
+      <new_dynamic>String detailing how trust/tension changed due to this scene's events.</new_dynamic>
+    </shift>
+  </relationship_shifts>
+  <new_character_briefs>
+    <!-- Include <brief><id>...</id><name>...</name><role>...</role><flaw>...</flaw><desire>...</desire></brief> if needed -->
+  </new_character_briefs>
+</response>`,
+
+            // 3.4 Scene Expander Review Agent (SMALL)
+            sceneExpanderReview: `You are a strict continuity auditor. You are evaluating a fully compiled list of expanded scenes for a sequence.
+
+EVALUATION CRITERIA:
+1. **Value Shifts:** Did the scene valence change noticeably for each scene? (A flat valence shift is a failure).
+2. **Lore & Info Boundaries:** Do characters act on information they possess? Are there continuity errors or teleportation across the expanded scene flow?
+3. **Clinical Assessment:** Are there any characters or scenarios that feel overly analytical, strategic, or cold when they should be emotional and human? If so, this is a HARD FAIL.
+
+CRITICAL PASS/FAIL DIRECTIVE:
+- If all criteria are met, set status to PASS.
+- If continuity is broken or the characters are too clinical, set status to FAIL and list the exact reasons.
+
+FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+Output Schema:
+<response>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <!-- Omit if PASS -->
+    <reason>Explain the exact issue and how to fix it.</reason>
+  </deviation_reasons>
+</response>`,
 
             // TIER 6: DIRECTIVE & MULTI-SCALE SURGICAL REFORMS
             directivePlanner: `You are an elite master developmental editor and multi-scale narrative architect. Your task is to evaluate a user-provided directive and design an intelligent, minimal-blast-radius plan to execute it across any narrative scale (Acts, Sequences, Scenes, Beats, and Written Prose).
@@ -5503,60 +5595,26 @@ INSTRUCTIONS:
 1. Break the scene into Motivation-Reaction Units (action/reaction pairs).
 2. Generate up to 15 beats in this chunk.
 3. If previous beats were generated in earlier chunks for this scene, continue seamlessly from where the previous beat ended without resetting character positions.
-4. Set \`has_more: true\` if the scene still has unchoreographed plot events from the description; set \`has_more: false\` when the scene reaches its natural resolution.
+4. Set `<has_more>true</has_more>` if the scene still has unchoreographed plot events from the description; set `<has_more>false</has_more>` when the scene reaches its natural resolution.
 
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: Use block scalar style (| operator) for the action_description, pivot, character_intent, authorial_intent, epistemic_boundaries, and subtext.
+FORMATTING DIRECTIVE: Return your choreography strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-has_more: true # Set to false if the scene's narrative blueprint is completely finished in this chunk.
-beats:
-  - scene_id: "1.1"
-    beat_id: "1.1.1"
-    beat_type: "DRAMATIC" # or TRANSITIONAL
-    action_description: |
-      A crisp, vivid 1-2 sentence description clearly stating the concrete physical and dramatic action occurring in this beat.
-    beat_structure:
-      pivot: |
-        Identify the exact turning point of this beat. Categorize explicitly as Peripeteia (reversal of fortune) or Anagnorisis (reversal of knowledge).
-    character_intent: |
-      [Character A Name]:
-        Approach & Goal: Strategy, posture, and motive.
-        Locutionary / Surface Dialogue: Surface words or visible signal.
-        Illocutionary Force: Performative action intended (Striking, Shielding, Evading, Provoking, Demanding, Confessing).
-        Perlocutionary Effect: Actual result on listener and tension gap.
-        MRU Reaction Sequence:
-          1. Feeling/Thought: Involuntary reflex or visceral sensation.
-          2. Action: Voluntary physical movement.
-          3. Speech: Verbal response.
-        Hidden Subtext: Real calculation or emotional truth.
-      [Character B Name]:
-        Approach & Goal: Micro-goal/defenses.
-        Locutionary / Surface Dialogue: Visible response or deflection.
-        Illocutionary Force: Performative counter-action.
-        Perlocutionary Effect: Actual result on Character A.
-        MRU Reaction Sequence:
-          1. Feeling/Thought: Involuntary reflex.
-          2. Action: Physical reaction.
-          3. Speech: Counter-dialogue.
-        Hidden Subtext: Real calculation or emotional truth.
-    atmosphere_and_feel:
-      mood: "The exact emotional vibe/frequency of the beat"
-      cognitive_sensory_filters:
-        - "Non-visual detail 1 filtered strictly through focal character's current neurological/emotional state"
-        - "Non-visual detail 2 filtered through character mindset"
-        - "Visual detail filtered through character mindset"
-      subtext: "The unsaid friction happening beneath the surface"
-    epistemic_boundaries: |
-      Focalizer: [Character Name]
-      Limit on Knowledge: Specify how the focalizer's perspective restricts access to other characters' internal thoughts.
-    authorial_intent: |
-      Provide clear, strategic instructions on how the author wants this beat to go.
-    char_A_tactic: "Active verb (e.g. Intimidates, Deflects, Probes)"
-    char_A_action: "Detailed description of physical/verbal execution following MRU order (Feeling -> Action -> Speech)."
-    char_B_reaction: "Detailed description of how the opposing force pushes back following MRU order."
-    power_shift: "Who holds the upper hand and how tension escalated."
-    valence: 0`,
+<response>
+  <has_more>true</has_more> <!-- Set to false if the scene's narrative blueprint is completely finished in this chunk. -->
+  <beats>
+    <beat>
+      <beat_id>1.1.1</beat_id>
+      <beat_type>DRAMATIC</beat_type> <!-- or TRANSITIONAL -->
+      <action>A vivid 1-2 sentence description of the concrete physical and verbal action launched in this beat.</action>
+      <reaction>The visceral reaction (Feeling -> Action -> Speech) of the receiving character.</reaction>
+      <tactic>The specific underlying tactic used (e.g. Provokes, Evades, Shields, Demands).</tactic>
+      <subtext>The unsaid friction happening beneath the surface, including the real calculation or emotional truth.</subtext>
+    </beat>
+    <!-- Add more <beat> blocks as needed, up to 15 -->
+  </beats>
+</response>`,
 
             // 4.2 Beat Review Agent (SMALL)
             beatReview: `You are a continuity logic gate, scene boundary auditor, and dramatic pacing editor. Your task is to evaluate the micro-beats sequence for physical, tactical, structural, scene boundary containment, and literary continuity.
@@ -12432,38 +12490,55 @@ ${genOutput}
 </generated_story_arc>
 `,
                             parserFn: (text) => {
-                                let parsed = null;
-                                try {
-                                    parsed = parseYaml(text);
-                                } catch (e) {
-                                    console.warn("parseYaml failed in Story Arc parserFn, falling back to salvageStoryArc:", e);
-                                }
-                                if (!parsed || typeof parsed !== 'object') {
-                                    parsed = salvageStoryArc(text) || {};
+                                const extractTag = (xml, tag) => {
+                                    const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
+                                    return match ? match[1].trim() : "";
+                                };
+
+                                const globalArcMatch = /<global_arc>([\s\S]*?)<\/global_arc>/i.exec(text);
+                                const globalArc = globalArcMatch ? globalArcMatch[1] : text;
+
+                                const startingVal = extractTag(globalArc, 'starting_value_state');
+                                const endingVal = extractTag(globalArc, 'ending_value_state');
+                                const surprises = extractTag(globalArc, 'major_surprises_and_twists');
+                                const coreThematic = extractTag(globalArc, 'core_thematic_argument');
+                                const incitingIncident = extractTag(globalArc, 'inciting_incident');
+                                
+                                const charArcs = [];
+                                const charArcsMatch = /<character_arcs>([\s\S]*?)<\/character_arcs>/i.exec(text);
+                                if (charArcsMatch) {
+                                    const arcRegex = /<arc>([\s\S]*?)<\/arc>/gi;
+                                    let match;
+                                    let idx = 0;
+                                    while ((match = arcRegex.exec(charArcsMatch[1])) !== null) {
+                                        const arcXML = match[1];
+                                        charArcs.push({
+                                            char_id: extractTag(arcXML, 'char_id') || `C${idx + 1}`,
+                                            description: extractTag(arcXML, 'arc_description'),
+                                            lie_believed: extractTag(arcXML, 'lie_believed'),
+                                            truth_needed: extractTag(arcXML, 'truth_needed'),
+                                            arc_catalyst: extractTag(arcXML, 'arc_catalyst')
+                                        });
+                                        idx++;
+                                    }
                                 }
 
-                                const globalArc = parsed.global_arc || parsed || {};
-                                const startingVal = globalArc.starting_value_state || parsed.starting_value_state || "";
-                                const endingVal = globalArc.ending_value_state || parsed.ending_value_state || "";
-                                const surprises = globalArc.major_surprises_and_twists || parsed.major_surprises_and_twists || "";
-                                const coreThematic = globalArc.core_thematic_argument || parsed.core_thematic_argument || "";
-                                const incitingIncident = globalArc.inciting_incident || parsed.inciting_incident || "";
-                                
-                                const rawCharArcs = parsed.character_arcs || globalArc.character_arcs || [];
-                                const charArcs = (Array.isArray(rawCharArcs) ? rawCharArcs : []).map((ca, idx) => ({
-                                    char_id: ca.char_id || ca.id || ca.character_id || `C${idx + 1}`,
-                                    description: ca.arc_description || ca.description || `${ca.lie_believed || ''} -> ${ca.truth_needed || ''}`,
-                                    lie_believed: ca.lie_believed || ca.lie || "",
-                                    truth_needed: ca.truth_needed || ca.truth || "",
-                                    arc_catalyst: ca.arc_catalyst || ca.catalyst || ""
-                                }));
-                                
-                                const rawThreads = parsed.narrative_threads || parsed.threads || globalArc.narrative_threads || [];
-                                const threads = (Array.isArray(rawThreads) ? rawThreads : []).map((t, idx) => ({
-                                    id: t.thread_id || t.id || `T${idx + 1}`,
-                                    name: t.name || t.title || `Thread ${idx + 1}`,
-                                    description: t.description || t.summary || ""
-                                }));
+                                const threads = [];
+                                const threadsMatch = /<narrative_threads>([\s\S]*?)<\/narrative_threads>/i.exec(text);
+                                if (threadsMatch) {
+                                    const threadRegex = /<thread>([\s\S]*?)<\/thread>/gi;
+                                    let match;
+                                    let idx = 0;
+                                    while ((match = threadRegex.exec(threadsMatch[1])) !== null) {
+                                        const threadXML = match[1];
+                                        threads.push({
+                                            id: extractTag(threadXML, 'thread_id') || `T${idx + 1}`,
+                                            name: extractTag(threadXML, 'name') || `Thread ${idx + 1}`,
+                                            description: extractTag(threadXML, 'description')
+                                        });
+                                        idx++;
+                                    }
+                                }
                                 
                                 return {
                                     starting_value_state: startingVal,
@@ -12741,102 +12816,147 @@ ${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role})`).join('\n')}
 </cast_list>
 
 <output_format_description>
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: For ANY field value longer than a short phrase, use block scalar style (the | operator).
-
-Output Schema:
-acts:
-  - number: 1
-    title: "Descriptive Title"
-    act_mandate: |
-      - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this act. Explain its role in the global value shift and Todorov equilibrium transition.
-      - **DRAMATIC ARC & PACING CURVES:** Map the act-level narrative movement. Detail starting emotional/value state, rising action, sequence division plan (2 in Act I, 4 in Act II, 2 in Act III), and Point of No Return climax.
-      - **THREAD PROGRESSION & CONVERGENCE:** Describe how each active plot thread evolves, intersects, and impacts one another across this act.
-      - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on how fatal flaws are tested, exposed, or synthesized.
-      - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems or pacing pitfalls for downstream sequence and scene planners.
-    world_building_developments: "How the setting or lore expands here."
-    knots:
-      - description: "Event description..."
-        interaction: "Thread 1 event forces Thread 2 crisis."
-
-thread_statuses_at_end:
-  - thread_id: T1
-    status: "Exact status at the end of this act."
-
-relationship_shifts:
-  - source_id: C1
-    target_id: C2
-    new_dynamic: "How their relationship fundamentally evolved in this Act."
-
-new_character_briefs: []
-</output_format_description>
-
-BEGIN STRUCTURING ACTS
-`,
-                        systemPrompt: PROMPTS.actAgent,
-                        reviewerSystemPrompt: PROMPTS.actReview,
-                        reviewerPromptFn: (genOutput) => `
-<story_arc_twists_and_surprises>
-${storyToUse.major_surprises_and_twists || ""}
-</story_arc_twists_and_surprises>
-<generated_acts>
-${genOutput}
-</generated_acts>
-
-<output_format_description>
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-
-Output Schema:
-critique_analysis: |
-  Critically analyze each Act's mandate, structural points, and thread statuses. Specifically verify that all five mandate sections are present and robustly addressed. Verify every thread ID from the input is accounted for.
-status: PASS # or FAIL
-deviation_reasons:
-  - "Explain the exact issue and how to fix it."
-</output_format_description>
-
-BEGIN ACT CRITIQUE REVIEW
-`,
-                        parserFn: (text) => {
-                            let parsed = parseYaml(text) || {};
-                            
-                            // If parseYaml returned empty acts, attempt direct salvageActs as fallback
-                            if (!parsed.acts || parsed.acts.length === 0) {
-                                const salvaged = salvageActs(text);
-                                if (salvaged && salvaged.acts && salvaged.acts.length > 0) {
-                                    console.warn("[Act Agent parserFn] salvageActs recovered acts after parseYaml returned empty.");
-                                    parsed = salvaged;
-                                }
-                            }
-
-                            const parsedActs = (parsed.acts || []).map(act => ({
-                                number: parseInt(act.number, 10) || (parsed.acts.indexOf(act) + 1),
-                                title: act.title || `Act ${parseInt(act.number, 10) || (parsed.acts.indexOf(act) + 1)}`,
-                                act_mandate: act.act_mandate || act.description || act.summary || "",
-                                description: act.act_mandate || act.description || act.summary || "",
-                                world_building_developments: act.world_building_developments || "",
-                                knots: (act.knots || []).map(k => ({
-                                    description: k.description || "",
-                                    interaction: k.interaction || ""
-                                }))
-                            }));
-                            
-                            const threadStatuses = (parsed.thread_statuses_at_end || []).map(ts => ({
-                                id: ts.thread_id || "",
-                                status: ts.status || ""
-                            }));
-                            
-                            const relShifts = (parsed.relationship_shifts || []).map(rs => ({
-                                from: rs.source_id || "",
-                                to: rs.target_id || "",
-                                new_feeling: rs.new_dynamic || ""
-                            }));
-                            
-                            return {
-                                acts: parsedActs,
-                                thread_statuses: threadStatuses,
-                                relationship_shifts: relShifts
-                            };
-                        },
+12756: FORMATTING DIRECTIVE: Return your act structure strictly as XML tags. Do not use YAML or markdown blocks.
+12757: CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+12758: 
+12759: Output Schema:
+12760: <response>
+12761:   <acts>
+12762:     <act>
+12763:       <number>1</number>
+12764:       <title>Descriptive Title</title>
+12765:       <act_mandate>
+12766:         - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this act. Explain its role in the global value shift and Todorov equilibrium transition.
+12767:         - **DRAMATIC ARC & PACING CURVES:** Map the act-level narrative movement. Detail starting emotional/value state, rising action, sequence division plan (2 in Act I, 4 in Act II, 2 in Act III), and Point of No Return climax.
+12768:         - **THREAD PROGRESSION & CONVERGENCE:** Describe how each active plot thread evolves, intersects, and impacts one another across this act.
+12769:         - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on how fatal flaws are tested, exposed, or synthesized.
+12770:         - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems or pacing pitfalls for downstream sequence and scene planners.
+12771:       </act_mandate>
+12772:       <world_building_developments>How the setting or lore expands here.</world_building_developments>
+12773:       <knots>
+12774:         <knot>
+12775:           <description>Event description...</description>
+12776:           <interaction>Thread 1 event forces Thread 2 crisis.</interaction>
+12777:         </knot>
+12778:       </knots>
+12779:     </act>
+12780:     <!-- Add Act 2 and 3 -->
+12781:   </acts>
+12782: 
+12783:   <thread_statuses_at_end>
+12784:     <thread_status>
+12785:       <thread_id>T1</thread_id>
+12786:       <status>Exact status at the end of this act.</status>
+12787:     </thread_status>
+12788:   </thread_statuses_at_end>
+12789: 
+12790:   <relationship_shifts>
+12791:     <shift>
+12792:       <source_id>C1</source_id>
+12793:       <target_id>C2</target_id>
+12794:       <new_dynamic>How their relationship fundamentally evolved in this Act.</new_dynamic>
+12795:     </shift>
+12796:   </relationship_shifts>
+12797: </response>
+12798: </output_format_description>
+12799: 
+12800: BEGIN STRUCTURING ACTS
+12801: `,
+12802:                         systemPrompt: PROMPTS.actAgent,
+12803:                         reviewerSystemPrompt: PROMPTS.actReview,
+12804:                         reviewerPromptFn: (genOutput) => `
+12805: <story_arc_twists_and_surprises>
+12806: ${storyToUse.major_surprises_and_twists || ""}
+12807: </story_arc_twists_and_surprises>
+12808: <generated_acts>
+12809: ${genOutput}
+12810: </generated_acts>
+12811: 
+12812: <output_format_description>
+12813: FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+12814: CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+12815: 
+12816: Output Schema:
+12817: <response>
+12818:   <critique_analysis>Critically analyze each Act's mandate, structural points, and thread statuses. Specifically verify that all five mandate sections are present and robustly addressed. Verify every thread ID from the input is accounted for.</critique_analysis>
+12819:   <status>PASS</status> <!-- or FAIL -->
+12820:   <deviation_reasons>
+12821:     <reason>Explain the exact issue and how to fix it.</reason>
+12822:   </deviation_reasons>
+12823: </response>
+12824: </output_format_description>
+12825: 
+12826: BEGIN ACT CRITIQUE REVIEW
+12827: `,
+12828:                         parserFn: (text) => {
+12829:                             const extractTag = (xml, tag) => {
+12830:                                 const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
+12831:                                 return match ? match[1].trim() : "";
+12832:                             };
+12833:                             
+12834:                             const actsMatch = /<acts>([\s\S]*?)<\/acts>/i.exec(text);
+12835:                             const actsXML = actsMatch ? actsMatch[1] : "";
+12836:                             const actRegex = /<act>([\s\S]*?)<\/act>/gi;
+12837:                             const parsedActs = [];
+12838:                             let match;
+12839:                             let idx = 1;
+12840:                             while ((match = actRegex.exec(actsXML)) !== null) {
+12841:                                 const actData = match[1];
+12842:                                 const knotsMatch = /<knots>([\s\S]*?)<\/knots>/i.exec(actData);
+12843:                                 const knotsXML = knotsMatch ? knotsMatch[1] : "";
+12844:                                 const knotRegex = /<knot>([\s\S]*?)<\/knot>/gi;
+12845:                                 const knots = [];
+12846:                                 let kMatch;
+12847:                                 while ((kMatch = knotRegex.exec(knotsXML)) !== null) {
+12848:                                     knots.push({
+12849:                                         description: extractTag(kMatch[1], 'description'),
+12850:                                         interaction: extractTag(kMatch[1], 'interaction')
+12851:                                     });
+12852:                                 }
+12853:                                 parsedActs.push({
+12854:                                     number: parseInt(extractTag(actData, 'number'), 10) || idx,
+12855:                                     title: extractTag(actData, 'title') || `Act ${idx}`,
+12856:                                     act_mandate: extractTag(actData, 'act_mandate'),
+12857:                                     description: extractTag(actData, 'act_mandate'),
+12858:                                     world_building_developments: extractTag(actData, 'world_building_developments'),
+12859:                                     knots
+12860:                                 });
+12861:                                 idx++;
+12862:                             }
+12863: 
+12864:                             const threadStatuses = [];
+12865:                             const threadsMatch = /<thread_statuses_at_end>([\s\S]*?)<\/thread_statuses_at_end>/i.exec(text);
+12866:                             if (threadsMatch) {
+12867:                                 const tsRegex = /<thread_status>([\s\S]*?)<\/thread_status>/gi;
+12868:                                 let tsMatch;
+12869:                                 while ((tsMatch = tsRegex.exec(threadsMatch[1])) !== null) {
+12870:                                     threadStatuses.push({
+12871:                                         id: extractTag(tsMatch[1], 'thread_id'),
+12872:                                         status: extractTag(tsMatch[1], 'status')
+12873:                                     });
+12874:                                 }
+12875:                             }
+12876: 
+12877:                             const relShifts = [];
+12878:                             const shiftsMatch = /<relationship_shifts>([\s\S]*?)<\/relationship_shifts>/i.exec(text);
+12879:                             if (shiftsMatch) {
+12880:                                 const shiftRegex = /<shift>([\s\S]*?)<\/shift>/gi;
+12881:                                 let sMatch;
+12882:                                 while ((sMatch = shiftRegex.exec(shiftsMatch[1])) !== null) {
+12883:                                     relShifts.push({
+12884:                                         from: extractTag(sMatch[1], 'source_id'),
+12885:                                         to: extractTag(sMatch[1], 'target_id'),
+12886:                                         new_feeling: extractTag(sMatch[1], 'new_dynamic')
+12887:                                     });
+12888:                                 }
+12889:                             }
+12890: 
+12891:                             return {
+12892:                                 acts: parsedActs,
+12893:                                 thread_statuses: threadStatuses,
+12894:                                 relationship_shifts: relShifts
+12895:                             };
+12896:                         },
                         modelSize: "large",
                         spawningContext: "Act division and pacing",
                         parentTierFailFn: async (reasons) => {
@@ -13014,22 +13134,68 @@ Mood: ${storyToUse.style?.mood || ""}
 Writing Guide: ${storyToUse.style?.writing_guide || ""}
 </style_and_tone>
 `;
+                            return `${getSequenceContext()}
+<generated_sequences>
+${genOutput}
+</generated_sequences>
+
+<output_format_description>
+FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+Output Schema:
+<response>
+  <critique_analysis>Analyze each sequence's tactical question, dramatic purpose, pacing contribution, and causal linkage. Verify formatting requirements are met.</critique_analysis>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <reason>Explain the exact issue and how to fix it.</reason>
+  </deviation_reasons>
+</response>
+</output_format_description>
+
+BEGIN SEQUENCE CRITIQUE REVIEW
+`;
                         },
                         parserFn: (text) => {
-                            const parsed = parseYaml(text) || {};
-                            const parsedSequences = (parsed.sequences || []).map((seq, idx) => ({
-                                number: parseInt(seq.number, 10) || (idx + 1),
-                                parent_act: parseInt(seq.parent_act, 10) || (idx < 2 ? 1 : (idx < 6 ? 2 : 3)),
-                                title: seq.title || `Sequence ${idx + 1}`,
-                                sequence_function: seq.sequence_function || SEQUENCE_DEFAULT_FUNCTIONS[idx % 8],
-                                tactical_question: seq.tactical_question || "",
-                                description: seq.description || "",
-                                sequence_objective: seq.sequence_objective || "",
-                                threads_advanced: seq.threads_advanced || [],
-                                characters_in_focus: seq.characters_in_focus || [],
-                                sequence_climax: seq.sequence_climax || "",
-                                ending_hook: seq.ending_hook || ""
-                            }));
+                            const extractTag = (xml, tag) => {
+                                const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
+                                return match ? match[1].trim() : "";
+                            };
+                            const sequencesMatch = /<sequences>([\s\S]*?)<\/sequences>/i.exec(text);
+                            const sequencesXML = sequencesMatch ? sequencesMatch[1] : text;
+                            const seqRegex = /<sequence>([\s\S]*?)<\/sequence>/gi;
+                            const parsedSequences = [];
+                            let match;
+                            let idx = 0;
+                            while ((match = seqRegex.exec(sequencesXML)) !== null) {
+                                const seqData = match[1];
+                                const extractList = (parentTag, childTag) => {
+                                    const pMatch = new RegExp(`<${parentTag}>([\\s\\S]*?)<\\/${parentTag}>`, 'i').exec(seqData);
+                                    if (!pMatch) return [];
+                                    const cRegex = new RegExp(`<${childTag}>([\\s\\S]*?)<\\/${childTag}>`, 'gi');
+                                    const items = [];
+                                    let cMatch;
+                                    while ((cMatch = cRegex.exec(pMatch[1])) !== null) {
+                                        items.push(cMatch[1].trim());
+                                    }
+                                    return items;
+                                };
+                                
+                                parsedSequences.push({
+                                    number: parseInt(extractTag(seqData, 'number'), 10) || (idx + 1),
+                                    parent_act: parseInt(extractTag(seqData, 'parent_act'), 10) || (idx < 2 ? 1 : (idx < 6 ? 2 : 3)),
+                                    title: extractTag(seqData, 'title') || `Sequence ${idx + 1}`,
+                                    sequence_function: extractTag(seqData, 'sequence_function') || SEQUENCE_DEFAULT_FUNCTIONS[idx % 8],
+                                    tactical_question: extractTag(seqData, 'tactical_question') || "",
+                                    description: extractTag(seqData, 'description') || "",
+                                    sequence_objective: extractTag(seqData, 'sequence_objective') || "",
+                                    threads_advanced: extractList('threads_advanced', 'thread'),
+                                    characters_in_focus: extractList('characters_in_focus', 'character'),
+                                    sequence_climax: extractTag(seqData, 'sequence_climax') || "",
+                                    ending_hook: extractTag(seqData, 'ending_hook') || ""
+                                });
+                                idx++;
+                            }
                             return { sequences: parsedSequences };
                         },
                         modelSize: "large",
@@ -15281,23 +15447,21 @@ Writing Guide: ${storyToUse.style?.writing_guide || ""}
 
                     // Run Edit Router for Scenes (Tier 3.1 & 3.2)
                     const sceneResult = await runAgentWithEscalation({
-                        tierName: "Scene Agent",
+                        tierName: "Scene Roster Agent",
                         isAutopilot,
                         generatorPromptFn: () => {
                             const getSceneContext = () => `
 <input_payload_schema>
-This prompt provides the following context blocks. Your responsibility is to generate the scene sequence for this sequence objective:
+This prompt provides the following context blocks. Your responsibility is to generate the lean scene sequence for this sequence objective:
 - <overall_story_information>: The macro narrative framework. Keep the overarching themes and concepts in mind.
 - <character_psychological_arcs>: The global character arcs. Ensure scene events test these arcs.
 - <active_character_profiles>: The characters available for this scene.
 - <character_relationships>: Existing relationship dynamics to leverage.
-- <continuity_ledger>: Hard facts established in the story. Do not contradict them.
 - <act_descriptions>: The macro Act structure. Ensure your scenes fulfill the current Sequence's objective.
 - <previous_act_last_sequence>: (If applicable) The narrative bridge from the previous act.
 - <style_and_tone>: The genre and style guidelines.
-- <available_narrative_modes>: The library of narrative lenses you can assign to scenes.
 - <target_scenes_per_sequence>: The structural constraints for your generation.
-- <output_format_description>: The required YAML output schema.
+- <output_format_description>: The required XML output schema.
 </input_payload_schema>
 
 <overall_story_information>
@@ -15324,10 +15488,6 @@ ${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw
 ${buildRelationshipFrictionBlock(storyToUse.cast || [], storyToUse.relationships || {})}
 </character_relationships>
 
-<continuity_ledger>
-${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}
-</continuity_ledger>
-
 <act_descriptions>
 ${storyToUse.acts.map(a => `## Act ${a.number}: ${a.title} ${(a.number === actNumber) ? "[[CURRENT ACT]]" : ""}
 Mandate: ${a.act_mandate || a.description}
@@ -15352,10 +15512,6 @@ Mood: ${storyToUse.style?.mood || 'Unspecified'}
 Writing Guide: ${storyToUse.style?.writing_guide || 'Standard'}
 </style_and_tone>
 
-<available_narrative_modes>
-${allNarrativeModesXml}
-</available_narrative_modes>
-
 <target_scenes_per_sequence>
 Generate between ${scenesRange.min} and ${scenesRange.max} scenes (hard minimum 4) for this sequence.
 Structure them with Dwight Swain's Scene and Sequel alternation (Proactive Scene -> Reactive Sequel).
@@ -15363,56 +15519,39 @@ Pacing Justification: ${scenesRange.justification}
 </target_scenes_per_sequence>
 
 <output_format_description>
-FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
-CRITICAL YAML SAFETY RULE: Use block scalar style (| operator) for rich_scene_description, character descriptions, and any multi-line text.
+FORMATTING DIRECTIVE: Return your scenes strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
-scenes:
-  - scene_id: "${currentSequence.number}.1" # SequenceNum.SceneNum (e.g. ${currentSequence.number}.1)
-    title: "Scene Title"
-    characters_present:
-      - C1
-    threads_advanced:
-      - T1
-    scene_objective: "The protagonist's immediate goal in the scene."
-    scene_type: "PROACTIVE" # or REACTIVE (Swain's Scene vs Sequel)
-    transition_jump: "Specific temporal, spatial, or cast transition from the preceding scene (e.g., '10 minutes later in the archives' or 'Next morning at dawn')."
-    temporal_scope: "Continuous real-time duration of this scene (e.g., '15 contiguous minutes'). No internal time jumps permitted."
-    dominant_narrative_mode:
-      mode_id: "MODE_ID"
-      justification: "Reason based on scene's analytical subtext"
-    entrance_conditions: "Where are the characters physically when this scene opens? What is their emotional/physical state coming in?"
-    exit_conditions: "Where are the characters physically when this scene closes? What changed?"
-    rich_scene_description: |
-      - **DRAMATIC STRUCTURE & SEQUENCE:** The exact sequence of events. Detail the starting situation, the rising action/complications as characters seek their objective, the turning point (point of no return, categorized explicitly as Peripeteia or Anagnorisis), and the scene-ending disaster or decision.
-      - **BEAT CHOREOGRAPHY DIRECTIVES:** Outline the verbal tactics (e.g., deflects, interrogates, validates), performative speech acts (illocutionary forces vs perlocutionary effects), physical movements (e.g., pacing, closing distance), and key subtext (hidden tension, unsaid motivations, or lies) to guide downstream Beat Choreographers.
-      - **CHARACTER & RELATIONSHIP DYNAMICS:** Explain how this scene tests the characters' flaws and core desires. Detail specific psychological changes, epistemic boundaries (focalizer limitations), and relationship shifts.
-      - **SENSORY & ENVIRONMENTAL LANDSCAPE:** List the physical setting, lighting, temperature, key objects/props characters can interact with, and cognitive sensory filters (visuals, sounds, textures, smells filtered through character psychology).
-      - **THEMATIC CONNECTION:** How does this scene test, complicate, or illuminate the core_thematic_argument?
-    value_shift:
-      start_state: "Starting emotional valence"
-      end_state: "Ending emotional valence"
-    causality:
-      interaction_type: "Collision" # 'Collision', 'Resonance', or 'Isolation'
-      justification: "Causal connection to other scenes/threads."
-    hard_facts_introduced:
-      - category: "Appearance" # Appearance (hair, eyes, scars, clothing), Object (items held, hidden, lost), Place (layout, secrets), Opinion (beliefs, suspicions), Agreement (promises, wagers, deadlines), Lore (world rules)
-        key: "Descriptive Label (e.g. Silas Hair Color, Vault Key Location, Kaelen's Stance)"
-        detail: "Helpful hard fact established in this scene with rich context."
-        entity_id: "C1" # Optional character ID or entity
-    relationship_shifts:
-      - source_id: C1
-        target_id: C2
-        new_dynamic: "String detailing how trust/tension changed due to this scene's events."
-    new_character_briefs: []
+<response>
+  <scenes>
+    <scene>
+      <scene_id>${currentSequence.number}.1</scene_id> <!-- SequenceNum.SceneNum (e.g. ${currentSequence.number}.1) -->
+      <title>Scene Title</title>
+      <characters_present>
+        <character>C1</character>
+      </characters_present>
+      <threads_advanced>
+        <thread>T1</thread>
+      </threads_advanced>
+      <scene_objective>The protagonist's immediate goal in the scene.</scene_objective>
+      <scene_type>PROACTIVE</scene_type> <!-- or REACTIVE -->
+      <transition_jump>Specific temporal, spatial, or cast transition from the preceding scene.</transition_jump>
+      <temporal_scope>Continuous real-time duration of this scene.</temporal_scope>
+      <entrance_conditions>Where are the characters physically when this scene opens?</entrance_conditions>
+      <exit_conditions>Where are the characters physically when this scene closes? What changed?</exit_conditions>
+    </scene>
+    <!-- Add more scenes -->
+  </scenes>
+</response>
 </output_format_description>
 
 BEGIN DEVELOPING CURRENT SEQUENCE SCENES
 `;
                             return getSceneContext();
                         },
-                        systemPrompt: PROMPTS.sceneAgent,
-                        reviewerSystemPrompt: PROMPTS.sceneReview,
+                        systemPrompt: PROMPTS.sceneRosterAgent,
+                        reviewerSystemPrompt: PROMPTS.sceneRosterReview,
                         reviewerPromptFn: (genOutput) => {
                             const getSceneContext = () => `
 <overall_story_information>
@@ -15477,61 +15616,38 @@ Structure them with Dwight Swain's Scene and Sequel alternation (Proactive Scene
 Pacing Justification: ${scenesRange.justification}
 </target_scenes_per_sequence>
 `;
-                            return `${getSceneContext()}\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.\n\nOutput Schema:\ncritique_analysis: |\n  Critique the generated scenes based on narrative modes, dramatic conflict, and character flaws. Verify formatting requirements are met.\nstatus: PASS # or FAIL\ndeviation_reasons:\n  - "Explain the exact issue and how to fix it."\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`;
+                            return `${getSceneContext()}\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Critique the generated scenes based on narrative modes, dramatic conflict, and character flaws. Verify formatting requirements are met.</critique_analysis>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`;
                         },
                         parserFn: (text) => {
-                            const parsed = parseYaml(text) || {};
-                            let rawScenes = parsed.scenes;
-                            if (!rawScenes || rawScenes.length === 0) {
-                                const salvaged = salvageScenes(text, currentSequence.number);
-                                if (salvaged && salvaged.scenes && salvaged.scenes.length > 0) {
-                                    console.warn("[Scene Agent parserFn] salvageScenes recovered scenes after parseYaml returned empty.");
-                                    rawScenes = salvaged.scenes;
-                                    parsed.scenes = salvaged.scenes;
-                                } else {
-                                    rawScenes = [];
-                                }
-                            }
+                            const extractTag = (xml, tag) => {
+                                const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
+                                return match ? match[1].trim() : "";
+                            };
+                            const scenesMatch = /<scenes>([\s\S]*?)<\/scenes>/i.exec(text);
+                            const scenesXML = scenesMatch ? scenesMatch[1] : text;
+                            const sceneRegex = /<scene>([\s\S]*?)<\/scene>/gi;
+                            const parsedScenes = [];
+                            let match;
+                            let sIdx = 0;
                             
-                            const parsedScenes = rawScenes.map((s, sIdx) => {
-                                const modeObj = s.dominant_narrative_mode || {};
-                                const modeId = typeof modeObj === 'object' ? modeObj.mode_id || 'SCENE_DRAMATIC' : (modeObj || 'SCENE_DRAMATIC');
-                                const modeJustification = typeof modeObj === 'object' ? modeObj.justification || '' : '';
+                            while ((match = sceneRegex.exec(scenesXML)) !== null) {
+                                const sData = match[1];
                                 
-                                const valShift = s.value_shift || {};
-                                const startValence = parseInt(valShift.start_state, 10) || parseInt(s.start_valence, 10) || 0;
-                                const endValence = parseInt(valShift.end_state, 10) || parseInt(s.end_valence, 10) || 0;
-                                
-                                const hardFacts = (s.hard_facts_introduced || s.continuity_facts || s.hard_facts || s.facts || []).map(hf => ({
-                                    category: hf.category || "Fact",
-                                    key: hf.key || hf.name || hf.subject || "Fact",
-                                    detail: hf.detail || hf.value || hf.fact || hf.description || "",
-                                    entity_id: hf.entity_id || hf.character || ""
-                                }));
+                                const extractList = (parentTag, childTag) => {
+                                    const pMatch = new RegExp(`<${parentTag}>([\\s\\S]*?)<\\/${parentTag}>`, 'i').exec(sData);
+                                    if (!pMatch) return [];
+                                    const cRegex = new RegExp(`<${childTag}>([\\s\\S]*?)<\\/${childTag}>`, 'gi');
+                                    const items = [];
+                                    let cMatch;
+                                    while ((cMatch = cRegex.exec(pMatch[1])) !== null) {
+                                        items.push(cMatch[1].trim());
+                                    }
+                                    return items;
+                                };
 
-                                const stateChanges = (s.state_changes_introduced || s.state_changes || []).map(sc => ({
-                                    entity_id: sc.entity_id || sc.entity || "",
-                                    relation: sc.relation || "HAS",
-                                    target: sc.target || sc.value || ""
-                                }));
-                                
-                                const relShifts = (s.relationship_shifts || []).map(rs => ({
-                                    from: rs.source_id || rs.from || "",
-                                    to: rs.target_id || rs.to || "",
-                                    new_feeling: rs.new_dynamic || rs.new_feeling || rs.description || ""
-                                }));
-                                
-                                const charBriefs = (s.new_character_briefs || []).map((cb, cbIdx) => ({
-                                    id: cb.id || `C_dyn_${currentSequence.number}_${sIdx + 1}_${cbIdx + 1}`,
-                                    name: cb.name || "Unnamed Character",
-                                    role: cb.role || "Minor",
-                                    flaw: cb.flaw || cb.core_flaw || "",
-                                    desire: cb.desire || cb.core_desire || ""
-                                }));
-                                
-                                const charPres = s.characters_present || s.characters || [];
-                                const threadAdv = s.threads_advanced || s.threads || [];
-                                
+                                const charPres = extractList('characters_present', 'character');
+                                const threadAdv = extractList('threads_advanced', 'thread');
+
                                 const castIds = [];
                                 const castNames = [];
                                 charPres.forEach(cp => {
@@ -15553,36 +15669,31 @@ Pacing Justification: ${scenesRange.justification}
                                         threadIds.push(ta);
                                     }
                                 });
-                                
-                                const sceneId = `${currentSequence.number}.${sIdx + 1}`;
-                                return {
+
+                                const sceneId = extractTag(sData, 'scene_id') || `${currentSequence.number}.${sIdx + 1}`;
+                                parsedScenes.push({
                                     id: sceneId,
                                     number: sceneId,
-                                    title: s.title || `Scene ${sceneId}`,
-                                    objective: s.scene_objective || s.objective || "",
-                                    description: s.rich_scene_description || s.description || "",
-                                    scene_type: s.scene_type || (sIdx % 2 === 0 ? "PROACTIVE" : "REACTIVE"),
-                                    transition_jump: s.transition_jump || (sIdx === 0 ? "Sequence opening" : "Seamless temporal/spatial continuation"),
-                                    dominant_narrative_mode: modeId,
-                                    dominant_narrative_mode_justification: modeJustification,
-                                    value_shift: { start_state: startValence, end_state: endValence },
+                                    title: extractTag(sData, 'title') || `Scene ${sceneId}`,
+                                    objective: extractTag(sData, 'scene_objective') || "",
+                                    scene_type: extractTag(sData, 'scene_type') || (sIdx % 2 === 0 ? "PROACTIVE" : "REACTIVE"),
+                                    transition_jump: extractTag(sData, 'transition_jump') || (sIdx === 0 ? "Sequence opening" : "Seamless continuation"),
+                                    entrance_conditions: extractTag(sData, 'entrance_conditions') || "",
+                                    exit_conditions: extractTag(sData, 'exit_conditions') || "",
+                                    temporal_scope: extractTag(sData, 'temporal_scope') || "",
                                     cast_ids: castIds,
                                     cast_names: castNames,
                                     thread_ids: threadIds,
-                                    active_thread_ids: threadIds,
-                                    hard_facts_introduced: hardFacts,
-                                    continuity_facts: hardFacts,
-                                    state_changes: stateChanges,
-                                    relationship_shifts: relShifts,
-                                    new_character_briefs: charBriefs
-                                };
-                            });
+                                    active_thread_ids: threadIds
+                                });
+                                sIdx++;
+                            }
                             
                             const normalizedScenes = normalizeScenesForSequence(parsedScenes, currentSequence.number);
                             return { scenes: normalizedScenes };
                         },
                         modelSize: "large",
-                        spawningContext: `Sequence ${currentSequence.number} Scene Weaving`,
+                        spawningContext: `Sequence ${currentSequence.number} Scene Roster Generation`,
                         parentTierFailFn: async (reasons) => {
                             setFeedbackLedger(prev => ({
                                 ...prev,
@@ -15595,15 +15706,236 @@ Pacing Justification: ${scenesRange.justification}
                         context: storyToUse
                     });
 
+                    // TIER 4.3: THE EXPANSION LOOP
+                    const leanScenes = sceneResult.parsedData?.scenes || [];
+                    const expandedScenes = [];
+                    for (let sIdx = 0; sIdx < leanScenes.length; sIdx++) {
+                        const leanScene = leanScenes[sIdx];
+                        
+                        addLog({
+                            id: Date.now(),
+                            agent: "Pipeline",
+                            action: `Expanding Scene ${leanScene.number} (${sIdx + 1}/${leanScenes.length})`,
+                            details: `Running Scene Expander Agent...`,
+                            status: "in_progress",
+                            tier: 4.3
+                        });
+
+                        const prevScene = sIdx > 0 ? expandedScenes[sIdx - 1] : null;
+                        const nextScene = sIdx < leanScenes.length - 1 ? leanScenes[sIdx + 1] : null;
+                        
+                        const expanderPromptFn = () => {
+                            return `
+<input_payload_schema>
+Expand this single scene.
+</input_payload_schema>
+
+<target_lean_scene>
+Title: ${leanScene.title}
+Objective: ${leanScene.objective}
+Type: ${leanScene.scene_type}
+Transition Jump: ${leanScene.transition_jump}
+Entrance Conditions: ${leanScene.entrance_conditions}
+Exit Conditions: ${leanScene.exit_conditions}
+Characters: ${leanScene.cast_names.join(', ')}
+Threads: ${leanScene.active_thread_ids.join(', ')}
+</target_lean_scene>
+
+<adjacent_context>
+${prevScene ? `<previous_scene>
+Title: ${prevScene.title}
+Exit Conditions: ${prevScene.exit_conditions}
+Ending Valence: ${prevScene.value_shift?.end_state}
+</previous_scene>` : "<previous_scene>Sequence Start</previous_scene>"}
+${nextScene ? `<next_scene_lean_target>
+Title: ${nextScene.title}
+Entrance Conditions: ${nextScene.entrance_conditions}
+</next_scene_lean_target>` : "<next_scene_lean_target>Sequence End</next_scene_lean_target>"}
+</adjacent_context>
+
+<available_narrative_modes>
+${allNarrativeModesXml}
+</available_narrative_modes>
+
+BEGIN EXPANDING SCENE
+`;
+                        };
+
+                        const expandResult = await runAgentWithEscalation({
+                            tierName: "Scene Expander Agent",
+                            isAutopilot,
+                            generatorPromptFn: expanderPromptFn,
+                            systemPrompt: PROMPTS.sceneExpanderAgent,
+                            reviewerSystemPrompt: null, // Reviewed as a batch in Tier 4.4
+                            reviewerPromptFn: null,
+                            parserFn: (text) => {
+                                const extractTag = (xml, tag) => {
+                                    const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
+                                    return match ? match[1].trim() : "";
+                                };
+                                
+                                const modeData = extractTag(text, 'dominant_narrative_mode');
+                                const modeId = extractTag(modeData, 'mode_id') || extractTag(text, 'dominant_narrative_mode') || 'SCENE_DRAMATIC';
+                                const modeJustification = extractTag(modeData, 'justification') || '';
+                                
+                                const valShiftData = extractTag(text, 'value_shift');
+                                const startValence = parseInt(extractTag(valShiftData, 'start_state'), 10) || 0;
+                                const endValence = parseInt(extractTag(valShiftData, 'end_state'), 10) || 0;
+                                
+                                const hardFacts = [];
+                                const hfMatch = /<hard_facts_introduced>([\s\S]*?)<\/hard_facts_introduced>/i.exec(text);
+                                if (hfMatch) {
+                                    const fRegex = /<fact>([\s\S]*?)<\/fact>/gi;
+                                    let fMatch;
+                                    while ((fMatch = fRegex.exec(hfMatch[1])) !== null) {
+                                        hardFacts.push({
+                                            category: extractTag(fMatch[1], 'category') || "Fact",
+                                            key: extractTag(fMatch[1], 'key') || "Fact",
+                                            detail: extractTag(fMatch[1], 'detail') || "",
+                                            entity_id: extractTag(fMatch[1], 'entity_id') || ""
+                                        });
+                                    }
+                                }
+
+                                const relShifts = [];
+                                const rsMatch = /<relationship_shifts>([\s\S]*?)<\/relationship_shifts>/i.exec(text);
+                                if (rsMatch) {
+                                    const rRegex = /<shift>([\s\S]*?)<\/shift>/gi;
+                                    let rMatch;
+                                    while ((rMatch = rRegex.exec(rsMatch[1])) !== null) {
+                                        relShifts.push({
+                                            from: extractTag(rMatch[1], 'source_id'),
+                                            to: extractTag(rMatch[1], 'target_id'),
+                                            new_feeling: extractTag(rMatch[1], 'new_dynamic')
+                                        });
+                                    }
+                                }
+
+                                const charBriefs = [];
+                                const cbMatch = /<new_character_briefs>([\s\S]*?)<\/new_character_briefs>/i.exec(text);
+                                if (cbMatch) {
+                                    const bRegex = /<brief>([\s\S]*?)<\/brief>/gi;
+                                    let bMatch;
+                                    let cbIdx = 0;
+                                    while ((bMatch = bRegex.exec(cbMatch[1])) !== null) {
+                                        charBriefs.push({
+                                            id: extractTag(bMatch[1], 'id') || `C_dyn_${currentSequence.number}_${sIdx + 1}_${cbIdx + 1}`,
+                                            name: extractTag(bMatch[1], 'name') || "Unnamed Character",
+                                            role: extractTag(bMatch[1], 'role') || "Minor",
+                                            flaw: extractTag(bMatch[1], 'flaw') || "",
+                                            desire: extractTag(bMatch[1], 'desire') || ""
+                                        });
+                                        cbIdx++;
+                                    }
+                                }
+                                
+                                return {
+                                    description: extractTag(text, 'rich_scene_description') || "",
+                                    dominant_narrative_mode: modeId,
+                                    dominant_narrative_mode_justification: modeJustification,
+                                    value_shift: { start_state: startValence, end_state: endValence },
+                                    hard_facts_introduced: hardFacts,
+                                    continuity_facts: hardFacts,
+                                    relationship_shifts: relShifts,
+                                    new_character_briefs: charBriefs,
+                                    state_changes: []
+                                };
+                            },
+                            modelSize: "small", // Safely runs on small because context is small
+                            spawningContext: `Scene ${leanScene.number} Details Expansion`,
+                            parentTierFailFn: async () => {},
+                            activeActNum: actNumber,
+                            activeChapNum: seqIdx,
+                            activeSceneNum: sIdx + 1,
+                            context: { ...storyToUse, currentScene: leanScene }
+                        });
+
+                        const expandedData = expandResult.parsedData || {};
+                        expandedScenes.push({
+                            ...leanScene,
+                            ...expandedData
+                        });
+                        
+                        addLog({
+                            id: Date.now(),
+                            agent: "Pipeline",
+                            action: `Scene ${leanScene.number} Expanded`,
+                            details: `Expansion complete.`,
+                            status: "success",
+                            tier: 4.3
+                        });
+                    }
+
+                    // TIER 4.4: BATCH REVIEW OF EXPANDED SCENES
+                    const expanderReviewResult = await runAgentWithEscalation({
+                        tierName: "Scene Expander Reviewer",
+                        isAutopilot,
+                        generatorPromptFn: () => {
+                            const expanderReviewContext = `
+<expanded_scenes_payload>
+${expandedScenes.map(sc => `
+<scene id="${sc.number}">
+Title: ${sc.title}
+Type: ${sc.scene_type}
+Transition: ${sc.transition_jump}
+Entrance: ${sc.entrance_conditions}
+Exit: ${sc.exit_conditions}
+Value Shift: ${sc.value_shift?.start_state} -> ${sc.value_shift?.end_state}
+Rich Description:
+${sc.description}
+</scene>
+`).join('\n')}
+</expanded_scenes_payload>
+
+BEGIN EXPANSION CRITIQUE REVIEW
+`;
+                            return expanderReviewContext;
+                        },
+                        systemPrompt: PROMPTS.sceneExpanderReview,
+                        reviewerSystemPrompt: null,
+                        reviewerPromptFn: null,
+                        parserFn: (text) => {
+                            const statusMatch = /<status>(PASS|FAIL)<\/status>/i.exec(text);
+                            const status = statusMatch ? statusMatch[1].toUpperCase() : "FAIL";
+                            const reasons = [];
+                            const rRegex = /<reason>([\s\S]*?)<\/reason>/gi;
+                            let rMatch;
+                            while ((rMatch = rRegex.exec(text)) !== null) {
+                                reasons.push(rMatch[1].trim());
+                            }
+                            return { status, deviation_reasons: reasons };
+                        },
+                        modelSize: "small",
+                        spawningContext: `Sequence ${currentSequence.number} Batch Review`,
+                        parentTierFailFn: async (reasons) => {
+                            console.warn("Expansion batch failed:", reasons);
+                        },
+                        activeActNum: actNumber,
+                        activeChapNum: seqIdx,
+                        activeSceneNum: 1,
+                        context: storyToUse
+                    });
+                    
+                    if (expanderReviewResult.parsedData?.status === "FAIL") {
+                        addLog({
+                            id: Date.now(),
+                            agent: "Scene Expander Reviewer",
+                            action: "Failed Batch Review",
+                            details: expanderReviewResult.parsedData.deviation_reasons.join("\n"),
+                            status: "error",
+                            tier: 4.4
+                        });
+                    }
+
                     // Ingest Continuity Ledger Data for newly generated scenes (C7)
                     let currentLedger = [...(storyToUse.continuity_ledger || [])];
-                    (sceneResult.parsedData?.scenes || []).forEach(sc => {
+                    (expandedScenes || []).forEach(sc => {
                         currentLedger = ingestSceneContinuityData(sc, { ...storyToUse, continuity_ledger: currentLedger });
                     });
 
                     const nextStory = {
                         ...storyToUse,
-                        scenes: { ...storyToUse.scenes, [`${seqIdx}`]: sceneResult.parsedData.scenes },
+                        scenes: { ...storyToUse.scenes, [`${seqIdx}`]: expandedScenes },
                         cast: storyToUse.cast || [],
                         continuity_ledger: currentLedger
                     };
@@ -16009,89 +16341,44 @@ You MUST adapt the beat choreography to address this specific instruction:
                                 return `${getBeatContext()}\n\n<generated_beat_choreography>\n${genOutput}\n</generated_beat_choreography>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.\n\nOutput Schema:\ncritique_analysis: |\n  Verify every beat's scene boundary compliance (starting situation, transition jump, ending disaster/decision, anti-overextension), action clarity, tactic, MRU reaction order, physical actions, inventory constraints, Aristotelian pivot type, speech act alignment, cognitive filters, and epistemic boundaries.\nstatus: PASS # or FAIL\ndeviation_reasons:\n  - "Explain the exact issue and how to fix it."\nnew_character_briefs: []\n</output_format_description>\n\nBEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`;
                             },
                             parserFn: (text) => {
-                                const parsed = parseYaml(text) || {};
-                                const cleanScalar = (val) => {
-                                    if (!val) return "";
-                                    let s = String(val).trim();
-                                    if (s === "|" || s === ">") return "";
-                                    if (s.startsWith("|\n") || s.startsWith(">\n")) s = s.substring(2).trim();
-                                    if (s.startsWith("|") || s.startsWith(">")) s = s.substring(1).trim();
-                                    if (s === "|" || s === ">") return "";
-                                    return s;
-                                };
+                                const hasMoreMatch = text.match(/<has_more>\s*(true|false)\s*<\/has_more>/i);
+                                const has_more = hasMoreMatch ? hasMoreMatch[1].toLowerCase() === 'true' : false;
 
-                                const beats = (parsed.beats || []).map((b, bIdx) => {
-                                    const beatId = cleanScalar(b.beat_id || b.id) || `${sceneData.number || `${seq + 1}.${scene + 1}`}.${accumulatedBeats.length + bIdx + 1}`;
-                                    const tactic = cleanScalar(b.char_A_tactic || b.tactic || b.objective);
-                                    const action = cleanScalar(b.char_A_action || b.action || b.motivation);
-                                    const reaction = cleanScalar(b.char_B_reaction || b.reaction);
-                                    const powerShift = cleanScalar(b.power_shift || b.powerShift);
-                                    const valence = parseInt(b.valence, 10) || 0;
-                                    const beatType = cleanScalar(b.beat_type) || "DRAMATIC";
-                                    const rawActionDesc = cleanScalar(b.action_description || b.beat_description || b.action_summary || b.description || b.summary);
+                                const beats = [];
+                                const beatRegex = /<beat>([\s\S]*?)<\/beat>/gi;
+                                let match;
+                                let bIdx = 0;
+                                while ((match = beatRegex.exec(text)) !== null) {
+                                    const beatContent = match[1];
+                                    const extract = (tag) => {
+                                        const tMatch = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(beatContent);
+                                        return tMatch ? tMatch[1].trim() : "";
+                                    };
 
-                                    // Build clear action description if not explicitly provided
-                                    let actionDescription = rawActionDesc;
-                                    if (!actionDescription) {
-                                        if (action && reaction) {
-                                            actionDescription = `${tactic ? `[${tactic}] ` : ''}${action} -> ${reaction}`;
-                                        } else if (action) {
-                                            actionDescription = `${tactic ? `[${tactic}] ` : ''}${action}`;
-                                        } else if (reaction) {
-                                            actionDescription = reaction;
-                                        } else {
-                                            actionDescription = `Beat ${beatId}: ${beatType} interaction.`;
-                                        }
-                                    }
+                                    const beatId = extract('beat_id') || `${sceneData.number || `${seq + 1}.${scene + 1}`}.${accumulatedBeats.length + bIdx + 1}`;
+                                    const beatType = extract('beat_type') || "DRAMATIC";
+                                    const action = extract('action');
+                                    const reaction = extract('reaction');
+                                    const tactic = extract('tactic');
+                                    const subtext = extract('subtext');
+                                    
+                                    let actionDescription = `${tactic ? `[${tactic}] ` : ''}${action} -> ${reaction}`;
 
-                                    let startText = "";
-                                    let pivotText = "";
-                                    let endText = "";
-                                    if (b.beat_structure && typeof b.beat_structure === 'object') {
-                                        startText = cleanScalar(b.beat_structure.start);
-                                        pivotText = cleanScalar(b.beat_structure.pivot);
-                                        endText = cleanScalar(b.beat_structure.end);
-                                    } else if (b.beat_structure) {
-                                        startText = cleanScalar(b.beat_structure);
-                                    }
-
-                                    if (!pivotText && powerShift) {
-                                        pivotText = `Turning point: ${powerShift}`;
-                                    } else if (!pivotText && tactic) {
-                                        pivotText = `Turning point: Character pivots using tactic '${tactic}'.`;
-                                    }
-
-                                    const charIntent = b.character_intent ? (typeof b.character_intent === 'object' ? b.character_intent : cleanScalar(b.character_intent)) : null;
-
-                                    let atmosphereAndFeel = b.atmosphere_and_feel || null;
-                                    let emotionalShift = (b.atmosphere_and_feel && b.atmosphere_and_feel.mood)
-                                        ? `Mood: ${cleanScalar(b.atmosphere_and_feel.mood)}`
-                                        : (powerShift ? `Power shift: ${powerShift}` : "Power shift: None");
-
-                                    const epistemicBoundaries = b.epistemic_boundaries ? (typeof b.epistemic_boundaries === 'object' ? b.epistemic_boundaries : cleanScalar(b.epistemic_boundaries)) : null;
-                                    const authorialIntent = b.authorial_intent ? (typeof b.authorial_intent === 'object' ? b.authorial_intent : cleanScalar(b.authorial_intent)) : null;
-
-                                    return {
+                                    beats.push({
                                         scene_id: sId,
                                         id: beatId,
                                         tactic,
                                         action,
                                         reaction,
-                                        power_shift: powerShift,
-                                        emotional_shift: emotionalShift,
-                                        valence,
                                         beat_type: beatType,
-                                        beat_structure: b.beat_structure || (pivotText ? { pivot: pivotText } : null),
-                                        character_intent: charIntent,
-                                        atmosphere_and_feel: atmosphereAndFeel,
-                                        epistemic_boundaries: epistemicBoundaries,
-                                        authorial_intent: authorialIntent,
                                         action_description: actionDescription,
-                                        description: actionDescription
-                                    };
-                                });
+                                        description: actionDescription,
+                                        subtext
+                                    });
+                                    bIdx++;
+                                }
                                 
-                                return { beats, has_more: !!parsed.has_more };
+                                return { beats, has_more };
                             },
                             modelSize: "small",
                             spawningContext: `Sequence ${seq + 1} Scene ${scene + 1} Beat choreography`,
@@ -21269,8 +21556,8 @@ ${currentLoreList}
                                             {[
                                                 { phaseName: "Phase 1: Story Conception & Worldbuilding", stepRange: [1, 4] },
                                                 { phaseName: "Phase 2: Structural Outlining", stepRange: [5, 8] },
-                                                { phaseName: "Phase 3: Sequence & Micro-Beat Outlining", stepRange: [9, 14] },
-                                                { phaseName: "Phase 4: Prose Generation & Review", stepRange: [15, 18] }
+                                                { phaseName: "Phase 3: Sequence, Scene, & Micro-Beat Outlining", stepRange: [9, 16] },
+                                                { phaseName: "Phase 4: Prose Generation & Review", stepRange: [17, 20] }
                                             ].map((phase, phaseIdx) => {
                                                 const phaseSteps = [
                                                     { id: 1, tier: "Tier 0.1", title: "Conceptual Development Agent", icon: Sparkles, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "User raw outline text, style/genre guides, tone parameters, lore context.", gate: "YAML/XML structure parsed correctly" },
@@ -21285,20 +21572,22 @@ ${currentLoreList}
 
                                                     { id: 9, tier: "Tier 3.1", title: "Sequence Planner (Sequence Agent)", icon: Book, iconColor: "text-[#8C6B32]", badge: "small-model", inputs: "Detailed Act mandates, cast dossiers, story guidelines.", gate: "8 Sequences generated (2-4-2 distribution)" },
                                                     { id: 10, tier: "Tier 3.2", title: "Sequence Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Newly generated sequence plans list, parent Act objectives.", gate: "Reviewer status == 'PASS'" },
-                                                    { id: 11, tier: "Tier 4.1", title: "Scene Planner (Scene Agent)", icon: Film, iconColor: "text-stone-700", badge: "small-model", inputs: "Sequence outline schema, cast dossiers, world bible rules.", gate: ">= 4 Scenes generated per Sequence" },
-                                                    { id: 12, tier: "Tier 4.2", title: "Scene Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Generated scene structure roster, parent sequence objectives.", gate: "Reviewer status == 'PASS'" },
-                                                    { id: 13, tier: "Tier 5.1", title: "Beat Planner (Beat Agent)", icon: Sparkles, iconColor: "text-purple-600", badge: "small-model", inputs: "Scene directives, cast dossiers, relationship ledger.", gate: ">= 3 Beats generated per Scene" },
-                                                    { id: 14, tier: "Tier 5.2", title: "Beat Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Newly generated beats choreography plan, scene parameters.", gate: "Reviewer status == 'PASS'" },
+                                                    { id: 11, tier: "Tier 4.1", title: "Scene Roster Agent", icon: Film, iconColor: "text-stone-700", badge: "small-model", inputs: "Sequence outline schema, cast dossiers, world bible rules.", gate: ">= 4 Scenes generated per Sequence" },
+                                                    { id: 12, tier: "Tier 4.2", title: "Scene Roster Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Generated lean scene roster, parent sequence objectives.", gate: "Reviewer status == 'PASS'" },
+                                                    { id: 13, tier: "Tier 4.3", title: "Scene Expander Agent", icon: ListPlus, iconColor: "text-[#8C6B32]", badge: "small-model", inputs: "Lean scene row, adjacent scene context.", gate: "Rich description blueprint generated" },
+                                                    { id: 14, tier: "Tier 4.4", title: "Scene Expander Reviewer", icon: ShieldCheck, iconColor: "text-amber-600", badge: "small-model", inputs: "List of expanded scenes.", gate: "Continuity validated" },
+                                                    { id: 15, tier: "Tier 5.1", title: "Beat Planner (Beat Agent)", icon: Sparkles, iconColor: "text-purple-600", badge: "small-model", inputs: "Scene directives, cast dossiers, relationship ledger.", gate: ">= 3 Beats generated per Scene" },
+                                                    { id: 16, tier: "Tier 5.2", title: "Beat Reviewer", icon: CheckCircle2, iconColor: "text-amber-600", badge: "small-model", inputs: "Newly generated beats choreography plan, scene parameters.", gate: "Reviewer status == 'PASS'" },
 
-                                                    { id: 15, tier: "RAG Preprocess", title: "Query Expansion & RAG Retriever", icon: Search, iconColor: "text-stone-700", badge: "small-model", inputs: "Raw beat description text, active cast list, scene location.", gate: "RAG context facts retrieved" },
-                                                    { id: 16, tier: "Tier 5.3", title: "Writing Agent (Prose Generator)", icon: Feather, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "Scene beat sequence, cast cards, RAG lore details, style guides.", gate: "Passes prose length guidelines" },
-                                                    { id: 17, tier: "Validation", title: "Continuity Reviewer & Surgical Editor", icon: ShieldCheck, iconColor: "text-amber-600", badge: "small-model", inputs: "Scene beat sequence, newly generated full scene prose draft.", gate: "Reviewer status == 'PASS' or patch applies" },
-                                                    { id: 18, tier: "Post-Process", title: "Archivist (End of Scene)", icon: Save, iconColor: "text-emerald-600", badge: "large-model", inputs: "Concatenated text of all beats in scene, current cast profiles.", gate: "JSON registry parsed & state updated" }
+                                                    { id: 17, tier: "RAG Preprocess", title: "Query Expansion & RAG Retriever", icon: Search, iconColor: "text-stone-700", badge: "small-model", inputs: "Raw beat description text, active cast list, scene location.", gate: "RAG context facts retrieved" },
+                                                    { id: 18, tier: "Tier 5.3", title: "Writing Agent (Prose Generator)", icon: Feather, iconColor: "text-[#8C6B32]", badge: "large-model", inputs: "Scene beat sequence, cast cards, RAG lore details, style guides.", gate: "Passes prose length guidelines" },
+                                                    { id: 19, tier: "Validation", title: "Continuity Reviewer & Surgical Editor", icon: ShieldCheck, iconColor: "text-amber-600", badge: "small-model", inputs: "Scene beat sequence, newly generated full scene prose draft.", gate: "Reviewer status == 'PASS' or patch applies" },
+                                                    { id: 20, tier: "Post-Process", title: "Archivist (End of Scene)", icon: Save, iconColor: "text-emerald-600", badge: "large-model", inputs: "Concatenated text of all beats in scene, current cast profiles.", gate: "JSON registry parsed & state updated" }
                                                 ].filter(s => s.id >= phase.stepRange[0] && s.id <= phase.stepRange[1]);
 
                                                 if (pipelineViewMode === 'simplified') {
-                                                    // In simplified mode, hide reviewer nodes (4, 6, 10, 12, 14, 15, 17)
-                                                    const reviewIds = [4, 6, 10, 12, 14, 15, 17];
+                                                    // In simplified mode, hide reviewer nodes
+                                                    const reviewIds = [4, 6, 10, 12, 14, 16, 17, 19];
                                                     const filtered = phaseSteps.filter(s => !reviewIds.includes(s.id));
                                                     if (filtered.length === 0) return null;
                                                 }
@@ -21385,17 +21674,18 @@ ${currentLoreList}
                                                     1: { title: "Conceptual Development Agent", function: "initStory() - Tier 0.1", model: "Large Model Target (Dual-Model Settings)", inputs: "User raw outline text, style/genre guides, tone parameters, lore context.", output: "YAML object detailing core genre class, style guidelines, atmosphere guidelines, world bible status quo, and initial character briefs.", gate: "YAML or XML tags parse correctly, returning string blocks for genre, style, and world bible.", retries: "Direct UI correction loops. No automated cascading deletions above this stage.", constraints: "Cultivate core concept to logical extremes. Define status quo, inciting incident, and core thematic arguments." },
                                                     2: { title: "Character Developer (Interviews)", function: "initStory() - Tier 0.2", model: "Large Model Target (Sequential Loop)", inputs: "World bible context, active character brief (name, role, flaw, desire), and narrative tone guidelines.", output: "First-person narrative interview context, voice samples, and psychological dossiers.", gate: "A text interview block is successfully generated for every single character profile brief in the cast list.", retries: "Retries profile generation on failure. Aborts initialization if permanent API error occurs.", constraints: "Must produce 300-600 word 1st-person monologues spoken directly by the character." },
                                                     3: { title: "Story Arc Agent", function: "initStory() - Tier 1.1", model: "Large Model Target", inputs: "World bible, genre classification, style parameters, tone guidelines, character casts with flaws/desires.", output: "YAML schema detailing starting and ending value states (inciting incident), character arcs, twists, and narrative threads.", gate: "Story Arc details parsed as valid YAML structure. Maps character arcs and narrative threads.", retries: "Retries the Story Arc planner up to 3 times on reviewer FAIL status.", constraints: "Specify concrete Lie, Truth, and Catalyst for character arcs." },
-                                                    4: { title: "Story Arc Reviewer", function: "runAgentWithEscalation() - Tier 1.2", model: "Small Model (Escalates to Large on Attempt 3)", inputs: "Story concept, world bible, generated Story Arc plan.", output: "YAML status report: PASS or FAIL along with critiques/reasons.", gate: "Reviewer status == 'PASS'", retries: "Fails trigger a retry of Step 3 (Story Arc Agent), feeding the critique reasons as prompts.", constraints: "Strict audit of thematic arguments, thread tracking, and logical reversals." },
-                                                    5: { title: "Act Planner (Act Agent)", function: "runAgentWithEscalation() - Tier 2.1", model: "Small Model Target (Escalates to Large)", inputs: "Story concept, theme milestones, character profiles list, and structural boundaries.", output: "YAML list representing Acts: number, title, description, milestones, and knots.", gate: "Passes Programmatic Validation: at least 3 acts planned, and every act description has a length >= 50 characters.", retries: "Up to 3 attempts. Downstream failure in Sequence Agent plans triggers a rollback to this step.", constraints: "Map out exact intersections (knots) where multiple threads collide." },
-                                                    6: { title: "Act Reviewer", function: "runAgentWithEscalation() - Tier 2.2", model: "Small Model Target", inputs: "Generated Act outlines, twists and surprises, inciting incidents.", output: "YAML listing critique analysis, status (PASS or FAIL), and list of deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL status triggers retry of Step 5 (Act Planner).", constraints: "Validate act developments are earned and logical." },
+                                                    3: { title: "Story Arc Agent", function: "initStory() - Tier 1.1", model: "Large Model Target", inputs: "World bible, genre classification, style parameters, tone guidelines, character casts with flaws/desires.", output: "XML schema detailing starting and ending value states (inciting incident), character arcs, twists, and narrative threads.", gate: "Story Arc details parsed as valid XML structure. Maps character arcs and narrative threads.", retries: "Retries the Story Arc planner up to 3 times on reviewer FAIL status.", constraints: "Specify concrete Lie, Truth, and Catalyst for character arcs." },
+                                                    4: { title: "Story Arc Reviewer", function: "runAgentWithEscalation() - Tier 1.2", model: "Small Model (Escalates to Large on Attempt 3)", inputs: "Story concept, world bible, generated Story Arc plan.", output: "XML status report: PASS or FAIL along with critiques/reasons.", gate: "Reviewer status == 'PASS'", retries: "Fails trigger a retry of Step 3 (Story Arc Agent), feeding the critique reasons as prompts.", constraints: "Strict audit of thematic arguments, thread tracking, and logical reversals." },
+                                                    5: { title: "Act Planner (Act Agent)", function: "runAgentWithEscalation() - Tier 2.1", model: "Small Model Target (Escalates to Large)", inputs: "Story concept, theme milestones, character profiles list, and structural boundaries.", output: "XML list representing Acts: number, title, description, milestones, and knots.", gate: "Passes Programmatic Validation: at least 3 acts planned, and every act description has a length >= 50 characters.", retries: "Up to 3 attempts. Downstream failure in Sequence Agent plans triggers a rollback to this step.", constraints: "Map out exact intersections (knots) where multiple threads collide." },
+                                                    6: { title: "Act Reviewer", function: "runAgentWithEscalation() - Tier 2.2", model: "Small Model Target", inputs: "Generated Act outlines, twists and surprises, inciting incidents.", output: "XML listing critique analysis, status (PASS or FAIL), and list of deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL status triggers retry of Step 5 (Act Planner).", constraints: "Validate act developments are earned and logical." },
                                                     7: { title: "World Lore Archivist", function: "initStory() - Lore RAG Archiving", model: "Vector DB & Graph Manager", inputs: "World bible text, character dossiers, lore notes.", output: "Indexed vector embeddings & entity graph nodes.", gate: "Vector store indexing complete.", retries: "Logs warning on indexing error and continues with raw text fallback.", constraints: "Ensure canon facts are indexed without duplication." },
-                                                    8: { title: "Pacing Architect", function: "initStory() - Tier 2.3", model: "Large Model Target", inputs: "Act outline mandates and narrative density targets.", output: "YAML output defining narrative density ranges (scenes per sequence, beats per scene).", gate: "Pacing ranges defined and stored in story state.", retries: "Uses default density ranges if call fails.", constraints: "Balance fast kinetic pacing with legato-staccato rhythm." },
-                                                    9: { title: "Sequence Planner (Sequence Agent)", function: "generateSequences() - Tier 3.1", model: "Small Model Target (Escalates to Large)", inputs: "Detailed Act mandates, cast dossiers, story guidelines.", output: "YAML schema detailing 8 Frank Daniel sequences: number, parent_act, title, sequence_function, tactical_question, and ending_hook.", gate: "Passes Programmatic Validation: 8 sequences generated in 2-4-2 distribution.", retries: "Up to 3 attempts. 3 failures trigger cascading rollback to Act Agent (Step 5).", constraints: "Each sequence must define its tactical question and sequence climax." },
-                                                    10: { title: "Sequence Reviewer", function: "generateSequences() - Tier 3.2", model: "Small Model Target", inputs: "Newly generated sequence plans list, parent Act objectives.", output: "YAML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 9 up to 3 times, then rolls back to Step 5.", constraints: "Verify Frank Daniel model alignment and tactical question sharpness." },
-                                                    11: { title: "Scene Planner (Scene Agent)", function: "generateScenes() - Tier 4.1", model: "Small Model Target (Escalates to Large)", inputs: "Sequence outline, active cast lists, target sequence scope, world bible rules.", output: "YAML array outlining Scenes: scene number, title, scene_type (proactive_scene/reactive_sequel), transition_jump, value/relationship shifts.", gate: "Passes Programmatic Validation: at least 4 scenes created per Sequence.", retries: "Up to 3 attempts. 3 failures trigger rollback to Sequence Agent (Step 9).", constraints: "Alternate proactive scenes and reactive sequels with explicit transition jumps." },
-                                                    12: { title: "Scene Reviewer", function: "generateScenes() - Tier 4.2", model: "Small Model Target", inputs: "Newly generated scene structure roster, parent sequence objectives.", output: "YAML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 11 up to 3 times, then rolls back to Step 9.", constraints: "Audit Swain Scene/Sequel alternation and causal linkage." },
-                                                    13: { title: "Beat Planner (Beat Agent)", function: "generateBeats() - Tier 5.1", model: "Small Model Target (Escalates to Large)", inputs: "Parent scene directives, character interview profiles, relationship ledger, preceding beats.", output: "YAML containing detailed choreography: start entry states, pivot turning points, end exit states, tactical actions.", gate: "Passes Programmatic Validation: at least 3 beats created per Scene.", retries: "Up to 3 attempts. 3 failures trigger rollback to Scene Agent (Step 11).", constraints: "Dialogue subtext planning: surface dialogue vs hidden desires." },
-                                                    14: { title: "Beat Reviewer", function: "generateBeats() - Tier 5.2", model: "Small Model Target", inputs: "Generated beats choreography plan, parent scene description.", output: "YAML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 13 up to 3 times, then rolls back to Step 11.", constraints: "Continuity logic gate: check inventory, posture, and physical continuity." },
+                                                    8: { title: "Pacing Architect", function: "initStory() - Tier 2.3", model: "Large Model Target", inputs: "Act outline mandates and narrative density targets.", output: "XML output defining narrative density ranges (scenes per sequence, beats per scene).", gate: "Pacing ranges defined and stored in story state.", retries: "Uses default density ranges if call fails.", constraints: "Balance fast kinetic pacing with legato-staccato rhythm." },
+                                                    9: { title: "Sequence Planner (Sequence Agent)", function: "generateSequences() - Tier 3.1", model: "Small Model Target (Escalates to Large)", inputs: "Detailed Act mandates, cast dossiers, story guidelines.", output: "XML schema detailing 8 Frank Daniel sequences: number, parent_act, title, sequence_function, tactical_question, and ending_hook.", gate: "Passes Programmatic Validation: 8 sequences generated in 2-4-2 distribution.", retries: "Up to 3 attempts. 3 failures trigger cascading rollback to Act Agent (Step 5).", constraints: "Each sequence must define its tactical question and sequence climax." },
+                                                    10: { title: "Sequence Reviewer", function: "generateSequences() - Tier 3.2", model: "Small Model Target", inputs: "Newly generated sequence plans list, parent Act objectives.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 9 up to 3 times, then rolls back to Step 5.", constraints: "Verify Frank Daniel model alignment and tactical question sharpness." },
+                                                    11: { title: "Scene Planner (Scene Agent)", function: "generateScenes() - Tier 4.1", model: "Small Model Target (Escalates to Large)", inputs: "Sequence outline, active cast lists, target sequence scope, world bible rules.", output: "XML array outlining Scenes: scene number, title, scene_type (proactive_scene/reactive_sequel), transition_jump, value/relationship shifts.", gate: "Passes Programmatic Validation: at least 4 scenes created per Sequence.", retries: "Up to 3 attempts. 3 failures trigger rollback to Sequence Agent (Step 9).", constraints: "Alternate proactive scenes and reactive sequels with explicit transition jumps." },
+                                                    12: { title: "Scene Reviewer", function: "generateScenes() - Tier 4.2", model: "Small Model Target", inputs: "Newly generated scene structure roster, parent sequence objectives.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 11 up to 3 times, then rolls back to Step 9.", constraints: "Audit Swain Scene/Sequel alternation and causal linkage." },
+                                                    13: { title: "Beat Planner (Beat Agent)", function: "generateBeats() - Tier 5.1", model: "Small Model Target (Escalates to Large)", inputs: "Parent scene directives, character interview profiles, relationship ledger, preceding beats.", output: "XML containing detailed choreography: start entry states, pivot turning points, end exit states, tactical actions.", gate: "Passes Programmatic Validation: at least 3 beats created per Scene.", retries: "Up to 3 attempts. 3 failures trigger rollback to Scene Agent (Step 11).", constraints: "Dialogue subtext planning: surface dialogue vs hidden desires." },
+                                                    14: { title: "Beat Reviewer", function: "generateBeats() - Tier 5.2", model: "Small Model Target", inputs: "Generated beats choreography plan, parent scene description.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 13 up to 3 times, then rolls back to Step 11.", constraints: "Continuity logic gate: check inventory, posture, and physical continuity." },
                                                     15: { title: "Query Expansion & RAG Context Retriever", function: "retrieveContext()", model: "Small Model Query Preprocessor + Vector Store Search", inputs: "Beat choreography sequence, active cast list, scene location.", output: "Relevant canonical facts, lore notes, character relationships attached to prompt.", gate: "Preprocessed terms and RAG facts returned.", retries: "Falls back to raw action query on search exception.", constraints: "Ensure canonical facts are never contradicted." },
                                                     16: { title: "Writing Agent (Prose Generator)", function: "writeSceneProse()", model: "Large Model Target", inputs: "Full scene choreography, cast cards, RAG lore details, style guides, preceding prose.", output: "Story text paragraphs (400-600 words per beat). Text-only format.", gate: "Passes prose length and format guidelines.", retries: "Up to 3 attempts. 3 failures trigger rollback to Beat Agent (Step 13).", constraints: "Subtext over text, distinct character voices, terse defensive restraint." },
                                                     17: { title: "Continuity Reviewer & Surgical Editor", function: "writeSceneProse() Reviewer & Patch", model: "Small Model Reviewer + Large Model Surgical Editor", inputs: "Scene beat sequence, newly generated prose draft, banned words filter.", output: "PASS or FAIL status. If FAIL with minor issues, applies surgical search-replace patch.", gate: "Reviewer status == 'PASS' or surgical edit applies cleanly.", retries: "Critical fail triggers prose rewrite loop (Step 16). Surgical error rolls back to Step 13.", constraints: "Check for posture slips, teleportation, and dialogue bloat." },
