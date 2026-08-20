@@ -11404,7 +11404,13 @@ Output Schema:
                 };
 
                 calculatePages();
-            }, [view, readerSettings, selectedSequence, selectedScene, currentReaderSceneItem?.proseText]);
+                // readerContainerWidth is a dependency because the first pass after entering the
+                // reader measures while the inline columnWidth is still the invalid '100%'
+                // placeholder (width state 0), so the content hasn't overflowed into columns yet
+                // and the page count comes back 1. Setting the width re-renders with a real
+                // columnWidth; re-running the measurement against that layout yields the true
+                // page count. Re-runs converge because setState bails on an unchanged width.
+            }, [view, readerSettings, selectedSequence, selectedScene, currentReaderSceneItem?.proseText, readerContainerWidth]);
 
             // Window resize handler for reader mode
             useEffect(() => {
