@@ -2172,12 +2172,12 @@
                                 if (edit.type === 'search_replace' || edit.search !== undefined) {
                                     var searchStr = chomp(String(edit.search || edit.original || ""));
                                     var repStr = chomp(String(edit.replace || edit.rewritten || ""));
-                                    if (updated.indexOf(searchStr) !== -1) {
-                                        updated = updated.replace(searchStr, repStr);
+                                    if (searchStr && updated.indexOf(searchStr) !== -1) {
+                                        updated = updated.replace(searchStr, () => repStr);
                                     } else {
                                         var trimmed = searchStr.trim();
-                                        if (updated.indexOf(trimmed) !== -1) {
-                                            updated = updated.replace(trimmed, repStr.trim());
+                                        if (trimmed && updated.indexOf(trimmed) !== -1) {
+                                            updated = updated.replace(trimmed, () => repStr.trim());
                                         }
                                     }
                                 }
@@ -2206,11 +2206,11 @@
 
                     if (searchVal && replaceVal) {
                         if (updatedText.indexOf(searchVal) !== -1) {
-                            updatedText = updatedText.replace(searchVal, replaceVal);
+                            updatedText = updatedText.replace(searchVal, () => replaceVal);
                         } else {
                             var trimmedSearch = searchVal.trim();
                             if (updatedText.indexOf(trimmedSearch) !== -1) {
-                                updatedText = updatedText.replace(trimmedSearch, replaceVal);
+                                updatedText = updatedText.replace(trimmedSearch, () => replaceVal);
                             }
                         }
                     }
@@ -2345,6 +2345,7 @@
         const AlignJustify = (p) => <Icon name="align-justify" {...p} />;
         const Check = (p) => <Icon name="check" {...p} />;
         const SlidersHorizontal = (p) => <Icon name="sliders-horizontal" {...p} />;
+        const ListPlus = (p) => <Icon name="list-plus" {...p} />;
 
 
 
@@ -2719,12 +2720,12 @@
                             if (edit.type === 'search_replace' || edit.search !== undefined) {
                                 const searchStr = chomp(String(edit.search || edit.original || ""));
                                 const repStr = chomp(String(edit.replace || edit.rewritten || ""));
-                                if (updated.includes(searchStr)) {
-                                    updated = updated.replace(searchStr, repStr);
+                                if (searchStr && updated.includes(searchStr)) {
+                                    updated = updated.replace(searchStr, () => repStr);
                                 } else {
                                     const trimmed = searchStr.trim();
-                                    if (updated.includes(trimmed)) {
-                                        updated = updated.replace(trimmed, repStr.trim());
+                                    if (trimmed && updated.includes(trimmed)) {
+                                        updated = updated.replace(trimmed, () => repStr.trim());
                                     }
                                 }
                             }
@@ -2752,11 +2753,11 @@
                 
                 if (searchVal && replaceVal) {
                     if (updatedText.includes(searchVal)) {
-                        updatedText = updatedText.replace(searchVal, replaceVal);
+                        updatedText = updatedText.replace(searchVal, () => replaceVal);
                     } else {
                         const trimmedSearch = searchVal.trim();
                         if (updatedText.includes(trimmedSearch)) {
-                            updatedText = updatedText.replace(trimmedSearch, replaceVal);
+                            updatedText = updatedText.replace(trimmedSearch, () => replaceVal);
                         }
                     }
                 }
@@ -3223,12 +3224,12 @@
                 if (originalVal !== undefined && rewrittenVal !== undefined) {
                     const origStr = chomp(String(originalVal));
                     const rewStr = chomp(String(rewrittenVal));
-                    if (updatedText.includes(origStr)) {
-                        updatedText = updatedText.replace(origStr, rewStr);
+                    if (origStr && updatedText.includes(origStr)) {
+                        updatedText = updatedText.replace(origStr, () => rewStr);
                     } else {
                         const trimmedOrig = origStr.trim();
-                        if (updatedText.includes(trimmedOrig)) {
-                            updatedText = updatedText.replace(trimmedOrig, rewStr.trim());
+                        if (trimmedOrig && updatedText.includes(trimmedOrig)) {
+                            updatedText = updatedText.replace(trimmedOrig, () => rewStr.trim());
                         }
                     }
                 }
@@ -3242,12 +3243,12 @@
                 if (anchorVal !== undefined && contentVal !== undefined) {
                     const anchStr = chomp(String(anchorVal));
                     const contStr = chomp(String(contentVal));
-                    if (updatedText.includes(anchStr)) {
-                        updatedText = updatedText.replace(anchStr, anchStr + contStr);
+                    if (anchStr && updatedText.includes(anchStr)) {
+                        updatedText = updatedText.replace(anchStr, () => anchStr + contStr);
                     } else {
                         const trimmedAnch = anchStr.trim();
-                        if (updatedText.includes(trimmedAnch)) {
-                            updatedText = updatedText.replace(trimmedAnch, trimmedAnch + contStr.trim());
+                        if (trimmedAnch && updatedText.includes(trimmedAnch)) {
+                            updatedText = updatedText.replace(trimmedAnch, () => trimmedAnch + contStr.trim());
                         }
                     }
                 }
@@ -3278,12 +3279,12 @@
                 if (searchVal !== undefined && replaceVal !== undefined) {
                     const searchStr = chomp(String(searchVal));
                     const repStr = chomp(String(replaceVal));
-                    if (updatedText.includes(searchStr)) {
-                        updatedText = updatedText.replace(searchStr, repStr);
+                    if (searchStr && updatedText.includes(searchStr)) {
+                        updatedText = updatedText.replace(searchStr, () => repStr);
                     } else {
                         const trimmedSearch = searchStr.trim();
-                        if (updatedText.includes(trimmedSearch)) {
-                            updatedText = updatedText.replace(trimmedSearch, repStr.trim());
+                        if (trimmedSearch && updatedText.includes(trimmedSearch)) {
+                            updatedText = updatedText.replace(trimmedSearch, () => repStr.trim());
                         }
                     }
                 }
@@ -3779,13 +3780,13 @@
                 if (!Array.isArray(seqs) || seqs.length !== 8) {
                     errors.push(`Sequence Agent: Exactly 8 sequences required across 3 acts (got ${seqs.length || 0})`);
                 }
-            } else if (tierName === "Scene Agent") {
+            } else if (tierName === "Scene Agent" || tierName === "Scene Roster Agent") {
                 const scenes = parsedData.scenes || (Array.isArray(parsedData) ? parsedData : []);
                 const minScenes = (context.generation_ranges && context.generation_ranges.scenes_per_sequence)
                     ? context.generation_ranges.scenes_per_sequence.min
                     : 4;
                 if (!Array.isArray(scenes) || scenes.length < minScenes) {
-                    errors.push(`Scene Agent: Generated ${scenes.length || 0} scenes (minimum ${minScenes} required)`);
+                    errors.push(`${tierName}: Generated ${scenes.length || 0} scenes (minimum ${minScenes} required)`);
                 }
                 
                 // Build a comprehensive, case-insensitive set of valid character IDs, full names, and first names
@@ -3824,17 +3825,23 @@
                     const sc = scenes[i];
                     const valShift = sc.value_shift;
                     const rawType = String(sc.scene_type || sc.type || "").toUpperCase();
-                    if (!valShift || !valShift.start_state || !valShift.end_state) {
-                        errors.push(`Scene Agent: Scene ${sc.number || i + 1} has missing value shift`);
-                    } else if (valShift.start_state === valShift.end_state) {
+                    // The lean Scene Roster (Tier 4.1) carries no value_shift - that field is produced
+                    // by the Scene Expander (4.3) - so only the legacy rich Scene Agent requires it.
+                    if (tierName === "Scene Agent" && (!valShift || !valShift.start_state || !valShift.end_state)) {
+                        errors.push(`${tierName}: Scene ${sc.number || i + 1} has missing value shift`);
+                    } else if (valShift && valShift.start_state && valShift.start_state === valShift.end_state) {
                         if (!rawType.includes("SEQUEL") && !rawType.includes("REACTIVE")) {
-                            errors.push(`Scene Agent: Scene ${sc.number || i + 1} has flat value shift`);
+                            errors.push(`${tierName}: Scene ${sc.number || i + 1} has flat value shift`);
                         }
                     }
                     if (!rawType || (!rawType.includes("PROACTIVE") && !rawType.includes("REACTIVE") && !rawType.includes("SCENE") && !rawType.includes("SEQUEL"))) {
-                        errors.push(`Scene Agent: Scene ${sc.number || i + 1} missing valid scene_type (PROACTIVE/REACTIVE)`);
+                        errors.push(`${tierName}: Scene ${sc.number || i + 1} missing valid scene_type (PROACTIVE/REACTIVE)`);
                     }
-                    const presentList = sc.cast_ids || sc.characters_present || [];
+                    // Prefer the raw characters_present list: cast_ids only ever holds names the parser
+                    // already matched to the cast, so hallucinated characters never appear in it.
+                    const presentList = (Array.isArray(sc.characters_present) && sc.characters_present.length)
+                        ? sc.characters_present
+                        : ((Array.isArray(sc.cast_ids) && sc.cast_ids.length) ? sc.cast_ids : (sc.cast_names || []));
                     if (validCast.size > 0 && Array.isArray(presentList)) {
                         for (const cid of presentList) {
                             const cleanCid = String(cid || "").trim().toLowerCase();
@@ -3844,7 +3851,7 @@
                             // Check for substring or partial match with any valid cast name/ID
                             const matched = validCastNames.some(name => name.includes(cleanCid) || cleanCid.includes(name));
                             if (!matched) {
-                                errors.push(`Scene Agent: Scene ${sc.number || i + 1} references unknown character ID "${cid}"`);
+                                errors.push(`${tierName}: Scene ${sc.number || i + 1} references unknown character ID "${cid}"`);
                             }
                         }
                     }
@@ -4185,13 +4192,8 @@
             const sysPrompt = "You are a surgical JSON/YAML repair agent. Your only job is to fix the target defects precisely as requested and output valid YAML.";
 
             try {
-                // Use a fast model like gemini-flash
-                const repairResult = await window.callAI(sysPrompt, userPrompt, {
-                    modelId: 'google/gemini-flash-1.5-8b',
-                    temperature: 0.2,
-                    forceProvider: 'openrouter',
-                    isJson: false
-                });
+                // callAI signature is (prompt, systemPrompt, isJson, logName, modelSize) - mirror surgicallyRepairBeatMRUs
+                const repairResult = await window.callAI(userPrompt, sysPrompt, false, "Surgical Value Shift Repair", "small");
 
                 const repairedYaml = parseYaml(repairResult);
                 if (repairedYaml && repairedYaml.repaired_scenes && Array.isArray(repairedYaml.repaired_scenes)) {
@@ -4305,7 +4307,7 @@
                 if (act !== null || seq !== null || scn !== null) {
                     const finalSeq = seq || 1;
                     const seqObj = (storyState.sequences || []).find(s => s.number === finalSeq);
-                    const finalAct = act || (seqObj ? seqObj.parent_act : (finalSeq <= 2 ? 1 : (finalSeq <= 5 ? 2 : 3)));
+                    const finalAct = act || (seqObj ? seqObj.parent_act : (SEQUENCE_ACT_MAP[finalSeq - 1] || 3));
                     return {
                         act: finalAct || 1,
                         sequence: finalSeq,
@@ -4320,7 +4322,7 @@
                 const seq = parseInt(seqSceneMatch[2], 10) || 1;
                 const scn = parseInt(seqSceneMatch[3], 10) || 1;
                 const seqObj = (storyState.sequences || []).find(s => s.number === seq);
-                const act = seqObj ? seqObj.parent_act : (seq <= 2 ? 1 : (seq <= 5 ? 2 : 3));
+                const act = seqObj ? seqObj.parent_act : (SEQUENCE_ACT_MAP[seq - 1] || 3);
                 return { act: act || 1, sequence: seq, scene: scn };
             }
             // Match "Act 2, Scene 3" or "Act 2 Scene 3"
@@ -4421,7 +4423,7 @@
             if (!scene) return storyState.continuity_ledger || [];
 
             const coords = parseSceneCoordinates(scene.number || scene.id || scene, storyState);
-            const validFromAct = scene.parent_act || (scene.parent_sequence ? ((storyState.sequences || []).find(s => s.number === scene.parent_sequence)?.parent_act || (scene.parent_sequence <= 2 ? 1 : (scene.parent_sequence <= 5 ? 2 : 3))) : coords.act) || 1;
+            const validFromAct = scene.parent_act || (scene.parent_sequence ? ((storyState.sequences || []).find(s => s.number === scene.parent_sequence)?.parent_act || SEQUENCE_ACT_MAP[scene.parent_sequence - 1] || 3) : coords.act) || 1;
             const validFromSeq = scene.parent_sequence || scene.sequence || coords.sequence || 1;
             const validFromScn = coords.scene || 1;
             const sceneRef = scene.number ? `Scene ${scene.number}` : (scene.id ? `Scene ${scene.id}` : `Scene ${validFromSeq}.${validFromScn}`);
@@ -4860,60 +4862,6 @@
             }
         };
 
-        const NARRATIVE_MODES_XML = `<narrative_modes>
-  <mode>
-    <id>BASELINE_NEUTRAL</id>
-    <context>Default writing style, standard pacing and narration without specific thematic exaggeration.</context>
-  </mode>
-  <mode>
-    <id>KINETIC_ACTION</id>
-    <context>Combat, chases, escapes, or physical struggles. Requires visceral momentum and physical focus.</context>
-  </mode>
-  <mode>
-    <id>BUILDING_ROMANCE</id>
-    <context>Establishing chemistry, yearning, and romantic tension. Focus on the "slow burn" and gravity between characters.</context>
-  </mode>
-  <mode>
-    <id>ATMOSPHERIC_SUSPENSE</id>
-    <context>Stealth, hunting, creeping dread. Focus on paranoia and the dilation of time.</context>
-  </mode>
-  <mode>
-    <id>VERBAL_SPARRING</id>
-    <context>High-stakes arguments, negotiations, interrogations. Dialogue is the primary weapon.</context>
-  </mode>
-  <mode>
-    <id>PROCEDURAL_MYSTERY</id>
-    <context>Investigations, analyzing clues, logical deduction. Focus on objective reality and empirical thought.</context>
-  </mode>
-  <mode>
-    <id>GRAND_SCALE</id>
-    <context>In-the-moment macro-scale events (e.g., troop movements, docking shuttles, arriving crowds).</context>
-  </mode>
-  <mode>
-    <id>WORLD_BUILDING</id>
-    <context>Zooming in to creatively invent/explain specific details about histories, cultural practices, systems, or environments.</context>
-  </mode>
-  <mode>
-    <id>LIGHTHEARTED</id>
-    <context>Comedic relief, joyful banter, whimsical situations providing a breather from heavy stakes.</context>
-  </mode>
-  <mode>
-    <id>ORGANIC_EXPOSITION</id>
-    <context>Characters organically explaining context, plot, or plans to one another (e.g., heist planning).</context>
-  </mode>
-  <mode>
-    <id>REVELATION</id>
-    <context>Major plot twists or the climax of a character arc where the truth shatters established reality.</context>
-  </mode>
-  <mode>
-    <id>UNCERTAINTY</id>
-    <context>Facing the terrifying unknown, groping in the dark, trying to understand a completely alien situation.</context>
-  </mode>
-  <mode>
-    <id>REFLECTION</id>
-    <context>The aftermath of an event, processing grief, trauma, or complex emotions internally.</context>
-  </mode>
-</narrative_modes>`;
 
         // ===
         // CENTRALIZED BANNED CHARACTER NAMES REGISTRY
@@ -5595,7 +5543,7 @@ INSTRUCTIONS:
 1. Break the scene into Motivation-Reaction Units (action/reaction pairs).
 2. Generate up to 15 beats in this chunk.
 3. If previous beats were generated in earlier chunks for this scene, continue seamlessly from where the previous beat ended without resetting character positions.
-4. Set `<has_more>true</has_more>` if the scene still has unchoreographed plot events from the description; set `<has_more>false</has_more>` when the scene reaches its natural resolution.
+4. Set \`<has_more>true</has_more>\` if the scene still has unchoreographed plot events from the description; set \`<has_more>false</has_more>\` when the scene reaches its natural resolution.
 
 FORMATTING DIRECTIVE: Return your choreography strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
@@ -10647,7 +10595,7 @@ Output Schema:
                             });
                         }
 
-                        await ingestLoreBatch(chunks);
+                        await ingestLoreBatch(chunks, { clearExisting: true });
                         setLoading(false);
                         showToast("Lore distilled and ingested into RAG.", "success");
                     } else {
@@ -10691,7 +10639,7 @@ Output Schema:
                         // Re-index full list including new chunks
                         const currentLore = story.lore || [];
                         const combinedList = [...currentLore, ...chunks];
-                        const processedList = await ingestLoreBatch(combinedList);
+                        const processedList = await ingestLoreBatch(combinedList, { clearExisting: true });
 
                         setStory(prev => ({
                             ...prev,
@@ -10746,8 +10694,8 @@ Output Schema:
                 setLoadingStep(`RSI: Injecting [${item}] into Sequence ${openSlot.seqNumber}, Scene ${openSlot.sceneIdx + 1}...`);
 
                 const sysPrompt = PROMPTS.rsiPrompt
-                    .replace("{prose_text}", openSlot.prose)
-                    .replace("{injection_detail}", `Seamlessly include an action where ${charName} acquires or pockets the item: "${item}".`);
+                    .replace("{prose_text}", () => openSlot.prose)
+                    .replace("{injection_detail}", () => `Seamlessly include an action where ${charName} acquires or pockets the item: "${item}".`);
                 const rsiUserPrompt = "Please execute the Retroactive State Injection according to the system rules and formats specified.";
                 const rsiOutput = await callAI(rsiUserPrompt, sysPrompt, false, "RSI Injector", "large");
                 
@@ -11215,8 +11163,8 @@ Output Schema:
                             } else {
                                 // Use Surgical Prose Editor LLM
                                 const sysPrompt = PROMPTS.surgicalProseEditor
-                                    .replace("{existing_prose}", currentProse)
-                                    .replace("{instructions}", action.details.instructions || action.description || "Apply surgical edits seamlessly.");
+                                    .replace("{existing_prose}", () => currentProse)
+                                    .replace("{instructions}", () => action.details.instructions || action.description || "Apply surgical edits seamlessly.");
                                 
                                 const patchPrompt = "Execute the surgical patch precisely. Return the updated prose inside yaml prose_text scalar.";
                                 const patchOutput = await callAI(patchPrompt, sysPrompt, false, "Surgical Prose Editor", "large");
@@ -11747,6 +11695,19 @@ ${JSON.stringify(structureOverview, null, 2)}
                         } catch (e) {}
                     }
                     await spawnNewCharacters(briefs);
+
+                    // Tiers without a paired reviewer (Scene Expander 4.3 / batch reviewer 4.4 pass
+                    // reviewerPromptFn: null) skip the review gate and accept the parsed output.
+                    if (!reviewerPromptFn || !reviewerSystemPrompt) {
+                        console.log(`[Pipeline - ${tierName}${chunkPrefix}] No reviewer configured - accepting output on attempt ${attempt}`);
+                        setFeedbackLedger(prev => {
+                            const next = { ...prev };
+                            delete next[tierName];
+                            return next;
+                        });
+                        console.groupEnd(); // Close attempt group
+                        return { genOutput, parsedData, spawnedBriefs };
+                    }
 
                     setLoadingStep(`Reviewing ${tierName}${chunkPrefix} output...`);
                     const reviewPrompt = reviewerPromptFn(genOutput);
@@ -12558,6 +12519,7 @@ ${genOutput}
                         initialStoryState.starting_value_state = arcResult.parsedData.starting_value_state || "";
                         initialStoryState.ending_value_state = arcResult.parsedData.ending_value_state || "";
                         initialStoryState.core_thematic_argument = arcResult.parsedData.core_thematic_argument || "";
+                        initialStoryState.major_surprises_and_twists = arcResult.parsedData.major_surprises_and_twists || "";
                         initialStoryState.character_arcs = arcResult.parsedData.character_arcs || [];
                         initialStoryState.inciting_incident = arcResult.parsedData.inciting_incident || "To be wove in Acts";
                         if (arcResult.parsedData.threads && arcResult.parsedData.threads.length > 0) {
@@ -12571,7 +12533,7 @@ ${genOutput}
 
                     // Archive baseline world bible in RAG
                     console.log("[initStory] Archiving baseline world lore in RAG...");
-                    await ingestLoreBatch(initialStoryState.lore);
+                    await ingestLoreBatch(initialStoryState.lore, { clearExisting: true });
 
                     const finalStory = {
                         ...initialStoryState,
@@ -12757,6 +12719,7 @@ BEGIN STORY ARC CRITIQUE REVIEW
                         starting_value_state: arcResult.parsedData.starting_value_state || storyToUse.starting_value_state || "",
                         ending_value_state: arcResult.parsedData.ending_value_state || storyToUse.ending_value_state || "",
                         core_thematic_argument: arcResult.parsedData.core_thematic_argument || storyToUse.core_thematic_argument || "",
+                        major_surprises_and_twists: arcResult.parsedData.major_surprises_and_twists || storyToUse.major_surprises_and_twists || "",
                         character_arcs: arcResult.parsedData.character_arcs || storyToUse.character_arcs || [],
                         inciting_incident: arcResult.parsedData.inciting_incident || storyToUse.inciting_incident || "To be wove in Acts",
                         threads: (arcResult.parsedData.threads && arcResult.parsedData.threads.length > 0) ? arcResult.parsedData.threads : storyToUse.threads
@@ -12816,147 +12779,147 @@ ${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role})`).join('\n')}
 </cast_list>
 
 <output_format_description>
-12756: FORMATTING DIRECTIVE: Return your act structure strictly as XML tags. Do not use YAML or markdown blocks.
-12757: CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
-12758: 
-12759: Output Schema:
-12760: <response>
-12761:   <acts>
-12762:     <act>
-12763:       <number>1</number>
-12764:       <title>Descriptive Title</title>
-12765:       <act_mandate>
-12766:         - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this act. Explain its role in the global value shift and Todorov equilibrium transition.
-12767:         - **DRAMATIC ARC & PACING CURVES:** Map the act-level narrative movement. Detail starting emotional/value state, rising action, sequence division plan (2 in Act I, 4 in Act II, 2 in Act III), and Point of No Return climax.
-12768:         - **THREAD PROGRESSION & CONVERGENCE:** Describe how each active plot thread evolves, intersects, and impacts one another across this act.
-12769:         - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on how fatal flaws are tested, exposed, or synthesized.
-12770:         - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems or pacing pitfalls for downstream sequence and scene planners.
-12771:       </act_mandate>
-12772:       <world_building_developments>How the setting or lore expands here.</world_building_developments>
-12773:       <knots>
-12774:         <knot>
-12775:           <description>Event description...</description>
-12776:           <interaction>Thread 1 event forces Thread 2 crisis.</interaction>
-12777:         </knot>
-12778:       </knots>
-12779:     </act>
-12780:     <!-- Add Act 2 and 3 -->
-12781:   </acts>
-12782: 
-12783:   <thread_statuses_at_end>
-12784:     <thread_status>
-12785:       <thread_id>T1</thread_id>
-12786:       <status>Exact status at the end of this act.</status>
-12787:     </thread_status>
-12788:   </thread_statuses_at_end>
-12789: 
-12790:   <relationship_shifts>
-12791:     <shift>
-12792:       <source_id>C1</source_id>
-12793:       <target_id>C2</target_id>
-12794:       <new_dynamic>How their relationship fundamentally evolved in this Act.</new_dynamic>
-12795:     </shift>
-12796:   </relationship_shifts>
-12797: </response>
-12798: </output_format_description>
-12799: 
-12800: BEGIN STRUCTURING ACTS
-12801: `,
-12802:                         systemPrompt: PROMPTS.actAgent,
-12803:                         reviewerSystemPrompt: PROMPTS.actReview,
-12804:                         reviewerPromptFn: (genOutput) => `
-12805: <story_arc_twists_and_surprises>
-12806: ${storyToUse.major_surprises_and_twists || ""}
-12807: </story_arc_twists_and_surprises>
-12808: <generated_acts>
-12809: ${genOutput}
-12810: </generated_acts>
-12811: 
-12812: <output_format_description>
-12813: FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
-12814: CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
-12815: 
-12816: Output Schema:
-12817: <response>
-12818:   <critique_analysis>Critically analyze each Act's mandate, structural points, and thread statuses. Specifically verify that all five mandate sections are present and robustly addressed. Verify every thread ID from the input is accounted for.</critique_analysis>
-12819:   <status>PASS</status> <!-- or FAIL -->
-12820:   <deviation_reasons>
-12821:     <reason>Explain the exact issue and how to fix it.</reason>
-12822:   </deviation_reasons>
-12823: </response>
-12824: </output_format_description>
-12825: 
-12826: BEGIN ACT CRITIQUE REVIEW
-12827: `,
-12828:                         parserFn: (text) => {
-12829:                             const extractTag = (xml, tag) => {
-12830:                                 const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
-12831:                                 return match ? match[1].trim() : "";
-12832:                             };
-12833:                             
-12834:                             const actsMatch = /<acts>([\s\S]*?)<\/acts>/i.exec(text);
-12835:                             const actsXML = actsMatch ? actsMatch[1] : "";
-12836:                             const actRegex = /<act>([\s\S]*?)<\/act>/gi;
-12837:                             const parsedActs = [];
-12838:                             let match;
-12839:                             let idx = 1;
-12840:                             while ((match = actRegex.exec(actsXML)) !== null) {
-12841:                                 const actData = match[1];
-12842:                                 const knotsMatch = /<knots>([\s\S]*?)<\/knots>/i.exec(actData);
-12843:                                 const knotsXML = knotsMatch ? knotsMatch[1] : "";
-12844:                                 const knotRegex = /<knot>([\s\S]*?)<\/knot>/gi;
-12845:                                 const knots = [];
-12846:                                 let kMatch;
-12847:                                 while ((kMatch = knotRegex.exec(knotsXML)) !== null) {
-12848:                                     knots.push({
-12849:                                         description: extractTag(kMatch[1], 'description'),
-12850:                                         interaction: extractTag(kMatch[1], 'interaction')
-12851:                                     });
-12852:                                 }
-12853:                                 parsedActs.push({
-12854:                                     number: parseInt(extractTag(actData, 'number'), 10) || idx,
-12855:                                     title: extractTag(actData, 'title') || `Act ${idx}`,
-12856:                                     act_mandate: extractTag(actData, 'act_mandate'),
-12857:                                     description: extractTag(actData, 'act_mandate'),
-12858:                                     world_building_developments: extractTag(actData, 'world_building_developments'),
-12859:                                     knots
-12860:                                 });
-12861:                                 idx++;
-12862:                             }
-12863: 
-12864:                             const threadStatuses = [];
-12865:                             const threadsMatch = /<thread_statuses_at_end>([\s\S]*?)<\/thread_statuses_at_end>/i.exec(text);
-12866:                             if (threadsMatch) {
-12867:                                 const tsRegex = /<thread_status>([\s\S]*?)<\/thread_status>/gi;
-12868:                                 let tsMatch;
-12869:                                 while ((tsMatch = tsRegex.exec(threadsMatch[1])) !== null) {
-12870:                                     threadStatuses.push({
-12871:                                         id: extractTag(tsMatch[1], 'thread_id'),
-12872:                                         status: extractTag(tsMatch[1], 'status')
-12873:                                     });
-12874:                                 }
-12875:                             }
-12876: 
-12877:                             const relShifts = [];
-12878:                             const shiftsMatch = /<relationship_shifts>([\s\S]*?)<\/relationship_shifts>/i.exec(text);
-12879:                             if (shiftsMatch) {
-12880:                                 const shiftRegex = /<shift>([\s\S]*?)<\/shift>/gi;
-12881:                                 let sMatch;
-12882:                                 while ((sMatch = shiftRegex.exec(shiftsMatch[1])) !== null) {
-12883:                                     relShifts.push({
-12884:                                         from: extractTag(sMatch[1], 'source_id'),
-12885:                                         to: extractTag(sMatch[1], 'target_id'),
-12886:                                         new_feeling: extractTag(sMatch[1], 'new_dynamic')
-12887:                                     });
-12888:                                 }
-12889:                             }
-12890: 
-12891:                             return {
-12892:                                 acts: parsedActs,
-12893:                                 thread_statuses: threadStatuses,
-12894:                                 relationship_shifts: relShifts
-12895:                             };
-12896:                         },
+FORMATTING DIRECTIVE: Return your act structure strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+Output Schema:
+<response>
+  <acts>
+    <act>
+      <number>1</number>
+      <title>Descriptive Title</title>
+      <act_mandate>
+        - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this act. Explain its role in the global value shift and Todorov equilibrium transition.
+        - **DRAMATIC ARC & PACING CURVES:** Map the act-level narrative movement. Detail starting emotional/value state, rising action, sequence division plan (2 in Act I, 4 in Act II, 2 in Act III), and Point of No Return climax.
+        - **THREAD PROGRESSION & CONVERGENCE:** Describe how each active plot thread evolves, intersects, and impacts one another across this act.
+        - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on how fatal flaws are tested, exposed, or synthesized.
+        - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems or pacing pitfalls for downstream sequence and scene planners.
+      </act_mandate>
+      <world_building_developments>How the setting or lore expands here.</world_building_developments>
+      <knots>
+        <knot>
+          <description>Event description...</description>
+          <interaction>Thread 1 event forces Thread 2 crisis.</interaction>
+        </knot>
+      </knots>
+    </act>
+    <!-- Add Act 2 and 3 -->
+  </acts>
+
+  <thread_statuses_at_end>
+    <thread_status>
+      <thread_id>T1</thread_id>
+      <status>Exact status at the end of this act.</status>
+    </thread_status>
+  </thread_statuses_at_end>
+
+  <relationship_shifts>
+    <shift>
+      <source_id>C1</source_id>
+      <target_id>C2</target_id>
+      <new_dynamic>How their relationship fundamentally evolved in this Act.</new_dynamic>
+    </shift>
+  </relationship_shifts>
+</response>
+</output_format_description>
+
+BEGIN STRUCTURING ACTS
+`,
+                        systemPrompt: PROMPTS.actAgent,
+                        reviewerSystemPrompt: PROMPTS.actReview,
+                        reviewerPromptFn: (genOutput) => `
+<story_arc_twists_and_surprises>
+${storyToUse.major_surprises_and_twists || ""}
+</story_arc_twists_and_surprises>
+<generated_acts>
+${genOutput}
+</generated_acts>
+
+<output_format_description>
+FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+Output Schema:
+<response>
+  <critique_analysis>Critically analyze each Act's mandate, structural points, and thread statuses. Specifically verify that all five mandate sections are present and robustly addressed. Verify every thread ID from the input is accounted for.</critique_analysis>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <reason>Explain the exact issue and how to fix it.</reason>
+  </deviation_reasons>
+</response>
+</output_format_description>
+
+BEGIN ACT CRITIQUE REVIEW
+`,
+                        parserFn: (text) => {
+                            const extractTag = (xml, tag) => {
+                                const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
+                                return match ? match[1].trim() : "";
+                            };
+                            
+                            const actsMatch = /<acts>([\s\S]*?)<\/acts>/i.exec(text);
+                            const actsXML = actsMatch ? actsMatch[1] : "";
+                            const actRegex = /<act>([\s\S]*?)<\/act>/gi;
+                            const parsedActs = [];
+                            let match;
+                            let idx = 1;
+                            while ((match = actRegex.exec(actsXML)) !== null) {
+                                const actData = match[1];
+                                const knotsMatch = /<knots>([\s\S]*?)<\/knots>/i.exec(actData);
+                                const knotsXML = knotsMatch ? knotsMatch[1] : "";
+                                const knotRegex = /<knot>([\s\S]*?)<\/knot>/gi;
+                                const knots = [];
+                                let kMatch;
+                                while ((kMatch = knotRegex.exec(knotsXML)) !== null) {
+                                    knots.push({
+                                        description: extractTag(kMatch[1], 'description'),
+                                        interaction: extractTag(kMatch[1], 'interaction')
+                                    });
+                                }
+                                parsedActs.push({
+                                    number: parseInt(extractTag(actData, 'number'), 10) || idx,
+                                    title: extractTag(actData, 'title') || `Act ${idx}`,
+                                    act_mandate: extractTag(actData, 'act_mandate'),
+                                    description: extractTag(actData, 'act_mandate'),
+                                    world_building_developments: extractTag(actData, 'world_building_developments'),
+                                    knots
+                                });
+                                idx++;
+                            }
+
+                            const threadStatuses = [];
+                            const threadsMatch = /<thread_statuses_at_end>([\s\S]*?)<\/thread_statuses_at_end>/i.exec(text);
+                            if (threadsMatch) {
+                                const tsRegex = /<thread_status>([\s\S]*?)<\/thread_status>/gi;
+                                let tsMatch;
+                                while ((tsMatch = tsRegex.exec(threadsMatch[1])) !== null) {
+                                    threadStatuses.push({
+                                        id: extractTag(tsMatch[1], 'thread_id'),
+                                        status: extractTag(tsMatch[1], 'status')
+                                    });
+                                }
+                            }
+
+                            const relShifts = [];
+                            const shiftsMatch = /<relationship_shifts>([\s\S]*?)<\/relationship_shifts>/i.exec(text);
+                            if (shiftsMatch) {
+                                const shiftRegex = /<shift>([\s\S]*?)<\/shift>/gi;
+                                let sMatch;
+                                while ((sMatch = shiftRegex.exec(shiftsMatch[1])) !== null) {
+                                    relShifts.push({
+                                        from: extractTag(sMatch[1], 'source_id'),
+                                        to: extractTag(sMatch[1], 'target_id'),
+                                        new_feeling: extractTag(sMatch[1], 'new_dynamic')
+                                    });
+                                }
+                            }
+
+                            return {
+                                acts: parsedActs,
+                                thread_statuses: threadStatuses,
+                                relationship_shifts: relShifts
+                            };
+                        },
                         modelSize: "large",
                         spawningContext: "Act division and pacing",
                         parentTierFailFn: async (reasons) => {
@@ -13210,17 +13173,47 @@ BEGIN SEQUENCE CRITIQUE REVIEW
 
                     console.log("[generateActsAndSequences] Tier 2.2 Sequence Agent complete.");
 
-                    // Archive world lore
+                    // Archive world lore additively - regenerating acts must not wipe lore
+                    // accumulated from imports or the archivist (vectors or story.lore)
                     setLoadingStep("Archiving world lore...");
-                    const loreList = [
-                        {
-                            topic: "World Bible Setting",
-                            detail: storyToUse.status_quo || "",
-                            valid_from_act: 1,
-                            valid_from_scene: 1
+                    const worldBibleEntry = {
+                        topic: "World Bible Setting",
+                        detail: storyToUse.status_quo || "",
+                        valid_from_act: 1,
+                        valid_from_scene: 1
+                    };
+                    const existingWorldBible = (storyToUse.lore || []).find(l => l && l.topic === "World Bible Setting");
+                    let persistedWorldBible = existingWorldBible || null;
+                    if (worldBibleEntry.detail && (!existingWorldBible || existingWorldBible.detail !== worldBibleEntry.detail)) {
+                        // Upsert under a stable vector id: overwrites the previous World Bible vector in place
+                        // (no stale duplicates, no similarity-merge against unrelated lore) and only records the
+                        // entry as archived when the vector write succeeded, so a transient embedding failure is
+                        // retried on the next regeneration instead of being skipped as already-archived.
+                        try {
+                            setRagStatus("indexing_batch");
+                            const wbText = `${worldBibleEntry.topic}: ${worldBibleEntry.detail}`;
+                            const emb = embeddingService.current ? await embeddingService.current.getEmbedding(wbText) : null;
+                            if (emb && vectorStore.current) {
+                                await vectorStore.current.add("lore_world_bible_setting", wbText, emb, {
+                                    topic: worldBibleEntry.topic,
+                                    valid_from_act: 1,
+                                    valid_from_scene: 1,
+                                    category: "General",
+                                    detail: worldBibleEntry.detail
+                                });
+                                persistedWorldBible = worldBibleEntry;
+                            } else if (!existingWorldBible) {
+                                // No embedding service configured - keep the lore entry visible anyway;
+                                // the load-time re-index rebuilds vectors from story.lore once one exists.
+                                persistedWorldBible = worldBibleEntry;
+                            }
+                        } catch (e) {
+                            console.warn("[generateActsAndSequences] World Bible vector archival failed; will retry on next regeneration:", e);
+                            if (!existingWorldBible) persistedWorldBible = worldBibleEntry;
+                        } finally {
+                            setRagStatus("ready");
                         }
-                    ];
-                    await ingestLoreBatch(loreList);
+                    }
 
                     // TIER 2.3: Pacing Architect (Deterministic Local Pacing Ranges - A1)
                     const parsedPacing = computePacingRanges(storyToUse.style?.genre || storyToUse.genre, storyToUse.target_word_count || 80000);
@@ -13231,7 +13224,9 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         acts: actsData,
                         sequences: normalizedSequences,
                         relationships: nextRels,
-                        lore: loreList,
+                        lore: (persistedWorldBible && persistedWorldBible.detail)
+                            ? [...(storyToUse.lore || []).filter(l => l && l.topic !== "World Bible Setting"), persistedWorldBible]
+                            : (storyToUse.lore || []),
                         thread_statuses: actResult.parsedData.thread_statuses || [],
                         generation_ranges: parsedPacing,
                         continuity_ledger: Array.isArray(storyToUse.continuity_ledger) ? storyToUse.continuity_ledger : []
@@ -13337,10 +13332,11 @@ BEGIN SEQUENCE CRITIQUE REVIEW
             };
 
             // Batch Ingest (for Init or Import)
-            const ingestLoreBatch = async (loreList) => {
+            const ingestLoreBatch = async (loreList, { clearExisting = false } = {}) => {
                 setRagStatus("indexing_batch");
-                // Clear old store if re-initializing? Maybe not if we want persistence, but for now yes to avoid stale ghosts
-                await vectorStore.current.clear();
+                // Full rebuilds (init, reindex, full-list imports) clear the store first;
+                // mid-story ingestions merge additively via ingestLore so accumulated lore vectors survive.
+                if (clearExisting) await vectorStore.current.clear();
 
                 let processedList = [];
                 for (const item of loreList) {
@@ -13380,6 +13376,18 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 toastTimerRef.current = setTimeout(() => {
                     setToast(prev => (prev && prev.id === toastId ? null : prev));
                 }, type === 'error' ? 5000 : 3500);
+            };
+
+            // Pipeline progress logger used by the scene expansion loop (Tier 4.3/4.4)
+            const addLog = (entry) => {
+                const line = `[Pipeline - ${entry.agent || 'Pipeline'}] ${entry.action || ''}${entry.details ? ` | ${entry.details}` : ''}`;
+                if (entry.status === 'error') {
+                    console.error(line);
+                    showToast(`${entry.agent || 'Pipeline'}: ${entry.action || 'step failed'}`, 'warning');
+                } else {
+                    console.log(line);
+                }
+                if (entry.status === 'in_progress' && entry.action) setLoadingStep(`${entry.action}...`);
             };
 
             const toggleAct = (idx) => {
@@ -14758,22 +14766,24 @@ ${chapterBody}
                 const n = name.toLowerCase();
                 if (n.includes("tier 0.1") || n.includes("conceptual")) return 1;
                 if (n.includes("tier 0.2") || n.includes("character developer")) return 2;
+                if (n.includes("story arc agent reviewer") || n.includes("story arc reviewer") || n.includes("tier 1.2")) return 4;
                 if (n.includes("tier 1.1") || n.includes("story arc agent") || n.includes("story arc planner")) return 3;
-                if (n.includes("tier 1.2") || n.includes("story arc reviewer")) return 4;
+                if (n.includes("act agent reviewer") || n.includes("act reviewer") || n.includes("tier 2.2")) return 6;
                 if (n.includes("act agent") || n.includes("act planner") || n.includes("tier 2.1")) return 5;
-                if (n.includes("act reviewer") || n.includes("tier 2.2")) return 6;
                 if (n.includes("lore archivist") || n.includes("rag ingest")) return 7;
                 if (n.includes("pacing architect") || n.includes("tier 2.3")) return 8;
+                if (n.includes("sequence agent reviewer") || n.includes("sequence reviewer") || n.includes("tier 3.2")) return 10;
                 if (n.includes("sequence agent") || n.includes("sequence planner") || n.includes("tier 3.1")) return 9;
-                if (n.includes("sequence reviewer") || n.includes("tier 3.2")) return 10;
-                if (n.includes("scene agent") || n.includes("scene planner") || n.includes("tier 4.1")) return 11;
-                if (n.includes("scene reviewer") || n.includes("tier 4.2")) return 12;
-                if (n.includes("beat agent") || n.includes("beat planner") || n.includes("tier 5.1")) return 13;
-                if (n.includes("beat reviewer") || n.includes("tier 5.2")) return 14;
-                if (n.includes("rag context") || n.includes("retriever") || n.includes("retrieve context")) return 15;
-                if (n.includes("writing agent") || n.includes("prose generator") || n.includes("prose writer") || n.includes("tier 5.3")) return 16;
-                if (n.includes("continuity reviewer") || n.includes("surgical editor")) return 17;
-                if (n.includes("archivist")) return 18;
+                if (n.includes("scene roster agent reviewer") || n.includes("scene roster reviewer") || n.includes("tier 4.2")) return 12;
+                if (n.includes("scene roster") || n.includes("scene agent") || n.includes("scene planner") || n.includes("tier 4.1")) return 11;
+                if (n.includes("scene expander agent reviewer") || n.includes("scene expander reviewer") || n.includes("tier 4.4")) return 14;
+                if (n.includes("scene expander") || n.includes("tier 4.3")) return 13;
+                if (n.includes("beat agent reviewer") || n.includes("beat reviewer") || n.includes("tier 5.2")) return 16;
+                if (n.includes("beat agent") || n.includes("beat planner") || n.includes("tier 5.1")) return 15;
+                if (n.includes("rag context") || n.includes("retriever") || n.includes("retrieve context")) return 17;
+                if (n.includes("writing agent reviewer") || n.includes("continuity reviewer") || n.includes("surgical")) return 19;
+                if (n.includes("writing agent") || n.includes("prose generator") || n.includes("prose writer") || n.includes("tier 5.3")) return 18;
+                if (n.includes("archivist")) return 20;
                 return null;
             };
 
@@ -14827,6 +14837,7 @@ ${chapterBody}
 
                 const maxRetries = 3;
                 let attempt = 0;
+                let timeoutRetries = 0;
 
                 console.log(`[AI Call - "${logName}"] Starting request... Model: ${modelToUse} | Size: ${modelSize} | Provider: ${apiProvider} | JSON: ${isJson}`);
 
@@ -14866,7 +14877,7 @@ ${chapterBody}
                     thinkingConfig = enableThinkingAct ? getThinkingConfigFromBudget(thinkingBudgetAct) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
                 } else if (logName.includes("Story Arc")) {
                     thinkingConfig = enableThinkingAct ? getThinkingConfigFromBudget(thinkingBudgetStoryArc) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
-                } else if (logName.includes("Scene Agent") || logName.includes("Sequence Agent") || logName.includes("Pacing")) {
+                } else if (logName.includes("Scene Agent") || logName.includes("Scene Roster") || logName.includes("Scene Expander") || logName.includes("Sequence Agent") || logName.includes("Pacing")) {
                     thinkingConfig = enableThinkingScene ? getThinkingConfigFromBudget(thinkingBudgetScene) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
                 } else if (logName.includes("Writing Agent") || logName.includes("Beat Agent") || logName.includes("Prose")) {
                     thinkingConfig = enableThinkingWriting ? getThinkingConfigFromBudget(thinkingBudgetWriting) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
@@ -14874,7 +14885,7 @@ ${chapterBody}
 
                 // Per-agent max_tokens to prevent structural YAML truncation & prose starvation
                 const agentMaxTokens = (() => {
-                    const isHeavyAgent = logName.includes("Story Arc") || logName.includes("Act Agent") || logName.includes("Scene Agent") || logName.includes("Sequence Agent") || logName.includes("Writing Agent") || logName.includes("Prose Generator") || logName.includes("Prose") || logName.includes("Conceptual") || logName.includes("Character") || logName.includes("Archivist") || logName.includes("Directive");
+                    const isHeavyAgent = logName.includes("Story Arc") || logName.includes("Act Agent") || logName.includes("Scene Agent") || logName.includes("Scene Roster") || logName.includes("Scene Expander") || logName.includes("Sequence Agent") || logName.includes("Writing Agent") || logName.includes("Prose Generator") || logName.includes("Prose") || logName.includes("Conceptual") || logName.includes("Character") || logName.includes("Archivist") || logName.includes("Directive") || logName.includes("Surgical") || logName.includes("Lore Merger");
                     if (thinkingConfig && thinkingConfig.enabled) {
                         return isHeavyAgent ? 32768 : 16384;
                     }
@@ -14963,8 +14974,11 @@ ${chapterBody}
                         console.error(`[AI Call - "${logName}"] Error (Attempt ${attempt}/${maxRetries}):`, errMsg, error);
                         
                         const isAuthError = errMsg.includes("401") || errMsg.includes("Authorization Failed") || errMsg.includes("API Key is missing");
-                        const isClientTimeout = errMsg.includes("Request timed out") || errMsg.includes("timed out after") || errMsg.includes("timed out") || error?.name === 'AbortError';
-                        const isTransient = !isAuthError && !isClientTimeout && (
+                        // Client-side aborts only: fetchWithTimeout/KoboldCPP throw "... request timed out after Ns".
+                        // Server-side gateway timeouts ("upstream request timed out", 504) must NOT match -
+                        // they are handled by the generic transient clauses with accurate messaging.
+                        const isClientTimeout = error?.name === 'AbortError' || errMsg.toLowerCase().includes("request timed out after");
+                        const isTransient = !isAuthError && ((isClientTimeout && timeoutRetries < 1) ||
                             errMsg.includes("500") || errMsg.includes("502") || errMsg.includes("503") || errMsg.includes("504") ||
                             errMsg.includes("Internal Server Error") || errMsg.includes("Bad Gateway") || errMsg.includes("Service Unavailable") ||
                             errMsg.includes("Gateway Timeout") || errMsg.includes("Overloaded") || errMsg.includes("429") ||
@@ -14977,6 +14991,13 @@ ${chapterBody}
                         );
 
                         if (isTransient && attempt < maxRetries) {
+                            // One retry per call for client timeouts: a transient stall gets a second chance
+                            // without burning an escalation attempt, but the user's configured timeout is honored
+                            // per request and a second timeout fails the call instead of compounding waits.
+                            if (isClientTimeout) {
+                                timeoutRetries++;
+                                console.warn(`[AI Call - "${logName}"] Client timeout on attempt ${attempt}. Retrying once at the configured ${Math.round((options.timeout || 0) / 1000)}s timeout...`);
+                            }
                             // If thinking budget was exhausted, expand max_tokens and tighten thinking instructions for retry
                             if (errMsg.includes("exhausted token budget") || errMsg.includes("completed thinking phase")) {
                                 console.warn(`[AI Call - "${logName}"] Thinking budget exhausted on attempt ${attempt}. Expanding max_tokens and tightening thinking instructions for retry...`);
@@ -14997,8 +15018,10 @@ ${chapterBody}
                             await new Promise(resolve => setTimeout(resolve, delayMs));
                         } else {
                             const durationSec = ((performance.now() - startTime) / 1000).toFixed(2);
-                            const finalMsg = isClientTimeout 
-                                ? `API Request timed out after ${apiTimeout}s without response (${logName}).` 
+                            const finalMsg = isClientTimeout
+                                ? (options.timeout > 0
+                                    ? `API Request timed out after ${Math.round(options.timeout / 1000)}s without response (${logName}, ${attempt} attempt(s)). If this recurs, raise the API Timeout in Settings.`
+                                    : `Request aborted (${logName}): ${errMsg}`)
                                 : `FAILED after ${attempt} attempt(s): ${errMsg}`;
                             console.error(`[AI Call - "${logName}"] Final Failure: ${finalMsg}`);
                             setPromptLog(prev => prev.map(entry => {
@@ -15681,6 +15704,7 @@ Pacing Justification: ${scenesRange.justification}
                                     entrance_conditions: extractTag(sData, 'entrance_conditions') || "",
                                     exit_conditions: extractTag(sData, 'exit_conditions') || "",
                                     temporal_scope: extractTag(sData, 'temporal_scope') || "",
+                                    characters_present: charPres,
                                     cast_ids: castIds,
                                     cast_names: castNames,
                                     thread_ids: threadIds,
@@ -16385,7 +16409,7 @@ You MUST adapt the beat choreography to address this specific instruction:
                             parentTierFailFn: async (reasons) => {
                                 setFeedbackLedger(prev => ({
                                     ...prev,
-                                    "Scene Agent": reasons
+                                    "Scene Roster Agent": reasons
                                 }));
                             },
                             activeActNum: sequenceData.parent_act || 1,
@@ -16564,7 +16588,7 @@ You MUST adapt the beat choreography to address this specific instruction:
                         dynamicStyleText = `=== DYNAMIC STYLE WARNINGS FROM PREVIOUS BEAT FAILURES ===\nAvoid these specific issues highlighted in recent reviews:\n` + 
                             failedReviewCritiques.map(crit => `- ${crit}`).join('\n') + `\n`;
                     }
-                    basePrompt = basePrompt.replace('[DYNAMIC_STYLE_WARNINGS]', dynamicStyleText);
+                    basePrompt = basePrompt.replace('[DYNAMIC_STYLE_WARNINGS]', () => dynamicStyleText);
 
                     const finalWritingSystemPrompt = injectionPrompt 
                         ? `${basePrompt}\n\n=== ACTIVE SCENE LENS MANDATE: ${activeModeId} ===\n${injectionPrompt}` 
@@ -16661,7 +16685,7 @@ You MUST adapt the beat choreography to address this specific instruction:
                         previousSceneProseText = previousSceneProseText.prose || previousSceneProseText.final || previousSceneProseText.draft;
                     }
                     if (previousSceneProseText && typeof previousSceneProseText === 'string') {
-                        const words = previousSceneProseText.split(/\\s+/);
+                        const words = previousSceneProseText.split(/\s+/);
                         if (words.length > 500) {
                             previousSceneProseText = "..." + words.slice(-500).join(" ");
                         }
@@ -17570,7 +17594,7 @@ ${currentLoreList}
                                 </div>
                                 <div>
                                     <h2 className="font-bold text-sm text-stone-900 tracking-tight flex items-center gap-1.5 font-display">
-                                        EllipsisProse <span className="text-[10px] font-mono font-bold bg-stone-200/80 text-stone-700 px-1.5 py-0.2 rounded-full">1.5</span>
+                                        EllipsisProse <span className="text-[10px] font-mono font-bold bg-stone-200/80 text-stone-700 px-1.5 py-0.2 rounded-full">1.7</span>
                                     </h2>
                                     <p className="text-[10px] text-stone-500 font-medium">AI Story Architect & Studio</p>
                                 </div>
@@ -19290,7 +19314,7 @@ ${currentLoreList}
                                                 <Plus size={14} /> Add Fact
                                             </button>
                                             <button
-                                                onClick={() => ingestLoreBatch(story.lore)}
+                                                onClick={() => ingestLoreBatch(story.lore, { clearExisting: true })}
                                                 disabled={ragStatus === 'indexing' || (!apiKey && !openRouterKey)}
                                                 className="text-xs bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50"
                                                 title="Re-embed all lore items into vector database"
@@ -21673,7 +21697,6 @@ ${currentLoreList}
                                                 const spec = {
                                                     1: { title: "Conceptual Development Agent", function: "initStory() - Tier 0.1", model: "Large Model Target (Dual-Model Settings)", inputs: "User raw outline text, style/genre guides, tone parameters, lore context.", output: "YAML object detailing core genre class, style guidelines, atmosphere guidelines, world bible status quo, and initial character briefs.", gate: "YAML or XML tags parse correctly, returning string blocks for genre, style, and world bible.", retries: "Direct UI correction loops. No automated cascading deletions above this stage.", constraints: "Cultivate core concept to logical extremes. Define status quo, inciting incident, and core thematic arguments." },
                                                     2: { title: "Character Developer (Interviews)", function: "initStory() - Tier 0.2", model: "Large Model Target (Sequential Loop)", inputs: "World bible context, active character brief (name, role, flaw, desire), and narrative tone guidelines.", output: "First-person narrative interview context, voice samples, and psychological dossiers.", gate: "A text interview block is successfully generated for every single character profile brief in the cast list.", retries: "Retries profile generation on failure. Aborts initialization if permanent API error occurs.", constraints: "Must produce 300-600 word 1st-person monologues spoken directly by the character." },
-                                                    3: { title: "Story Arc Agent", function: "initStory() - Tier 1.1", model: "Large Model Target", inputs: "World bible, genre classification, style parameters, tone guidelines, character casts with flaws/desires.", output: "YAML schema detailing starting and ending value states (inciting incident), character arcs, twists, and narrative threads.", gate: "Story Arc details parsed as valid YAML structure. Maps character arcs and narrative threads.", retries: "Retries the Story Arc planner up to 3 times on reviewer FAIL status.", constraints: "Specify concrete Lie, Truth, and Catalyst for character arcs." },
                                                     3: { title: "Story Arc Agent", function: "initStory() - Tier 1.1", model: "Large Model Target", inputs: "World bible, genre classification, style parameters, tone guidelines, character casts with flaws/desires.", output: "XML schema detailing starting and ending value states (inciting incident), character arcs, twists, and narrative threads.", gate: "Story Arc details parsed as valid XML structure. Maps character arcs and narrative threads.", retries: "Retries the Story Arc planner up to 3 times on reviewer FAIL status.", constraints: "Specify concrete Lie, Truth, and Catalyst for character arcs." },
                                                     4: { title: "Story Arc Reviewer", function: "runAgentWithEscalation() - Tier 1.2", model: "Small Model (Escalates to Large on Attempt 3)", inputs: "Story concept, world bible, generated Story Arc plan.", output: "XML status report: PASS or FAIL along with critiques/reasons.", gate: "Reviewer status == 'PASS'", retries: "Fails trigger a retry of Step 3 (Story Arc Agent), feeding the critique reasons as prompts.", constraints: "Strict audit of thematic arguments, thread tracking, and logical reversals." },
                                                     5: { title: "Act Planner (Act Agent)", function: "runAgentWithEscalation() - Tier 2.1", model: "Small Model Target (Escalates to Large)", inputs: "Story concept, theme milestones, character profiles list, and structural boundaries.", output: "XML list representing Acts: number, title, description, milestones, and knots.", gate: "Passes Programmatic Validation: at least 3 acts planned, and every act description has a length >= 50 characters.", retries: "Up to 3 attempts. Downstream failure in Sequence Agent plans triggers a rollback to this step.", constraints: "Map out exact intersections (knots) where multiple threads collide." },
@@ -21682,15 +21705,18 @@ ${currentLoreList}
                                                     8: { title: "Pacing Architect", function: "initStory() - Tier 2.3", model: "Large Model Target", inputs: "Act outline mandates and narrative density targets.", output: "XML output defining narrative density ranges (scenes per sequence, beats per scene).", gate: "Pacing ranges defined and stored in story state.", retries: "Uses default density ranges if call fails.", constraints: "Balance fast kinetic pacing with legato-staccato rhythm." },
                                                     9: { title: "Sequence Planner (Sequence Agent)", function: "generateSequences() - Tier 3.1", model: "Small Model Target (Escalates to Large)", inputs: "Detailed Act mandates, cast dossiers, story guidelines.", output: "XML schema detailing 8 Frank Daniel sequences: number, parent_act, title, sequence_function, tactical_question, and ending_hook.", gate: "Passes Programmatic Validation: 8 sequences generated in 2-4-2 distribution.", retries: "Up to 3 attempts. 3 failures trigger cascading rollback to Act Agent (Step 5).", constraints: "Each sequence must define its tactical question and sequence climax." },
                                                     10: { title: "Sequence Reviewer", function: "generateSequences() - Tier 3.2", model: "Small Model Target", inputs: "Newly generated sequence plans list, parent Act objectives.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 9 up to 3 times, then rolls back to Step 5.", constraints: "Verify Frank Daniel model alignment and tactical question sharpness." },
-                                                    11: { title: "Scene Planner (Scene Agent)", function: "generateScenes() - Tier 4.1", model: "Small Model Target (Escalates to Large)", inputs: "Sequence outline, active cast lists, target sequence scope, world bible rules.", output: "XML array outlining Scenes: scene number, title, scene_type (proactive_scene/reactive_sequel), transition_jump, value/relationship shifts.", gate: "Passes Programmatic Validation: at least 4 scenes created per Sequence.", retries: "Up to 3 attempts. 3 failures trigger rollback to Sequence Agent (Step 9).", constraints: "Alternate proactive scenes and reactive sequels with explicit transition jumps." },
-                                                    12: { title: "Scene Reviewer", function: "generateScenes() - Tier 4.2", model: "Small Model Target", inputs: "Newly generated scene structure roster, parent sequence objectives.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 11 up to 3 times, then rolls back to Step 9.", constraints: "Audit Swain Scene/Sequel alternation and causal linkage." },
-                                                    13: { title: "Beat Planner (Beat Agent)", function: "generateBeats() - Tier 5.1", model: "Small Model Target (Escalates to Large)", inputs: "Parent scene directives, character interview profiles, relationship ledger, preceding beats.", output: "XML containing detailed choreography: start entry states, pivot turning points, end exit states, tactical actions.", gate: "Passes Programmatic Validation: at least 3 beats created per Scene.", retries: "Up to 3 attempts. 3 failures trigger rollback to Scene Agent (Step 11).", constraints: "Dialogue subtext planning: surface dialogue vs hidden desires." },
-                                                    14: { title: "Beat Reviewer", function: "generateBeats() - Tier 5.2", model: "Small Model Target", inputs: "Generated beats choreography plan, parent scene description.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 13 up to 3 times, then rolls back to Step 11.", constraints: "Continuity logic gate: check inventory, posture, and physical continuity." },
-                                                    15: { title: "Query Expansion & RAG Context Retriever", function: "retrieveContext()", model: "Small Model Query Preprocessor + Vector Store Search", inputs: "Beat choreography sequence, active cast list, scene location.", output: "Relevant canonical facts, lore notes, character relationships attached to prompt.", gate: "Preprocessed terms and RAG facts returned.", retries: "Falls back to raw action query on search exception.", constraints: "Ensure canonical facts are never contradicted." },
-                                                    16: { title: "Writing Agent (Prose Generator)", function: "writeSceneProse()", model: "Large Model Target", inputs: "Full scene choreography, cast cards, RAG lore details, style guides, preceding prose.", output: "Story text paragraphs (400-600 words per beat). Text-only format.", gate: "Passes prose length and format guidelines.", retries: "Up to 3 attempts. 3 failures trigger rollback to Beat Agent (Step 13).", constraints: "Subtext over text, distinct character voices, terse defensive restraint." },
-                                                    17: { title: "Continuity Reviewer & Surgical Editor", function: "writeSceneProse() Reviewer & Patch", model: "Small Model Reviewer + Large Model Surgical Editor", inputs: "Scene beat sequence, newly generated prose draft, banned words filter.", output: "PASS or FAIL status. If FAIL with minor issues, applies surgical search-replace patch.", gate: "Reviewer status == 'PASS' or surgical edit applies cleanly.", retries: "Critical fail triggers prose rewrite loop (Step 16). Surgical error rolls back to Step 13.", constraints: "Check for posture slips, teleportation, and dialogue bloat." },
-                                                    18: { title: "Archivist (End of Scene)", function: "handleWorldUpdates() / Archivist", model: "Large Model Target (JSON output)", inputs: "Concatenated text of all beats in scene, current cast profiles, lore database topics.", output: "JSON object updating character goals, new lore entries, and relationship shifts.", gate: "JSON output parses successfully and updates state model.", retries: "Regex fallback on JSON parse failure.", constraints: "Assign unique IDs to all new character briefs immediately." }
+                                                    11: { title: "Scene Roster Agent", function: "generateScenes() - Tier 4.1", model: "Small Model Target (Escalates to Large)", inputs: "Sequence outline, active cast lists, target sequence scope, world bible rules.", output: "XML roster of lean scenes: scene_id, title, characters, threads, objective, scene_type, transition_jump, temporal_scope, entrance/exit conditions.", gate: "Passes Programmatic Validation: at least 4 scenes created per Sequence.", retries: "Up to 3 attempts. 3 failures trigger rollback to Sequence Agent (Step 9).", constraints: "Alternate proactive scenes and reactive sequels with explicit transition jumps." },
+                                                    12: { title: "Scene Roster Reviewer", function: "generateScenes() - Tier 4.2", model: "Small Model Target", inputs: "Generated lean scene roster, parent sequence objectives.", output: "XML outlining status (PASS or FAIL) and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 11 up to 3 times, then rolls back to Step 9.", constraints: "Audit Swain Scene/Sequel alternation and causal linkage." },
+                                                    13: { title: "Scene Expander Agent", function: "generateScenes() - Tier 4.3", model: "Small Model Target", inputs: "Lean scene row, adjacent scene context (previous exit / next entrance), narrative mode library.", output: "XML expansion: rich_scene_description blueprint, dominant narrative mode, value shift, hard facts, relationship shifts.", gate: "Rich description blueprint generated.", retries: "Up to 3 attempts via the escalation loop.", constraints: "Blueprint only - no prose or dialogue. Respect adjacent-scene continuity." },
+                                                    14: { title: "Scene Expander Reviewer", function: "generateScenes() - Tier 4.4", model: "Small Model Target", inputs: "Full list of expanded scenes for the sequence.", output: "XML status report: PASS or FAIL with deviation reasons.", gate: "Continuity validated across the expanded scene flow.", retries: "FAIL is logged; scenes are kept (advisory batch review).", constraints: "Check teleportation, state collisions, and clinical tone." },
+                                                    15: { title: "Beat Planner (Beat Agent)", function: "generateBeats() - Tier 5.1", model: "Small Model Target (Escalates to Large)", inputs: "Parent scene directives, character interview profiles, relationship ledger, preceding beats.", output: "XML containing detailed choreography: start entry states, pivot turning points, end exit states, tactical actions.", gate: "Passes Programmatic Validation: at least 3 beats created per Scene.", retries: "Up to 3 attempts. 3 failures trigger rollback to Scene Roster Agent (Step 11).", constraints: "Dialogue subtext planning: surface dialogue vs hidden desires." },
+                                                    16: { title: "Beat Reviewer", function: "generateBeats() - Tier 5.2", model: "Small Model Target", inputs: "Generated beats choreography plan, parent scene description.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 15 up to 3 times, then rolls back to Step 11.", constraints: "Continuity logic gate: check inventory, posture, and physical continuity." },
+                                                    17: { title: "Query Expansion & RAG Context Retriever", function: "retrieveContext()", model: "Small Model Query Preprocessor + Vector Store Search", inputs: "Beat choreography sequence, active cast list, scene location.", output: "Relevant canonical facts, lore notes, character relationships attached to prompt.", gate: "Preprocessed terms and RAG facts returned.", retries: "Falls back to raw action query on search exception.", constraints: "Ensure canonical facts are never contradicted." },
+                                                    18: { title: "Writing Agent (Prose Generator)", function: "writeSceneProse()", model: "Large Model Target", inputs: "Full scene choreography, cast cards, RAG lore details, style guides, preceding prose.", output: "Story text paragraphs (400-600 words per beat). Text-only format.", gate: "Passes prose length and format guidelines.", retries: "Up to 3 attempts. 3 failures trigger rollback to Beat Agent (Step 15).", constraints: "Subtext over text, distinct character voices, terse defensive restraint." },
+                                                    19: { title: "Continuity Reviewer & Surgical Editor", function: "writeSceneProse() Reviewer & Patch", model: "Small Model Reviewer + Large Model Surgical Editor", inputs: "Scene beat sequence, newly generated prose draft, banned words filter.", output: "PASS or FAIL status. If FAIL with minor issues, applies surgical search-replace patch.", gate: "Reviewer status == 'PASS' or surgical edit applies cleanly.", retries: "Critical fail triggers prose rewrite loop (Step 18). Surgical error rolls back to Step 15.", constraints: "Check for posture slips, teleportation, and dialogue bloat." },
+                                                    20: { title: "Archivist (End of Scene)", function: "handleWorldUpdates() / Archivist", model: "Large Model Target (JSON output)", inputs: "Concatenated text of all beats in scene, current cast profiles, lore database topics.", output: "JSON object updating character goals, new lore entries, and relationship shifts.", gate: "JSON output parses successfully and updates state model.", retries: "Regex fallback on JSON parse failure.", constraints: "Assign unique IDs to all new character briefs immediately." }
                                                 }[activeStepId];
+                                                if (!spec) return null;
 
                                                 return (
                                                     <div className="bg-white rounded-2xl border border-black/[0.07] p-5 sm:p-6 space-y-4 sticky top-6 shadow-sm">
