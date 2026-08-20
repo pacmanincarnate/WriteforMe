@@ -15293,25 +15293,10 @@ BEGIN DEVELOPING STORY SEQUENCES
                     const styleContext = storyToUse.style ? `Genre: ${storyToUse.style.genre || 'Unspecified'}, Mood: ${storyToUse.style.mood || 'Unspecified'}, Style: ${storyToUse.style.writing_guide || 'Standard'}` : '';
 
                     // Run Edit Router for Scenes (Tier 3.1 & 3.2)
-                    const sceneResult = await runAgentWithEscalation({
-                        tierName: "Scene Roster Agent",
-                        isAutopilot,
-                        generatorPromptFn: () => {
-                            const getSceneContext = () => `
-<input_payload_schema>
-This prompt provides the following context blocks. Your responsibility is to generate the lean scene sequence for this sequence objective:
-- <overall_story_information>: The macro narrative framework. Keep the overarching themes and concepts in mind.
-- <character_psychological_arcs>: The global character arcs. Ensure scene events test these arcs.
-- <active_character_profiles>: The characters available for this scene.
-- <character_relationships>: Existing relationship dynamics to leverage.
-- <act_descriptions>: The macro Act structure. Ensure your scenes fulfill the current Sequence's objective.
-- <previous_act_last_sequence>: (If applicable) The narrative bridge from the previous act.
-- <style_and_tone>: The genre and style guidelines.
-- <target_scenes_per_sequence>: The structural constraints for your generation.
-- <output_format_description>: The required XML output schema.
-</input_payload_schema>
-
-<overall_story_information>
+                    // Shared context segments for the Scene Roster Agent's generator AND reviewer
+                    // prompts - previously duplicated verbatim inside both promptFns. The reviewer
+                    // additionally receives the continuity ledger and the narrative-mode library.
+                    const getSceneContextIntro = () => `<overall_story_information>
 Concept: ${storyToUse.concept || ""}
 Status Quo: ${storyToUse.status_quo || ""}
 Inciting Incident: ${storyToUse.inciting_incident || ""}
@@ -15333,9 +15318,9 @@ ${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw
 
 <character_relationships>
 ${buildRelationshipFrictionBlock(storyToUse.cast || [], storyToUse.relationships || {})}
-</character_relationships>
+</character_relationships>`;
 
-<act_descriptions>
+                    const getSceneActsAndStyle = () => `<act_descriptions>
 ${storyToUse.acts.map(a => `## Act ${a.number}: ${a.title} ${(a.number === actNumber) ? "[[CURRENT ACT]]" : ""}
 Mandate: ${a.act_mandate || a.description}
 ${(a.number === actNumber) ? `<sequence_descriptions>
@@ -15357,13 +15342,36 @@ Description: ${previousSequence.description || ""}
 Genre: ${storyToUse.style?.genre || 'Unspecified'}
 Mood: ${storyToUse.style?.mood || 'Unspecified'}
 Writing Guide: ${storyToUse.style?.writing_guide || 'Standard'}
-</style_and_tone>
+</style_and_tone>`;
 
-<target_scenes_per_sequence>
+                    const getSceneTargetBlock = () => `<target_scenes_per_sequence>
 Generate between ${scenesRange.min} and ${scenesRange.max} scenes (hard minimum 4) for this sequence.
 Structure them with Dwight Swain's Scene and Sequel alternation (Proactive Scene -> Reactive Sequel).
 Pacing Justification: ${scenesRange.justification}
-</target_scenes_per_sequence>
+</target_scenes_per_sequence>`;
+
+                    const sceneResult = await runAgentWithEscalation({
+                        tierName: "Scene Roster Agent",
+                        isAutopilot,
+                        generatorPromptFn: () => `
+<input_payload_schema>
+This prompt provides the following context blocks. Your responsibility is to generate the lean scene sequence for this sequence objective:
+- <overall_story_information>: The macro narrative framework. Keep the overarching themes and concepts in mind.
+- <character_psychological_arcs>: The global character arcs. Ensure scene events test these arcs.
+- <active_character_profiles>: The characters available for this scene.
+- <character_relationships>: Existing relationship dynamics to leverage.
+- <act_descriptions>: The macro Act structure. Ensure your scenes fulfill the current Sequence's objective.
+- <previous_act_last_sequence>: (If applicable) The narrative bridge from the previous act.
+- <style_and_tone>: The genre and style guidelines.
+- <target_scenes_per_sequence>: The structural constraints for your generation.
+- <output_format_description>: The required XML output schema.
+</input_payload_schema>
+
+${getSceneContextIntro()}
+
+${getSceneActsAndStyle()}
+
+${getSceneTargetBlock()}
 
 <output_format_description>
 FORMATTING DIRECTIVE: Return your scenes strictly as XML tags. Do not use YAML or markdown blocks.
@@ -15394,77 +15402,10 @@ Output Schema:
 </output_format_description>
 
 BEGIN DEVELOPING CURRENT SEQUENCE SCENES
-`;
-                            return getSceneContext();
-                        },
+`,
                         systemPrompt: PROMPTS.sceneRosterAgent,
                         reviewerSystemPrompt: PROMPTS.sceneRosterReview,
-                        reviewerPromptFn: (genOutput) => {
-                            const getSceneContext = () => `
-<overall_story_information>
-Concept: ${storyToUse.concept || ""}
-Status Quo: ${storyToUse.status_quo || ""}
-Inciting Incident: ${storyToUse.inciting_incident || ""}
-Themes: ${storyToUse.themes || ""}
-Threads:
-${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`).join('\n')}
-Core Thematic Argument: ${storyToUse.core_thematic_argument || ""}
-Story Starting Value State: ${storyToUse.starting_value_state || ""}
-Story Ending Value State: ${storyToUse.ending_value_state || ""}
-</overall_story_information>
-
-<character_psychological_arcs>
-${(storyToUse.character_arcs || []).map(ca => `- Character ${ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`).join('\n')}
-</character_psychological_arcs>
-
-<active_character_profiles>
-${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || c.details?.history || 'Unspecified flaw'}, Desire: ${c.core_desire || c.details?.goals || 'Unspecified desire'}, Cadence: ${c.vocal_cadence || c.voice_sample || 'Standard'}`).join('\n')}
-</active_character_profiles>
-
-<character_relationships>
-${buildRelationshipFrictionBlock(storyToUse.cast || [], storyToUse.relationships || {})}
-</character_relationships>
-
-<continuity_ledger>
-${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}
-</continuity_ledger>
-
-<act_descriptions>
-${storyToUse.acts.map(a => `## Act ${a.number}: ${a.title} ${(a.number === actNumber) ? "[[CURRENT ACT]]" : ""}
-Mandate: ${a.act_mandate || a.description}
-${(a.number === actNumber) ? `<sequence_descriptions>
-${(storyToUse.sequences || []).filter(seq => seq.parent_act === a.number).map(seq => `  - Sequence ${seq.number}: ${seq.title} ${(seq.number === currentSequence.number) ? "[[CURRENT SEQUENCE]]" : ""}
-    Objective: ${seq.sequence_objective || ""}
-    Description: ${seq.description || ""}
-`).join('\n')}
-</sequence_descriptions>` : ""}
-`).join('\n')}
-</act_descriptions>
-${(previousSequence && previousSequence.parent_act !== currentSequence.parent_act) ? `
-<previous_act_last_sequence>
-Sequence ${previousSequence.number}: ${previousSequence.title}
-Description: ${previousSequence.description || ""}
-</previous_act_last_sequence>
-` : ""}
-
-<style_and_tone>
-Genre: ${storyToUse.style?.genre || 'Unspecified'}
-Mood: ${storyToUse.style?.mood || 'Unspecified'}
-Writing Guide: ${storyToUse.style?.writing_guide || 'Standard'}
-</style_and_tone>
-
-<available_narrative_modes>
-${allNarrativeModesXml}
-</available_narrative_modes>
-
-<target_scenes_per_sequence>
-Generate between ${scenesRange.min} and ${scenesRange.max} scenes (hard minimum 4) for this sequence.
-Structure them with Dwight Swain's Scene and Sequel alternation (Proactive Scene -> Reactive Sequel).
-Pacing Justification: ${scenesRange.justification}
-</target_scenes_per_sequence>
-`;
-                            return `${getSceneContext()}\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Critique the generated scenes based on narrative modes, dramatic conflict, and character flaws. Verify formatting requirements are met.</critique_analysis>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`;
-                        },
+                        reviewerPromptFn: (genOutput) => `\n${getSceneContextIntro()}\n\n<continuity_ledger>\n${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}\n</continuity_ledger>\n\n${getSceneActsAndStyle()}\n\n<available_narrative_modes>\n${allNarrativeModesXml}\n</available_narrative_modes>\n\n${getSceneTargetBlock()}\n\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Critique the generated scenes based on narrative modes, dramatic conflict, and character flaws. Verify formatting requirements are met.</critique_analysis>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`,
                         parserFn: (text) => {
                             const scenesMatch = /<scenes>([\s\S]*?)<\/scenes>/i.exec(text);
                             const scenesXML = scenesMatch ? scenesMatch[1] : text;
