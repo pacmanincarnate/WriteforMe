@@ -12816,147 +12816,147 @@ ${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role})`).join('\n')}
 </cast_list>
 
 <output_format_description>
-12756: FORMATTING DIRECTIVE: Return your act structure strictly as XML tags. Do not use YAML or markdown blocks.
-12757: CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
-12758: 
-12759: Output Schema:
-12760: <response>
-12761:   <acts>
-12762:     <act>
-12763:       <number>1</number>
-12764:       <title>Descriptive Title</title>
-12765:       <act_mandate>
-12766:         - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this act. Explain its role in the global value shift and Todorov equilibrium transition.
-12767:         - **DRAMATIC ARC & PACING CURVES:** Map the act-level narrative movement. Detail starting emotional/value state, rising action, sequence division plan (2 in Act I, 4 in Act II, 2 in Act III), and Point of No Return climax.
-12768:         - **THREAD PROGRESSION & CONVERGENCE:** Describe how each active plot thread evolves, intersects, and impacts one another across this act.
-12769:         - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on how fatal flaws are tested, exposed, or synthesized.
-12770:         - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems or pacing pitfalls for downstream sequence and scene planners.
-12771:       </act_mandate>
-12772:       <world_building_developments>How the setting or lore expands here.</world_building_developments>
-12773:       <knots>
-12774:         <knot>
-12775:           <description>Event description...</description>
-12776:           <interaction>Thread 1 event forces Thread 2 crisis.</interaction>
-12777:         </knot>
-12778:       </knots>
-12779:     </act>
-12780:     <!-- Add Act 2 and 3 -->
-12781:   </acts>
-12782: 
-12783:   <thread_statuses_at_end>
-12784:     <thread_status>
-12785:       <thread_id>T1</thread_id>
-12786:       <status>Exact status at the end of this act.</status>
-12787:     </thread_status>
-12788:   </thread_statuses_at_end>
-12789: 
-12790:   <relationship_shifts>
-12791:     <shift>
-12792:       <source_id>C1</source_id>
-12793:       <target_id>C2</target_id>
-12794:       <new_dynamic>How their relationship fundamentally evolved in this Act.</new_dynamic>
-12795:     </shift>
-12796:   </relationship_shifts>
-12797: </response>
-12798: </output_format_description>
-12799: 
-12800: BEGIN STRUCTURING ACTS
-12801: `,
-12802:                         systemPrompt: PROMPTS.actAgent,
-12803:                         reviewerSystemPrompt: PROMPTS.actReview,
-12804:                         reviewerPromptFn: (genOutput) => `
-12805: <story_arc_twists_and_surprises>
-12806: ${storyToUse.major_surprises_and_twists || ""}
-12807: </story_arc_twists_and_surprises>
-12808: <generated_acts>
-12809: ${genOutput}
-12810: </generated_acts>
-12811: 
-12812: <output_format_description>
-12813: FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
-12814: CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
-12815: 
-12816: Output Schema:
-12817: <response>
-12818:   <critique_analysis>Critically analyze each Act's mandate, structural points, and thread statuses. Specifically verify that all five mandate sections are present and robustly addressed. Verify every thread ID from the input is accounted for.</critique_analysis>
-12819:   <status>PASS</status> <!-- or FAIL -->
-12820:   <deviation_reasons>
-12821:     <reason>Explain the exact issue and how to fix it.</reason>
-12822:   </deviation_reasons>
-12823: </response>
-12824: </output_format_description>
-12825: 
-12826: BEGIN ACT CRITIQUE REVIEW
-12827: `,
-12828:                         parserFn: (text) => {
-12829:                             const extractTag = (xml, tag) => {
-12830:                                 const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
-12831:                                 return match ? match[1].trim() : "";
-12832:                             };
-12833:                             
-12834:                             const actsMatch = /<acts>([\s\S]*?)<\/acts>/i.exec(text);
-12835:                             const actsXML = actsMatch ? actsMatch[1] : "";
-12836:                             const actRegex = /<act>([\s\S]*?)<\/act>/gi;
-12837:                             const parsedActs = [];
-12838:                             let match;
-12839:                             let idx = 1;
-12840:                             while ((match = actRegex.exec(actsXML)) !== null) {
-12841:                                 const actData = match[1];
-12842:                                 const knotsMatch = /<knots>([\s\S]*?)<\/knots>/i.exec(actData);
-12843:                                 const knotsXML = knotsMatch ? knotsMatch[1] : "";
-12844:                                 const knotRegex = /<knot>([\s\S]*?)<\/knot>/gi;
-12845:                                 const knots = [];
-12846:                                 let kMatch;
-12847:                                 while ((kMatch = knotRegex.exec(knotsXML)) !== null) {
-12848:                                     knots.push({
-12849:                                         description: extractTag(kMatch[1], 'description'),
-12850:                                         interaction: extractTag(kMatch[1], 'interaction')
-12851:                                     });
-12852:                                 }
-12853:                                 parsedActs.push({
-12854:                                     number: parseInt(extractTag(actData, 'number'), 10) || idx,
-12855:                                     title: extractTag(actData, 'title') || `Act ${idx}`,
-12856:                                     act_mandate: extractTag(actData, 'act_mandate'),
-12857:                                     description: extractTag(actData, 'act_mandate'),
-12858:                                     world_building_developments: extractTag(actData, 'world_building_developments'),
-12859:                                     knots
-12860:                                 });
-12861:                                 idx++;
-12862:                             }
-12863: 
-12864:                             const threadStatuses = [];
-12865:                             const threadsMatch = /<thread_statuses_at_end>([\s\S]*?)<\/thread_statuses_at_end>/i.exec(text);
-12866:                             if (threadsMatch) {
-12867:                                 const tsRegex = /<thread_status>([\s\S]*?)<\/thread_status>/gi;
-12868:                                 let tsMatch;
-12869:                                 while ((tsMatch = tsRegex.exec(threadsMatch[1])) !== null) {
-12870:                                     threadStatuses.push({
-12871:                                         id: extractTag(tsMatch[1], 'thread_id'),
-12872:                                         status: extractTag(tsMatch[1], 'status')
-12873:                                     });
-12874:                                 }
-12875:                             }
-12876: 
-12877:                             const relShifts = [];
-12878:                             const shiftsMatch = /<relationship_shifts>([\s\S]*?)<\/relationship_shifts>/i.exec(text);
-12879:                             if (shiftsMatch) {
-12880:                                 const shiftRegex = /<shift>([\s\S]*?)<\/shift>/gi;
-12881:                                 let sMatch;
-12882:                                 while ((sMatch = shiftRegex.exec(shiftsMatch[1])) !== null) {
-12883:                                     relShifts.push({
-12884:                                         from: extractTag(sMatch[1], 'source_id'),
-12885:                                         to: extractTag(sMatch[1], 'target_id'),
-12886:                                         new_feeling: extractTag(sMatch[1], 'new_dynamic')
-12887:                                     });
-12888:                                 }
-12889:                             }
-12890: 
-12891:                             return {
-12892:                                 acts: parsedActs,
-12893:                                 thread_statuses: threadStatuses,
-12894:                                 relationship_shifts: relShifts
-12895:                             };
-12896:                         },
+FORMATTING DIRECTIVE: Return your act structure strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+Output Schema:
+<response>
+  <acts>
+    <act>
+      <number>1</number>
+      <title>Descriptive Title</title>
+      <act_mandate>
+        - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this act. Explain its role in the global value shift and Todorov equilibrium transition.
+        - **DRAMATIC ARC & PACING CURVES:** Map the act-level narrative movement. Detail starting emotional/value state, rising action, sequence division plan (2 in Act I, 4 in Act II, 2 in Act III), and Point of No Return climax.
+        - **THREAD PROGRESSION & CONVERGENCE:** Describe how each active plot thread evolves, intersects, and impacts one another across this act.
+        - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on how fatal flaws are tested, exposed, or synthesized.
+        - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems or pacing pitfalls for downstream sequence and scene planners.
+      </act_mandate>
+      <world_building_developments>How the setting or lore expands here.</world_building_developments>
+      <knots>
+        <knot>
+          <description>Event description...</description>
+          <interaction>Thread 1 event forces Thread 2 crisis.</interaction>
+        </knot>
+      </knots>
+    </act>
+    <!-- Add Act 2 and 3 -->
+  </acts>
+
+  <thread_statuses_at_end>
+    <thread_status>
+      <thread_id>T1</thread_id>
+      <status>Exact status at the end of this act.</status>
+    </thread_status>
+  </thread_statuses_at_end>
+
+  <relationship_shifts>
+    <shift>
+      <source_id>C1</source_id>
+      <target_id>C2</target_id>
+      <new_dynamic>How their relationship fundamentally evolved in this Act.</new_dynamic>
+    </shift>
+  </relationship_shifts>
+</response>
+</output_format_description>
+
+BEGIN STRUCTURING ACTS
+`,
+                        systemPrompt: PROMPTS.actAgent,
+                        reviewerSystemPrompt: PROMPTS.actReview,
+                        reviewerPromptFn: (genOutput) => `
+<story_arc_twists_and_surprises>
+${storyToUse.major_surprises_and_twists || ""}
+</story_arc_twists_and_surprises>
+<generated_acts>
+${genOutput}
+</generated_acts>
+
+<output_format_description>
+FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+Output Schema:
+<response>
+  <critique_analysis>Critically analyze each Act's mandate, structural points, and thread statuses. Specifically verify that all five mandate sections are present and robustly addressed. Verify every thread ID from the input is accounted for.</critique_analysis>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <reason>Explain the exact issue and how to fix it.</reason>
+  </deviation_reasons>
+</response>
+</output_format_description>
+
+BEGIN ACT CRITIQUE REVIEW
+`,
+                        parserFn: (text) => {
+                            const extractTag = (xml, tag) => {
+                                const match = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(xml);
+                                return match ? match[1].trim() : "";
+                            };
+                            
+                            const actsMatch = /<acts>([\s\S]*?)<\/acts>/i.exec(text);
+                            const actsXML = actsMatch ? actsMatch[1] : "";
+                            const actRegex = /<act>([\s\S]*?)<\/act>/gi;
+                            const parsedActs = [];
+                            let match;
+                            let idx = 1;
+                            while ((match = actRegex.exec(actsXML)) !== null) {
+                                const actData = match[1];
+                                const knotsMatch = /<knots>([\s\S]*?)<\/knots>/i.exec(actData);
+                                const knotsXML = knotsMatch ? knotsMatch[1] : "";
+                                const knotRegex = /<knot>([\s\S]*?)<\/knot>/gi;
+                                const knots = [];
+                                let kMatch;
+                                while ((kMatch = knotRegex.exec(knotsXML)) !== null) {
+                                    knots.push({
+                                        description: extractTag(kMatch[1], 'description'),
+                                        interaction: extractTag(kMatch[1], 'interaction')
+                                    });
+                                }
+                                parsedActs.push({
+                                    number: parseInt(extractTag(actData, 'number'), 10) || idx,
+                                    title: extractTag(actData, 'title') || `Act ${idx}`,
+                                    act_mandate: extractTag(actData, 'act_mandate'),
+                                    description: extractTag(actData, 'act_mandate'),
+                                    world_building_developments: extractTag(actData, 'world_building_developments'),
+                                    knots
+                                });
+                                idx++;
+                            }
+
+                            const threadStatuses = [];
+                            const threadsMatch = /<thread_statuses_at_end>([\s\S]*?)<\/thread_statuses_at_end>/i.exec(text);
+                            if (threadsMatch) {
+                                const tsRegex = /<thread_status>([\s\S]*?)<\/thread_status>/gi;
+                                let tsMatch;
+                                while ((tsMatch = tsRegex.exec(threadsMatch[1])) !== null) {
+                                    threadStatuses.push({
+                                        id: extractTag(tsMatch[1], 'thread_id'),
+                                        status: extractTag(tsMatch[1], 'status')
+                                    });
+                                }
+                            }
+
+                            const relShifts = [];
+                            const shiftsMatch = /<relationship_shifts>([\s\S]*?)<\/relationship_shifts>/i.exec(text);
+                            if (shiftsMatch) {
+                                const shiftRegex = /<shift>([\s\S]*?)<\/shift>/gi;
+                                let sMatch;
+                                while ((sMatch = shiftRegex.exec(shiftsMatch[1])) !== null) {
+                                    relShifts.push({
+                                        from: extractTag(sMatch[1], 'source_id'),
+                                        to: extractTag(sMatch[1], 'target_id'),
+                                        new_feeling: extractTag(sMatch[1], 'new_dynamic')
+                                    });
+                                }
+                            }
+
+                            return {
+                                acts: parsedActs,
+                                thread_statuses: threadStatuses,
+                                relationship_shifts: relShifts
+                            };
+                        },
                         modelSize: "large",
                         spawningContext: "Act division and pacing",
                         parentTierFailFn: async (reasons) => {
