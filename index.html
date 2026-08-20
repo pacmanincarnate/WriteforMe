@@ -13382,6 +13382,13 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 }, type === 'error' ? 5000 : 3500);
             };
 
+            // Pipeline progress logger used by the scene expansion loop (Tier 4.3/4.4)
+            const addLog = (entry) => {
+                const line = `[Pipeline - ${entry.agent || 'Pipeline'}] ${entry.action || ''}${entry.details ? ` | ${entry.details}` : ''}`;
+                if (entry.status === 'error') console.error(line); else console.log(line);
+                if (entry.status === 'in_progress' && entry.action) setLoadingStep(`${entry.action}...`);
+            };
+
             const toggleAct = (idx) => {
                 setCollapsedActs(prev => ({ ...prev, [idx]: !prev[idx] }));
             };
