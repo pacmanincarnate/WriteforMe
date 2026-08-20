@@ -9778,19 +9778,73 @@ Output Schema:
             const [koboldLoadedModel, setKoboldLoadedModel] = useState(koboldModel || "koboldcpp");
             const [koboldError, setKoboldError] = useState(null);
 
-            // Structure Model Search State
-            const [modelSearchQuery, setModelSearchQuery] = useState("");
-            const debouncedModelSearchQuery = useDebounce(modelSearchQuery, 300);
-            const [isSearchingModels, setIsSearchingModels] = useState(false);
-            const [searchResults, setSearchResults] = useState([]);
-            const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
+            // One debounced model-search cluster per picker (structure + prose). Previously two
+            // copy-pasted state sets plus two copy-pasted 45-line search effects further down.
+            const useModelSearch = (label) => {
+                const [query, setQuery] = useState("");
+                const debouncedQuery = useDebounce(query, 300);
+                const [isSearching, setIsSearching] = useState(false);
+                const [results, setResults] = useState([]);
+                const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
-            // Prose Model Search State
-            const [proseModelSearchQuery, setProseModelSearchQuery] = useState("");
-            const debouncedProseModelSearchQuery = useDebounce(proseModelSearchQuery, 300);
-            const [isSearchingProseModels, setIsSearchingProseModels] = useState(false);
-            const [proseSearchResults, setProseSearchResults] = useState([]);
-            const [isProseModelDropdownOpen, setIsProseModelDropdownOpen] = useState(false);
+                useEffect(() => {
+                    let active = true;
+
+                    const runSearch = async () => {
+                        if (apiProvider === 'koboldcpp') {
+                            setResults([]);
+                            setIsSearching(false);
+                            return;
+                        }
+
+                        setIsSearching(true);
+                        const q = debouncedQuery.trim();
+
+                        try {
+                            if (apiProvider === 'gemini') {
+                                let catalog = geminiModelsList;
+                                if (catalog.length === 0 && apiKey) {
+                                    await fetchGeminiModels();
+                                    catalog = geminiModelsList;
+                                }
+                                const formattedCatalog = catalog.map(m => (typeof m === 'string' ? { id: m, name: m } : m));
+                                if (active) setResults(filterModelsClientSide(formattedCatalog, q));
+                            } else if (apiProvider === 'openrouter') {
+                                let catalog = openRouterModelsList;
+                                if (catalog.length === 0) {
+                                    catalog = await fetchOpenRouterModels(openRouterKey).catch(() => []);
+                                }
+                                if (active) setResults(filterModelsClientSide(catalog, q));
+                            } else if (apiProvider === 'nanogpt') {
+                                const { results: found } = await searchNanoGPTModels(q, nanoGptKey, nanoGptModelsList);
+                                if (active) setResults(found);
+                            }
+                        } catch (e) {
+                            console.error(`${label} model search error:`, e);
+                            if (active) setResults([]);
+                        } finally {
+                            if (active) setIsSearching(false);
+                        }
+                    };
+
+                    runSearch();
+                    return () => { active = false; };
+                }, [debouncedQuery, apiProvider, apiKey, openRouterKey, nanoGptKey, geminiModelsList, openRouterModelsList, nanoGptModelsList]);
+
+                return { query, setQuery, isSearching, results, setResults, isDropdownOpen, setIsDropdownOpen };
+            };
+
+            const {
+                query: modelSearchQuery, setQuery: setModelSearchQuery,
+                isSearching: isSearchingModels, results: searchResults, setResults: setSearchResults,
+                isDropdownOpen: isModelDropdownOpen, setIsDropdownOpen: setIsModelDropdownOpen
+            } = useModelSearch("Structure");
+
+            const {
+                query: proseModelSearchQuery, setQuery: setProseModelSearchQuery,
+                isSearching: isSearchingProseModels, results: proseSearchResults, setResults: setProseSearchResults,
+                isDropdownOpen: isProseModelDropdownOpen, setIsDropdownOpen: setIsProseModelDropdownOpen
+            } = useModelSearch("Prose");
 
             // Dual Model State (Structure vs Prose)
             const [useProseModel, setUseProseModel] = useState(() => localStorage.getItem("ellipsisprose_use_prose_model") === 'true');
@@ -17256,100 +17310,6 @@ ${currentLoreList}
                     }
                 }
             }, [view, apiProvider, apiKey, openRouterKey, nanoGptKey, koboldUrl]);
-
-            // Structure Model search execution effect (300ms debounced)
-            useEffect(() => {
-                let active = true;
-
-                const runSearch = async () => {
-                    if (apiProvider === 'koboldcpp') {
-                        setSearchResults([]);
-                        setIsSearchingModels(false);
-                        return;
-                    }
-
-                    setIsSearchingModels(true);
-                    const query = debouncedModelSearchQuery.trim();
-
-                    try {
-                        if (apiProvider === 'gemini') {
-                            let catalog = geminiModelsList;
-                            if (catalog.length === 0 && apiKey) {
-                                await fetchGeminiModels();
-                                catalog = geminiModelsList;
-                            }
-                            const formattedCatalog = catalog.map(m => (typeof m === 'string' ? { id: m, name: m } : m));
-                            const filtered = filterModelsClientSide(formattedCatalog, query);
-                            if (active) setSearchResults(filtered);
-                        } else if (apiProvider === 'openrouter') {
-                            let catalog = openRouterModelsList;
-                            if (catalog.length === 0) {
-                                catalog = await fetchOpenRouterModels(openRouterKey).catch(() => []);
-                            }
-                            const filtered = filterModelsClientSide(catalog, query);
-                            if (active) setSearchResults(filtered);
-                        } else if (apiProvider === 'nanogpt') {
-                            const { results } = await searchNanoGPTModels(query, nanoGptKey, nanoGptModelsList);
-                            if (active) setSearchResults(results);
-                        }
-                    } catch (e) {
-                        console.error("Structure model search error:", e);
-                        if (active) setSearchResults([]);
-                    } finally {
-                        if (active) setIsSearchingModels(false);
-                    }
-                };
-
-                runSearch();
-                return () => { active = false; };
-            }, [debouncedModelSearchQuery, apiProvider, apiKey, openRouterKey, nanoGptKey, geminiModelsList, openRouterModelsList, nanoGptModelsList]);
-
-            // Prose Model search execution effect (300ms debounced)
-            useEffect(() => {
-                let active = true;
-
-                const runSearch = async () => {
-                    if (apiProvider === 'koboldcpp') {
-                        setProseSearchResults([]);
-                        setIsSearchingProseModels(false);
-                        return;
-                    }
-
-                    setIsSearchingProseModels(true);
-                    const query = debouncedProseModelSearchQuery.trim();
-
-                    try {
-                        if (apiProvider === 'gemini') {
-                            let catalog = geminiModelsList;
-                            if (catalog.length === 0 && apiKey) {
-                                await fetchGeminiModels();
-                                catalog = geminiModelsList;
-                            }
-                            const formattedCatalog = catalog.map(m => (typeof m === 'string' ? { id: m, name: m } : m));
-                            const filtered = filterModelsClientSide(formattedCatalog, query);
-                            if (active) setProseSearchResults(filtered);
-                        } else if (apiProvider === 'openrouter') {
-                            let catalog = openRouterModelsList;
-                            if (catalog.length === 0) {
-                                catalog = await fetchOpenRouterModels(openRouterKey).catch(() => []);
-                            }
-                            const filtered = filterModelsClientSide(catalog, query);
-                            if (active) setProseSearchResults(filtered);
-                        } else if (apiProvider === 'nanogpt') {
-                            const { results } = await searchNanoGPTModels(query, nanoGptKey, nanoGptModelsList);
-                            if (active) setProseSearchResults(results);
-                        }
-                    } catch (e) {
-                        console.error("Prose model search error:", e);
-                        if (active) setProseSearchResults([]);
-                    } finally {
-                        if (active) setIsSearchingProseModels(false);
-                    }
-                };
-
-                runSearch();
-                return () => { active = false; };
-            }, [debouncedProseModelSearchQuery, apiProvider, apiKey, openRouterKey, nanoGptKey, geminiModelsList, openRouterModelsList, nanoGptModelsList]);
 
             return (
                 <div className={`flex h-screen overflow-hidden font-sans ${theme === 'dark' ? 'dark bg-[#141416] text-[#F5F0E8]' : 'bg-[#F7F5F0] text-stone-900'}`} data-theme={theme}>
