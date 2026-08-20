@@ -7362,6 +7362,142 @@ Output Schema:
             );
         };
 
+        /* Shared scene card row used by the Structure accordion and the Sequence Dashboard.
+           variant="structure" renders the denser row (lens selector, causality, inline title edit);
+           variant="dashboard" renders the dark-mode-aware dashboard row. Class strings are kept
+           byte-identical to the originals per variant — the .dark override block is keyed to them. */
+        const SceneRow = ({ variant, scene: s, sceneIdx: si, seqIdx, sequence, getModeIcon, allNarrativeModes, openEditModal, setStory, showToast, setSelectedSequence, setSelectedScene, setView, handleDeleteScene }) => {
+            const isStructure = variant === 'structure';
+            const isProactive = String(s.scene_type).toLowerCase().includes('proactive') || s.scene_type === 'scene';
+            return (
+                <div className={isStructure ? "p-5 hover:bg-[#FAF8F5] group transition-colors" : "p-4 sm:p-5 hover:bg-stone-50/80 dark:hover:bg-white/[0.02] transition-colors group"}>
+                    <div className={isStructure ? "flex flex-col md:flex-row md:justify-between md:items-start gap-4" : "flex flex-col md:flex-row md:justify-between md:items-start gap-3"}>
+                        <div className="flex gap-3.5 flex-1 min-w-0">
+                            <div className={isStructure ? "w-8 h-8 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center text-xs font-bold font-mono text-stone-700 shrink-0 mt-0.5" : "w-8 h-8 rounded-full bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-white/[0.08] flex items-center justify-center text-xs font-bold text-stone-700 dark:text-stone-300 shrink-0 font-mono"}>
+                                {s.number || `${sequence.number || seqIdx + 1}.${si + 1}`}
+                            </div>
+                            <div className={isStructure ? "min-w-0 flex-1 space-y-1.5" : "min-w-0 flex-1"}>
+                                <div className="flex flex-wrap items-center gap-2">
+                                    {isStructure ? (
+                                        <h4 className="font-bold font-serif text-base text-stone-900 flex items-center gap-2">
+                                            <Icon name={getModeIcon(s.dominant_narrative_mode || "BASELINE_NEUTRAL")} className="w-4 h-4 text-[#8C6B32] shrink-0" />
+                                            {s.title}
+                                            <EditButton title={`Scene ${s.number || si + 1} Title`} value={s.title} onSave={() => openEditModal(`Scene ${s.number || si + 1} Title`, s.title, (val) => { setStory(prev => { const newScenes = { ...prev.scenes }; newScenes[`${seqIdx}`] = [...(newScenes[`${seqIdx}`] || [])]; newScenes[`${seqIdx}`][si] = { ...(newScenes[`${seqIdx}`][si] || {}), title: val }; return { ...prev, scenes: newScenes }; }); })} />
+                                        </h4>
+                                    ) : (
+                                        <h4 className="font-serif font-bold text-base text-stone-900 dark:text-[#F5F0E8] flex items-center gap-2">
+                                            <Icon name={getModeIcon(s.dominant_narrative_mode || "BASELINE_NEUTRAL")} className="w-4 h-4 text-[#8C6B32] dark:text-[#C9A96E] shrink-0" />
+                                            {s.title}
+                                        </h4>
+                                    )}
+                                    {s.scene_type && (
+                                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 ${isStructure ? 'rounded-md border font-mono' : 'rounded-full border'} ${
+                                            isProactive
+                                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                                                : 'bg-amber-50 border-amber-200 text-amber-800'
+                                        }`}>
+                                            {isProactive
+                                                ? (isStructure ? 'Proactive Scene (Action)' : 'Proactive Scene')
+                                                : (isStructure ? 'Reactive Sequel (Reflection)' : 'Reactive Sequel')}
+                                        </span>
+                                    )}
+                                    {s.transition_jump && (
+                                        <span className={isStructure ? "text-[9px] font-medium text-stone-600 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded-md font-mono" : "text-[9px] font-medium text-stone-600 dark:text-stone-400 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-white/[0.08] px-2 py-0.5 rounded-full font-mono"}>
+                                            Jump: {s.transition_jump}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {isStructure && (
+                                    <div className="flex items-center gap-1.5 text-xs text-stone-600">
+                                        <span className="text-[9px] font-mono uppercase text-stone-400 font-bold">Lens:</span>
+                                        <select
+                                            value={s.dominant_narrative_mode || "BASELINE_NEUTRAL"}
+                                            onChange={(e) => {
+                                                const val = e.target.value;
+                                                setStory(prev => {
+                                                    const newScenes = { ...prev.scenes };
+                                                    newScenes[`${seqIdx}`] = [...(newScenes[`${seqIdx}`] || [])];
+                                                    newScenes[`${seqIdx}`][si] = {
+                                                        ...(newScenes[`${seqIdx}`][si] || {}),
+                                                        dominant_narrative_mode: val
+                                                    };
+                                                    return { ...prev, scenes: newScenes };
+                                                });
+                                                showToast(`Scene lens set to ${val}`);
+                                            }}
+                                            className="bg-white border border-stone-200 text-stone-800 rounded px-2 py-0.5 text-[10px] font-mono focus:border-[#B8935A] outline-none cursor-pointer"
+                                        >
+                                            {Object.keys(allNarrativeModes).map(modeKey => (
+                                                <option key={modeKey} value={modeKey}>
+                                                    {modeKey.replace(/_/g, ' ')}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {s.objective && (isStructure ? (
+                                    <p className="text-xs text-stone-800 font-medium">
+                                        <span className="text-stone-400 font-bold uppercase font-mono text-[9px] mr-1">Objective:</span>
+                                        {s.objective}
+                                    </p>
+                                ) : (
+                                    <p className="text-xs text-stone-800 dark:text-[#EDE8E0] font-medium mt-1.5">
+                                        <span className="text-stone-400 font-bold uppercase text-[9px] mr-1.5 font-mono">Objective:</span>
+                                        {s.objective}
+                                    </p>
+                                ))}
+                                {isStructure ? (
+                                    <p className="text-xs sm:text-sm text-stone-700 dark:text-[#C7C2BA] leading-relaxed font-serif">{s.description}</p>
+                                ) : (
+                                    <p className="text-sm text-stone-700 dark:text-[#C7C2BA] mt-1.5 leading-relaxed line-clamp-3 font-serif">{s.description}</p>
+                                )}
+
+                                {s.cast_names && s.cast_names.length > 0 && (
+                                    <div className={isStructure ? "flex flex-wrap gap-1.5 pt-1" : "flex flex-wrap gap-1.5 mt-2"}>
+                                        {s.cast_names.map((name, ni) => (
+                                            <span key={ni} className={isStructure ? "text-[10px] bg-stone-100 border border-stone-200 text-stone-600 px-2 py-0.5 rounded-full font-medium" : "text-[10px] bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-white/[0.08] text-stone-600 dark:text-stone-300 px-2 py-0.5 rounded-full font-medium"}>{name}</span>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {isStructure && s.causality && (
+                                    <div className="text-[11px] text-amber-900/90 italic bg-amber-50/50 p-2 rounded-lg border border-amber-200/50 mt-1">
+                                        <span className="font-bold text-amber-800 uppercase not-italic font-mono text-[8px] mr-1">Causality ({s.causality.interaction_type || 'interaction'}):</span>
+                                        {s.causality.justification || s.causality.rationale}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0">
+                            {isStructure ? (
+                                <button
+                                    onClick={() => { setSelectedSequence(seqIdx); setSelectedScene(si); setView('writer'); }}
+                                    className="text-stone-800 hover:text-stone-900 flex items-center gap-1.5 bg-white border border-stone-200 hover:border-stone-300 px-3 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all"
+                                    title="Write Scene"
+                                >
+                                    <Edit3 size={13} className="text-[#8C6B32]" /> Write
+                                </button>
+                            ) : (
+                                <button onClick={() => { setSelectedScene(si); setView('writer'); }} className="bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-700 border border-stone-200 dark:border-white/[0.1] text-stone-800 dark:text-[#F5F0E8] px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all flex items-center gap-1.5">
+                                    <Edit3 size={13} className="text-[#8C6B32] dark:text-[#C9A96E]" /> Write
+                                </button>
+                            )}
+                            <button
+                                onClick={() => handleDeleteScene(seqIdx, si)}
+                                className={isStructure ? "text-stone-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors" : "text-stone-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"}
+                                title="Delete Scene"
+                            >
+                                <Trash2 size={15} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
         const CharacterCard = ({ c, onEdit }) => {
             const [isExpanded, setIsExpanded] = useState(false);
             if (!c) return null;
@@ -20010,106 +20146,23 @@ ${currentLoreList}
                                                                         {/* Numbered Scene Stack */}
                                                                         <div className="divide-y divide-black/[0.05]">
                                                                             {seqScenes.map((s, si) => (
-                                                                                <div key={si} className="p-5 hover:bg-[#FAF8F5] group transition-colors">
-                                                                                    <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-                                                                                        <div className="flex gap-3.5 flex-1 min-w-0">
-                                                                                            <div className="w-8 h-8 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center text-xs font-bold font-mono text-stone-700 shrink-0 mt-0.5">
-                                                                                                {s.number || `${sequence.number || seqIdx + 1}.${si + 1}`}
-                                                                                            </div>
-                                                                                            <div className="min-w-0 flex-1 space-y-1.5">
-                                                                                                <div className="flex flex-wrap items-center gap-2">
-                                                                                                    <h4 className="font-bold font-serif text-base text-stone-900 flex items-center gap-2">
-                                                                                                        <Icon name={getModeIcon(s.dominant_narrative_mode || "BASELINE_NEUTRAL")} className="w-4 h-4 text-[#8C6B32] shrink-0" />
-                                                                                                        {s.title}
-                                                                                                        <EditButton title={`Scene ${s.number || si + 1} Title`} value={s.title} onSave={() => openEditModal(`Scene ${s.number || si + 1} Title`, s.title, (val) => { setStory(prev => { const newScenes = { ...prev.scenes }; newScenes[`${seqIdx}`] = [...(newScenes[`${seqIdx}`] || [])]; newScenes[`${seqIdx}`][si] = { ...(newScenes[`${seqIdx}`][si] || {}), title: val }; return { ...prev, scenes: newScenes }; }); })} />
-                                                                                                    </h4>
-                                                                                                    {s.scene_type && (
-                                                                                                        <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-md border font-mono ${
-                                                                                                            String(s.scene_type).toLowerCase().includes('proactive') || s.scene_type === 'scene'
-                                                                                                                ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                                                                                                : 'bg-amber-50 border-amber-200 text-amber-800'
-                                                                                                        }`}>
-                                                                                                            {String(s.scene_type).toLowerCase().includes('proactive') || s.scene_type === 'scene' ? 'Proactive Scene (Action)' : 'Reactive Sequel (Reflection)'}
-                                                                                                        </span>
-                                                                                                    )}
-                                                                                                    {s.transition_jump && (
-                                                                                                        <span className="text-[9px] font-medium text-stone-600 bg-stone-100 border border-stone-200 px-2 py-0.5 rounded-md font-mono">
-                                                                                                            Jump: {s.transition_jump}
-                                                                                                        </span>
-                                                                                                    )}
-                                                                                                </div>
-
-                                                                                                {/* Narrative Lens Selector */}
-                                                                                                <div className="flex items-center gap-1.5 text-xs text-stone-600">
-                                                                                                    <span className="text-[9px] font-mono uppercase text-stone-400 font-bold">Lens:</span>
-                                                                                                    <select
-                                                                                                        value={s.dominant_narrative_mode || "BASELINE_NEUTRAL"}
-                                                                                                        onChange={(e) => {
-                                                                                                            const val = e.target.value;
-                                                                                                            setStory(prev => {
-                                                                                                                const newScenes = { ...prev.scenes };
-                                                                                                                newScenes[`${seqIdx}`] = [...(newScenes[`${seqIdx}`] || [])];
-                                                                                                                newScenes[`${seqIdx}`][si] = {
-                                                                                                                    ...(newScenes[`${seqIdx}`][si] || {}),
-                                                                                                                    dominant_narrative_mode: val
-                                                                                                                };
-                                                                                                                return { ...prev, scenes: newScenes };
-                                                                                                            });
-                                                                                                            showToast(`Scene lens set to ${val}`);
-                                                                                                        }}
-                                                                                                        className="bg-white border border-stone-200 text-stone-800 rounded px-2 py-0.5 text-[10px] font-mono focus:border-[#B8935A] outline-none cursor-pointer"
-                                                                                                    >
-                                                                                                        {Object.keys(allNarrativeModes).map(modeKey => (
-                                                                                                            <option key={modeKey} value={modeKey}>
-                                                                                                                {modeKey.replace(/_/g, ' ')}
-                                                                                                            </option>
-                                                                                                        ))}
-                                                                                                    </select>
-                                                                                                </div>
-
-                                                                                                {s.objective && (
-                                                                                                    <p className="text-xs text-stone-800 font-medium">
-                                                                                                        <span className="text-stone-400 font-bold uppercase font-mono text-[9px] mr-1">Objective:</span>
-                                                                                                        {s.objective}
-                                                                                                    </p>
-                                                                                                )}
-                                                                                                <p className="text-xs sm:text-sm text-stone-700 dark:text-[#C7C2BA] leading-relaxed font-serif">{s.description}</p>
-                                                                                                
-                                                                                                {s.cast_names && s.cast_names.length > 0 && (
-                                                                                                    <div className="flex flex-wrap gap-1.5 pt-1">
-                                                                                                        {s.cast_names.map((name, ni) => (
-                                                                                                            <span key={ni} className="text-[10px] bg-stone-100 border border-stone-200 text-stone-600 px-2 py-0.5 rounded-full font-medium">{name}</span>
-                                                                                                        ))}
-                                                                                                    </div>
-                                                                                                )}
-
-                                                                                                {s.causality && (
-                                                                                                    <div className="text-[11px] text-amber-900/90 italic bg-amber-50/50 p-2 rounded-lg border border-amber-200/50 mt-1">
-                                                                                                        <span className="font-bold text-amber-800 uppercase not-italic font-mono text-[8px] mr-1">Causality ({s.causality.interaction_type || 'interaction'}):</span>
-                                                                                                        {s.causality.justification || s.causality.rationale}
-                                                                                                    </div>
-                                                                                                )}
-                                                                                            </div>
-                                                                                        </div>
-                                                                                        
-                                                                                        <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0">
-                                                                                            <button 
-                                                                                                onClick={() => { setSelectedSequence(seqIdx); setSelectedScene(si); setView('writer'); }} 
-                                                                                                className="text-stone-800 hover:text-stone-900 flex items-center gap-1.5 bg-white border border-stone-200 hover:border-stone-300 px-3 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all" 
-                                                                                                title="Write Scene"
-                                                                                            >
-                                                                                                <Edit3 size={13} className="text-[#8C6B32]" /> Write
-                                                                                            </button>
-                                                                                            <button 
-                                                                                                onClick={() => handleDeleteScene(seqIdx, si)} 
-                                                                                                className="text-stone-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors" 
-                                                                                                title="Delete Scene"
-                                                                                            >
-                                                                                                <Trash2 size={15} />
-                                                                                            </button>
-                                                                                        </div>
-                                                                                    </div>
-                                                                                </div>
+                                                                                <SceneRow
+                                                                                    key={si}
+                                                                                    variant="structure"
+                                                                                    scene={s}
+                                                                                    sceneIdx={si}
+                                                                                    seqIdx={seqIdx}
+                                                                                    sequence={sequence}
+                                                                                    getModeIcon={getModeIcon}
+                                                                                    allNarrativeModes={allNarrativeModes}
+                                                                                    openEditModal={openEditModal}
+                                                                                    setStory={setStory}
+                                                                                    showToast={showToast}
+                                                                                    setSelectedSequence={setSelectedSequence}
+                                                                                    setSelectedScene={setSelectedScene}
+                                                                                    setView={setView}
+                                                                                    handleDeleteScene={handleDeleteScene}
+                                                                                />
                                                                             ))}
                                                                         </div>
                                                                     </div>
@@ -20184,59 +20237,18 @@ ${currentLoreList}
                                                 </div>
                                                 <div className="divide-y divide-stone-100 dark:divide-white/[0.06]">
                                                     {dashScenes.map((s, si) => (
-                                                        <div key={si} className="p-4 sm:p-5 hover:bg-stone-50/80 dark:hover:bg-white/[0.02] transition-colors group">
-                                                            <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-3">
-                                                                <div className="flex gap-3.5 flex-1 min-w-0">
-                                                                    <div className="w-8 h-8 rounded-full bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-white/[0.08] flex items-center justify-center text-xs font-bold text-stone-700 dark:text-stone-300 shrink-0 font-mono">
-                                                                        {s.number || `${sequence.number || selectedSequence + 1}.${si + 1}`}
-                                                                    </div>
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <div className="flex flex-wrap items-center gap-2">
-                                                                            <h4 className="font-serif font-bold text-base text-stone-900 dark:text-[#F5F0E8] flex items-center gap-2">
-                                                                                <Icon name={getModeIcon(s.dominant_narrative_mode || "BASELINE_NEUTRAL")} className="w-4 h-4 text-[#8C6B32] dark:text-[#C9A96E] shrink-0" />
-                                                                                {s.title}
-                                                                            </h4>
-                                                                            {s.scene_type && (
-                                                                                <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full border ${
-                                                                                    String(s.scene_type).toLowerCase().includes('proactive') || s.scene_type === 'scene'
-                                                                                        ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                                                                                        : 'bg-amber-50 border-amber-200 text-amber-800'
-                                                                                }`}>
-                                                                                    {String(s.scene_type).toLowerCase().includes('proactive') || s.scene_type === 'scene' ? 'Proactive Scene' : 'Reactive Sequel'}
-                                                                                </span>
-                                                                            )}
-                                                                            {s.transition_jump && (
-                                                                                <span className="text-[9px] font-medium text-stone-600 dark:text-stone-400 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-white/[0.08] px-2 py-0.5 rounded-full font-mono">
-                                                                                    Jump: {s.transition_jump}
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                        {s.objective && (
-                                                                            <p className="text-xs text-stone-800 dark:text-[#EDE8E0] font-medium mt-1.5">
-                                                                                <span className="text-stone-400 font-bold uppercase text-[9px] mr-1.5 font-mono">Objective:</span>
-                                                                                {s.objective}
-                                                                            </p>
-                                                                        )}
-                                                                        <p className="text-sm text-stone-700 dark:text-[#C7C2BA] mt-1.5 leading-relaxed line-clamp-3 font-serif">{s.description}</p>
-                                                                        {s.cast_names && s.cast_names.length > 0 && (
-                                                                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                                                                {s.cast_names.map((name, ni) => (
-                                                                                    <span key={ni} className="text-[10px] bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-white/[0.08] text-stone-600 dark:text-stone-300 px-2 py-0.5 rounded-full font-medium">{name}</span>
-                                                                                ))}
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-                                                                <div className="flex items-center gap-2.5 self-end md:self-auto shrink-0">
-                                                                    <button onClick={() => { setSelectedScene(si); setView('writer'); }} className="bg-white dark:bg-stone-800 hover:bg-stone-50 dark:hover:bg-stone-700 border border-stone-200 dark:border-white/[0.1] text-stone-800 dark:text-[#F5F0E8] px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all flex items-center gap-1.5">
-                                                                        <Edit3 size={13} className="text-[#8C6B32] dark:text-[#C9A96E]" /> Write
-                                                                    </button>
-                                                                    <button onClick={() => handleDeleteScene(selectedSequence, si)} className="text-stone-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors" title="Delete Scene">
-                                                                        <Trash2 size={15} />
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                        </div>
+                                                        <SceneRow
+                                                            key={si}
+                                                            variant="dashboard"
+                                                            scene={s}
+                                                            sceneIdx={si}
+                                                            seqIdx={selectedSequence}
+                                                            sequence={sequence}
+                                                            getModeIcon={getModeIcon}
+                                                            setSelectedScene={setSelectedScene}
+                                                            setView={setView}
+                                                            handleDeleteScene={handleDeleteScene}
+                                                        />
                                                     ))}
                                                 </div>
                                             </div>
