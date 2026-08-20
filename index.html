@@ -5597,18 +5597,18 @@ EVALUATION CRITERIA:
    - **Starting Situation & Transition Jump:** Verify Beat 1 starts precisely at the scene's designated starting situation, honoring \`transition_jump\` and \`entrance_conditions\`.
    - **Scene-Ending Disaster / Decision:** Verify that the final beat(s) culminate at the designated turning point and execute the exact scene-ending disaster or decision (and satisfy \`exit_conditions\`).
    - **Anti-Overextension & Location Integrity:** Verify that beats DO NOT overextend beyond the scene's narrative blueprint, resolve plot points prematurely, or jump locations when the scene is supposed to be continuous. If <following_scene_starting_situation> is provided, verify that the current scene's beats leave characters positioned correctly for that subsequent scene without preempting its events. If beats overextend or jump locations incorrectly, mark status as **FAIL**.
-2. **Action Clarity & Tangible Execution:** Does each beat's \`action_description\` and Motivation-Reaction Unit clearly specify concrete physical and verbal actions rather than vague summaries or empty commentary?
-3. **MRU Reaction Order:** Does character reaction choreography strictly follow the biological Motivation-Reaction Unit sequence (1. Involuntary Feeling/Thought -> 2. Voluntary Physical Action -> 3. Verbal Speech)?
-4. **Tactical Progression:** Did sequential beats vary and escalate tactics, avoiding repetitive conversational loops?
-5. **Aristotelian Reversals & Pivot Quality:** Does every beat pivot represent a genuine Peripeteia (reversal of circumstances) or Anagnorisis (reversal of knowledge)?
-6. **Speech Act Integration:** Does the character_intent block define performative speech acts (Locutionary Act, Illocutionary Force, Perlocutionary Effect) and dramatize the tension gap?
+2. **Action Clarity & Tangible Execution:** Does each beat's \`action\` and \`reaction\` clearly specify concrete physical and verbal actions rather than vague summaries or empty commentary?
+3. **MRU Reaction Order:** Does each \`reaction\` follow the biological Motivation-Reaction Unit sequence (1. Involuntary Feeling/Thought -> 2. Voluntary Physical Action -> 3. Verbal Speech)?
+4. **Tactical Progression:** Did sequential beats vary and escalate \`tactic\`s, avoiding repetitive conversational loops?
+5. **Reversals & Momentum:** Do the beats collectively build toward genuine reversals (Peripeteia of circumstances or Anagnorisis of knowledge) rather than flat exchanges?
+6. **Subtext Integration:** Does each beat's \`subtext\` carry the hidden calculation or emotional truth beneath the exchange, and do the action/reaction pairs dramatize what characters are doing TO each other?
 7. **Chronotope Pacing Control:** Is beat_type properly classified (DRAMATIC vs TRANSITIONAL)?
 8. **Physical & Inventory Continuity:** Verify every item utilized against the inventory state. If a character uses an unheld item, output "[CharacterName] lacks [ItemName]".
-9. **Cognitive Sensory Filters & Epistemic Boundaries:** Are sensory details framed as cognitive filters of the focalizer? Are epistemic boundaries strictly maintained?
-10. **Analytical Depth & Tag Completeness:** Does every beat contain substantial multiline text for action_description, pivot, character_intent, atmosphere_and_feel, epistemic_boundaries, and authorial_intent?
+9. **Epistemic Boundaries:** Do characters only act on information they possess within the beat choreography?
+10. **Field Completeness:** Does every beat contain substantive, concrete text for \`action\`, \`reaction\`, \`tactic\`, and \`subtext\` (no empty or one-word fields)?
 
 CRITICAL PASS/FAIL DIRECTIVE:
-If the beats flow logically, fit within the scene blueprint bounds (honoring jump, starting situation, and ending disaster/decision without overextending), follow MRU chronological reaction order, respect inventory limits, contain all required analytical blocks, and categorize Aristotelian pivots, you MUST set status to PASS. Use status FAIL if there are scene boundary overextensions, wrong starting/ending situations, improper location shifts, unestablished items used, broken physical impossibilities, missing/empty analytical blocks, or severe tactical stalling.
+If the beats flow logically, fit within the scene blueprint bounds (honoring jump, starting situation, and ending disaster/decision without overextending), follow MRU chronological reaction order, respect inventory limits, and carry substantive action/reaction/tactic/subtext fields, you MUST set status to PASS. Use status FAIL if there are scene boundary overextensions, wrong starting/ending situations, improper location shifts, unestablished items used, broken physical impossibilities, missing or empty beat fields, or severe tactical stalling.
 
 FORMATTING DIRECTIVE: Return ONLY valid YAML. Do not wrap the output in markdown code blocks.
 
@@ -15183,20 +15183,32 @@ BEGIN DEVELOPING STORY SEQUENCES
                             return `\n${getSequenceContext()}\n\n\n<generated_sequences>\n${genOutput}\n</generated_sequences>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Analyze each sequence's tactical question, dramatic purpose, pacing contribution, and causal linkage. Verify formatting requirements are met.</critique_analysis>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SEQUENCE CRITIQUE REVIEW`;
                         },
                         parserFn: (text) => {
-                            const parsed = parseYaml(text) || {};
-                            const parsedSequences = (parsed.sequences || []).map((seq, idx) => ({
-                                number: parseInt(seq.number, 10) || (idx + 1),
-                                parent_act: parseInt(seq.parent_act, 10) || actForSequence(idx + 1),
-                                title: seq.title || `Sequence ${idx + 1}`,
-                                sequence_function: seq.sequence_function || SEQUENCE_DEFAULT_FUNCTIONS[idx % 8],
-                                tactical_question: seq.tactical_question || "",
-                                description: seq.description || "",
-                                sequence_objective: seq.sequence_objective || "",
-                                threads_advanced: seq.threads_advanced || [],
-                                characters_in_focus: seq.characters_in_focus || [],
-                                sequence_climax: seq.sequence_climax || "",
-                                ending_hook: seq.ending_hook || ""
-                            }));
+                            // XML parser matching the Tier 2.2 twin - this standalone path still
+                            // ran the pre-1.7 YAML parser against the XML-demanding system prompt.
+                            const sequencesMatch = /<sequences>([\s\S]*?)<\/sequences>/i.exec(text);
+                            const sequencesXML = sequencesMatch ? sequencesMatch[1] : text;
+                            const seqRegex = /<sequence>([\s\S]*?)<\/sequence>/gi;
+                            const parsedSequences = [];
+                            let match;
+                            let idx = 0;
+                            while ((match = seqRegex.exec(sequencesXML)) !== null) {
+                                const seqData = match[1];
+
+                                parsedSequences.push({
+                                    number: parseInt(extractTag(seqData, 'number'), 10) || (idx + 1),
+                                    parent_act: parseInt(extractTag(seqData, 'parent_act'), 10) || actForSequence(idx + 1),
+                                    title: extractTag(seqData, 'title') || `Sequence ${idx + 1}`,
+                                    sequence_function: extractTag(seqData, 'sequence_function') || SEQUENCE_DEFAULT_FUNCTIONS[idx % 8],
+                                    tactical_question: extractTag(seqData, 'tactical_question') || "",
+                                    description: extractTag(seqData, 'description') || "",
+                                    sequence_objective: extractTag(seqData, 'sequence_objective') || "",
+                                    threads_advanced: extractTagList(seqData, 'threads_advanced', 'thread'),
+                                    characters_in_focus: extractTagList(seqData, 'characters_in_focus', 'character'),
+                                    sequence_climax: extractTag(seqData, 'sequence_climax') || "",
+                                    ending_hook: extractTag(seqData, 'ending_hook') || ""
+                                });
+                                idx++;
+                            }
                             return { sequences: parsedSequences };
                         },
                         modelSize: "large",
