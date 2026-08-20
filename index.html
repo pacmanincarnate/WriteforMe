@@ -13977,7 +13977,13 @@ BEGIN ACT CRITIQUE REVIEW
                     if (actResult.parsedData.relationship_shifts) {
                         actResult.parsedData.relationship_shifts.forEach(shift => {
                             const key = `${shift.from}->${shift.to}`;
-                            if (!nextRels[key]) nextRels[key] = { current: "", history: [] };
+                            // Clone the rel before writing — pushing into the existing history
+                            // array mutates the current story state's nested objects in place.
+                            if (!nextRels[key]) {
+                                nextRels[key] = { current: "", history: [] };
+                            } else {
+                                nextRels[key] = { ...nextRels[key], history: [...(nextRels[key].history || [])] };
+                            }
                             nextRels[key].current = shift.new_feeling;
                             nextRels[key].history.push({
                                 chapter: "Act Structure planning",
@@ -14028,7 +14034,7 @@ ${(storyToUse.cast || []).map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw
 </active_character_profiles>
 
 <character_relationships>
-${buildRelationshipFrictionBlock(storyToUse.cast || [], storyToUse.relationships || {})}
+${buildRelationshipFrictionBlock(storyToUse.cast || [], nextRels || {})}
 </character_relationships>
 
 <continuity_ledger>
@@ -16884,7 +16890,13 @@ BEGIN EXPANSION CRITIQUE REVIEW
                         if (scene.relationship_shifts && scene.relationship_shifts.length > 0) {
                             scene.relationship_shifts.forEach(shift => {
                                 const key = `${shift.from}->${shift.to}`;
-                                if (!newRels[key]) newRels[key] = { current: "", history: [] };
+                                // Clone the rel before writing — pushing into the existing history
+                                // array mutates the current story state's nested objects in place.
+                                if (!newRels[key]) {
+                                    newRels[key] = { current: "", history: [] };
+                                } else {
+                                    newRels[key] = { ...newRels[key], history: [...(newRels[key].history || [])] };
+                                }
                                 newRels[key].current = shift.new_feeling;
                                 newRels[key].history.push({
                                     chapter: `Sequence ${currentSequence.number}, Scene ${scene.number}`,
@@ -19583,26 +19595,30 @@ ${currentLoreList}
                                                                     onClick={() => {
                                                                         const val = prompt(`Update feeling for ${selectedRel.from} ➔ ${selectedRel.to}:`, selectedRel.current);
                                                                         if (val === null) return;
-                                                                        
+
+                                                                        // Keep the updater pure: no nested setState, no mutation of the
+                                                                        // previous state's rel object/history array (StrictMode runs
+                                                                        // updaters twice — an in-place push would double the entry).
+                                                                        const histEntry = {
+                                                                            chapter: "Manual Edit",
+                                                                            change: `${val} (Edited manually)`
+                                                                        };
                                                                         setStory(prev => {
-                                                                            const newRels = { ...(prev.relationships || {}) };
-                                                                            if (!newRels[selectedRel.key]) {
-                                                                                newRels[selectedRel.key] = { current: "", history: [] };
-                                                                            }
-                                                                            newRels[selectedRel.key].current = val;
-                                                                            newRels[selectedRel.key].history.push({
-                                                                                chapter: "Manual Edit",
-                                                                                change: `${val} (Edited manually)`
-                                                                            });
-                                                                            
-                                                                            setSelectedRel(prevSel => ({
-                                                                                ...prevSel,
+                                                                            const prevRels = prev.relationships || {};
+                                                                            const prevRel = prevRels[selectedRel.key] || { current: "", history: [] };
+                                                                            const newRel = {
+                                                                                ...prevRel,
                                                                                 current: val,
-                                                                                history: newRels[selectedRel.key].history
-                                                                            }));
-                                                                            
-                                                                            return { ...prev, relationships: newRels };
+                                                                                history: [...(prevRel.history || []), histEntry]
+                                                                            };
+                                                                            return { ...prev, relationships: { ...prevRels, [selectedRel.key]: newRel } };
                                                                         });
+                                                                        const baseRel = (story.relationships || {})[selectedRel.key] || { current: "", history: [] };
+                                                                        setSelectedRel(prevSel => ({
+                                                                            ...prevSel,
+                                                                            current: val,
+                                                                            history: [...(baseRel.history || []), histEntry]
+                                                                        }));
                                                                     }}
                                                                     className="text-[10px] bg-white hover:bg-stone-50 border border-stone-200 text-stone-700 font-bold px-2.5 py-1 rounded-lg transition-colors shadow-2xs"
                                                                 >
@@ -19637,19 +19653,20 @@ ${currentLoreList}
                                                                 <button
                                                                     onClick={() => {
                                                                         if (window.confirm("Clear all milestone logs for this relationship? Active value remains.")) {
+                                                                            // Pure updater: clone the rel instead of nulling its history
+                                                                            // in place, and update the inspector selection outside.
                                                                             setStory(prev => {
-                                                                                const newRels = { ...(prev.relationships || {}) };
-                                                                                if (newRels[selectedRel.key]) {
-                                                                                newRels[selectedRel.key].history = [];
-                                                                            }
+                                                                                const prevRels = prev.relationships || {};
+                                                                                const prevRel = prevRels[selectedRel.key];
+                                                                                if (!prevRel) return prev;
+                                                                                return { ...prev, relationships: { ...prevRels, [selectedRel.key]: { ...prevRel, history: [] } } };
+                                                                            });
                                                                             setSelectedRel(prevSel => ({
                                                                                 ...prevSel,
                                                                                 history: []
                                                                             }));
-                                                                            return { ...prev, relationships: newRels };
-                                                                        });
-                                                                    }
-                                                                }}
+                                                                        }
+                                                                    }}
                                                                 className="text-[9px] text-stone-400 hover:text-rose-600 font-bold uppercase transition-colors"
                                                             >
                                                                 Reset Logs
