@@ -4305,7 +4305,7 @@
                 if (act !== null || seq !== null || scn !== null) {
                     const finalSeq = seq || 1;
                     const seqObj = (storyState.sequences || []).find(s => s.number === finalSeq);
-                    const finalAct = act || (seqObj ? seqObj.parent_act : (finalSeq <= 2 ? 1 : (finalSeq <= 5 ? 2 : 3)));
+                    const finalAct = act || (seqObj ? seqObj.parent_act : (SEQUENCE_ACT_MAP[finalSeq - 1] || 3));
                     return {
                         act: finalAct || 1,
                         sequence: finalSeq,
@@ -4320,7 +4320,7 @@
                 const seq = parseInt(seqSceneMatch[2], 10) || 1;
                 const scn = parseInt(seqSceneMatch[3], 10) || 1;
                 const seqObj = (storyState.sequences || []).find(s => s.number === seq);
-                const act = seqObj ? seqObj.parent_act : (seq <= 2 ? 1 : (seq <= 5 ? 2 : 3));
+                const act = seqObj ? seqObj.parent_act : (SEQUENCE_ACT_MAP[seq - 1] || 3);
                 return { act: act || 1, sequence: seq, scene: scn };
             }
             // Match "Act 2, Scene 3" or "Act 2 Scene 3"
@@ -4421,7 +4421,7 @@
             if (!scene) return storyState.continuity_ledger || [];
 
             const coords = parseSceneCoordinates(scene.number || scene.id || scene, storyState);
-            const validFromAct = scene.parent_act || (scene.parent_sequence ? ((storyState.sequences || []).find(s => s.number === scene.parent_sequence)?.parent_act || (scene.parent_sequence <= 2 ? 1 : (scene.parent_sequence <= 5 ? 2 : 3))) : coords.act) || 1;
+            const validFromAct = scene.parent_act || (scene.parent_sequence ? ((storyState.sequences || []).find(s => s.number === scene.parent_sequence)?.parent_act || SEQUENCE_ACT_MAP[scene.parent_sequence - 1] || 3) : coords.act) || 1;
             const validFromSeq = scene.parent_sequence || scene.sequence || coords.sequence || 1;
             const validFromScn = coords.scene || 1;
             const sceneRef = scene.number ? `Scene ${scene.number}` : (scene.id ? `Scene ${scene.id}` : `Scene ${validFromSeq}.${validFromScn}`);
