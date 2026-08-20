@@ -2172,11 +2172,11 @@
                                 if (edit.type === 'search_replace' || edit.search !== undefined) {
                                     var searchStr = chomp(String(edit.search || edit.original || ""));
                                     var repStr = chomp(String(edit.replace || edit.rewritten || ""));
-                                    if (updated.indexOf(searchStr) !== -1) {
+                                    if (searchStr && updated.indexOf(searchStr) !== -1) {
                                         updated = updated.replace(searchStr, () => repStr);
                                     } else {
                                         var trimmed = searchStr.trim();
-                                        if (updated.indexOf(trimmed) !== -1) {
+                                        if (trimmed && updated.indexOf(trimmed) !== -1) {
                                             updated = updated.replace(trimmed, () => repStr.trim());
                                         }
                                     }
@@ -3223,11 +3223,11 @@
                 if (originalVal !== undefined && rewrittenVal !== undefined) {
                     const origStr = chomp(String(originalVal));
                     const rewStr = chomp(String(rewrittenVal));
-                    if (updatedText.includes(origStr)) {
+                    if (origStr && updatedText.includes(origStr)) {
                         updatedText = updatedText.replace(origStr, () => rewStr);
                     } else {
                         const trimmedOrig = origStr.trim();
-                        if (updatedText.includes(trimmedOrig)) {
+                        if (trimmedOrig && updatedText.includes(trimmedOrig)) {
                             updatedText = updatedText.replace(trimmedOrig, () => rewStr.trim());
                         }
                     }
@@ -3242,11 +3242,11 @@
                 if (anchorVal !== undefined && contentVal !== undefined) {
                     const anchStr = chomp(String(anchorVal));
                     const contStr = chomp(String(contentVal));
-                    if (updatedText.includes(anchStr)) {
+                    if (anchStr && updatedText.includes(anchStr)) {
                         updatedText = updatedText.replace(anchStr, () => anchStr + contStr);
                     } else {
                         const trimmedAnch = anchStr.trim();
-                        if (updatedText.includes(trimmedAnch)) {
+                        if (trimmedAnch && updatedText.includes(trimmedAnch)) {
                             updatedText = updatedText.replace(trimmedAnch, () => trimmedAnch + contStr.trim());
                         }
                     }
@@ -3278,11 +3278,11 @@
                 if (searchVal !== undefined && replaceVal !== undefined) {
                     const searchStr = chomp(String(searchVal));
                     const repStr = chomp(String(replaceVal));
-                    if (updatedText.includes(searchStr)) {
+                    if (searchStr && updatedText.includes(searchStr)) {
                         updatedText = updatedText.replace(searchStr, () => repStr);
                     } else {
                         const trimmedSearch = searchStr.trim();
-                        if (updatedText.includes(trimmedSearch)) {
+                        if (trimmedSearch && updatedText.includes(trimmedSearch)) {
                             updatedText = updatedText.replace(trimmedSearch, () => repStr.trim());
                         }
                     }
@@ -3779,13 +3779,13 @@
                 if (!Array.isArray(seqs) || seqs.length !== 8) {
                     errors.push(`Sequence Agent: Exactly 8 sequences required across 3 acts (got ${seqs.length || 0})`);
                 }
-            } else if (tierName === "Scene Agent") {
+            } else if (tierName === "Scene Agent" || tierName === "Scene Roster Agent") {
                 const scenes = parsedData.scenes || (Array.isArray(parsedData) ? parsedData : []);
                 const minScenes = (context.generation_ranges && context.generation_ranges.scenes_per_sequence)
                     ? context.generation_ranges.scenes_per_sequence.min
                     : 4;
                 if (!Array.isArray(scenes) || scenes.length < minScenes) {
-                    errors.push(`Scene Agent: Generated ${scenes.length || 0} scenes (minimum ${minScenes} required)`);
+                    errors.push(`${tierName}: Generated ${scenes.length || 0} scenes (minimum ${minScenes} required)`);
                 }
                 
                 // Build a comprehensive, case-insensitive set of valid character IDs, full names, and first names
@@ -3824,15 +3824,17 @@
                     const sc = scenes[i];
                     const valShift = sc.value_shift;
                     const rawType = String(sc.scene_type || sc.type || "").toUpperCase();
-                    if (!valShift || !valShift.start_state || !valShift.end_state) {
-                        errors.push(`Scene Agent: Scene ${sc.number || i + 1} has missing value shift`);
-                    } else if (valShift.start_state === valShift.end_state) {
+                    // The lean Scene Roster (Tier 4.1) carries no value_shift - that field is produced
+                    // by the Scene Expander (4.3) - so only the legacy rich Scene Agent requires it.
+                    if (tierName === "Scene Agent" && (!valShift || !valShift.start_state || !valShift.end_state)) {
+                        errors.push(`${tierName}: Scene ${sc.number || i + 1} has missing value shift`);
+                    } else if (valShift && valShift.start_state && valShift.start_state === valShift.end_state) {
                         if (!rawType.includes("SEQUEL") && !rawType.includes("REACTIVE")) {
-                            errors.push(`Scene Agent: Scene ${sc.number || i + 1} has flat value shift`);
+                            errors.push(`${tierName}: Scene ${sc.number || i + 1} has flat value shift`);
                         }
                     }
                     if (!rawType || (!rawType.includes("PROACTIVE") && !rawType.includes("REACTIVE") && !rawType.includes("SCENE") && !rawType.includes("SEQUEL"))) {
-                        errors.push(`Scene Agent: Scene ${sc.number || i + 1} missing valid scene_type (PROACTIVE/REACTIVE)`);
+                        errors.push(`${tierName}: Scene ${sc.number || i + 1} missing valid scene_type (PROACTIVE/REACTIVE)`);
                     }
                     const presentList = sc.cast_ids || sc.characters_present || [];
                     if (validCast.size > 0 && Array.isArray(presentList)) {
@@ -3844,7 +3846,7 @@
                             // Check for substring or partial match with any valid cast name/ID
                             const matched = validCastNames.some(name => name.includes(cleanCid) || cleanCid.includes(name));
                             if (!matched) {
-                                errors.push(`Scene Agent: Scene ${sc.number || i + 1} references unknown character ID "${cid}"`);
+                                errors.push(`${tierName}: Scene ${sc.number || i + 1} references unknown character ID "${cid}"`);
                             }
                         }
                     }
@@ -4185,13 +4187,8 @@
             const sysPrompt = "You are a surgical JSON/YAML repair agent. Your only job is to fix the target defects precisely as requested and output valid YAML.";
 
             try {
-                // Use a fast model like gemini-flash
-                const repairResult = await window.callAI(sysPrompt, userPrompt, {
-                    modelId: 'google/gemini-flash-1.5-8b',
-                    temperature: 0.2,
-                    forceProvider: 'openrouter',
-                    isJson: false
-                });
+                // callAI signature is (prompt, systemPrompt, isJson, logName, modelSize) - mirror surgicallyRepairBeatMRUs
+                const repairResult = await window.callAI(userPrompt, sysPrompt, false, "Surgical Value Shift Repair", "small");
 
                 const repairedYaml = parseYaml(repairResult);
                 if (repairedYaml && repairedYaml.repaired_scenes && Array.isArray(repairedYaml.repaired_scenes)) {
@@ -10746,8 +10743,8 @@ Output Schema:
                 setLoadingStep(`RSI: Injecting [${item}] into Sequence ${openSlot.seqNumber}, Scene ${openSlot.sceneIdx + 1}...`);
 
                 const sysPrompt = PROMPTS.rsiPrompt
-                    .replace("{prose_text}", openSlot.prose)
-                    .replace("{injection_detail}", `Seamlessly include an action where ${charName} acquires or pockets the item: "${item}".`);
+                    .replace("{prose_text}", () => openSlot.prose)
+                    .replace("{injection_detail}", () => `Seamlessly include an action where ${charName} acquires or pockets the item: "${item}".`);
                 const rsiUserPrompt = "Please execute the Retroactive State Injection according to the system rules and formats specified.";
                 const rsiOutput = await callAI(rsiUserPrompt, sysPrompt, false, "RSI Injector", "large");
                 
@@ -11215,8 +11212,8 @@ Output Schema:
                             } else {
                                 // Use Surgical Prose Editor LLM
                                 const sysPrompt = PROMPTS.surgicalProseEditor
-                                    .replace("{existing_prose}", currentProse)
-                                    .replace("{instructions}", action.details.instructions || action.description || "Apply surgical edits seamlessly.");
+                                    .replace("{existing_prose}", () => currentProse)
+                                    .replace("{instructions}", () => action.details.instructions || action.description || "Apply surgical edits seamlessly.");
                                 
                                 const patchPrompt = "Execute the surgical patch precisely. Return the updated prose inside yaml prose_text scalar.";
                                 const patchOutput = await callAI(patchPrompt, sysPrompt, false, "Surgical Prose Editor", "large");
@@ -11747,6 +11744,19 @@ ${JSON.stringify(structureOverview, null, 2)}
                         } catch (e) {}
                     }
                     await spawnNewCharacters(briefs);
+
+                    // Tiers without a paired reviewer (Scene Expander 4.3 / batch reviewer 4.4 pass
+                    // reviewerPromptFn: null) skip the review gate and accept the parsed output.
+                    if (!reviewerPromptFn || !reviewerSystemPrompt) {
+                        console.log(`[Pipeline - ${tierName}${chunkPrefix}] No reviewer configured - accepting output on attempt ${attempt}`);
+                        setFeedbackLedger(prev => {
+                            const next = { ...prev };
+                            delete next[tierName];
+                            return next;
+                        });
+                        console.groupEnd(); // Close attempt group
+                        return { genOutput, parsedData, spawnedBriefs };
+                    }
 
                     setLoadingStep(`Reviewing ${tierName}${chunkPrefix} output...`);
                     const reviewPrompt = reviewerPromptFn(genOutput);
@@ -13219,7 +13229,18 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         valid_from_act: 1,
                         valid_from_scene: 1
                     };
-                    await ingestLoreBatch([worldBibleEntry]);
+                    const existingWorldBible = (storyToUse.lore || []).find(l => l && l.topic === "World Bible Setting");
+                    let persistedWorldBible = worldBibleEntry;
+                    if (!worldBibleEntry.detail) {
+                        // No status_quo to archive - keep whatever world bible entry already exists
+                        if (existingWorldBible) persistedWorldBible = existingWorldBible;
+                    } else if (existingWorldBible && existingWorldBible.detail === worldBibleEntry.detail) {
+                        // Unchanged since the last archive - skip the embedding round-trip entirely
+                        persistedWorldBible = existingWorldBible;
+                    } else {
+                        const processedWB = await ingestLoreBatch([worldBibleEntry]);
+                        if (processedWB && processedWB[0]) persistedWorldBible = processedWB[0];
+                    }
 
                     // TIER 2.3: Pacing Architect (Deterministic Local Pacing Ranges - A1)
                     const parsedPacing = computePacingRanges(storyToUse.style?.genre || storyToUse.genre, storyToUse.target_word_count || 80000);
@@ -13230,7 +13251,9 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         acts: actsData,
                         sequences: normalizedSequences,
                         relationships: nextRels,
-                        lore: [...(storyToUse.lore || []).filter(l => l && l.topic !== "World Bible Setting"), worldBibleEntry],
+                        lore: persistedWorldBible.detail
+                            ? [...(storyToUse.lore || []).filter(l => l && l.topic !== "World Bible Setting"), persistedWorldBible]
+                            : (storyToUse.lore || []),
                         thread_statuses: actResult.parsedData.thread_statuses || [],
                         generation_ranges: parsedPacing,
                         continuity_ledger: Array.isArray(storyToUse.continuity_ledger) ? storyToUse.continuity_ledger : []
@@ -13385,7 +13408,12 @@ BEGIN SEQUENCE CRITIQUE REVIEW
             // Pipeline progress logger used by the scene expansion loop (Tier 4.3/4.4)
             const addLog = (entry) => {
                 const line = `[Pipeline - ${entry.agent || 'Pipeline'}] ${entry.action || ''}${entry.details ? ` | ${entry.details}` : ''}`;
-                if (entry.status === 'error') console.error(line); else console.log(line);
+                if (entry.status === 'error') {
+                    console.error(line);
+                    showToast(`${entry.agent || 'Pipeline'}: ${entry.action || 'step failed'}`, 'warning');
+                } else {
+                    console.log(line);
+                }
                 if (entry.status === 'in_progress' && entry.action) setLoadingStep(`${entry.action}...`);
             };
 
@@ -14775,13 +14803,13 @@ ${chapterBody}
                 if (n.includes("sequence agent") || n.includes("sequence planner") || n.includes("tier 3.1")) return 9;
                 if (n.includes("scene roster agent reviewer") || n.includes("scene roster reviewer") || n.includes("tier 4.2")) return 12;
                 if (n.includes("scene roster") || n.includes("scene agent") || n.includes("scene planner") || n.includes("tier 4.1")) return 11;
-                if (n.includes("scene expander reviewer") || n.includes("tier 4.4")) return 14;
+                if (n.includes("scene expander agent reviewer") || n.includes("scene expander reviewer") || n.includes("tier 4.4")) return 14;
                 if (n.includes("scene expander") || n.includes("tier 4.3")) return 13;
                 if (n.includes("beat agent reviewer") || n.includes("beat reviewer") || n.includes("tier 5.2")) return 16;
                 if (n.includes("beat agent") || n.includes("beat planner") || n.includes("tier 5.1")) return 15;
                 if (n.includes("rag context") || n.includes("retriever") || n.includes("retrieve context")) return 17;
+                if (n.includes("writing agent reviewer") || n.includes("continuity reviewer") || n.includes("surgical")) return 19;
                 if (n.includes("writing agent") || n.includes("prose generator") || n.includes("prose writer") || n.includes("tier 5.3")) return 18;
-                if (n.includes("continuity reviewer") || n.includes("surgical editor")) return 19;
                 if (n.includes("archivist")) return 20;
                 return null;
             };
@@ -14836,6 +14864,7 @@ ${chapterBody}
 
                 const maxRetries = 3;
                 let attempt = 0;
+                let timeoutRetries = 0;
 
                 console.log(`[AI Call - "${logName}"] Starting request... Model: ${modelToUse} | Size: ${modelSize} | Provider: ${apiProvider} | JSON: ${isJson}`);
 
@@ -14883,7 +14912,7 @@ ${chapterBody}
 
                 // Per-agent max_tokens to prevent structural YAML truncation & prose starvation
                 const agentMaxTokens = (() => {
-                    const isHeavyAgent = logName.includes("Story Arc") || logName.includes("Act Agent") || logName.includes("Scene Agent") || logName.includes("Scene Roster") || logName.includes("Scene Expander") || logName.includes("Sequence Agent") || logName.includes("Writing Agent") || logName.includes("Prose Generator") || logName.includes("Prose") || logName.includes("Conceptual") || logName.includes("Character") || logName.includes("Archivist") || logName.includes("Directive");
+                    const isHeavyAgent = logName.includes("Story Arc") || logName.includes("Act Agent") || logName.includes("Scene Agent") || logName.includes("Scene Roster") || logName.includes("Scene Expander") || logName.includes("Sequence Agent") || logName.includes("Writing Agent") || logName.includes("Prose Generator") || logName.includes("Prose") || logName.includes("Conceptual") || logName.includes("Character") || logName.includes("Archivist") || logName.includes("Directive") || logName.includes("Surgical") || logName.includes("Lore Merger");
                     if (thinkingConfig && thinkingConfig.enabled) {
                         return isHeavyAgent ? 32768 : 16384;
                     }
@@ -14973,7 +15002,7 @@ ${chapterBody}
                         
                         const isAuthError = errMsg.includes("401") || errMsg.includes("Authorization Failed") || errMsg.includes("API Key is missing");
                         const isClientTimeout = errMsg.includes("Request timed out") || errMsg.includes("timed out after") || errMsg.includes("timed out") || error?.name === 'AbortError';
-                        const isTransient = !isAuthError && (isClientTimeout ||
+                        const isTransient = !isAuthError && ((isClientTimeout && timeoutRetries < 1) ||
                             errMsg.includes("500") || errMsg.includes("502") || errMsg.includes("503") || errMsg.includes("504") ||
                             errMsg.includes("Internal Server Error") || errMsg.includes("Bad Gateway") || errMsg.includes("Service Unavailable") ||
                             errMsg.includes("Gateway Timeout") || errMsg.includes("Overloaded") || errMsg.includes("429") ||
@@ -14986,10 +15015,12 @@ ${chapterBody}
                         );
 
                         if (isTransient && attempt < maxRetries) {
-                            // A client timeout is retried with an escalating timeout budget instead of failing the tier outright
-                            if (isClientTimeout && options.timeout > 0) {
-                                options.timeout = Math.min(options.timeout * 2, 1800000);
-                                console.warn(`[AI Call - "${logName}"] Client timeout on attempt ${attempt}. Raising timeout to ${Math.round(options.timeout / 1000)}s for the retry...`);
+                            // One retry per call for client timeouts: a transient stall gets a second chance
+                            // without burning an escalation attempt, but the user's configured timeout is honored
+                            // per request and a second timeout fails the call instead of compounding waits.
+                            if (isClientTimeout) {
+                                timeoutRetries++;
+                                console.warn(`[AI Call - "${logName}"] Client timeout on attempt ${attempt}. Retrying once at the configured ${Math.round((options.timeout || 0) / 1000)}s timeout...`);
                             }
                             // If thinking budget was exhausted, expand max_tokens and tighten thinking instructions for retry
                             if (errMsg.includes("exhausted token budget") || errMsg.includes("completed thinking phase")) {
@@ -15012,7 +15043,9 @@ ${chapterBody}
                         } else {
                             const durationSec = ((performance.now() - startTime) / 1000).toFixed(2);
                             const finalMsg = isClientTimeout
-                                ? `API Request timed out after ${Math.round((options.timeout || apiTimeout * 1000) / 1000)}s without response (${logName}, ${attempt} attempt(s)).`
+                                ? (options.timeout > 0
+                                    ? `API Request timed out after ${Math.round(options.timeout / 1000)}s without response (${logName}, ${attempt} attempt(s)). If this recurs, raise the API Timeout in Settings.`
+                                    : `Request aborted (${logName}): ${errMsg}`)
                                 : `FAILED after ${attempt} attempt(s): ${errMsg}`;
                             console.error(`[AI Call - "${logName}"] Final Failure: ${finalMsg}`);
                             setPromptLog(prev => prev.map(entry => {
@@ -16399,7 +16432,7 @@ You MUST adapt the beat choreography to address this specific instruction:
                             parentTierFailFn: async (reasons) => {
                                 setFeedbackLedger(prev => ({
                                     ...prev,
-                                    "Scene Agent": reasons
+                                    "Scene Roster Agent": reasons
                                 }));
                             },
                             activeActNum: sequenceData.parent_act || 1,
@@ -16578,7 +16611,7 @@ You MUST adapt the beat choreography to address this specific instruction:
                         dynamicStyleText = `=== DYNAMIC STYLE WARNINGS FROM PREVIOUS BEAT FAILURES ===\nAvoid these specific issues highlighted in recent reviews:\n` + 
                             failedReviewCritiques.map(crit => `- ${crit}`).join('\n') + `\n`;
                     }
-                    basePrompt = basePrompt.replace('[DYNAMIC_STYLE_WARNINGS]', dynamicStyleText);
+                    basePrompt = basePrompt.replace('[DYNAMIC_STYLE_WARNINGS]', () => dynamicStyleText);
 
                     const finalWritingSystemPrompt = injectionPrompt 
                         ? `${basePrompt}\n\n=== ACTIVE SCENE LENS MANDATE: ${activeModeId} ===\n${injectionPrompt}` 
