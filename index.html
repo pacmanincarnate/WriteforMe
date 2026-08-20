@@ -14973,7 +14973,7 @@ ${chapterBody}
                         
                         const isAuthError = errMsg.includes("401") || errMsg.includes("Authorization Failed") || errMsg.includes("API Key is missing");
                         const isClientTimeout = errMsg.includes("Request timed out") || errMsg.includes("timed out after") || errMsg.includes("timed out") || error?.name === 'AbortError';
-                        const isTransient = !isAuthError && !isClientTimeout && (
+                        const isTransient = !isAuthError && (isClientTimeout ||
                             errMsg.includes("500") || errMsg.includes("502") || errMsg.includes("503") || errMsg.includes("504") ||
                             errMsg.includes("Internal Server Error") || errMsg.includes("Bad Gateway") || errMsg.includes("Service Unavailable") ||
                             errMsg.includes("Gateway Timeout") || errMsg.includes("Overloaded") || errMsg.includes("429") ||
@@ -14986,6 +14986,11 @@ ${chapterBody}
                         );
 
                         if (isTransient && attempt < maxRetries) {
+                            // A client timeout is retried with an escalating timeout budget instead of failing the tier outright
+                            if (isClientTimeout && options.timeout > 0) {
+                                options.timeout = Math.min(options.timeout * 2, 1800000);
+                                console.warn(`[AI Call - "${logName}"] Client timeout on attempt ${attempt}. Raising timeout to ${Math.round(options.timeout / 1000)}s for the retry...`);
+                            }
                             // If thinking budget was exhausted, expand max_tokens and tighten thinking instructions for retry
                             if (errMsg.includes("exhausted token budget") || errMsg.includes("completed thinking phase")) {
                                 console.warn(`[AI Call - "${logName}"] Thinking budget exhausted on attempt ${attempt}. Expanding max_tokens and tightening thinking instructions for retry...`);
@@ -15006,8 +15011,8 @@ ${chapterBody}
                             await new Promise(resolve => setTimeout(resolve, delayMs));
                         } else {
                             const durationSec = ((performance.now() - startTime) / 1000).toFixed(2);
-                            const finalMsg = isClientTimeout 
-                                ? `API Request timed out after ${apiTimeout}s without response (${logName}).` 
+                            const finalMsg = isClientTimeout
+                                ? `API Request timed out after ${Math.round((options.timeout || apiTimeout * 1000) / 1000)}s without response (${logName}, ${attempt} attempt(s)).`
                                 : `FAILED after ${attempt} attempt(s): ${errMsg}`;
                             console.error(`[AI Call - "${logName}"] Final Failure: ${finalMsg}`);
                             setPromptLog(prev => prev.map(entry => {
