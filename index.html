@@ -11018,6 +11018,7 @@ Output Schema:
             const [geminiProseModel, setGeminiProseModel] = useState(() => localStorage.getItem("ellipsisprose_gemini_prose_model") || "");
             const [openRouterProseModel, setOpenRouterProseModel] = useState(() => localStorage.getItem("ellipsisprose_openrouter_prose_model") || "");
             const [nanoGptProseModel, setNanoGptProseModel] = useState(() => localStorage.getItem("ellipsisprose_nanogpt_prose_model") || "");
+            const [koboldProseModel, setKoboldProseModel] = useState(() => localStorage.getItem("ellipsisprose_kobold_prose_model") || "");
 
             // Thinking / Reasoning State variables
             const [enableThinkingAct, setEnableThinkingAct] = useState(() => {
@@ -14442,6 +14443,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
             useEffect(() => { safeLocalStorageSet("ellipsisprose_use_prose_model", useProseModel); }, [useProseModel]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_gemini_prose_model", geminiProseModel); }, [geminiProseModel]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_openrouter_prose_model", openRouterProseModel); }, [openRouterProseModel]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_kobold_prose_model", koboldProseModel); }, [koboldProseModel]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_custom_modes", customModes); }, [customModes]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_banned_phrases", bannedPhrases); }, [bannedPhrases]);
 
@@ -15801,6 +15803,9 @@ ${chapterBody}
                 // Determine model based on modelSize and dual-model settings
                 const getModel = () => {
                     if (apiProvider === 'koboldcpp') {
+                        if (modelSize === 'large' && useProseModel) {
+                            return koboldProseModel || koboldModel || 'koboldcpp';
+                        }
                         return koboldModel || 'koboldcpp';
                     }
                     if (modelSize === 'large' && useProseModel) {
@@ -22059,13 +22064,13 @@ ${currentLoreList}
                                                             apiProvider === 'gemini' ? geminiProseModel :
                                                             apiProvider === 'openrouter' ? openRouterProseModel :
                                                             apiProvider === 'nanogpt' ? nanoGptProseModel :
-                                                            apiProvider === 'koboldcpp' ? koboldModel : ""
+                                                            apiProvider === 'koboldcpp' ? koboldProseModel : ""
                                                         }
                                                         onSelectModel={(id) => {
                                                             if (apiProvider === 'gemini') setGeminiProseModel(id);
                                                             else if (apiProvider === 'openrouter') setOpenRouterProseModel(id);
                                                             else if (apiProvider === 'nanogpt') setNanoGptProseModel(id);
-                                                            else if (apiProvider === 'koboldcpp') setKoboldModel(id);
+                                                            else if (apiProvider === 'koboldcpp') setKoboldProseModel(id);
                                                         }}
                                                         savedModels={savedModels}
                                                         onSaveModel={(id) => saveModel(id)}
