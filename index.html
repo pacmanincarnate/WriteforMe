@@ -29,38 +29,48 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="application-name" content="EllipsisProse">
 
+    <!-- All CDN dependencies are pinned to exact versions: floating tags (latest/@18) can change
+         behavior under users overnight and were how dev-build React ended up in production. -->
     <!-- 1. Tailwind CSS (Styling) -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.tailwindcss.com/3.4.16"></script>
     <script>
         tailwind.config = {
             darkMode: 'class'
         }
     </script>
 
-    <!-- 2. React & ReactDOM (Core Framework) -->
-    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- 2. React & ReactDOM (Core Framework, production builds) -->
+    <script crossorigin src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
 
     <!-- 3. Babel (JSX Compiler) -->
     <script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js"></script>
 
     <!-- 4. Lucide Icons (Visuals) -->
-    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/lucide@1.33.0/dist/umd/lucide.min.js"></script>
 
     <!-- 5. JSZip (EPUB Export) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
     <!-- 6. Marked (Markdown Parser) -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
 
     <!-- 7. JS-YAML (YAML Parser) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+
+    <!-- 8. DOMPurify (sanitizes LLM/imported markdown before dangerouslySetInnerHTML) -->
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.4.14/dist/purify.min.js"></script>
 
     <!-- Custom Styles -->
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Antonio:wght@100;300;700&family=Bodoni+Moda:ital,opsz,wght@0,6..96,400;0,6..96,800;1,6..96,400;1,6..96,700&family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@600;800;900&family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=DM+Serif+Display:ital@0;1&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Merriweather:ital,wght@0,300;0,400;0,700;1,300;1,400&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,600&family=Oswald:wght@300;400;600&family=Pinyon+Script&family=Playfair+Display:ital,wght@0,600;0,800;1,400;1,700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Prata&family=Space+Grotesk:wght@600;700&family=Syne:wght@700;800&family=Unbounded:wght@700;900&display=swap');
 
         :root {
+            /* Typeface tokens (theme-independent) - .lib-card-title/.lib-meta referenced these
+               without a definition, silently inheriting the body font */
+            --font-serif: 'Newsreader', 'Cormorant Garamond', 'Merriweather', Georgia, serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
             /* Scandinavian Light / Folio Bianca System */
             --bg-void: #F7F5F0;               /* Warm parchment canvas */
             --bg-surface: #FFFFFF;            /* Clean white surface */
@@ -453,10 +463,6 @@
             }
         }
 
-        @keyframes modalBackdropFade {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
 
         .animate-fade-in {
             animation: springFadeIn var(--spring-duration) var(--ease-snappy) forwards;
@@ -1195,9 +1201,6 @@
             }
             .lib-card-list {
                 gap: 36px;
-            }
-            .lib-cover {
-                border-radius: 10px;
             }
             .lib-card-title {
                 font-size: 18px;
@@ -2123,101 +2126,8 @@
     <script>
         // XML Parser Helpers - duplicated here for global availability
         (function() {
-            const decodeXmlEntities = function(str) {
-                if (!str) return "";
-                return str
-                    .replace(/&amp;/g, "&")
-                    .replace(/&lt;/g, "<")
-                    .replace(/&gt;/g, ">")
-                    .replace(/&quot;/g, '"')
-                    .replace(/&apos;/g, "'")
-                    .replace(/&#(\d+);/g, function(match, dec) { return String.fromCharCode(parseInt(dec, 10)); })
-                    .replace(/&#x([0-9a-fA-F]+);/g, function(match, hex) { return String.fromCharCode(parseInt(hex, 16)); })
-                    .replace(/&amp(?![a-zA-Z0-9#])/g, "&");
-            };
-
-            const extractTag = function(text, tag) {
-                if (!text) return "";
-                var regex = new RegExp('<' + tag + '>(.*?)</' + tag + '>', 'si');
-                var match = text.match(regex);
-                return match ? decodeXmlEntities(match[1].trim()) : "";
-            };
-
-            const extractAllTags = function(text, tag) {
-                if (!text) return [];
-                var regex = new RegExp('<' + tag + '>(.*?)</' + tag + '>', 'gsi');
-                var matches = Array.from(text.matchAll(regex));
-                return matches.map(function(m) { return decodeXmlEntities(m[1].trim()); });
-            };
-
-            window.applySearchAndReplaceBlocks = function(originalText, text) {
-                if (!text) return originalText;
-                
-                var chomp = function(str) {
-                    if (typeof str !== 'string') return str;
-                    if (str.endsWith('\r\n')) return str.slice(0, -2);
-                    if (str.endsWith('\n')) return str.slice(0, -1);
-                    return str;
-                };
-
-                if (text.includes("edits:") || !text.includes("<search_replace>")) {
-                    try {
-                        var clean = text.replace(/^```(?:yaml)?\n/i, "").replace(/\n```$/, "").trim();
-                        var parsed = jsyaml.load(clean);
-                        var edits = Array.isArray(parsed) ? parsed : (parsed && parsed.edits);
-                        if (Array.isArray(edits)) {
-                            var updated = originalText;
-                            for (var i = 0; i < edits.length; i++) {
-                                var edit = edits[i];
-                                if (edit.type === 'search_replace' || edit.search !== undefined) {
-                                    var searchStr = chomp(String(edit.search || edit.original || ""));
-                                    var repStr = chomp(String(edit.replace || edit.rewritten || ""));
-                                    if (searchStr && updated.indexOf(searchStr) !== -1) {
-                                        updated = updated.replace(searchStr, () => repStr);
-                                    } else {
-                                        var trimmed = searchStr.trim();
-                                        if (trimmed && updated.indexOf(trimmed) !== -1) {
-                                            updated = updated.replace(trimmed, () => repStr.trim());
-                                        }
-                                    }
-                                }
-                            }
-                            return updated;
-                        }
-                    } catch (e) {
-                        console.error("YAML fallback failed in applySearchAndReplaceBlocks:", e);
-                    }
-                }
-
-                var cleanCdata = function(str) {
-                    if (!str) return "";
-                    return str.replace(/^\s*<!\[CDATA\[/, "").replace(/\]\]>\s*$/, "");
-                };
-
-                var blocks = extractAllTags(text, 'search_replace');
-                var updatedText = originalText;
-                for (var i = 0; i < blocks.length; i++) {
-                    var block = blocks[i];
-                    var searchVal = extractTag(block, 'search');
-                    var replaceVal = extractTag(block, 'replace');
-
-                    searchVal = cleanCdata(searchVal);
-                    replaceVal = cleanCdata(replaceVal);
-
-                    if (searchVal && replaceVal) {
-                        if (updatedText.indexOf(searchVal) !== -1) {
-                            updatedText = updatedText.replace(searchVal, () => replaceVal);
-                        } else {
-                            var trimmedSearch = searchVal.trim();
-                            if (updatedText.indexOf(trimmedSearch) !== -1) {
-                                updatedText = updatedText.replace(trimmedSearch, () => replaceVal);
-                            }
-                        }
-                    }
-                }
-                return updatedText;
-            };
-
+            // (XML/search-replace helpers that used to be duplicated here are defined once in the
+            // main app script; their window bindings were overwritten at boot, so the copies were dead.)
             window.countBannedPhrases = function(text, list) {
                 if (!text || !list || list.length === 0) return { count: 0, matches: [] };
                 var count = 0;
@@ -2428,6 +2338,24 @@
             }
         };
 
+        // Configure marked ONCE at module init - marked.use() mutates global parser state,
+        // and the old per-parse call re-appended the config on every render.
+        if (window.marked) {
+            try { marked.use({ gfm: true, breaks: true }); } catch (e) { console.warn("marked configuration failed:", e); }
+        }
+
+        // Every dangerouslySetInnerHTML site renders output of parseMarkdown (directly or via
+        // formatReaderProse). The input is LLM-generated or imported from arbitrary .json/.epub
+        // files, so sanitize centrally here.
+        const sanitizeHtml = (html) => {
+            try {
+                if (typeof DOMPurify !== 'undefined') return DOMPurify.sanitize(html);
+            } catch (e) {
+                console.warn("DOMPurify sanitization failed:", e);
+            }
+            return html;
+        };
+
         const parseMarkdown = (text) => {
             if (!text) return "";
             if (typeof text !== 'string') {
@@ -2445,11 +2373,7 @@
             if (!text || typeof text !== 'string') return "";
             try {
                 if (window.marked) {
-                    marked.use({
-                        gfm: true,
-                        breaks: true
-                    });
-                    return marked.parse(text);
+                    return sanitizeHtml(marked.parse(text));
                 }
             } catch (e) {
                 console.error("Failed to parse markdown with marked, falling back:", e);
@@ -2460,7 +2384,7 @@
                     .replace(/\*(.*?)\*/g, '<em>$1</em>')
                     .replace(/\n\n/g, '</p><p>')
                     .replace(/\n/g, '<br />');
-                return `<p>${html}</p>`;
+                return sanitizeHtml(`<p>${html}</p>`);
             } catch (e) {
                 return "";
             }
@@ -5928,18 +5852,6 @@ Output Schema:
         };
         window.PROMPTS = PROMPTS;
 
-        const getValenceDescription = (score) => {
-            const num = parseInt(score, 10);
-            if (isNaN(num)) return "Neutral";
-            if (num <= -8) return "Catastrophic / Despair";
-            if (num <= -5) return "Dangerous / Critical Failure";
-            if (num <= -2) return "Negative / Tense";
-            if (num <= 1) return "Uncertain / Neutral";
-            if (num <= 4) return "Positive / Hopeful";
-            if (num <= 7) return "Success / Joyous";
-            return "Amazing / Triumphant";
-        };
-
         const fetchWithTimeout = async (url, options = {}, timeoutMs = 120000) => {
             if (timeoutMs === 0 || timeoutMs === false || timeoutMs === null) {
                 return await fetch(url, options);
@@ -6086,8 +5998,8 @@ Output Schema:
                     generationConfig: generationConfig
                 };
 
-                const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${key}`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(payload)
                 }, options.timeout);
                 if (!response.ok) throw new Error(`API Error: ${response.status}`);
                 const responseText = await response.text();
@@ -6180,8 +6092,8 @@ Output Schema:
                 // If 400 persists, users might need access to 'gemini-2.0-flash-exp'.
                 // Given the user logs showed 'gemini-2.0-flash' with 400, it was likely the responseMimeType causing it.
                 // I will try gemini-2.0-flash-exp as it's often more permissive with new modalities.
-                const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${key}`, {
-                    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+                const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key }, body: JSON.stringify(payload)
                 }, 60000);
                 if (!response.ok) throw new Error(`TTS API Error: ${response.status}`);
                 const data = await response.json();
@@ -6725,10 +6637,10 @@ Output Schema:
             async getGeminiEmbedding(text) {
                 // ... (Existing Gemini Logic)
                 const model = "gemini-embedding-001";
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent?key=${this.apiKey}`;
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent`;
                 const response = await fetchWithTimeout(url, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': this.apiKey },
                     body: JSON.stringify({
                         model: `models/${model}`,
                         content: { parts: [{ text: text }] }
@@ -7185,78 +7097,12 @@ Output Schema:
                 return t.scene <= c.scene;
             }
 
-            getTemporalEdges(edges, currentSceneId) {
-                if (!edges) return [];
-                return edges.filter(e => {
-                    const sceneId = e.learned_in_scene || e.updated_at_scene || "1.1";
-                    return this.isPastOrCurrent(sceneId, currentSceneId);
-                });
-            }
-
-            getLatestActiveRelations(edges, currentSceneId) {
-                const tempEdges = this.getTemporalEdges(edges, currentSceneId);
-                const latestMap = new Map();
-                tempEdges.forEach(e => {
-                    const key = `${e.source}->${e.target}->${e.relation}`;
-                    const existing = latestMap.get(key);
-                    if (!existing) {
-                        latestMap.set(key, e);
-                    } else {
-                        const existingScene = existing.learned_in_scene || existing.updated_at_scene || "1.1";
-                        const currentScene = e.learned_in_scene || e.updated_at_scene || "1.1";
-                        if (this.isPastOrCurrent(existingScene, currentScene)) {
-                            latestMap.set(key, e);
-                        }
-                    }
-                });
-                return Array.from(latestMap.values());
-            }
         }
 
         /* ----------------------------------------------------------------------
           HELPER COMPONENTS
           ----------------------------------------------------------------------
         */
-        const ValenceGraph = ({ dataPoints, height = 60 }) => {
-            const safeDataPoints = (dataPoints || []).map(val => {
-                const parsed = parseInt(val, 10);
-                return isNaN(parsed) ? 0 : parsed;
-            });
-            if (safeDataPoints.length < 2) return null;
-            const maxVal = 10, minVal = -10, range = 20;
-            const stepX = 100 / (safeDataPoints.length - 1);
-            const points = safeDataPoints.map((val, idx) => {
-                const normalizedY = 100 - ((val - minVal) / range) * 100;
-                return `${idx * stepX},${normalizedY}`;
-            }).join(' ');
-            const zeroY = 100 - ((0 - minVal) / range) * 100;
-            return (
-                <div className="w-full" style={{ height: `${height}px` }}>
-                    <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" className="overflow-visible">
-                        <line x1="0" y1={zeroY} x2="100" y2={zeroY} stroke="#E5E0D8" strokeWidth="1" strokeDasharray="4" />
-                        <polyline points={points} fill="none" stroke="#B8935A" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-                        {safeDataPoints.map((val, idx) => {
-                            const normalizedY = 100 - ((val - minVal) / range) * 100;
-                            const color = val > 0 ? '#5B8A72' : val < 0 ? '#C97070' : '#8A847C';
-                            return <circle key={idx} cx={`${idx * stepX}`} cy={normalizedY} r="1.5" fill={color} vectorEffect="non-scaling-stroke" />;
-                        })}
-                    </svg>
-                </div>
-            );
-        };
-
-        const ValenceBadge = ({ score }) => {
-            const numScore = parseInt(score, 10) || 0;
-            let color = "bg-stone-100 text-stone-600 border-stone-200";
-            let IconComp = Minus;
-            if (numScore > 0) { color = "bg-emerald-50 text-emerald-700 border-emerald-200"; IconComp = TrendingUp; }
-            else if (numScore < 0) { color = "bg-rose-50 text-rose-700 border-rose-200"; IconComp = TrendingDown; }
-            return (
-                <div className={`flex items-center gap-1 text-[10px] font-mono px-2 py-0.5 rounded-full border ${color}`}>
-                    <IconComp className="w-3 h-3" /> {numScore > 0 ? '+' : ''}{numScore}
-                </div>
-            );
-        };
 
         const ThreadVisualizer = ({ scenes, threads }) => {
             if (!scenes || !threads || threads.length === 0) return null;
@@ -9232,6 +9078,69 @@ Output Schema:
           ----------------------------------------------------------------------
         */
 
+        // Static defaults hoisted out of EllipsisProsef - they were re-declared on every render.
+        const STORY_STARTER_TEMPLATES = [
+            {
+                id: "cyberpunk_noir",
+                title: "Neon Rain & Synthetic Souls",
+                genre: "Cyberpunk / Tech-Noir",
+                mood: "Gritty, melancholic, suspenseful",
+                themes: "Identity, corporate hegemony, memory as currency",
+                concept: "In the rain-drenched megalopolis of New Kyoto, an unlicensed neuro-archivist discovers a murdered corporate heir whose memories have been surgically replaced with encrypted state secrets.",
+                status_quo: "Neuro-archivist Ren struggles to keep their subterranean memory clinic afloat amidst strict corporate sweeps.",
+                inciting_incident: "A dying syndicate courier leaves behind a black-market neuro-drive containing the fragmented soul of the Megacorp's lead architect."
+            },
+            {
+                id: "gothic_mystery",
+                title: "The Whispering Manor of Blackwood",
+                genre: "Gothic Mystery / Psychological",
+                mood: "Atmospheric, claustrophobic, eerie",
+                themes: "Obsession, ancestral guilt, perception of sanity",
+                concept: "An antique restorer travels to a secluded coastal estate to catalog the library of a reclusive occultist, only to find the architectural blueprints shift with each chiming of the grandfather clock.",
+                status_quo: "Evelyn travels to the foggy cliffs of Blackwood Point to appraise rare manuscripts for a hefty commission.",
+                inciting_incident: "She unlocks a hidden door behind a bookcase that leads to a wing that does not exist on any blueprint of the estate."
+            },
+            {
+                id: "epic_space_fantasy",
+                title: "The Crown of Shattered Stars",
+                genre: "Epic Space Fantasy",
+                mood: "Grand, mythical, perilous",
+                themes: "Duty vs freedom, legacy of forgotten civilizations, destiny",
+                concept: "When the Celestial Beacon of the Core Worlds flickers and dies, an outcast star-navigator and a deposed astral prince must traverse forbidden rift sectors to reignite the primary stellar forge before an ancient void entity awakens.",
+                status_quo: "Navigator Kael charts hazardous trade lanes on the galaxy's edge, avoiding imperial bounty hunters.",
+                inciting_incident: "The Core Star collapses into a dark-matter anomaly, sending psychic shockwaves across navigators across the arm."
+            }
+        ];
+
+        const DEFAULT_BANNED_PHRASES = [
+            "Shivers down her spine",
+            "sternum",
+            "Voss",
+            "ozone",
+            "tapestry",
+            "testament",
+            "delve",
+            "beacon",
+            "shiver ran down",
+            "nestled",
+            "whispered secrets",
+            "cold sweat",
+            "gasping for air",
+            "not only, but also",
+            "in the heart of"
+        ];
+
+        const DEFAULT_READER_SETTINGS = {
+            fontFamily: "Merriweather",
+            fontSize: 18,
+            lineHeight: 1.75,
+            readerTheme: "light",
+            contentWidth: "standard",
+            textAlign: "left",
+            paragraphStyle: "indented",
+            readingMode: "paginated"
+        };
+
         function EllipsisProsef() {
             const [activeStoryId, setActiveStoryId] = useState(() => localStorage.getItem("ellipsisprose_active_story_id") || "story_default");
             const [libraryStories, setLibraryStories] = useState([]);
@@ -9700,38 +9609,6 @@ Output Schema:
             };
 
             // Starter Template Presets
-            const STORY_STARTER_TEMPLATES = [
-                {
-                    id: "cyberpunk_noir",
-                    title: "Neon Rain & Synthetic Souls",
-                    genre: "Cyberpunk / Tech-Noir",
-                    mood: "Gritty, melancholic, suspenseful",
-                    themes: "Identity, corporate hegemony, memory as currency",
-                    concept: "In the rain-drenched megalopolis of New Kyoto, an unlicensed neuro-archivist discovers a murdered corporate heir whose memories have been surgically replaced with encrypted state secrets.",
-                    status_quo: "Neuro-archivist Ren struggles to keep their subterranean memory clinic afloat amidst strict corporate sweeps.",
-                    inciting_incident: "A dying syndicate courier leaves behind a black-market neuro-drive containing the fragmented soul of the Megacorp's lead architect."
-                },
-                {
-                    id: "gothic_mystery",
-                    title: "The Whispering Manor of Blackwood",
-                    genre: "Gothic Mystery / Psychological",
-                    mood: "Atmospheric, claustrophobic, eerie",
-                    themes: "Obsession, ancestral guilt, perception of sanity",
-                    concept: "An antique restorer travels to a secluded coastal estate to catalog the library of a reclusive occultist, only to find the architectural blueprints shift with each chiming of the grandfather clock.",
-                    status_quo: "Evelyn travels to the foggy cliffs of Blackwood Point to appraise rare manuscripts for a hefty commission.",
-                    inciting_incident: "She unlocks a hidden door behind a bookcase that leads to a wing that does not exist on any blueprint of the estate."
-                },
-                {
-                    id: "epic_space_fantasy",
-                    title: "The Crown of Shattered Stars",
-                    genre: "Epic Space Fantasy",
-                    mood: "Grand, mythical, perilous",
-                    themes: "Duty vs freedom, legacy of forgotten civilizations, destiny",
-                    concept: "When the Celestial Beacon of the Core Worlds flickers and dies, an outcast star-navigator and a deposed astral prince must traverse forbidden rift sectors to reignite the primary stellar forge before an ancient void entity awakens.",
-                    status_quo: "Navigator Kael charts hazardous trade lanes on the galaxy's edge, avoiding imperial bounty hunters.",
-                    inciting_incident: "The Core Star collapses into a dark-matter anomaly, sending psychic shockwaves across navigators across the arm."
-                }
-            ];
 
             // Settings State
             const [apiProvider, setApiProvider] = useState(() => localStorage.getItem("ellipsisprose_api_provider") || 'gemini');
@@ -9839,23 +9716,6 @@ Output Schema:
             const [newModeIcon, setNewModeIcon] = useState("tag");
             const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
 
-            const DEFAULT_BANNED_PHRASES = [
-                "Shivers down her spine",
-                "sternum",
-                "Voss",
-                "ozone",
-                "tapestry",
-                "testament",
-                "delve",
-                "beacon",
-                "shiver ran down",
-                "nestled",
-                "whispered secrets",
-                "cold sweat",
-                "gasping for air",
-                "not only, but also",
-                "in the heart of"
-            ];
 
             const [bannedPhrases, setBannedPhrases] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_banned_phrases");
@@ -9863,10 +9723,10 @@ Output Schema:
             });
             const [newBannedPhraseInput, setNewBannedPhraseInput] = useState("");
 
-            const allNarrativeModes = {
+            const allNarrativeModes = useMemo(() => ({
                 ...NARRATIVE_MODES,
                 ...customModes
-            };
+            }), [customModes]);
 
             const getModeIcon = (modeId) => {
                 const modeObj = allNarrativeModes[modeId];
@@ -9876,7 +9736,7 @@ Output Schema:
                 return NARRATIVE_MODE_ICONS[modeId] || "tag";
             };
 
-            const allNarrativeModesXml = (() => {
+            const allNarrativeModesXml = useMemo(() => {
                 let xml = `<narrative_modes>\n`;
                 Object.values(allNarrativeModes).forEach(mode => {
                     xml += `  <mode>\n`;
@@ -9886,7 +9746,7 @@ Output Schema:
                 });
                 xml += `</narrative_modes>`;
                 return xml;
-            })();
+            }, [allNarrativeModes]);
 
             // Selected relationship for editing
             const [selectedRel, setSelectedRel] = useState(null);
@@ -9978,16 +9838,6 @@ Output Schema:
             const [logFilter, setLogFilter] = useState('all');
 
             // --- EBOOK READER STATE & SETTINGS ---
-            const DEFAULT_READER_SETTINGS = {
-                fontFamily: "Merriweather",
-                fontSize: 18,
-                lineHeight: 1.75,
-                readerTheme: "light",
-                contentWidth: "standard",
-                textAlign: "left",
-                paragraphStyle: "indented",
-                readingMode: "paginated"
-            };
 
             const [readerSettings, setReaderSettings] = useState(() => {
                 try {
@@ -10391,6 +10241,10 @@ Output Schema:
                 }
             }, [loading]);
 
+            // Cap the in-memory pipeline log: long autopilot runs previously grew promptLog
+            // without bound (every entry holds full prompts, responses, and reasoning text).
+            const PROMPT_LOG_CAP = 250;
+
             const logPipelineDelay = (stageName, durationMs, reason = "Cooldown delay") => {
                 const logId = Date.now() + Math.random();
                 const durationSec = (durationMs / 1000).toFixed(2);
@@ -10406,7 +10260,7 @@ Output Schema:
                     prompt: `Delay timer paused execution for ${durationSec}s (${Math.round(durationMs)}ms). Reason: ${reason}`,
                     systemPrompt: "SYSTEM TIMER"
                 };
-                setPromptLog(prev => [logEntry, ...prev]);
+                setPromptLog(prev => [logEntry, ...prev].slice(0, PROMPT_LOG_CAP));
             };
 
             const logPipelineValidation = (stageName, isPassed, details, durationSec = null) => {
@@ -10422,13 +10276,17 @@ Output Schema:
                     prompt: details,
                     systemPrompt: "PIPELINE VALIDATION GATE"
                 };
-                setPromptLog(prev => [logEntry, ...prev]);
+                setPromptLog(prev => [logEntry, ...prev].slice(0, PROMPT_LOG_CAP));
             };
             const fileInputRef = useRef(null);
 
             // RAG & Graph State
-            const vectorStore = useRef(new VectorStore());
-            const graphManager = useRef(new GraphManager());
+            // useRef's initial-value argument is evaluated on EVERY render - useRef(new VectorStore())
+            // constructed (and discarded) a fresh instance, including an IndexedDB open, per render.
+            const vectorStore = useRef(null);
+            if (!vectorStore.current) vectorStore.current = new VectorStore();
+            const graphManager = useRef(null);
+            if (!graphManager.current) graphManager.current = new GraphManager();
             const embeddingService = useRef(null);
             const [ragStatus, setRagStatus] = useState("idle"); // idle, indexing, ready
 
@@ -13379,17 +13237,6 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 setExpandedBeatAnalysis(prev => ({ ...prev, [bId]: !prev[bId] }));
             };
 
-            const getSceneColor = (actIdx, chapIdx, sceneIdx) => {
-                const sId = `${actIdx}-${chapIdx}-${sceneIdx}`;
-                const beats = story?.beats ? story.beats[sId] : null;
-                if (!beats || beats.length === 0) return '';
-
-                // Check prose status
-                if (story?.prose && story.prose[sId]?.final) return 'text-emerald-400';
-                if (story?.prose && story.prose[sId]?.draft) return 'text-amber-400';
-                return '';
-            };
-
             // Persistence Effects
             useEffect(() => { safeLocalStorageSet("ellipsisprose_api_provider", apiProvider); }, [apiProvider]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_embedding_provider", embeddingProvider); }, [embeddingProvider]);
@@ -13881,7 +13728,7 @@ ${payload}
                 }
 
                 if (prov === 'gemini') {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateImages?key=${key}`;
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateImages`;
                     const payload = {
                         prompt: prompt,
                         numberOfImages: 1,
@@ -13892,11 +13739,12 @@ ${payload}
                     const response = await fetchWithTimeout(url, {
                         method: 'POST',
                         headers: {
-                            'Content-Type': 'application/json'
+                            'Content-Type': 'application/json',
+                            'x-goog-api-key': key
                         },
                         body: JSON.stringify(payload)
                     }, 60000);
-                    
+
                     if (!response.ok) {
                         const errText = await response.text();
                         throw new Error(`Gemini Image API failed: ${response.status} - ${errText}`);
@@ -14808,7 +14656,7 @@ ${chapterBody}
                     responseSnippet: "",
                     validationSummary: `Dispatched to ${modelToUse} (${modelSize}). Waiting for response...`
                 };
-                setPromptLog(prev => [logEntry, ...prev]);
+                setPromptLog(prev => [logEntry, ...prev].slice(0, PROMPT_LOG_CAP));
 
                 const maxRetries = 3;
                 let attempt = 0;
@@ -17375,7 +17223,7 @@ ${currentLoreList}
             const fetchGeminiModels = async () => {
                 if (!apiKey) return;
                 try {
-                    const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {}, 15000);
+                    const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models`, { headers: { 'x-goog-api-key': apiKey } }, 15000);
                     if (!response.ok) throw new Error("Failed to fetch models");
                     const data = await response.json();
                     const models = data.models
