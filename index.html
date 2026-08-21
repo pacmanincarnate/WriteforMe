@@ -67,7 +67,8 @@
                             bold: 'var(--edge-bold)',
                             highlight: 'var(--border-highlight)',
                         },
-                        gold: 'rgb(var(--accent-gold-rgb) / <alpha-value>)',
+                        gold: { DEFAULT: 'rgb(var(--accent-gold-rgb) / <alpha-value>)', tint: 'var(--gold-tint)', edge: 'var(--gold-edge)' },
+                        lift: 'var(--lift)',
                         'gold-ink': { DEFAULT: 'var(--gold-ink)', deep: 'var(--gold-ink-deep)' },
                         ink: {
                             DEFAULT: 'var(--text-primary)',
@@ -185,7 +186,7 @@
             --mist-100-rgb: 245 245 244;
             --mist-200-rgb: 231 229 228;
             --mist-300-rgb: 214 211 209;
-            --wash: rgba(0, 0, 0, 0.04);
+            --wash: rgba(0, 0, 0, 0.05);
             --wash-strong: rgba(0, 0, 0, 0.10);
             --edge-soft: #F5F5F4;
             --edge-300: #D6D3D1;
@@ -286,6 +287,14 @@
             --tv-lane: #E5E0D8;
             --field-edge: rgba(0, 0, 0, 0.12);
             --field-placeholder: #A8A29E;
+            --gold-tint: rgba(184, 147, 90, 0.10);
+            --gold-edge: rgba(184, 147, 90, 0.30);
+            --lift: #FAFAF9;
+            --progress-track: #E5E0D8;
+            --lib-title-hover: #8C6B32;
+            --tv-surface: #FFFFFF;
+            --header-glass: rgba(255, 255, 255, 0.85);
+            --act-hover-edge: rgba(184, 147, 90, 0.3);
 
             /* Apple / Emil Kowalski Precision Motion Easings */
             --ease-snappy: cubic-bezier(0.23, 1, 0.32, 1);
@@ -351,7 +360,7 @@
             --wash-strong: rgba(255, 255, 255, 0.10);
             --edge-soft: rgba(255, 255, 255, 0.08);
             --edge-300: rgba(255, 255, 255, 0.08);
-            --edge-bold: rgba(255, 255, 255, 0.10);
+            --edge-bold: rgba(255, 255, 255, 0.08);
             --ink-950: #FFFFFF;
             --ink-300: #8C8578;
             --gold-ink-deep: #E5C38D;
@@ -448,6 +457,14 @@
             --tv-lane: rgba(255, 255, 255, 0.12);
             --field-edge: rgba(255, 255, 255, 0.12);
             --field-placeholder: #6E6A64;
+            --gold-tint: rgba(201, 169, 110, 0.16);
+            --gold-edge: rgba(201, 169, 110, 0.35);
+            --lift: #2F2F37;
+            --progress-track: #292524;
+            --lib-title-hover: #C9A96E;
+            --tv-surface: #1A1A1E;
+            --header-glass: rgba(30, 30, 34, 0.92);
+            --act-hover-edge: rgba(255, 255, 255, 0.08);
         }
 
         * {
@@ -520,6 +537,7 @@
 
         /* Top Studio Header with safe area padding */
         .studio-top-header {
+            background-color: var(--header-glass);
             padding-top: max(0.35rem, env(safe-area-inset-top, 0px));
             padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
             padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
@@ -885,7 +903,8 @@
         .thread-vis-lane-line { stroke: var(--tv-lane); }
         .thread-vis-lane-text { fill: var(--text-secondary); }
         .thread-vis-scene-text { fill: var(--text-primary); }
-        .thread-vis-node { fill: rgb(var(--surface-rgb)); }
+        .thread-vis-node { fill: var(--tv-surface); }
+        .thread-vis-bg { background-color: var(--tv-surface); }
 
         /* Option B Structure: Connected Act Timeline Tabs */
         .act-timeline-track {
@@ -918,7 +937,7 @@
         .act-node-btn:hover {
             background: var(--act-hover-bg);
             color: var(--text-primary);
-            border-color: rgb(var(--accent-gold-rgb) / 0.3);
+            border-color: var(--act-hover-edge);
         }
 
         .act-node-btn.active {
@@ -982,7 +1001,7 @@
             .glass-panel,
             .glass-card,
             .glass-modal {
-                background: #FFFFFF !important;
+                background: rgb(var(--surface-rgb)) !important;
                 backdrop-filter: none !important;
                 -webkit-backdrop-filter: none !important;
             }
@@ -1166,7 +1185,7 @@
             gap: 8px;
             padding: 12px 28px;
             border-radius: 980px;
-            border: 1px solid var(--border-highlight);
+            border: 1px solid rgba(0, 0, 0, 0.15);
             color: var(--text-secondary);
             font-size: 14px;
             font-weight: 500;
@@ -1388,7 +1407,7 @@
             width: 100%;
         }
         .lib-card-title:hover {
-            color: var(--gold-ink);
+            color: var(--lib-title-hover);
         }
 
         /* Active dot */
@@ -1491,7 +1510,7 @@
             width: 44px;
             height: 3px;
             border-radius: 2px;
-            background: var(--track-bg);
+            background: var(--progress-track);
             overflow: hidden;
             vertical-align: middle;
         }
@@ -6913,7 +6932,7 @@ Output Schema:
             const getThreadX = (index) => index * laneWidth + laneWidth / 2;
 
             return (
-                <div className="overflow-x-auto overflow-y-hidden border border-edge rounded-xl bg-surface p-2 shadow-sm thread-vis-bg">
+                <div className="overflow-x-auto overflow-y-hidden border border-edge rounded-xl p-2 shadow-sm thread-vis-bg">
                     <svg width={svgWidth} height={svgHeight} className="min-w-full">
                         {/* 1. Draw Thread Lanes (Background) */}
                         {threads.map((t, i) => (
@@ -7052,7 +7071,7 @@ Output Schema:
             const isStructure = variant === 'structure';
             const isProactive = String(s.scene_type).toLowerCase().includes('proactive') || s.scene_type === 'scene';
             return (
-                <div className={isStructure ? "p-5 hover:bg-inset group transition-colors" : "p-4 sm:p-5 hover:bg-mist-50/80 transition-colors group"}>
+                <div className={isStructure ? "p-5 hover:bg-inset group transition-colors" : "p-4 sm:p-5 hover:bg-lift transition-colors group"}>
                     <div className={isStructure ? "flex flex-col md:flex-row md:justify-between md:items-start gap-4" : "flex flex-col md:flex-row md:justify-between md:items-start gap-3"}>
                         <div className="flex gap-3.5 flex-1 min-w-0">
                             <div className={isStructure ? "w-8 h-8 rounded-full bg-mist-100 border border-edge-strong flex items-center justify-center text-xs font-bold font-mono text-ink-700 shrink-0 mt-0.5" : "w-8 h-8 rounded-full bg-mist-100 border border-edge-strong flex items-center justify-center text-xs font-bold text-ink-700 shrink-0 font-mono"}>
@@ -7163,7 +7182,7 @@ Output Schema:
                                     <Edit3 size={13} className="text-gold-ink" /> Write
                                 </button>
                             ) : (
-                                <button onClick={() => { setSelectedScene(si); setView('writer'); }} className="bg-surface hover:bg-mist-50 border border-edge-strong text-ink-800 px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all flex items-center gap-1.5">
+                                <button onClick={() => { setSelectedScene(si); setView('writer'); }} className="bg-surface hover:bg-lift border border-edge-strong text-ink-800 px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all flex items-center gap-1.5">
                                     <Edit3 size={13} className="text-gold-ink" /> Write
                                 </button>
                             )}
@@ -7399,7 +7418,7 @@ Output Schema:
                                 ) : (
                                     /* Empty Scene Notice */
                                     <div className="text-center my-auto p-8 rounded-2xl reader-ui-card max-w-md mx-auto space-y-4 border">
-                                        <div className="w-12 h-12 rounded-2xl bg-gold/15 text-gold flex items-center justify-center mx-auto">
+                                        <div className="w-12 h-12 rounded-2xl bg-gold-tint text-gold flex items-center justify-center mx-auto">
                                             <PenTool size={22} />
                                         </div>
                                         <h3 className="text-lg font-bold font-serif">Prose Not Yet Drafted</h3>
@@ -7588,7 +7607,7 @@ Output Schema:
                                                                 onClick={() => jumpToReaderScene(sIdx, originalSceneIdx, 0)}
                                                                 className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${
                                                                     isCurrent 
-                                                                        ? 'bg-gold/20 font-bold text-gold-ink border border-gold/30' 
+                                                                        ? 'bg-gold-tint font-bold text-gold-ink border border-gold-edge' 
                                                                         : 'hover:bg-wash opacity-80 hover:opacity-100'
                                                                 }`}
                                                             >
@@ -7687,7 +7706,7 @@ Output Schema:
                                                 key={f.id}
                                                 onClick={() => updateReaderSetting('fontFamily', f.id)}
                                                 className={`p-2 rounded-xl text-xs border text-left flex items-center justify-between transition-all cursor-pointer ${
-                                                    readerSettings.fontFamily === f.id ? 'bg-gold/15 border-gold font-bold text-gold-ink' : 'bg-wash border-transparent opacity-80 hover:opacity-100'
+                                                    readerSettings.fontFamily === f.id ? 'bg-gold-tint border-gold font-bold text-gold-ink' : 'bg-wash border-transparent opacity-80 hover:opacity-100'
                                                 }`}
                                             >
                                                 <span style={{ fontFamily: f.id }}>{f.label}</span>
@@ -7862,7 +7881,7 @@ Output Schema:
                                 <button
                                     key={filterKey}
                                     onClick={() => setLogFilter(filterKey)}
-                                    className={`px-3 py-1.5 rounded-lg font-bold capitalize transition-all ${logFilter === filterKey ? 'bg-btn text-btn-ink shadow-2xs' : 'text-ink-600 hover:text-ink-900 hover:bg-mist-50'}`}
+                                    className={`px-3 py-1.5 rounded-lg font-bold capitalize transition-all ${logFilter === filterKey ? 'bg-btn text-btn-ink shadow-2xs' : 'text-ink-600 hover:text-ink-900 hover:bg-lift'}`}
                                 >
                                     {filterKey}
                                 </button>
@@ -8079,7 +8098,7 @@ Output Schema:
                 <div className="bg-surface rounded-2xl border border-edge overflow-hidden shadow-sm hover:shadow-md transition-all">
                     <div className="p-5 border-b border-edge bg-inset flex justify-between items-center">
                         <div className="flex items-center gap-3.5">
-                            <div className="w-10 h-10 rounded-xl bg-gold/10 border border-gold/25 flex items-center justify-center text-gold-ink font-bold font-serif text-lg shrink-0 shadow-sm">
+                            <div className="w-10 h-10 rounded-xl bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink font-bold font-serif text-lg shrink-0 shadow-sm">
                                 {c.name ? c.name.charAt(0).toUpperCase() : <User size={18} />}
                             </div>
                             <div>
@@ -8985,8 +9004,8 @@ Output Schema:
                                                         onSelectModel(modelId);
                                                         setIsDropdownOpen(false);
                                                     }}
-                                                    className={`px-3.5 py-2.5 text-xs flex items-center justify-between cursor-pointer hover:bg-mist-50 transition-colors ${
-                                                        isSelected ? 'bg-gold/10 text-ink-900 font-semibold' : 'text-ink-700'
+                                                    className={`px-3.5 py-2.5 text-xs flex items-center justify-between cursor-pointer hover:bg-lift transition-colors ${
+                                                        isSelected ? 'bg-gold-tint text-ink-900 font-semibold' : 'text-ink-700'
                                                     }`}
                                                 >
                                                     <div className="flex flex-col min-w-0 pr-2">
@@ -9059,7 +9078,7 @@ Output Schema:
                                 }}
                                 className={`text-[11px] flex items-center gap-1 px-2.5 py-1 rounded-lg border font-bold transition-all ${
                                     isCurrentSaved 
-                                        ? 'bg-gold/15 border-gold/40 text-gold-ink hover:bg-gold/25' 
+                                        ? 'bg-gold-tint border-gold-edge text-gold-ink hover:bg-gold/25' 
                                         : 'bg-surface border-edge-strong text-ink-600 hover:text-ink-900 shadow-2xs'
                                 }`}
                             >
@@ -9080,7 +9099,7 @@ Output Schema:
                                         onClick={() => onSelectModel(model)}
                                         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer transition-all ${
                                             activeModel === model
-                                                ? 'bg-gold/15 border-gold/40 text-gold-ink font-semibold'
+                                                ? 'bg-gold-tint border-gold-edge text-gold-ink font-semibold'
                                                 : 'bg-surface border-edge-strong text-ink-600 hover:border-edge-300 shadow-2xs'
                                         }`}
                                     >
@@ -9456,7 +9475,7 @@ Output Schema:
                     }`}>
                         {cycleBtn}
                         {/* Decorative Inset Frame (Positioned safely right of the spine crease) */}
-                        <div className={`absolute top-3 bottom-3 right-3 left-6 sm:left-7 border ${isDark ? 'border-[#C9A96E]/20' : 'border-gold/25'} pointer-events-none`} />
+                        <div className={`absolute top-3 bottom-3 right-3 left-6 sm:left-7 border ${isDark ? 'border-[#C9A96E]/20' : 'border-gold-edge'} pointer-events-none`} />
 
                         {/* Left Vertical Title Spine Run (Clear of spine shadow) */}
                         <div className="h-full flex items-center justify-center z-10 pl-5 sm:pl-6">
@@ -9560,7 +9579,7 @@ Output Schema:
                         {cycleBtn}
                         {/* Ambient Golden Halo in Center */}
                         <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full blur-xl pointer-events-none ${
-                            isDark ? 'bg-[#C9A96E]/20' : 'bg-gold/20'
+                            isDark ? 'bg-[#C9A96E]/20' : 'bg-gold-tint'
                         }`} />
 
                         {/* Top Classical Filigree */}
@@ -9834,7 +9853,7 @@ Output Schema:
                                 Edition Primus
                             </span>
                             <span className={`w-4 h-4 rounded-xs flex items-center justify-center text-[8.5px] font-bold ${
-                                isDark ? 'bg-[#C9A96E]/20 text-[#C9A96E] border border-[#C9A96E]/40' : 'bg-gold/20 text-gold-ink border border-gold/40'
+                                isDark ? 'bg-[#C9A96E]/20 text-[#C9A96E] border border-[#C9A96E]/40' : 'bg-gold-tint text-gold-ink border border-gold-edge'
                             }`}>
                                 印
                             </span>
@@ -17739,7 +17758,7 @@ ${currentLoreList}
                         {/* Studio Logo Header */}
                         <div className="p-4 flex justify-between items-center border-b border-edge bg-surface/70 backdrop-blur-sm">
                             <div className="flex items-center gap-2.5">
-                                <div className="w-9 h-9 rounded-xl overflow-hidden border border-gold/30 shadow-sm flex-shrink-0 bg-stone-900 flex items-center justify-center">
+                                <div className="w-9 h-9 rounded-xl overflow-hidden border border-gold-edge shadow-sm flex-shrink-0 bg-stone-900 flex items-center justify-center">
                                     <img src="ELPIcon2.jpg" alt="EllipsisProse Icon" className="w-full h-full object-cover" />
                                 </div>
                                 <div>
@@ -17853,7 +17872,7 @@ ${currentLoreList}
                                                                         }}
                                                                         className={`w-full flex items-center justify-between text-[10.5px] font-semibold px-2 py-0.5 rounded text-left transition-colors ${
                                                                             (view === 'sequence_dashboard' || view === 'chapter_dashboard') && selectedSequence === seqIdx 
-                                                                                ? 'text-gold-ink bg-gold/15 font-bold' 
+                                                                                ? 'text-gold-ink bg-gold-tint font-bold' 
                                                                                 : 'text-ink-600 hover:text-ink-900 hover:bg-wash'
                                                                         }`}
                                                                     >
@@ -17879,7 +17898,7 @@ ${currentLoreList}
                                                                                 }}
                                                                                 className={`w-full text-left pl-3 pr-2 py-0.5 rounded text-[10px] flex items-center justify-between group transition-colors ${
                                                                                     isSelected 
-                                                                                        ? 'bg-gold/20 text-gold-ink font-semibold' 
+                                                                                        ? 'bg-gold-tint text-gold-ink font-semibold' 
                                                                                         : 'text-ink-500 hover:text-ink-800 hover:bg-wash'
                                                                                 }`}
                                                                             >
@@ -17955,7 +17974,7 @@ ${currentLoreList}
                             <button onClick={handleExport} className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Export JSON Database">
                                 <Download size={13} /> JSON
                             </button>
-                            <button onClick={handleExportEpub} className="flex-1 bg-gold/10 hover:bg-gold/20 border border-gold/30 text-gold-ink hover:text-gold-ink-deep py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Export Formatted EPUB Novel">
+                            <button onClick={handleExportEpub} className="flex-1 bg-gold-tint hover:bg-gold-tint border border-gold-edge text-gold-ink hover:text-gold-ink-deep py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Export Formatted EPUB Novel">
                                 <Book size={13} /> EPUB
                             </button>
                             <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Load .json or .epub">
@@ -17969,7 +17988,7 @@ ${currentLoreList}
                     <div className={`studio-main-workspace flex-1 flex flex-col h-full relative w-full ${view === 'reader' ? 'md:ml-0' : 'md:ml-72'} bg-void`}>
                         {/* STUDIO APP HEADER (iOS Safe Region & Mobile Momentum Scrollable) */}
                         {view !== 'reader' && (
-                            <header className="studio-top-header border-b border-edge bg-surface/85 backdrop-blur-md z-30 sticky top-0 shadow-2xs flex flex-col justify-center transition-all">
+                            <header className="studio-top-header border-b border-edge backdrop-blur-md z-30 sticky top-0 shadow-2xs flex flex-col justify-center transition-all">
                                 <div className="w-full flex items-center justify-between gap-3 overflow-x-auto no-scrollbar touch-scroll py-2 px-2 md:px-6 min-w-0" style={{ WebkitOverflowScrolling: 'touch' }}>
                                     <div className="flex items-center gap-2.5 shrink-0 min-w-0">
                                         <button 
@@ -17996,7 +18015,7 @@ ${currentLoreList}
                                                 {story.title || "Untitled Project"}
                                             </span>
                                             <ChevronRight size={12} className="text-ink-300 shrink-0" />
-                                            <span className="font-mono text-[10px] text-gold-ink bg-gold/10 border border-gold/20 px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 font-semibold whitespace-nowrap">
+                                            <span className="font-mono text-[10px] text-gold-ink bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 font-semibold whitespace-nowrap">
                                                 {view.replace('_', ' ')}
                                             </span>
                                         </div>
@@ -18012,7 +18031,7 @@ ${currentLoreList}
                                     <div className="flex items-center gap-2 shrink-0 ml-auto pl-2">
                                         <button
                                             onClick={() => enterReaderMode()}
-                                            className="px-3 py-1.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 border shrink-0 bg-gold/10 hover:bg-gold/20 border-gold/30 text-gold-ink cursor-pointer"
+                                            className="px-3 py-1.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 border shrink-0 bg-gold-tint hover:bg-gold-tint border-gold-edge text-gold-ink cursor-pointer"
                                             title="Enter Ebook Reading Mode"
                                         >
                                             <BookOpen size={13} />
@@ -18101,7 +18120,7 @@ ${currentLoreList}
 
                             {view === 'setup' && (
                                 <div className="max-w-xl mx-auto py-16 text-center animate-fade-in">
-                                    <div className="w-16 h-16 rounded-2xl bg-gold/10 border border-gold/30 text-gold-ink flex items-center justify-center mx-auto mb-6 shadow-sm">
+                                    <div className="w-16 h-16 rounded-2xl bg-gold-tint border border-gold-edge text-gold-ink flex items-center justify-center mx-auto mb-6 shadow-sm">
                                         <Sparkles size={28} />
                                     </div>
                                     <h1 className="text-3xl font-bold font-serif text-ink-900 mb-2 tracking-tight">New Story Setup</h1>
@@ -18118,7 +18137,7 @@ ${currentLoreList}
                                     <div className="mb-4 relative group">
                                         <div className="absolute right-3.5 top-3.5 text-ink-400 pointer-events-none"><ChevronDown size={15} /></div>
                                         <select
-                                            className="w-full bg-surface border border-edge-strong rounded-xl p-3.5 pr-10 text-xs text-ink-700 focus:border-gold outline-none appearance-none cursor-pointer hover:bg-mist-50 transition-colors shadow-2xs font-medium"
+                                            className="w-full bg-surface border border-edge-strong rounded-xl p-3.5 pr-10 text-xs text-ink-700 focus:border-gold outline-none appearance-none cursor-pointer hover:bg-lift transition-colors shadow-2xs font-medium"
                                             onChange={(e) => {
                                                 const val = e.target.value;
                                                 if (val === 'random') {
@@ -18180,7 +18199,7 @@ ${currentLoreList}
                                         <button 
                                             onClick={() => initStory(false)} 
                                             disabled={loading || !inputConcept} 
-                                            className="flex-1 bg-surface border border-edge-300 hover:border-stone-400 text-ink-900 py-3.5 rounded-xl font-bold transition-all shadow-2xs hover:bg-mist-50 disabled:opacity-50"
+                                            className="flex-1 bg-surface border border-edge-300 hover:border-stone-400 text-ink-900 py-3.5 rounded-xl font-bold transition-all shadow-2xs hover:bg-lift disabled:opacity-50"
                                         >
                                             Initialize Story
                                         </button>
@@ -18280,7 +18299,7 @@ ${currentLoreList}
                                                         <button
                                                             onClick={generateCoverImage}
                                                             disabled={loadingCover}
-                                                            className="flex-1 bg-surface hover:bg-mist-50 border border-edge-strong text-ink-800 py-2 px-3 rounded-xl text-xs flex justify-center items-center gap-1.5 transition-all font-semibold shadow-2xs hover:border-gold/50"
+                                                            className="flex-1 bg-surface hover:bg-lift border border-edge-strong text-ink-800 py-2 px-3 rounded-xl text-xs flex justify-center items-center gap-1.5 transition-all font-semibold shadow-2xs hover:border-gold/50"
                                                         >
                                                             {loadingCover ? (
                                                                 <>
@@ -18295,7 +18314,7 @@ ${currentLoreList}
                                                         <button
                                                             onClick={() => coverUploadInputRef.current.click()}
                                                             disabled={loadingCover}
-                                                            className="flex-1 bg-surface hover:bg-mist-50 border border-edge-strong text-ink-800 py-2 px-3 rounded-xl text-xs flex justify-center items-center gap-1.5 transition-all font-semibold shadow-2xs"
+                                                            className="flex-1 bg-surface hover:bg-lift border border-edge-strong text-ink-800 py-2 px-3 rounded-xl text-xs flex justify-center items-center gap-1.5 transition-all font-semibold shadow-2xs"
                                                         >
                                                             <Upload size={13} className="text-ink-500" /> Upload
                                                         </button>
@@ -18565,7 +18584,7 @@ ${currentLoreList}
                                                     </div>
                                                     <div className="space-y-3.5">
                                                         {(story.threads || []).map((t, i) => (
-                                                            <div key={t.id} className="p-4 sm:p-5 bg-inset rounded-xl border border-edge-strong space-y-2 hover:border-gold/40 transition-colors">
+                                                            <div key={t.id} className="p-4 sm:p-5 bg-inset rounded-xl border border-edge-strong space-y-2 hover:border-gold-edge transition-colors">
                                                                 <div className="font-bold font-serif text-ink-900 text-sm flex justify-between items-center pb-2 border-b border-edge-strong">
                                                                     <div className="flex items-center gap-2">
                                                                         <span className="w-2 h-2 rounded-full bg-gold" />
@@ -18664,7 +18683,7 @@ ${currentLoreList}
                                                                 else if (cat === 'relationship') badgeClass = "bg-blush-tint-strong text-blush-800 border-blush-edge";
 
                                                                 return (
-                                                                    <div key={idx} className="p-4 sm:p-5 bg-inset rounded-xl border border-edge-strong space-y-2 group hover:border-gold/40 transition-all">
+                                                                    <div key={idx} className="p-4 sm:p-5 bg-inset rounded-xl border border-edge-strong space-y-2 group hover:border-gold-edge transition-all">
                                                                         <div className="flex justify-between items-start pb-2 border-b border-edge-strong">
                                                                             <div className="flex items-center gap-2.5 flex-wrap">
                                                                                 <span className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-md font-mono border ${badgeClass}`}>{fact.category || "Fact"}</span>
@@ -18800,7 +18819,7 @@ ${currentLoreList}
                                         <div>
                                             <h2 className="text-2xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
                                                 <Globe className="text-gold-ink" size={22} /> World Lore & Semantic RAG Database
-                                                {ragStatus === 'indexing' && <span className="text-[10px] font-mono bg-gold/10 border border-gold/30 text-gold-ink px-2.5 py-0.5 rounded-full animate-pulse">Indexing...</span>}
+                                                {ragStatus === 'indexing' && <span className="text-[10px] font-mono bg-gold-tint border border-gold-edge text-gold-ink px-2.5 py-0.5 rounded-full animate-pulse">Indexing...</span>}
                                             </h2>
                                             <p className="text-xs text-ink-500 mt-1">Ingest world-building bibles, historical archives, dossiers, and rulesets into local TF-IDF / vector memory for continuous RAG continuity retrieval.</p>
                                         </div>
@@ -18850,14 +18869,14 @@ ${currentLoreList}
                                                     });
                                                 }}
                                                 disabled={ragStatus === 'indexing'}
-                                                className="text-xs bg-surface hover:bg-mist-50 border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs"
+                                                className="text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs"
                                             >
                                                 <Plus size={14} /> Add Fact
                                             </button>
                                             <button
                                                 onClick={() => ingestLoreBatch(story.lore, { clearExisting: true })}
                                                 disabled={ragStatus === 'indexing' || (!apiKey && !openRouterKey)}
-                                                className="text-xs bg-surface hover:bg-mist-50 border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50"
+                                                className="text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50"
                                                 title="Re-embed all lore items into vector database"
                                             >
                                                 <RefreshCw size={12} className={ragStatus === 'indexing' ? 'animate-spin text-gold-ink' : ''} /> Re-Index RAG
@@ -18867,7 +18886,7 @@ ${currentLoreList}
 
                                     {(!story.lore || story.lore.length === 0) ? (
                                         <div className="text-center py-14 border border-dashed border-edge-strong rounded-2xl bg-surface p-8 space-y-4 shadow-sm">
-                                            <div className="w-14 h-14 rounded-2xl bg-gold/10 border border-gold/30 flex items-center justify-center mx-auto text-gold-ink">
+                                            <div className="w-14 h-14 rounded-2xl bg-gold-tint border border-gold-edge flex items-center justify-center mx-auto text-gold-ink">
                                                 <Globe size={28} />
                                             </div>
                                             <div className="space-y-1.5">
@@ -18886,7 +18905,7 @@ ${currentLoreList}
                                     ) : (
                                         <div className="grid gap-4">
                                             {story.lore.map((l, i) => (
-                                                <div key={i} className="bg-surface rounded-2xl border border-edge p-6 transition-all hover:border-gold/40 shadow-sm space-y-3">
+                                                <div key={i} className="bg-surface rounded-2xl border border-edge p-6 transition-all hover:border-gold-edge shadow-sm space-y-3">
                                                     <div className="flex flex-col md:flex-row justify-between items-start gap-3">
                                                         <h3 className="font-bold text-base font-serif text-ink-900 flex items-center gap-2">
                                                             {l.topic}
@@ -19018,7 +19037,7 @@ ${currentLoreList}
                                             </div>
                                             <button
                                                 onClick={() => setView('cast')}
-                                                className="text-xs bg-surface hover:bg-mist-50 text-ink-700 font-bold px-4 py-2.5 rounded-xl transition-colors border border-edge-strong shadow-2xs"
+                                                className="text-xs bg-surface hover:bg-lift text-ink-700 font-bold px-4 py-2.5 rounded-xl transition-colors border border-edge-strong shadow-2xs"
                                             >
                                                 Go to Cast Roster
                                             </button>
@@ -19099,7 +19118,7 @@ ${currentLoreList}
                                                     </table>
                                                 </div>
                                                 <div className="p-4 border-t border-edge-strong bg-inset flex gap-4 text-[10px] text-ink-500 font-mono">
-                                                    <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-gold/20 border border-gold/40 inline-block"></span> Established</div>
+                                                    <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-gold-tint border border-gold-edge inline-block"></span> Established</div>
                                                     <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-surface border border-edge-strong inline-block"></span> Not Defined</div>
                                                     <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-mist-100 border border-edge-strong inline-block"></span> Diagonal (Self)</div>
                                                 </div>
@@ -19152,7 +19171,7 @@ ${currentLoreList}
                                                                             history: [...(baseRel.history || []), histEntry]
                                                                         }));
                                                                     }}
-                                                                    className="text-[10px] bg-surface hover:bg-mist-50 border border-edge-strong text-ink-700 font-bold px-2.5 py-1 rounded-lg transition-colors shadow-2xs"
+                                                                    className="text-[10px] bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-2.5 py-1 rounded-lg transition-colors shadow-2xs"
                                                                 >
                                                                     Edit Active
                                                                 </button>
@@ -19321,7 +19340,7 @@ ${currentLoreList}
                                                         let typeColor = 'bg-mist-100 text-ink-700 border-edge-strong';
                                                         if (act.action_type === 'MODIFY_ACT') typeColor = 'bg-azure-tint text-azure-800 border-azure-edge';
                                                         if (act.action_type === 'MODIFY_SEQUENCE') typeColor = 'bg-iris-tint text-iris-800 border-iris-edge';
-                                                        if (act.action_type === 'MODIFY_SCENE') typeColor = 'bg-gold/10 text-gold-ink border-gold/30';
+                                                        if (act.action_type === 'MODIFY_SCENE') typeColor = 'bg-gold-tint text-gold-ink border-gold-edge';
                                                         if (act.action_type === 'ADD_SCENE') typeColor = 'bg-sage-tint text-sage-800 border-sage-edge';
                                                         if (act.action_type === 'DELETE_SCENE') typeColor = 'bg-blush-tint text-blush-800 border-blush-edge';
                                                         if (act.action_type === 'MODIFY_BEAT') typeColor = 'bg-ember-tint text-ember-800 border-ember-edge';
@@ -19813,7 +19832,7 @@ ${currentLoreList}
                                                 <div className="p-6 bg-inset border-t border-edge flex justify-end gap-3">
                                                     <button
                                                         onClick={() => setDirectivePlan(null)}
-                                                        className="px-4 py-2 rounded-xl border border-edge-strong bg-surface text-ink-600 hover:text-ink-900 text-xs hover:bg-mist-50 transition-colors shadow-2xs font-semibold"
+                                                        className="px-4 py-2 rounded-xl border border-edge-strong bg-surface text-ink-600 hover:text-ink-900 text-xs hover:bg-lift transition-colors shadow-2xs font-semibold"
                                                         disabled={isExecutingDirective}
                                                     >
                                                         Cancel
@@ -19911,7 +19930,7 @@ ${currentLoreList}
                                                             }
                                                         }}
                                                         disabled={loading}
-                                                        className="px-3.5 py-2 rounded-xl font-bold text-xs bg-surface hover:bg-mist-50 border border-edge-strong text-ink-700 shadow-2xs transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
+                                                        className="px-3.5 py-2 rounded-xl font-bold text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 shadow-2xs transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
                                                     >
                                                         <RefreshCw size={12} /> Re-Structure
                                                     </button>
@@ -19932,7 +19951,7 @@ ${currentLoreList}
                                     {/* Empty Acts Callout Banner when no acts exist */}
                                     {(!story.acts || story.acts.length === 0) && (
                                         <div className="p-12 bg-surface rounded-2xl border border-edge text-center space-y-4 shadow-sm animate-fade-in">
-                                            <div className="w-14 h-14 rounded-2xl bg-gold/10 border border-gold/30 flex items-center justify-center mx-auto text-gold-ink shadow-sm">
+                                            <div className="w-14 h-14 rounded-2xl bg-gold-tint border border-gold-edge flex items-center justify-center mx-auto text-gold-ink shadow-sm">
                                                 <Layers size={26} />
                                             </div>
                                             <div className="space-y-1.5">
@@ -19981,20 +20000,20 @@ ${currentLoreList}
                                                     <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                                                         <div className="flex-1 min-w-0">
                                                             <div className="flex items-center justify-between gap-2 mb-2">
-                                                                <span className="text-[10px] font-mono font-bold text-gold-ink uppercase tracking-wider bg-gold/10 border border-gold/20 px-2.5 py-0.5 rounded-full">
+                                                                <span className="text-[10px] font-mono font-bold text-gold-ink uppercase tracking-wider bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full">
                                                                     Act {actNum} Architecture
                                                                 </span>
                                                                 {actSequences.length > 0 && (
                                                                     <div className="flex items-center gap-2">
                                                                         <button 
                                                                             onClick={() => toggleAllSequencesInAct(idx, true)}
-                                                                            className="text-[10px] text-ink-700 hover:text-ink-900 font-semibold px-2.5 py-1 rounded-lg bg-surface border border-edge-strong hover:bg-mist-50 transition-colors shadow-2xs"
+                                                                            className="text-[10px] text-ink-700 hover:text-ink-900 font-semibold px-2.5 py-1 rounded-lg bg-surface border border-edge-strong hover:bg-lift transition-colors shadow-2xs"
                                                                         >
                                                                             Expand All
                                                                         </button>
                                                                         <button 
                                                                             onClick={() => toggleAllSequencesInAct(idx, false)}
-                                                                            className="text-[10px] text-ink-500 hover:text-ink-800 font-semibold px-2.5 py-1 rounded-lg bg-surface border border-edge-strong hover:bg-mist-50 transition-colors shadow-2xs"
+                                                                            className="text-[10px] text-ink-500 hover:text-ink-800 font-semibold px-2.5 py-1 rounded-lg bg-surface border border-edge-strong hover:bg-lift transition-colors shadow-2xs"
                                                                         >
                                                                             Collapse All
                                                                         </button>
@@ -20032,7 +20051,7 @@ ${currentLoreList}
                                                         }).length;
 
                                                         return (
-                                                            <div key={seqIdx} className={`transition-colors ${isExpanded ? 'bg-surface border-l-4 border-gold' : 'bg-inset hover:bg-mist-50 border-l-4 border-transparent'}`}>
+                                                            <div key={seqIdx} className={`transition-colors ${isExpanded ? 'bg-surface border-l-4 border-gold' : 'bg-inset hover:bg-lift border-l-4 border-transparent'}`}>
                                                                 <div 
                                                                     onClick={() => toggleSequence(seqIdx)}
                                                                     className="p-5 cursor-pointer flex flex-col md:flex-row md:justify-between md:items-center gap-3 select-none"
@@ -20046,7 +20065,7 @@ ${currentLoreList}
                                                                         </button>
                                                                         <div className="flex-1 min-w-0">
                                                                             <div className="flex flex-wrap items-center gap-2 mb-1">
-                                                                                <span className="text-[10px] font-bold text-gold-ink uppercase bg-gold/10 border border-gold/25 px-2.5 py-0.5 rounded-full font-mono">
+                                                                                <span className="text-[10px] font-bold text-gold-ink uppercase bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full font-mono">
                                                                                     Sequence {sequence.number || seqIdx + 1}
                                                                                 </span>
                                                                                 {sequence.sequence_function && (
@@ -20151,7 +20170,7 @@ ${currentLoreList}
                                             <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                                                 <div className="flex-1 min-w-0">
                                                     <div className="flex flex-wrap items-center gap-2 mb-2">
-                                                        <span className="text-[10px] font-mono font-bold text-gold-ink uppercase bg-gold/10 border border-gold/30 px-2.5 py-0.5 rounded-full">
+                                                        <span className="text-[10px] font-mono font-bold text-gold-ink uppercase bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full">
                                                             Act {sequence.parent_act || actForSequence(sequence.number)} — Sequence {sequence.number || selectedSequence + 1}
                                                         </span>
                                                         {sequence.sequence_function && (
@@ -20178,7 +20197,7 @@ ${currentLoreList}
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0 flex-wrap self-start">
-                                                    <button onClick={() => enterReaderMode(selectedSequence, 0)} className="bg-surface hover:bg-mist-50 text-ink-800 border border-edge-strong px-3.5 py-2.5 rounded-xl font-bold text-xs shadow-2xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer">
+                                                    <button onClick={() => enterReaderMode(selectedSequence, 0)} className="bg-surface hover:bg-lift text-ink-800 border border-edge-strong px-3.5 py-2.5 rounded-xl font-bold text-xs shadow-2xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer">
                                                         <BookOpen size={13} className="text-gold-ink" /> Read Sequence
                                                     </button>
                                                     <button onClick={() => requestSceneWeaving(selectedSequence)} disabled={loading} className="shrink-0 bg-btn hover:bg-btn-hover text-btn-ink px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed self-start">
@@ -20243,7 +20262,7 @@ ${currentLoreList}
                                                 </button>
                                                 
                                                 <div className="flex flex-wrap items-center gap-2 mb-3">
-                                                    <span className="text-[10px] font-mono font-bold text-gold-ink uppercase bg-gold/10 border border-gold/30 px-2.5 py-0.5 rounded-full">
+                                                    <span className="text-[10px] font-mono font-bold text-gold-ink uppercase bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full">
                                                         Seq {currentSequence ? currentSequence.number : selectedSequence + 1} — Scene {currentScene.number || selectedScene + 1}
                                                     </span>
 
@@ -20340,10 +20359,10 @@ ${currentLoreList}
                                                 <button onClick={() => enterReaderMode(selectedSequence, selectedScene)} className="bg-mist-50 hover:bg-wash border border-edge-strong px-3 py-2 rounded-xl text-ink-800 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer" title="Read this scene in Ebook Reader Mode">
                                                     <BookOpen size={14} className="text-gold-ink" /> Read Scene
                                                 </button>
-                                                <button onClick={copyFullScene} className="bg-surface hover:bg-mist-50 border border-edge-strong p-2.5 rounded-xl text-ink-700 hover:text-ink-900 shadow-2xs hover:shadow-xs transition-colors" title="Copy Scene Prose">
+                                                <button onClick={copyFullScene} className="bg-surface hover:bg-lift border border-edge-strong p-2.5 rounded-xl text-ink-700 hover:text-ink-900 shadow-2xs hover:shadow-xs transition-colors" title="Copy Scene Prose">
                                                     <Copy size={16} />
                                                 </button>
-                                                <button onClick={() => requestBeatGeneration(selectedSequence, selectedScene)} disabled={loading} className="bg-surface hover:bg-mist-50 text-ink-800 border border-edge-strong hover:border-edge-300 px-4 py-2 rounded-xl font-bold text-xs shadow-2xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                                                <button onClick={() => requestBeatGeneration(selectedSequence, selectedScene)} disabled={loading} className="bg-surface hover:bg-lift text-ink-800 border border-edge-strong hover:border-edge-300 px-4 py-2 rounded-xl font-bold text-xs shadow-2xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all">
                                                     <Sparkles size={14} className="text-gold-ink" /> {Array.isArray(story.beats?.[writerBeatKey]) && story.beats[writerBeatKey].length > 0 ? 'Re-Do Beats' : 'Draft Beats'}
                                                 </button>
                                                 <button onClick={() => handleAutoGenerateScene(selectedSequence, selectedScene)} disabled={loading} className="bg-btn hover:bg-btn-hover text-btn-ink px-4 py-2 rounded-xl font-bold text-xs shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed transition-all" title="Auto-write prose for all beats">
@@ -20371,7 +20390,7 @@ ${currentLoreList}
                                                                 <Layers size={16} className="text-gold-ink group-hover:scale-110 transition-transform" />
                                                                 <span className="text-xs font-bold uppercase tracking-wider font-mono text-ink-800">Beats ({beatsList.length})</span>
                                                             </div>
-                                                            <span className="text-[10px] text-gold-ink bg-gold/10 border border-gold/30 px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
+                                                            <span className="text-[10px] text-gold-ink bg-gold-tint border border-gold-edge px-2 py-0.5 rounded-full font-semibold flex items-center gap-1">
                                                                 <ChevronRight size={12} /> Show
                                                             </span>
                                                         </button>
@@ -20388,7 +20407,7 @@ ${currentLoreList}
                                                         </div>
                                                         <button
                                                             onClick={() => toggleBeats(writerBeatKey)}
-                                                            className="text-[10px] text-ink-500 hover:text-ink-900 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface hover:bg-mist-50 border border-edge-strong transition-colors font-medium cursor-pointer shadow-2xs"
+                                                            className="text-[10px] text-ink-500 hover:text-ink-900 flex items-center gap-1 px-2.5 py-1 rounded-lg bg-surface hover:bg-lift border border-edge-strong transition-colors font-medium cursor-pointer shadow-2xs"
                                                             title="Collapse Beats panel to focus on scene prose"
                                                         >
                                                             <ChevronDown size={12} /> Collapse
@@ -20673,7 +20692,7 @@ ${currentLoreList}
                                                                 </div>
 
                                                                 <div className="flex items-center gap-2">
-                                                                    <button onClick={() => enterReaderMode(selectedSequence, selectedScene)} className="bg-surface hover:bg-mist-50 border border-edge-strong px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors shadow-2xs text-ink-800 cursor-pointer" title="Open in Ebook Reader Mode">
+                                                                    <button onClick={() => enterReaderMode(selectedSequence, selectedScene)} className="bg-surface hover:bg-lift border border-edge-strong px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors shadow-2xs text-ink-800 cursor-pointer" title="Open in Ebook Reader Mode">
                                                                         <BookOpen size={12} className="text-gold-ink" /> Read
                                                                     </button>
                                                                     <button onClick={() => handleAutoGenerateScene(selectedSequence, selectedScene)} disabled={loading} className="bg-btn hover:bg-btn-hover text-btn-ink px-3.5 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors shadow-2xs">
@@ -20685,7 +20704,7 @@ ${currentLoreList}
                                                                             newProse[sId] = { ...newProse[sId], final: val };
                                                                             return { ...prev, prose: newProse };
                                                                         });
-                                                                    })} className="p-1.5 rounded-xl bg-surface border border-edge-strong hover:bg-mist-50 text-ink-700 shadow-2xs" />
+                                                                    })} className="p-1.5 rounded-xl bg-surface border border-edge-strong hover:bg-lift text-ink-700 shadow-2xs" />
                                                                 </div>
                                                             </div>
 
@@ -20706,7 +20725,7 @@ ${currentLoreList}
                                                 } else {
                                                     return (
                                                         <div className="bg-surface rounded-2xl p-12 text-center border border-edge shadow-sm min-h-[50vh] flex flex-col justify-center items-center">
-                                                            <div className="w-16 h-16 rounded-2xl bg-gold/10 border border-gold/30 text-gold-ink flex items-center justify-center mb-4">
+                                                            <div className="w-16 h-16 rounded-2xl bg-gold-tint border border-gold-edge text-gold-ink flex items-center justify-center mb-4">
                                                                 <PenTool className="w-7 h-7" />
                                                             </div>
                                                             <h3 className="text-xl font-bold font-serif text-ink-900 mb-2">Manuscript Canvas Empty</h3>
@@ -20717,7 +20736,7 @@ ${currentLoreList}
                                                                 <button
                                                                     onClick={() => requestBeatGeneration(selectedSequence, selectedScene)}
                                                                     disabled={loading}
-                                                                    className="px-4 py-2 bg-surface hover:bg-mist-50 border border-edge-strong text-ink-800 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-2xs"
+                                                                    className="px-4 py-2 bg-surface hover:bg-lift border border-edge-strong text-ink-800 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shadow-2xs"
                                                                 >
                                                                     <Sparkles size={14} className="text-gold-ink" /> Draft Beats First
                                                                 </button>
@@ -20762,7 +20781,7 @@ ${currentLoreList}
                                             </p>
                                         </div>
                                         <div className="flex items-center gap-3">
-                                            <div className={`px-3 py-1.5 rounded-full text-xs font-bold font-mono flex items-center gap-2 border ${currentPipelineStep !== null ? 'bg-gold/15 text-gold-ink border-gold/40 animate-pulse' : 'bg-mist-100 text-ink-500 border-edge-strong'}`}>
+                                            <div className={`px-3 py-1.5 rounded-full text-xs font-bold font-mono flex items-center gap-2 border ${currentPipelineStep !== null ? 'bg-gold-tint text-gold-ink border-gold-edge animate-pulse' : 'bg-mist-100 text-ink-500 border-edge-strong'}`}>
                                                 <span className={`w-2 h-2 rounded-full ${currentPipelineStep !== null ? 'bg-gold animate-ping' : 'bg-stone-400'}`}></span>
                                                 {currentPipelineStep !== null ? `Step ${currentPipelineStep} Active` : 'Pipeline Idle'}
                                             </div>
@@ -20831,7 +20850,7 @@ ${currentLoreList}
                                                                         }`}
                                                                     >
                                                                         <div className="flex items-center justify-between gap-2 mb-2">
-                                                                            <span className="step-num text-[11px] font-bold text-gold-ink bg-gold/10 px-2.5 py-0.5 rounded-full border border-gold/30 font-mono">
+                                                                            <span className="step-num text-[11px] font-bold text-gold-ink bg-gold-tint px-2.5 py-0.5 rounded-full border border-gold-edge font-mono">
                                                                                 Step {step.id}
                                                                             </span>
                                                                             <span className="step-tier text-[11px] text-ink-500 font-semibold flex items-center gap-1 font-mono">
@@ -20888,7 +20907,7 @@ ${currentLoreList}
                                                         <div className="border-b border-edge-strong pb-3.5 flex flex-wrap items-center justify-between gap-2">
                                                             <div>
                                                                 <div className="flex items-center gap-2">
-                                                                    <span className="text-[10px] font-bold text-gold-ink bg-gold/10 border border-gold/30 px-2.5 py-0.5 rounded-full uppercase tracking-wider font-mono">
+                                                                    <span className="text-[10px] font-bold text-gold-ink bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full uppercase tracking-wider font-mono">
                                                                         Step {activeStepId}
                                                                     </span>
                                                                     {isFollowingLive && (
@@ -20902,7 +20921,7 @@ ${currentLoreList}
                                                             {isInspectingDifferent ? (
                                                                 <button
                                                                     onClick={() => setInspectedStepId(null)}
-                                                                    className="px-3 py-1 rounded-xl text-xs font-bold bg-gold/15 text-gold-ink border border-gold/30 hover:bg-gold/25 transition-colors flex items-center gap-1"
+                                                                    className="px-3 py-1 rounded-xl text-xs font-bold bg-gold-tint text-gold-ink border border-gold-edge hover:bg-gold/25 transition-colors flex items-center gap-1"
                                                                     title="Snap back to tracking current running pipeline stage"
                                                                 >
                                                                     <Workflow size={13} className="animate-spin text-gold-ink" />
@@ -20911,7 +20930,7 @@ ${currentLoreList}
                                                             ) : (
                                                                 <button
                                                                     onClick={() => setInspectedStepId(inspectedStepId === activeStepId ? null : activeStepId)}
-                                                                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 border ${inspectedStepId === activeStepId ? 'bg-btn text-btn-ink border-[#1C1917]' : 'bg-surface text-ink-700 border-edge-strong hover:bg-mist-50'}`}
+                                                                    className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1 border ${inspectedStepId === activeStepId ? 'bg-btn text-btn-ink border-[#1C1917]' : 'bg-surface text-ink-700 border-edge-strong hover:bg-lift'}`}
                                                                 >
                                                                     <Workflow size={13} />
                                                                     {inspectedStepId === activeStepId ? 'Inspected' : 'Inspect'}
@@ -21386,7 +21405,7 @@ ${currentLoreList}
                             {view === 'settings' && (
                                 <div className="max-w-2xl mx-auto py-8 animate-fade-in pb-24">
                                     <div className="flex items-center gap-3 mb-6">
-                                        <div className="p-2.5 rounded-xl bg-gold/10 border border-gold/30 text-gold-ink">
+                                        <div className="p-2.5 rounded-xl bg-gold-tint border border-gold-edge text-gold-ink">
                                             <Settings size={22} />
                                         </div>
                                         <div>
