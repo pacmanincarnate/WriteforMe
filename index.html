@@ -46,37 +46,55 @@
                        utilities + overrides render today. */
                     colors: {
                         void: 'var(--bg-void)',
-                        surface: 'var(--bg-surface)',
+                        surface: 'rgb(var(--surface-rgb) / <alpha-value>)',
                         'surface-elevated': 'var(--bg-surface-elevated)',
                         'surface-active': 'var(--bg-surface-active)',
                         'surface-subtle': 'var(--bg-surface-subtle)',
                         sidebar: 'var(--bg-sidebar)',
-                        inset: 'var(--bg-inset)',
-                        edge: 'var(--border-subtle)',
-                        'edge-strong': 'var(--edge-strong)',
-                        'edge-highlight': 'var(--border-highlight)',
+                        inset: 'rgb(var(--inset-rgb) / <alpha-value>)',
+                        mist: {
+                            50: 'rgb(var(--mist-50-rgb) / <alpha-value>)',
+                            100: 'rgb(var(--mist-100-rgb) / <alpha-value>)',
+                            200: 'rgb(var(--mist-200-rgb) / <alpha-value>)',
+                            300: 'rgb(var(--mist-300-rgb) / <alpha-value>)',
+                        },
+                        wash: { DEFAULT: 'var(--wash)', strong: 'var(--wash-strong)' },
+                        edge: {
+                            DEFAULT: 'var(--border-subtle)',
+                            soft: 'var(--edge-soft)',
+                            strong: 'var(--edge-strong)',
+                            300: 'var(--edge-300)',
+                            bold: 'var(--edge-bold)',
+                            highlight: 'var(--border-highlight)',
+                        },
                         gold: 'rgb(var(--accent-gold-rgb) / <alpha-value>)',
-                        'gold-ink': 'var(--gold-ink)',
-                        sage: 'var(--accent-emerald)',
+                        'gold-ink': { DEFAULT: 'var(--gold-ink)', deep: 'var(--gold-ink-deep)' },
                         ink: {
                             DEFAULT: 'var(--text-primary)',
+                            950: 'var(--ink-950)',
                             900: 'var(--ink-900)',
                             800: 'var(--ink-800)',
                             700: 'var(--ink-700)',
                             600: 'var(--ink-600)',
                             500: 'var(--ink-500)',
                             400: 'var(--ink-400)',
+                            300: 'var(--ink-300)',
                         },
                         btn: {
                             DEFAULT: 'var(--btn-bg)',
                             hover: 'var(--btn-bg-hover)',
                             ink: 'var(--btn-ink)',
+                            accent: 'var(--btn-accent)',
                         },
-                        positive: {
-                            tint: 'var(--positive-tint)',
-                            edge: 'var(--positive-edge)',
-                            ink: 'var(--positive-ink)',
-                        },
+                        ember: { tint: 'var(--ember-tint)', 'tint-strong': 'var(--ember-tint-strong)', edge: 'var(--ember-edge)', 600: 'var(--ember-600)', 700: 'var(--ember-700)', 800: 'var(--ember-800)', 900: 'var(--ember-900)', 950: 'var(--ember-950)' },
+                        blush: { tint: 'var(--blush-tint)', 'tint-strong': 'var(--blush-tint-strong)', edge: 'var(--blush-edge)', 600: 'var(--blush-600)', 700: 'var(--blush-700)', 800: 'var(--blush-800)', 900: 'var(--blush-900)', 950: 'var(--blush-950)' },
+                        sage: { DEFAULT: 'var(--accent-emerald)', tint: 'var(--sage-tint)', 'tint-strong': 'var(--sage-tint-strong)', edge: 'var(--sage-edge)', 600: 'var(--sage-600)', 700: 'var(--sage-700)', 800: 'var(--sage-800)', 900: 'var(--sage-900)' },
+                        plum: { tint: 'var(--plum-tint)', 'tint-strong': 'var(--plum-tint-strong)', edge: 'var(--plum-edge)', 600: 'var(--plum-600)', 700: 'var(--plum-700)', 800: 'var(--plum-800)', 900: 'var(--plum-900)', 950: 'var(--plum-950)' },
+                        azure: { tint: 'var(--azure-tint)', edge: 'var(--azure-edge)', 700: 'var(--azure-700)', 800: 'var(--azure-800)', 900: 'var(--azure-900)' },
+                        iris: { tint: 'var(--iris-tint)', 'tint-strong': 'var(--iris-tint-strong)', edge: 'var(--iris-edge)', 700: 'var(--iris-700)', 800: 'var(--iris-800)' },
+                        lagoon: { tint: 'var(--lagoon-tint)', 'tint-strong': 'var(--lagoon-tint-strong)', edge: 'var(--lagoon-edge)', 800: 'var(--lagoon-800)' },
+                        tangerine: { tint: 'var(--tangerine-tint)', edge: 'var(--tangerine-edge)', 800: 'var(--tangerine-800)' },
+                        orchid: { tint: 'var(--orchid-tint)', edge: 'var(--orchid-edge)', 800: 'var(--orchid-800)' },
                     }
                 }
             }
@@ -159,9 +177,74 @@
             --btn-bg: #1C1917;
             --btn-bg-hover: #292524;
             --btn-ink: #FFFFFF;
-            --positive-tint: #ECFDF5;
-            --positive-edge: #A7F3D0;
-            --positive-ink: #065F46;
+
+            /* Full token system (see tailwind.config colors). Light values reproduce the utilities they replace. */
+            --surface-rgb: 255 255 255;
+            --inset-rgb: 250 248 245;
+            --mist-50-rgb: 250 250 249;
+            --mist-100-rgb: 245 245 244;
+            --mist-200-rgb: 231 229 228;
+            --mist-300-rgb: 214 211 209;
+            --wash: rgba(0, 0, 0, 0.04);
+            --wash-strong: rgba(0, 0, 0, 0.10);
+            --edge-soft: #F5F5F4;
+            --edge-300: #D6D3D1;
+            --edge-bold: rgba(0, 0, 0, 0.10);
+            --ink-950: #0C0A09;
+            --ink-300: #D6D3D1;
+            --gold-ink-deep: #735522;
+            --btn-accent: #C9A96E;
+            --ember-tint: #FFFBEB;
+            --ember-tint-strong: #FEF3C7;
+            --ember-edge: #FDE68A;
+            --ember-600: #D97706;
+            --ember-700: #B45309;
+            --ember-800: #92400E;
+            --ember-900: #78350F;
+            --ember-950: #451A03;
+            --blush-tint: #FFF1F2;
+            --blush-tint-strong: #FFE4E6;
+            --blush-edge: #FECDD3;
+            --blush-600: #E11D48;
+            --blush-700: #BE123C;
+            --blush-800: #9F1239;
+            --blush-900: #881337;
+            --blush-950: #4C0519;
+            --sage-tint: #ECFDF5;
+            --sage-tint-strong: #D1FAE5;
+            --sage-edge: #A7F3D0;
+            --sage-600: #059669;
+            --sage-700: #047857;
+            --sage-800: #065F46;
+            --sage-900: #064E3B;
+            --plum-tint: #FAF5FF;
+            --plum-tint-strong: #F3E8FF;
+            --plum-edge: #E9D5FF;
+            --plum-600: #9333EA;
+            --plum-700: #7E22CE;
+            --plum-800: #6B21A8;
+            --plum-900: #581C87;
+            --plum-950: #3B0764;
+            --azure-tint: #F0F9FF;
+            --azure-edge: #BAE6FD;
+            --azure-700: #0369A1;
+            --azure-800: #075985;
+            --azure-900: #0C4A6E;
+            --iris-tint: #EEF2FF;
+            --iris-tint-strong: #E0E7FF;
+            --iris-edge: #C7D2FE;
+            --iris-700: #4338CA;
+            --iris-800: #3730A3;
+            --lagoon-tint: #F0FDFA;
+            --lagoon-tint-strong: #CCFBF1;
+            --lagoon-edge: #99F6E4;
+            --lagoon-800: #115E59;
+            --tangerine-tint: #FFF7ED;
+            --tangerine-edge: #FED7AA;
+            --tangerine-800: #9A3412;
+            --orchid-tint: #FDF4FF;
+            --orchid-edge: #F5D0FE;
+            --orchid-800: #86198F;
 
             /* Apple / Emil Kowalski Precision Motion Easings */
             --ease-snappy: cubic-bezier(0.23, 1, 0.32, 1);
@@ -180,7 +263,7 @@
             --bg-surface-elevated: #26262C;   /* Floating cards / modal sheets */
             --bg-surface-active: #2F2F37;     /* Active / pressed state */
             --bg-surface-subtle: #18181C;     /* Soft dark sub-box */
-            --bg-sidebar: #19191D;            /* Frosted dark sidebar */
+            --bg-sidebar: #18181C;            /* Frosted dark sidebar */
             
             --border-subtle: rgba(255, 255, 255, 0.08);
             --border-highlight: rgba(255, 255, 255, 0.14);
@@ -215,9 +298,74 @@
             --btn-bg: #F5F0E8;
             --btn-bg-hover: #FFFFFF;
             --btn-ink: #141416;
-            --positive-tint: rgba(91, 138, 114, 0.18);
-            --positive-edge: rgba(91, 138, 114, 0.4);
-            --positive-ink: #A7F3D0;
+
+            /* Full token system — dark values reproduce the former .dark override block. */
+            --surface-rgb: 30 30 34;
+            --inset-rgb: 24 24 28;
+            --mist-50-rgb: 34 34 40;
+            --mist-100-rgb: 34 34 40;
+            --mist-200-rgb: 44 44 52;
+            --mist-300-rgb: 56 56 66;
+            --wash: rgba(255, 255, 255, 0.05);
+            --wash-strong: rgba(255, 255, 255, 0.10);
+            --edge-soft: rgba(255, 255, 255, 0.08);
+            --edge-300: rgba(255, 255, 255, 0.08);
+            --edge-bold: rgba(255, 255, 255, 0.10);
+            --ink-950: #FFFFFF;
+            --ink-300: #8C8578;
+            --gold-ink-deep: #E5C38D;
+            --btn-accent: #1C1917;
+            --ember-tint: rgba(217, 140, 48, 0.16);
+            --ember-tint-strong: rgba(217, 140, 48, 0.16);
+            --ember-edge: rgba(217, 140, 48, 0.35);
+            --ember-600: #F5B864;
+            --ember-700: #F6C47A;
+            --ember-800: #F9CF90;
+            --ember-900: #FBE0B5;
+            --ember-950: #FFF1DC;
+            --blush-tint: rgba(225, 112, 112, 0.16);
+            --blush-tint-strong: rgba(225, 112, 112, 0.16);
+            --blush-edge: rgba(225, 112, 112, 0.35);
+            --blush-600: #FDA4AF;
+            --blush-700: #FECDD3;
+            --blush-800: #FFE4E6;
+            --blush-900: #FFF1F2;
+            --blush-950: #FFF1F2;
+            --sage-tint: rgba(91, 138, 114, 0.18);
+            --sage-tint-strong: rgba(91, 138, 114, 0.18);
+            --sage-edge: rgba(91, 138, 114, 0.4);
+            --sage-600: #6EE7B7;
+            --sage-700: #86EFAC;
+            --sage-800: #A7F3D0;
+            --sage-900: #D1FAE5;
+            --plum-tint: rgba(192, 132, 252, 0.16);
+            --plum-tint-strong: rgba(192, 132, 252, 0.16);
+            --plum-edge: rgba(192, 132, 252, 0.35);
+            --plum-600: #C084FC;
+            --plum-700: #D8B4FE;
+            --plum-800: #E9D5FF;
+            --plum-900: #F3E8FF;
+            --plum-950: #F3E8FF;
+            --azure-tint: rgba(56, 189, 248, 0.16);
+            --azure-edge: rgba(56, 189, 248, 0.35);
+            --azure-700: #BAE6FD;
+            --azure-800: #E0F2FE;
+            --azure-900: #F0F9FF;
+            --iris-tint: rgba(129, 140, 248, 0.16);
+            --iris-tint-strong: rgba(129, 140, 248, 0.16);
+            --iris-edge: rgba(129, 140, 248, 0.35);
+            --iris-700: #C7D2FE;
+            --iris-800: #E0E7FF;
+            --lagoon-tint: rgba(45, 212, 191, 0.15);
+            --lagoon-tint-strong: rgba(45, 212, 191, 0.15);
+            --lagoon-edge: rgba(45, 212, 191, 0.35);
+            --lagoon-800: #CCFBF1;
+            --tangerine-tint: rgba(251, 146, 60, 0.16);
+            --tangerine-edge: rgba(251, 146, 60, 0.35);
+            --tangerine-800: #FFEDD5;
+            --orchid-tint: rgba(232, 121, 249, 0.16);
+            --orchid-edge: rgba(232, 121, 249, 0.35);
+            --orchid-800: #F5D0FE;
         }
 
         * {
