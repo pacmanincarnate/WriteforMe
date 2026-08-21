@@ -1541,13 +1541,16 @@
             color: var(--text-primary);
         }
 
-        /* Input Controls & Selects */
-        .dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
-        .dark textarea,
-        .dark select {
-            background-color: var(--bg-inset) !important;
-            color: var(--text-primary) !important;
-            border-color: var(--field-edge) !important;
+        /* Input Controls & Selects — defaults only. :where() keeps these at element-level
+           specificity so utility classes on a control (bg-inset, border-edge-strong,
+           text-ink-*, focus:border-gold) keep winning, exactly as the old !important class
+           overrides used to. Only the placeholder colour stays forced. */
+        :where(.dark) input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+        :where(.dark) textarea,
+        :where(.dark) select {
+            background-color: var(--bg-inset);
+            color: var(--text-primary);
+            border-color: var(--field-edge);
         }
 
         .dark input::placeholder,
@@ -1555,11 +1558,11 @@
             color: var(--field-placeholder) !important;
         }
 
-        .dark input:focus,
-        .dark textarea:focus,
-        .dark select:focus {
-            border-color: var(--accent-gold) !important;
-            box-shadow: 0 0 0 2px var(--accent-gold-glow) !important;
+        :where(.dark) input:focus,
+        :where(.dark) textarea:focus,
+        :where(.dark) select:focus {
+            border-color: var(--accent-gold);
+            box-shadow: 0 0 0 2px var(--accent-gold-glow);
         }
 
         /* Library: non-color dark tweaks with no light counterpart */
