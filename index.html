@@ -168,6 +168,7 @@
             --bg-inset: #FAF8F5;
             --edge-strong: #E7E5E4;
             --accent-gold-rgb: 184 147 90;    /* --accent-gold as an R G B triplet for /opacity */
+            --accent-emerald-rgb: 91 138 114; /* --accent-emerald as an R G B triplet for /opacity */
             --gold-ink: #8C6B32;
             --ink-900: #1C1917;
             --ink-800: #292524;
@@ -275,6 +276,8 @@
             --book-shadow-hover: 0 26px 42px -8px rgba(0, 0, 0, 0.26), 0 10px 18px -4px rgba(0, 0, 0, 0.12), -3px 3px 10px rgba(0, 0, 0, 0.1);
             --spine-crease: linear-gradient(to right, rgba(0,0,0,0.18), rgba(255,255,255,0.3) 50%, rgba(0,0,0,0.08));
             --spine-shadow: linear-gradient(to right, rgba(0,0,0,0.22), transparent);
+            --lib-secondary-edge: rgba(0, 0, 0, 0.15);
+            --lib-secondary-edge-hover: rgba(0, 0, 0, 0.3);
             --lib-meta-edge: rgba(0, 0, 0, 0.04);
             --lib-meta-sep: #D6D3CD;
             --tv-lane: #E5E0D8;
@@ -331,6 +334,7 @@
             --bg-inset: #18181C;
             --edge-strong: rgba(255, 255, 255, 0.08);
             --accent-gold-rgb: 201 169 110;
+            --accent-emerald-rgb: 104 159 132;
             --gold-ink: #D8B47A;
             --ink-900: #FDFBFA;
             --ink-800: #F0ECE4;
@@ -438,6 +442,8 @@
             --book-shadow-hover: 0 34px 56px -10px rgba(0, 0, 0, 0.95), 0 16px 26px -5px rgba(0, 0, 0, 0.75), inset 0 0 0 1px rgba(201, 169, 110, 0.35), -3px 4px 14px rgba(0, 0, 0, 0.9);
             --spine-crease: linear-gradient(to right, rgba(0,0,0,0.55), rgba(255,255,255,0.14) 50%, rgba(0,0,0,0.3));
             --spine-shadow: linear-gradient(to right, rgba(0,0,0,0.45), transparent);
+            --lib-secondary-edge: rgba(255, 255, 255, 0.15);
+            --lib-secondary-edge-hover: rgba(255, 255, 255, 0.3);
             --lib-meta-edge: rgba(255, 255, 255, 0.06);
             --lib-meta-sep: #44403C;
             --tv-lane: rgba(255, 255, 255, 0.12);
@@ -833,7 +839,7 @@
             aspect-ratio: 2 / 3;
             border-radius: 10px;
             overflow: hidden;
-            background: #EAE6DF;
+            background: var(--book-bg);
             position: relative;
             box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.16), 0 4px 12px -2px rgba(0, 0, 0, 0.06), inset 1.5px 0 0 0 rgba(255, 255, 255, 0.5), inset -1.5px 0 0 0 rgba(0, 0, 0, 0.1);
             transition: transform 300ms var(--ease-snappy), box-shadow 300ms ease;
@@ -1031,7 +1037,7 @@
             gap: 8px;
             padding: 12px 28px;
             border-radius: 980px;
-            border: 1px solid rgba(0, 0, 0, 0.15);
+            border: 1px solid var(--lib-secondary-edge);
             color: var(--text-secondary);
             font-size: 14px;
             font-weight: 500;
@@ -1041,7 +1047,7 @@
         }
         .lib-empty-secondary:hover {
             color: var(--text-primary);
-            border-color: rgba(0, 0, 0, 0.3);
+            border-color: var(--lib-secondary-edge-hover);
         }
         .lib-empty-secondary:active {
             transform: scale(0.96) !important;
@@ -1120,8 +1126,8 @@
             position: absolute;
             inset: -10px -12px;
             border-radius: 16px;
-            background: rgba(91, 138, 114, 0.04);
-            border: 1px solid rgba(91, 138, 114, 0.2);
+            background: rgb(var(--accent-emerald-rgb) / 0.04);
+            border: 1px solid rgb(var(--accent-emerald-rgb) / 0.2);
             pointer-events: none;
             z-index: 0;
         }
@@ -1237,12 +1243,12 @@
             border-radius: 50%;
             background: var(--accent-emerald);
             flex-shrink: 0;
-            box-shadow: 0 0 8px rgba(91, 138, 114, 0.5);
+            box-shadow: 0 0 8px rgb(var(--accent-emerald-rgb) / 0.5);
             animation: libActivePulse 3s ease-in-out infinite;
         }
         @keyframes libActivePulse {
-            0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(91, 138, 114, 0.5); }
-            50% { opacity: 0.5; box-shadow: 0 0 3px rgba(91, 138, 114, 0.2); }
+            0%, 100% { opacity: 1; box-shadow: 0 0 8px rgb(var(--accent-emerald-rgb) / 0.5); }
+            50% { opacity: 0.5; box-shadow: 0 0 3px rgb(var(--accent-emerald-rgb) / 0.2); }
         }
 
         /* Concept preview */
