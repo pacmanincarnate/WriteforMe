@@ -4566,6 +4566,11 @@ CORE MANDATE & SURGICAL HEURISTIC:
 1. **Prefer Surgical Edits Over Nuclear Rewrites:** Whenever a change is targeted, specific, or late in the story lifecycle, you MUST use surgical actions (MODIFY_ACT, MODIFY_SEQUENCE, MODIFY_SCENE, MODIFY_BEAT, INSERT_BEAT, DELETE_BEAT, SURGICAL_PATCH_PROSE, LINE_EDIT_PROSE) rather than discarding and regenerating whole scenes or sequences.
 2. **Preserve Hard-Won Prose & Structure:** Do not invalidate or discard polished beats or written prose unless the directive explicitly demands a total tear-down.
 3. **Multi-Scale Operations Available:**
+   - **Story & Cast Level (Scale 0 - Holistic):**
+     - MODIFY_STORY_METADATA: Update the story's title, concept, status_quo, inciting_incident, themes, genre, mood, or writing_guide.
+     - ADD_CHARACTER: Insert a brand new character into the story's cast list.
+     - MODIFY_CHARACTER: Update an existing character's properties (name, role, core_flaw, core_desire, vocal_cadence) using target_character_id.
+     - DELETE_CHARACTER: Remove an obsolete character from the cast list using target_character_id.
    - **Act Level (Scale 1):**
      - MODIFY_ACT: Update an act's title, mandate, core tension, or thematic reversal.
    - **Sequence Level (Scale 2):**
@@ -4587,7 +4592,7 @@ CORE MANDATE & SURGICAL HEURISTIC:
 
 INSTRUCTIONS:
 1. **Strategic Evaluation:** Analyze the user's directive. Explain how it can be achieved with surgical precision and minimal disruption to established narrative work.
-2. **Action Planning:** Generate a sequence of discrete actions chosen from the 12 action types above. Specify 0-based indices for target_act_idx, target_sequence_idx, target_scene_idx, and target_beat_idx where applicable.
+2. **Action Planning:** Generate a sequence of discrete actions chosen from the 16 action types above. Specify 0-based indices for target_act_idx, target_sequence_idx, target_scene_idx, target_beat_idx, or target_character_id where applicable.
 3. **Format Output:** Return your response strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
@@ -10892,6 +10897,20 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         details.find_text = getField('find_text') || getField('find');
                         details.replace_text = getField('replace_text') || getField('replace');
                         details.line_edits = [];
+                        
+                        details.concept = getField('concept');
+                        details.status_quo = getField('status_quo');
+                        details.inciting_incident = getField('inciting_incident');
+                        details.themes = getField('themes');
+                        details.genre = getField('genre');
+                        details.mood = getField('mood');
+                        details.writing_guide = getField('writing_guide');
+
+                        details.name = getField('name');
+                        details.role = getField('role');
+                        details.core_flaw = getField('core_flaw');
+                        details.core_desire = getField('core_desire');
+                        details.vocal_cadence = getField('vocal_cadence');
 
                         const insertAt = getField('insert_at_idx');
                         if (insertAt !== "") {
@@ -10902,6 +10921,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         const targetSeqStr = extractTag(block, 'target_sequence_idx') || extractTag(block, 'target_seq_idx');
                         const targetSceneStr = extractTag(block, 'target_scene_idx');
                         const targetBeatStr = extractTag(block, 'target_beat_idx');
+                        const targetCharStr = extractTag(block, 'target_character_id');
 
                         const seqIdx = targetSeqStr !== null && targetSeqStr !== "" ? parseInt(targetSeqStr, 10) : 0;
 
@@ -10912,6 +10932,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             target_seq_idx: seqIdx,
                             target_scene_idx: targetSceneStr !== null && targetSceneStr !== "" ? parseInt(targetSceneStr, 10) : null,
                             target_beat_idx: targetBeatStr !== null && targetBeatStr !== "" ? parseInt(targetBeatStr, 10) : null,
+                            target_character_id: targetCharStr !== null ? targetCharStr : null,
                             description: decodeXmlEntities(extractTag(block, 'description') || ''),
                             details: details
                         };
@@ -10995,8 +11016,76 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         const sceneKey = `${seqIdx}`;
                         const sId = `${seqIdx}-${sceneIdx}`;
 
+                        // SCALE 0: STORY & METADATA OPERATIONS
+                        if (action.action_type === 'MODIFY_STORY_METADATA') {
+                            if (action.details.title) currentStory.title = action.details.title;
+                            if (action.details.concept) currentStory.concept = action.details.concept;
+                            if (action.details.status_quo) currentStory.status_quo = action.details.status_quo;
+                            if (action.details.inciting_incident) currentStory.inciting_incident = action.details.inciting_incident;
+                            if (action.details.themes) currentStory.themes = action.details.themes;
+                            if (action.details.genre) currentStory.style.genre = action.details.genre;
+                            if (action.details.mood) currentStory.style.mood = action.details.mood;
+                            if (action.details.writing_guide) currentStory.style.writing_guide = action.details.writing_guide;
+                            
+                            setStory(currentStory);
+                            logMessage(`[Action ${actionNum}/${totalActions}] Success: Surgically modified story metadata.`, 'success');
+                        }
+                        else if (action.action_type === 'ADD_CHARACTER') {
+                            const newChar = {
+                                id: `C_dyn_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+                                name: action.details.name || "Unnamed Character",
+                                role: action.details.role || "Minor Character",
+                                core_flaw: action.details.core_flaw || "Unspecified flaw",
+                                core_desire: action.details.core_desire || "Unspecified desire",
+                                vocal_cadence: action.details.vocal_cadence || "Standard"
+                            };
+                            currentStory.cast = [...(currentStory.cast || []), newChar];
+                            setStory(currentStory);
+                            logMessage(`[Action ${actionNum}/${totalActions}] Success: Added new character ${newChar.name}.`, 'success');
+                        }
+                        else if (action.action_type === 'MODIFY_CHARACTER') {
+                            let castList = [...(currentStory.cast || [])];
+                            let charIdx = castList.findIndex(c => c.id === action.target_character_id);
+                            if (charIdx === -1 && action.details.name) {
+                                charIdx = castList.findIndex(c => c.name.toLowerCase() === action.details.name.toLowerCase());
+                            }
+                            
+                            if (charIdx > -1) {
+                                const char = { ...castList[charIdx] };
+                                if (action.details.name) char.name = action.details.name;
+                                if (action.details.role) char.role = action.details.role;
+                                if (action.details.core_flaw) char.core_flaw = action.details.core_flaw;
+                                if (action.details.core_desire) char.core_desire = action.details.core_desire;
+                                if (action.details.vocal_cadence) char.vocal_cadence = action.details.vocal_cadence;
+                                
+                                castList[charIdx] = char;
+                                currentStory = { ...currentStory, cast: castList };
+                                setStory(currentStory);
+                                logMessage(`[Action ${actionNum}/${totalActions}] Success: Surgically modified character ${char.name}.`, 'success');
+                            } else {
+                                throw new Error(`Character ${action.target_character_id || action.details.name} not found.`);
+                            }
+                        }
+                        else if (action.action_type === 'DELETE_CHARACTER') {
+                            let castList = [...(currentStory.cast || [])];
+                            let charIdx = castList.findIndex(c => c.id === action.target_character_id);
+                            if (charIdx === -1 && action.details.name) {
+                                charIdx = castList.findIndex(c => c.name.toLowerCase() === action.details.name.toLowerCase());
+                            }
+                            
+                            if (charIdx > -1) {
+                                const deletedName = castList[charIdx].name;
+                                castList.splice(charIdx, 1);
+                                currentStory = { ...currentStory, cast: castList };
+                                setStory(currentStory);
+                                logMessage(`[Action ${actionNum}/${totalActions}] Success: Deleted character ${deletedName}.`, 'success');
+                            } else {
+                                throw new Error(`Character ${action.target_character_id || action.details.name} not found to delete.`);
+                            }
+                        }
+
                         // SCALE 1: ACT LEVEL SURGICAL OPERATIONS
-                        if (action.action_type === 'MODIFY_ACT') {
+                        else if (action.action_type === 'MODIFY_ACT') {
                             const actsList = [...(currentStory.acts || [])];
                             if (actsList[actIdx]) {
                                 const act = { ...actsList[actIdx] };
@@ -11472,8 +11561,10 @@ BEGIN SURGICAL PROSE EDIT`;
                         title: story.title,
                         concept: story.concept,
                         status_quo: story.status_quo,
+                        inciting_incident: story.inciting_incident,
                         themes: story.themes,
-                        cast: (story.cast || []).map(c => ({ id: c.id, name: c.name, role: c.role })),
+                        style: story.style,
+                        cast: (story.cast || []).map(c => ({ id: c.id, name: c.name, role: c.role, core_flaw: c.core_flaw, core_desire: c.core_desire, vocal_cadence: c.vocal_cadence })),
                         acts: (story.acts || []).map((act, actIdx) => ({
                             index: actIdx,
                             number: act.number,
