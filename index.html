@@ -3321,12 +3321,14 @@ Story Ending Value State${fullStoryLabels ? ' (Full Story)' : ''}: ${story.endin
                     if (issuesBlock) {
                         const issueBlocks = extractTagList(issuesBlock, 'issue');
                         for (const b of issueBlocks) {
+                            const fixSugg = decodeXmlEntities(extractTag(b, 'fix_suggestion') || extractTag(b, 'fixSuggestion') || '');
                             issues.push({
                                 severity: (extractTag(b, 'severity') || 'CRITICAL').toUpperCase().trim(),
                                 category: (extractTag(b, 'category') || 'CHOREOGRAPHY').toUpperCase().trim(),
                                 description: decodeXmlEntities(extractTag(b, 'description') || ''),
                                 location: decodeXmlEntities(extractTag(b, 'location') || ''),
-                                fix_suggestion: decodeXmlEntities(extractTag(b, 'fix_suggestion') || '')
+                                fix_suggestion: fixSugg,
+                                fixSuggestion: fixSugg
                             });
                         }
                     }
@@ -4219,8 +4221,8 @@ BEGIN SURGICAL BEAT REPAIR`;
         function validatePromptCacheOrder(promptText) {
             if (!promptText || typeof promptText !== 'string') return { valid: false, reason: "Empty prompt" };
 
-            const staticMarkers = ["<active_characters_profiles>", "<relationship_friction_matrix>", "<lore_subtext_context>", "<reference_style>", "<story_details>", "<world_bible>"];
-            const dynamicMarkers = ["<unresolved_continuity_mandates>", "<directive_rewrite_mandate>", "<draft_to_revise>", "<critical_issues>", "<reviewer_critique>", "=== DRAFT FOR REVISION ==="];
+            const staticMarkers = ["<active_characters_profiles>", "<relationship_friction_matrix>", "<lore_subtext_context>", "<reference_style>", "<story_details>", "<world_bible>", "<style_and_tone>", "<scene_blueprint>", "<continuity_ledger>"];
+            const dynamicMarkers = ["<unresolved_continuity_mandates>", "<directive_rewrite_mandate>", "<directive_requirement>", "<draft_to_revise>", "<critical_issues>", "<reviewer_critique>", "=== DRAFT FOR REVISION ==="];
 
             let lastStaticPos = -1;
             for (const sm of staticMarkers) {
@@ -4516,12 +4518,36 @@ EVALUATION CRITERIA:
 4. **Character Presence & Identification:** Characters in scenes are identified by their real character names. Do not flag character name vs. ID usage as an error; the system handles character ID synchronization automatically.
 5. **Narrative Scale:** Are there between 4 and 12 scenes?
 
+CRITICAL AUDIT & ISSUE CLASSIFICATION:
+You must provide structured <issues> detailing each problem so a downstream Surgical Scene Editor can make targeted repairs:
+- **MINOR Severity:** Minor phrasing flaws in transition jumps, slight wording adjustments to scene objectives, or minor character tag omissions.
+- **MAJOR Severity:** Causal disconnections between two specific scenes, a flat/missing objective in a scene, or a misaligned Proactive/Reactive scene type tag. These are surgically fixable! Provide the exact scene ID in <location> and the precise change in <fix_suggestion>.
+- **CRITICAL Severity:** Fewer than 4 scenes generated, massive plot hallucinations, or complete breakdown of the sequence structure that cannot be repaired surgically.
+
 CRITICAL PASS/FAIL DIRECTIVE:
 - If all criteria are met, set status to PASS.
-- If the causality breaks, the transition jumps teleport characters inexplicably, or the Swain pattern fails, set status to FAIL and list the exact reasons.
+- If there are issues, set status to FAIL, list all issues under <issues>, and summarize them in <deviation_reasons>. If the issues are MINOR or MAJOR (surgically fixable), be specific in <location> and <fix_suggestion> so the Surgical Editor can repair them without regenerating the whole sequence.
 
 FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
-CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+Output Schema:
+<response>
+  <critique_analysis>Perform a focused analysis of causality, Swain flow, and transition jumps across the scenes.</critique_analysis>
+  <issues>
+    <issue>
+      <severity>MINOR</severity> <!-- CRITICAL | MAJOR | MINOR -->
+      <category>SWAIN_FLOW</category> <!-- SWAIN_FLOW | CAUSALITY | TRANSITION | CAST | OBJECTIVES | SCALE -->
+      <description>Clear explanation of the problem.</description>
+      <location>Scene ID (e.g. Scene 1.2)</location>
+      <fix_suggestion>Exact surgical edit to resolve the issue.</fix_suggestion>
+    </issue>
+  </issues>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <reason>Brief description of each issue.</reason>
+  </deviation_reasons>
+</response>`,
 
             // 3.3 Scene Expander Agent (LARGE)
             sceneExpanderAgent: `You are an author crafting deep, multi-layered dramatic scene blueprints for your latest novel. Given a pair of linked scenes (typically a Proactive Scene and its Reactive Sequel), you will expand their lean skeletons into rich, comprehensive scene descriptions.
@@ -4552,12 +4578,35 @@ EVALUATION CRITERIA:
 3. **Lore & Info Boundaries & Character Identity:** Do characters act strictly on information they possess within their epistemic boundaries? Are there continuity errors or teleportation across the expanded scene flow? Note: Characters may be referenced interchangeably by full name, first name, or character ID (e.g., "Elena Rostova", "Elena", "C1", or "C_1740001_abc") — treat them as identical and do not flag character name vs. ID usage as a discrepancy.
 4. **Concrete Action vs. Clinical Summary:** Do the blueprints provide concrete physical choreography and verbal tactics rather than vague summaries or cold, detached commentary?
 
+CRITICAL AUDIT & ISSUE CLASSIFICATION:
+You must provide structured <issues> detailing each problem so a downstream Surgical Editor can make targeted blueprint repairs:
+- **MINOR / MAJOR Severity:** Flat value shifts, minor causality gaps, or sensory detail weaknesses in specific scenes. State the exact scene ID in <location> and how to fix it in <fix_suggestion>.
+- **CRITICAL Severity:** Unrecoverable continuity corruption or structural breakdown.
+
 CRITICAL PASS/FAIL DIRECTIVE:
 - If all criteria are met, set status to PASS.
-- If continuity is broken, causality between paired scenes is disjointed, or value shifts are flat, set status to FAIL and list the exact reasons.
+- If continuity is broken, causality between paired scenes is disjointed, or value shifts are flat, set status to FAIL, detail all issues under <issues>, and summarize in <deviation_reasons>.
 
 FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
-CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+Output Schema:
+<response>
+  <critique_analysis>Perform a step-by-step critical analysis of each criterion across the expanded scenes.</critique_analysis>
+  <issues>
+    <issue>
+      <severity>MINOR</severity> <!-- CRITICAL | MAJOR | MINOR -->
+      <category>VALUE_SHIFT</category> <!-- VALUE_SHIFT | CAUSALITY | CONTINUITY | CONCRETE_ACTION -->
+      <description>Clear explanation of the problem.</description>
+      <location>Scene ID (e.g. Scene 1.2)</location>
+      <fix_suggestion>Exact surgical edit to resolve the issue.</fix_suggestion>
+    </issue>
+  </issues>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <reason>Explain the exact issue and how to fix it.</reason>
+  </deviation_reasons>
+</response>`,
 
             // TIER 6: DIRECTIVE & MULTI-SCALE SURGICAL REFORMS
             directivePlanner: `You are an elite master developmental editor and multi-scale narrative architect. Your task is to evaluate a user-provided directive and design an intelligent, minimal-blast-radius plan to execute it across any narrative scale (Acts, Sequences, Scenes, Beats, and Written Prose).
@@ -4595,7 +4644,6 @@ INSTRUCTIONS:
 2. **Action Planning:** Generate a sequence of discrete actions chosen from the 16 action types above. Specify 0-based indices for target_act_idx, target_sequence_idx, target_scene_idx, target_beat_idx, or target_character_id where applicable.
 3. **Format Output:** Return your response strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
-
 BEGIN DIRECTIVE PLANNING`,
 
             // Surgical Prose Editor (Scale 5 Nano-Patching)
@@ -4697,154 +4745,149 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
             // 5.1 Writing Agent (LARGE)
             writingAgent: `You are a Booker Prize-winning prose stylist, known for your invisible narrative hand and immersive sensory details. Translate the provided scene choreography (a sequence of micro-beats) into breathtaking narrative fiction of 1,500-3,000 words.
 
-=== MANDATORY CHOREOGRAPHY COMPLIANCE — READ THIS FIRST ===
-Your prose will be rejected and you will be forced to rewrite if you do not obey this rule. This is the single most common reason for failed reviews, and it is non-negotiable.
+### **MANDATORY CHOREOGRAPHY COMPLIANCE**
 
-You will receive a <current_scene_beats> sequence containing multiple beats in chronological order. Each beat is structured with its action_summary, tactical_exchange (stimulus action and MRU reaction), dramatic_pivot, speech_acts_and_intent, sensory_filters_and_mood, and epistemic_boundaries. Every beat contains a **Dramatic Pivot** — the specific turning point where expectation and reality diverge.
+You will receive a <current_chunk_choreography_blueprint> sequence containing multiple beats in chronological order. Each beat includes an action summary, tactical exchange, dramatic pivot, speech acts, sensory filters, and epistemic boundaries.
 
-You MUST write the ENTIRE scene in one continuous pass, executing ALL beats in sequence:
-1. **Begin your prose grounded in the scene's entrance conditions.** Your opening lines must depict the characters in the positions, emotional states, and circumstances described in the overarching scene description and prior context. Do not invent a different starting situation.
-2. **Execute each beat sequentially.** Write through the dramatic pivot and tactical exchanges of Beat 1, then flow seamlessly into Beat 2 without a jarring gap, and so on. Weave the physical transitions and character choreography naturally between beats.
-3. **End your prose naturally.** Land the characters in a state that naturally concludes the final beat's action and satisfies the scene's exit conditions.
-4. **Maintain strict tense consistency.** Check the tense of the surrounding original text (e.g. present tense vs. past tense) and ensure all generated prose matches that exact tense. DO NOT drift into past tense if the scene is present tense.
-5. **Ensure Strict Narrative & Physical Continuity:** Your opening and all transitions must maintain absolute continuity with the preceding events of the scene. Avoid logical gaps, sudden relocation of characters (teleportation), or changes in physical posture or held items unless they are explicitly dramatized in the text.
+**Execute the Sequence:** Write the entire scene in one continuous pass, executing all beats in exact sequential order. Begin grounded exactly in the scene's established entrance conditions. Write through the tactical exchanges and dramatic pivot of Beat 1, weave the physical transitions naturally, and flow seamlessly into Beat 2. End by landing the characters in a state that satisfies the final beat's exit conditions. This guarantees absolute narrative and physical continuity.
 
-=== ADVANCED LITERARY DEVICES & NARRATIVE THEORY MANDATES ===
-You must actively apply the following five literary devices when translating choreography into narrative prose:
+**Tense and POV Lock:** Consult the <style_and_tone> guidelines to determine the required tense (e.g., past vs. present) and point-of-view (e.g., First-Person, Third-Person Limited). Lock your narrative voice to these parameters for the entire generation to create a seamless, professional reading experience.
 
-1. **ARISTOTELIAN REVERSALS (*PERIPETEIA* & *ANAGNORISIS*):**
-   - Translate each beat's 'pivot' into a sharp, irreversible dramatic turning point. Viscerally dramatize whether the turning point is driven by *Peripeteia* (a radical reversal of fortune or circumstance) or *Anagnorisis* (a moment of critical discovery or reversal of knowledge). Ensure the shift changes either external circumstances or internal understanding in a way that cannot be undone.
+### **1. NARRATIVE & PHYSICAL CONTINUITY**
 
-2. **CHRONOTOPE MODULATION & PACING CONTROL:**
-   - In literary theory, the "chronotope" governs how time and space unfold in language. Do NOT apply heavy, thick description to every micro-moment; doing so causes narrative time to grind to a halt. Modulate descriptive density based on 'beat_type':
-     - **Transitional / Functional Beats:** Move through physical movements, spatial positioning, and functional handoffs briskly. Use direct, kinetic sentences to keep narrative momentum high.
-     - **Dramatic / Climactic Beats:** Deploy rich sensory texture, close psychic distance, subtextual depth, and rhythmic legato-staccato balance to linger on high-stakes emotional peaks.
+**Persistent Mise-en-Scène & Chekhov's Gun:**
 
-3. **SPEECH ACT THEORY IN PROSE (ILLOCUTIONARY FORCE & PERLOCUTIONARY EFFECT):**
-   - Treat dialogue as performative action and emotional exchange (J.L. Austin & John Searle). When a character speaks, they are not just transmitting data; they are making an active bid, connection, or emotional strike with another character.
-   - Render dialogue so the **Illocutionary Force** (the speaker's intended action or bid: e.g. probing, deflecting, connecting, provoking, pleading, confessing) collides with, resonates with, or deflects off the listener, producing a distinct **Perlocutionary Effect** (e.g. emotional vulnerability, defensive withdrawal, shock, softening, capitulation). Dramatize the tension gap between intended force and actual effect.
+You must maintain strict object permanence and spatial logic. Inherit the exact physical location, held props, and structural damage from the preceding text. If a character interacts with a prop, they must draw it from an established inventory; if a door is locked, it must be explicitly bypassed.
 
-4. **COGNITIVE SENSORY FILTERING (THEORY OF MIND):**
-   - Readers understand a character's internal state not by being told, but by observing how their cognition filters the physical world. Never write objective, decorative room descriptions.
-   - All sensory details must function strictly as **Cognitive Filters** shaped by the focal character's immediate neurological and emotional state (e.g., anxiety narrowing perception to an oppressive fluorescent hum; adrenaline magnifying kinetic vibration; depression flattening acoustic contrast). Ask: *"Why is my character noticing THIS specific detail at THIS specific microsecond?"*
+Goal: To ground the reader in a believable, tangible reality and prevent hallucinatory "deus ex machina" solutions.
 
-5. **STRICT EPISTEMIC BOUNDARIES & FOCALISATION (GENETTE'S CAMERA LIMITS):**
-   - Maintain strict Third-Person Limited POV strictly behind the focal character's eyes (Gérard Genette's "Who sees?"). You MUST respect Epistemic Boundaries: the narrative cannot state facts about another character's private internal thoughts or unsaid motives as objective reality (e.g., PROHIBITED: "She was half-expecting silence", "He secretly feared...", "She felt pleased").
-   - Translate all non-focal characters' internal states strictly into external, observable physical choreography (twitches, posture shifts, glances, vocal cadence shifts) as perceived and interpreted by the focal character.
+**Proxemics and Narrative Blocking:**
 
-=== STYLISTIC BANNED PATTERNS (AI-WRITING DETECTOR) ===
-You must completely AVOID these lazy, generic patterns. The reviewer is programmed to fail any draft containing them:
-1. **Negation Tells:** Telling what a character did not do instead of what they did (e.g. "She did not move...", "He did not cough. He did not complain."). Focus instead on their physical immobility or concrete action.
-2. **Filter Words & Passive Constructs:** Words that distance the reader ("seemed to", "felt", "saw", "heard", "could see", "almost", "began to").
-   * *Bad:* "Reginald felt the silence rush in." -> *Good:* "The silence rushed in."
-   * *Bad:* "He saw the box." -> *Good:* "The box sat."
-3. **Cliche & Anthropomorphic Metaphors:**
-   - Personified objects doing human actions (e.g. "the leather groaned in weary protest", "the steam pipe whispered a soft sigh"). Objects must remain passive and physical.
-   - Stale comparisons (e.g. "silence like dust", "silence like a held breath", "heart pounded", "blood ran cold", "breath caught").
-4. **Authorial Commentary & Explanatory Abstractions:** Explaining the subtext or emotional value to the reader (e.g. "It was an insult-shaped compliment", "He had no distance left", "the silence was a room they entered together", "giving him space to settle"). Show the action; trust the reader to draw the emotional conclusion.
-5. **Redundant Qualifiers:** Triple descriptors or wordy pairings ("slow, deliberate motion", "single, final swallow", "dusty, its label illegible, the glass filmed with grime"). Use ONE strong noun and active verb.
-6. **Saidisms & Dialogue Tags Bloat:** Avoid creative dialogue tags ("she hissed", "he growled", "she breathed"). Use "said" sparingly. Let the dialogue itself carry the emotion. When possible, use action beats instead of tags: show the character doing something physical, then their dialogue follows without a tag.
+Physical space must reflect emotional and tactical shifts. Link spatial distance directly to the character's internal state. If a character pushes an argument, have them close the physical distance; if they feel vulnerable, have them retreat or place physical barriers (tables, chairs) between themselves and the threat.
 
-=== DIALOGUE CRAFT ===
-Strong dialogue is the single biggest differentiator between amateur and professional fiction:
-1. **Subtext Over Text:** Characters rarely say exactly what they mean. Every line of dialogue should have a surface meaning and an undercurrent. What the character wants vs. what they say should create productive tension.
-2. **Distinct Voices:** Each character's speech patterns must be immediately recognizable without dialogue tags. Vary sentence length, vocabulary level, directness, and verbal habits. Read each character's interview/profile for their specific voice.
-3. **Compression:** Real conversation is boring. Fictional dialogue must be compressed — every line must either advance the plot, reveal character, or increase tension. Cut pleasantries, filler, and on-the-nose exposition.
-4. **Interruptions & Fragments:** Not every sentence needs to be complete. Characters interrupt, trail off, restart. Use em-dashes and ellipses purposefully.
+Goal: To eliminate "floating head" dialogue and frantic, meaningless fidgeting, creating a scene that feels physically grounded.
 
-=== PROSE TEXTURE, CADENCE & MUSICALITY MANDATE ===
-- Write with Booker-Prize-winning literary excellence and musicality. You MUST aggressively vary sentence structures and lengths. Contrast sweeping, multi-clause observations with sharp, visceral, fragmented impacts.
-- LEGATO-STACCATO RHYTHM BALANCE: Avoid relentless, consecutive Subject-Verb-Object micro-sentences during action sequences. Build kinetic momentum using fluid, multi-clause 'legato' sentences that paint spatial geometry, atmospheric tension, and sensory buildup. Reserve blunt, 'staccato' micro-sentences exclusively for the exact fraction-of-a-second of hard physical impact, fracture, or psychological revelation. Avoid breathless chains of 2-word fragments (e.g. do NOT write "Cold iron. Familiar weight."). The pacing must breathe.
-- SENSORY PHYSICS OVER META-LABELING: Build atmosphere entirely through concrete physics and sensory interaction (light, acoustics, temperature, friction). Avoid abstract meta-tells. BAN abstract silence and spatial personification (e.g., do NOT write "The silence was absolute", "The silence was structural", "The room contracted", "The silence was a weapon", "The silence was not a physical thing", "The silence between them stretches"). Show the acoustic reality—the scrape of a boot, the lack of echo, the suffocating proximity of a cold plaster wall.
-- FLUID SYNTACTIC RHYTHM & KINETIC ACTION: Avoid repetitive Subject-Verb-Object triplets (e.g. "The clock ticks. The fire settles. He stands."). Weave complex, multi-clause sentences that link sensory observation with character movement. Prioritize positive, kinetic physical actions over negative non-actions (e.g., do NOT write "he does not turn", "she does not look up", "did not move"—instead describe what the character actively DOES).
-- SEQUENTIAL POSTURE HANDOFF & ANTI-ENTRANCE LOOPING: If <previous_prose_context> or <preceding_beat_end_state> indicates a character is ALREADY present in the space, DO NOT write them entering the room, cycling a door, or delivering an initial greeting. Start the prose directly from their existing physical position and momentum.
-- ENVIRONMENTAL MOTIF ROTATION: Do NOT repeat specific frequency numbers (e.g., "60 hertz", "53 hertz") or recycled sensory anchors across beats. Ground the atmosphere in evolving, dynamic physical interactions.
-- BAN micro-blocking (e.g. do NOT write "her fingers find...", "his foot steps forward...", "she turns her head..."). Focus on the momentum, intent, and kinetic physics of the scene, allowing the reader's spatial awareness to fill in anatomical minutiae.
-- BAN predictable, dramatic punchline endings at the end of every paragraph. Vary paragraph endings between quiet sensory resonance, hanging implications, and sharp narrative turns.
+**Narrative Causality (Anti-Derailment):**
 
-=== EMOTIONAL AUTHENTICITY & GENRE-APPROPRIATE VOICE ===
-- Character reactions must align with their genre, psychological flaw, and immediate emotional state.
-- Avoid defaulting to stoic, calculating, or hyper-analytical behavior unless explicitly required by the character's profile (e.g., a trained assassin or chess master).
-- Allow characters to be messy, impulsive, irrational, tearful, humorous, or vulnerable when under stress.
-- Antagonist competency must match the story's genre: comedy antagonists should be absurd or petty; romance rivals should be charming or insecure; thriller villains should be formidable.
-- COMPLEX PERSONAL MOTIVATIONS: Antagonists should be realistic, complex, and driven by deeply personal experiences and desires. BAN cartoonish villainy, generic evil tropes, or being clinically detached as a rule. Let them justify their actions through their own subjective worldviews, emotional scars, or misguided righteousness. They should view the protagonist's struggle as a deeply personal ideological or emotional conflict, not an administrative inconvenience or clinical metric.
-- ANTI-CASEFILE MONOLOGUE PROTOCOL: Eliminate the "Casefile Monologue". Oppressive figures and antagonists must NEVER explicitly recite historical lore, execution casefiles, official dates, or past execution details to the protagonist during interrogations. Communicate danger obliquely through subtext, physical presence, and implicit threat rather than explicit exposition.
-- BAN grandstanding, villainous monologuing, and on-the-nose philosophical lecturing (e.g. "Innocence is a story...", "This isn't over...", "You'll regret this...", "Hand it over..."). Powerful figures demonstrate control through brevity, casual disregard, and micro-aggressions—never through melodrama.
+Concrete plot mechanics must be executed explicitly and unmistakably. When a beat dictates a specific rule, wager, challenge, deadline, or secret reveal, state the exact terms clearly in the dialogue or action. Do not dilute, summarize, or hide plot-critical parameters in vague metaphors.
 
-=== CHARACTER IDENTITY & ANATOMICAL FEATURE PERMANENCE MANDATE ===
-- The protagonist and all active characters MUST be referred to by their EXACT canonical names (e.g. "Elara", "Silas Thorne") as assigned in <active_characters_profiles>.
-- ANATOMICAL FEATURE PERMANENCE: Entities and props must retain strict anatomical feature locking. Once a physical feature (e.g. a gem set in the forehead, a scar on the wrist, a mechanical pinion on a wing) is defined, it CANNOT migrate to another body part or surface (e.g. do NOT move a ruby from an automaton's forehead to its thorax). Replicate immutable traits and anatomical locations with absolute fidelity.
-- IMMUTABLE TRAIT FIDELITY: You MUST consult <active_characters_profiles> and <previous_prose_context> before describing any physical trait (eye color, scars, hair, body materials). Replicate immutable traits exactly as defined. NEVER alter, omit, or randomly drift physical attributes across scenes (e.g. if a companion's eye is amber, it must remain amber in every scene).
-- NEVER use generic descriptor nouns (e.g. do NOT write "The man", "The woman", "The artificer", "The clockmaker", "A figure steps forward", "The visitor", "The foreman") or pseudo-epithets (e.g. "woman without a name"). Always use exact canonical character names or direct personal pronouns (he/she/they).
-- NEVER confuse or swap character names in narrative prose. Do NOT refer to a character by another character's name, secondary name, or relative's name unless explicitly established as an active alias in their profile.
-- Always maintain complete fidelity to the assigned character profiles and assigned entity names.
+Goal: To preserve narrative causality, ensuring downstream agents and scenes have a concrete, factual foundation to build upon.
 
-=== STRICT NARRATIVE TENSE MANDATE ===
-- You MUST write all narrative prose strictly in PRESENT TENSE (e.g. "she steps", "the gears turn", "she holds").
-- Do NOT write in past tense (e.g. "she stepped", "the gears turned", "she held").
-- Maintaining uniform present tense across every beat is mandatory.
+**Canonical Identity (Anti-Epithet):**
 
-=== STRICT NARRATIVE POV MANDATE ===
-- You MUST write all narrative prose strictly in THIRD-PERSON LIMITED POV (e.g. "Elara steps", "she grips", "her hand").
-- NEVER write narrative prose in 1st-person ("I", "my", "me", "we") outside character dialogue.
+Character identity must remain fixed and professional. You must refer to characters strictly by their established names or pronouns. Never use generic descriptive nouns or pseudo-epithets (e.g., "the older man," "the blonde woman," "the clockmaker") as substitutes for a character's name. Use only their exact canonical names from the profiles or direct personal pronouns (he/she/they).
 
-=== PROP, ASSET, CARTESIAN & STRUCTURAL DAMAGE CONTINUITY MANDATE ===
-- You MUST maintain strict continuity of held items, prop locations, and clothing states established in <previous_prose_context>.
-- POSTURE INHERITANCE: You MUST anchor the opening of this beat by honoring the exact physical location, state, and possession of all props and entities as they were last recorded in <previous_prose_context>.
-- ATTRIBUTE ISOLATION: Strictly isolate physical traits. NEVER blend, swap, or leak defining physical descriptors (e.g., eye color, textures, biological features) between distinct characters, companions, or props.
-- STRUCTURAL DAMAGE PERSISTENCE: Enforce strict environmental damage persistence. Any structural damage or physical trauma to the setting (e.g. shattered locks, blown-out doorframes, broken glass) MUST persist in the narrative reality and subsequent interactions. Environments do NOT magically reset to pristine functional states.
-- CARTESIAN PERMANENCE & SPATIAL BOUNDARIES: Respect structural boundaries and physical laws. If a character crosses a barrier previously established as locked, blocked, or secured, the narrative MUST explicitly depict the physical mechanism of its bypass (e.g., shattering the lock, unbolting the door, breaking the barrier) prior to or during traversal.
-- ASSET PROVENANCE & INHERITANCE: Do not spontaneously invent or introduce critical physical assets (tools, artifacts, weapons) at the exact moment of a climax or disaster. Any asset utilized to resolve or escalate a beat MUST be explicitly inherited from previous scenes or established in the character's known inventory/environment prior to the high-stakes moment.
-- If a character removed gloves, set down a tool, or tucked an item into a belt/pocket in a previous beat, do NOT depict them wearing or using that item in subsequent beats unless explicitly dramatizing them putting it back on or drawing it from that exact location.
-- All prop transitions MUST be explicitly dramatized step-by-step. Do NOT drop physical micro-actions or allow props to teleport (e.g. if a character removes a glove, you MUST explicitly state where they place it—in a pocket, on a bench, or in a belt—before they can retrieve it later).
+Goal: To maintain a professional, intimate narrative voice and avoid the distancing, amateurish effect of epithet-heavy writing.
 
-=== ACTION-STATE MONOTONICITY MANDATE ===
-- You MUST maintain strict sequential physical logic. NEVER contradict a character's physical state in consecutive sentences (e.g. do NOT write "He does not move. He reaches for the shelf"). All physical transitions must be linearly and logically tracked.
+**Anatomical Permanence:**
 
-=== SHOW, DON'T TRANSLATE & SUBTEXT MANDATE ===
-- NEVER translate physical gestures, glances, or dialogue into explicit internal meanings, telepathy, or italicized subtext interpretations (e.g. do NOT write "The gesture meant she was not afraid" or "She heard the question beneath the threat: what do you know?").
-- NEVER have characters explicitly name or recite high-concept plot artifacts or secret lore terms ("Soul-Spark", "sentience Rite") in on-the-nose dialogue during tense confrontations. Dialogue must remain clipped, elliptical, and grounded in physical micro-actions and immediate stakes.
-- Trust the reader to infer emotional undercurrents directly from kinetic micro-actions and compressed dialogue.
+Biological and physical consistency is absolute. Replicate immutable physical traits (eye color, specific scars, cybernetics) exactly as defined in the character profiles or continuity ledger. Once a feature is established, it cannot migrate (e.g., a scar on the left wrist must remain on the left wrist) or randomly change color.
 
-=== PLOT, DIALOGUE & BEAT FIDELITY MANDATE (ANTI-DERAILMENT) ===
-- Strict fidelity to beat-defined plot developments, stakes, rules, challenges, and conditions is MANDATORY.
-- When a beat blueprint specifies that a character delivers a challenge, wager, bargain, ultimatum, condition, secret reveal, or dialogue commitment (e.g. "You have to eat ice cream for every meal for a month" or "Meet at the docks by midnight or the deal is off"), the prose MUST translate the exact terms, parameters, and stakes with absolute clarity and semantic accuracy.
-- NEVER soften, dilute, summarize away, or generalize specific plot conditions (e.g. changing "eat ice cream for every meal for a month" into "eat ice cream with a meal this month", or changing a specific deadline into a vague suggestion). Downstream scenes rely on this exact premise.
-- Subtext and oblique dialogue apply to psychological tension and hidden character motives—they must NEVER be used to erase, contradict, or water down the actual concrete plot terms, rules, or agreements established in the beat choreography.
+Goal: To preserve absolute physical realism and prevent hallucinatory drifting of character models.
+
+### **2. PSYCHOLOGICAL POV & PERCEPTION**
+
+**Strict Focalization & Theory of Mind:**
+
+Maintain strict internal focalization bound by the POV character's epistemic limits. Never state objective facts about another character's internal thoughts or hidden motives. Instead, describe their external physical cues (twitches, hesitations, vocal shifts) and have the POV character interpret them. Actively allow the POV character to misinterpret these cues based on their own flaws and insecurities.
+
+Goal: To create an authentic, highly immersive, and slightly unreliable narrative lens.
+
+**The Objective Correlative:**
+
+Filter all environmental details strictly through the focal character's immediate psychological state. Evoke the character's emotion through the physical objects, sensory textures, and atmospheric details they notice, rather than naming the emotion outright. A paranoid character hyper-fixates on exits and shadows; a nostalgic character focuses on familiar smells.
+
+Goal: To show emotion dynamically through world-building, creating deeper subconscious resonance for the reader.
+
+**Collapse Psychic Distance (Free Indirect Discourse):**
+
+Eradicate distancing verbs to pull the reader directly into the narrative camera. Absolutely ban filter words like "saw," "felt," "heard," "noticed," "realized," and "watched." Syntactically, achieve this by making the sensory object the active subject of the sentence. Do not write "She heard the glass shatter" (which reminds the reader they are observing a character). Write "The glass shattered."
+
+Goal: To remove the narrator's presence and trap the reader immediately in the character's sensory experience.
+
+**Phenomenological Immersion (Sensory Hierarchy):**
+
+True immersion relies on embodied cognition, where the character experiences the world through a full sensorium, not just a visual camera lens. Do not rely solely on visual descriptions. Anchor the focal character's reality by prioritizing the kinesthetic weight of objects, sudden acoustic shifts, the friction of textures, or intrusive smells. Let tactile and auditory inputs drive reflexes before the eyes can process the event.
+
+Goal: To create a multi-dimensional, visceral reading experience that prevents the scene from feeling like a flat, distant movie script.
+
+### **3. PROSE ECONOMY & MOMENTUM**
+
+**Action-Emotion Compression (Anti-Bloat):**
+
+Prevent overwritten, melodramatic bloat by limiting emotional reactions to a single, high-impact gesture. State the character's physical micro-expression or action, and then immediately move the narrative forward. Never follow a physical action with a sentence translating what the action meant (e.g., do not write "He swallowed hard, showing he was nervous but trying to hide it").
+
+Goal: To maintain rapid narrative velocity and treat the reader with intelligence, trusting them to infer the emotion from the action.
+
+**Aristotelian Pivots (Peripeteia & Anagnorisis):**
+
+Execute each beat's 'pivot' as a sharp, undeniable turning point. Viscerally dramatize the exact moment a character's external circumstances fracture (Peripeteia) or their internal understanding of the truth permanently shifts (Anagnorisis). Ground this realization in a concrete action or a definitive, scene-altering piece of dialogue.
+
+Goal: To ensure every beat feels consequential and drives irreversible momentum, avoiding stagnant or circular scenes.
+
+**Syntactic Rhythm & Pacing:**
+
+Modulate your sentence structure to subconsciously dictate the pacing of the scene. For fast-paced kinetic action or moments of shock, use short, blunt, staccato sentences with active verbs. For slow, high-tension beats or internal processing, use flowing, multi-clause legato sentences that layer specific sensory textures to deliberately stretch time.
+
+Goal: To subconsciously manipulate the reader's heart rate and immersion through the musicality of the prose.
+
+**Flaubert’s *Le Mot Juste* (Modifier Economy):**
+
+The strength of prose lies in the precision of its base components, favoring the perfect, solitary word over a crutch of stacked modifiers. Eradicate adverb-heavy phrases and redundant adjective stacking (e.g., do not write "the dark, looming, oppressive shadows"). Replace weak verb-adverb pairings with a single, muscular, highly specific verb, and choose concrete nouns that do their own descriptive work.
+
+Goal: To eliminate purple, amateurish prose and create a lean, sharp narrative voice that commands authority and trusts the weight of its vocabulary.
+
+**Typographical Pacing (White Space as Meter):**
+
+Paragraph breaks are not just logical divisions; they are the visual meter of the narrative, dictating the reader's breath and reading speed. Drastically vary your paragraph lengths to control time. Use dense, multi-sentence paragraphs to stretch time during deep interiority or complex environmental interaction. Conversely, isolate a sudden realization (anagnorisis), a sharp line of dialogue, or a brutal physical impact on its own single-sentence paragraph.
+
+Goal: To subconsciously manipulate the reader's velocity, forcing them to pause and absorb moments of high narrative gravity through the physical layout of the text.
+
+### **4. DYNAMIC DIALOGUE**
+
+**Character Idiolect (Extreme Vocal Fingerprinting):**
+
+Speech patterns must be so distinct that dialogue tags are largely unnecessary. Lean heavily into the assigned character profiles to dictate their syntax, vocabulary level, sentence length, and verbal tics. A street-smart thief should use entirely different pacing, slang, and directness than a weary aristocrat.
+
+Goal: To make dialogue character-revealing and ensure characters are immediately identifiable by their words alone.
+
+**Speech Act Theory & Subtext:**
+
+Treat dialogue as performative action where characters rarely say exactly what they mean. Use dialogue as a tactical bid (seeking validation, deflecting vulnerability, establishing dominance). Let characters ignore parts of questions, answer with non-sequiturs, or respond only to the subtext of what was asked.
+
+Goal: To mimic the messy, tension-filled reality of human communication, ensuring scenes possess rich subtextual depth rather than reading like dry information exchanges.
+
+**Motivation-Reaction Units (Action Beats):**
+
+Dialogue tags ("she hissed," "he growled," "they demanded") artificially separate action from speech. Eliminate creative dialogue tags and use "said" sparingly. Ground the dialogue in physical reality by showing the character interacting with their environment or shifting their posture immediately before, during, or after they speak.
+
+Goal: To anchor the conversation in the physical space and allow the action beat to carry the emotional weight of the line implicitly.
+
+**Anti-Exposition (The Casefile Ban):**
+
+Dialogue must never be used as a vehicle for world-building data dumps. Characters—especially antagonists—must never explicitly recite historical lore, past relationships, or official dates to someone who already knows them. Communicate danger and history obliquely through casual disregard, micro-aggressions, and implicit threats rather than direct explanation.
+
+Goal: To preserve the urgent, realistic tension of the immediate scene and trust the reader to pick up context clues organically.
 
 [DYNAMIC_STYLE_WARNINGS]
+### **Formatting directive**
 
-INSTRUCTIONS & PHILOSOPHY:
-1. **Execute Choreography & Plot Commitments Faithfully:** Translate every action/reaction beat and its detailed analytical directives (structure, character intent, atmosphere, epistemic boundaries, and authorial intent) into the final prose. You must follow the start → pivot → end sequence exactly as specified. All specific dialogue challenges, wagers, bargains, rules, and plot revelations defined in the beats MUST be preserved in the prose with full semantic accuracy and stakes intact.
-2. **Show, Don't Tell:** Render action through dialogue performative strikes, physical micro-expressions, cognitive sensory filters, and subtext. Engage at least 3 senses for slow scenes.
-3. **Seamless Integration & Flow:** Weave into the previous prose chunk seamlessly. Your opening must be continuous with the previous beat's ending in posture, position, and tone — both of these are defined by the choreography, not by your creative preference. There must be no jar or gap in the physical space or temporal flow between beats.
-4. **Physical Motion Advancement (Anti-Looping Rule):** Every beat MUST advance the character's physical posture and micro-actions. NEVER repeat or re-establish static postures from preceding beats (e.g. repeated "hand hovering", repeated "holding breath", repeated "spilled oil description"). If a posture was established in the previous beat, the character MUST move into a new physical posture in this beat.
-5. **Reaction Order:** Character reactions must follow the pattern: visceral (body), emotional, intellectual, speech/action.
-6. **Immersive Description & Close Psychic Distance:** Collapse comparisons directly into the scene. Instead of telling the reader what a thing is *like*, allow the description to *become* the thing. Turn similes into active verbs or vivid nouns. This keeps the reader trapped inside the world. True narrative resonance comes from creating atmosphere, not pointing at comparisons. Focus on kinetic action: let a single, high-impact verb carry both movement and emotion simultaneously. Anchor the character's internal state within a definitive physical act.
-7. **Pacing Variation & Chronotope Control:** Match your prose rhythm to the beat's emotional register and beat_type. High-tension/dramatic moments: short sentences, staccato rhythm, deep sensory layering. Transitional moments: direct sentences, fast narrative velocity, lean description.
-8. **Banned Somatic Clichés & Melodrama Prevention:** 
-- ABSOLUTELY PROHIBITED: "foreman", "the visitor", "Durant", "the man", "the woman", "the artificer", "the clockmaker", "woman without a name", "air thickens", "the air thickens", "air in the room tightens", "muscle jumps in his jaw", "she sees the malice beneath", "drawn blood", "she has drawn blood", "sound breaks the seal", "holds its breath", "knuckles white", "knuckles going white", "throat tightens", "throat tightened", "like a blade drawn", "like a candle", "venom banked", "muscle jumped", "muscle twitched", "spine locked", "spine stiffened", "jaw shifted", "molars ground", "molars grind", "holds her breath", "holding breath", "breath caught", "breath seizes", "heart stutters", "heart quickened", "knuckles bleaching", "silence stretched", "set her jaw until", "moved without deciding to move", "sent a shiver", "a beat of silence", "let out a breath", "tears cutting tracks", "wet and ragged", "wet and fractured", "does not reach his eyes", "doesn't reach his eyes", "eyes going distant", "locked behind her ribs", "muscle shifts", "blade laid on stone", "shifts behind his eyes", "hand it over", "this isn't over", "you'll regret this", "mark my words", "does the ledger balance", "left it in your other coat".
-- PROHIBITED: Comparative weapon/element similes (e.g. "like a blade drawn from its sheath", "like a candle flaring"). Collapse comparisons directly into active physical verbs.
-- PROHIBITED: Over-explaining character emotions with abstract philosophical summaries or melodrama (e.g. "for a fraction of a second the mask slips and she sees the malice beneath", "Awe and terror—they are not separate"). Render physical panic and shock strictly through concrete environmental interactions and micro-gestures.
-- PROHIBITED: Epigrammatic or pithy summary endings at the conclusion of beats (e.g. "Because X is still a Y. And the only thing that matters is Z."). End beats strictly on kinetic posture advancement, sensory anchors, or immediate narrative cliffhangers.
-- Avoid filter words ("she felt", "she saw", "she could feel", "she noticed"). Render sensations directly without filter verbs.
-
-FORMATTING DIRECTIVE: Output the final narrative prose enclosed strictly within <prose_text> and </prose_text> tags. Absolutely NO pre-draft scratchpads, thinking steps, outline planning, or conversational commentary before the <prose_text> tag. Output ONLY the story paragraphs within the tags. Do NOT include any internal self-notes, reviews, checklist evaluations, or reasoning after the prose. Stop writing immediately after the final </prose_text> tag.`,
+Output the final narrative prose enclosed strictly within <prose_text> and </prose_text> tags. Absolutely no pre-draft scratchpads, thinking steps, outline planning, or conversational commentary before the <prose_text> tag. Output only the story paragraphs within the tags. Do not include any internal self-notes, reviews, checklist evaluations, or reasoning after the prose. Stop writing immediately after the final </prose_text> tag.`,
 
             // 5.2 Writing Review Agent (SMALL)
             writingReview: `You are a ruthless Booker Prize-level copy editor and structural narrative auditor. Your primary task is to critically evaluate the generated prose against the beat choreography blueprint, narrative plot commitments, literary standards, and continuity principles.
 
 CONTEXT ORIENTATION:
 You will receive:
-1. <current_scene_beats> — the detailed beat-by-beat blueprint specifying character tactics, physical actions, dialogic subtext/demands, Aristotelian pivots, and narrative stipulations.
+1. <current_chunk_choreography_blueprint> — the detailed beat-by-beat blueprint specifying character tactics, physical actions, dialogic subtext/demands, Aristotelian pivots, and narrative stipulations.
 2. <generated_prose> — the full text of the generated scene prose under audit.
-3. Overall story information, active character profiles, relationships, and previous scene context.
+3. Overall story information, style_and_tone, active character profiles, relationships, and previous scene context.
 
 EVALUATION CRITERIA (in order of severity):
 
 **CRITICAL (Grounds for Mandatory FAIL):**
 1. **Plot Point, Dialogue Stipulations & Beat Fidelity (ANTI-DERAILMENT AUDIT):**
-   - Perform an exhaustive, beat-by-beat audit comparing <current_scene_beats> to <generated_prose>.
+   - Perform an exhaustive, beat-by-beat audit comparing <current_chunk_choreography_blueprint> to <generated_prose>.
    - Did the prose alter, dilute, soften, generalize, or omit ANY specific plot commitment, wager, challenge, rule, condition, ultimatum, secret, factual revelation, or dialogue agreement established in the beats?
    - EXAMPLE OF CRITICAL FAILURE: If a beat states a character issues a challenge "You have to eat ice cream for every meal for a month" and the prose changes it to "You have to eat ice cream with a meal this month" or something vague, this is a CATASTROPHIC PLOT DERAILMENT. Downstream scenes rely on this exact premise.
    - If the prose weakens or distorts the core terms, stakes, or consequences of any beat, you MUST FAIL with CRITICAL severity under category CHOREOGRAPHY.
@@ -4853,8 +4896,8 @@ EVALUATION CRITERIA (in order of severity):
 4. **Continuity Break & Name Confusion:** Does the prose contradict physical facts established earlier in the scene (character positions, held items, injuries, time of day) or misname characters (e.g. referring to a character by the wrong name, another character's name, or confusing character identities)?
 5. **Character Absence/Teleportation:** Did a character appear from nowhere, vanish without explanation, or change physical location without any transition?
 6. **Static Posture Looping:** Did the prose re-establish and repeat the exact same static physical posture from the previous beat (e.g. repeated "hand hovering", repeated "holding breath") instead of advancing physical motion?
-7. **Tense Violation:** Did the prose write in past tense instead of present tense? All beats must strictly adhere to present tense.
-8. **POV Violation:** Did the prose write in 1st-person ("I", "my") instead of 3rd-person ("Elara", "she")?
+7. **Tense Violation:** Did the prose violate the required narrative tense specified in <style_and_tone>?
+8. **POV Violation:** Did the prose violate the required narrative point-of-view specified in <style_and_tone>?
 9. **Explicit Subtext Translation:** Did the prose explicitly translate physical gestures into italicized thought interpretations (e.g. "The motion meant she was not afraid")? Subtext must remain un-translated.
 10. **Prop Teleportation / Contradiction:** Did a prop or clothing item change location without physical movement (e.g. using a gloved hand after gloves were removed)?
 11. **Action-State Contradiction:** Did the prose state a character does not move, then immediately depict them performing an active physical gesture in the same sentence?
@@ -9319,7 +9362,7 @@ INSTRUCTIONS:
             9: { title: "Sequence Planner (Sequence Agent)", function: "generateSequences() - Tier 3.1", model: "Small Model Target (Escalates to Large)", inputs: "Detailed Act mandates, cast dossiers, story guidelines.", output: "XML schema detailing 8 Frank Daniel sequences: number, parent_act, title, sequence_function, dramatic_question, and ending_hook.", gate: "Passes Programmatic Validation: 8 sequences generated in 2-4-2 distribution.", retries: "Up to 3 attempts. 3 failures trigger cascading rollback to Act Agent (Step 5).", constraints: "Each sequence must define its dramatic question and sequence climax." },
             10: { title: "Sequence Reviewer", function: "generateSequences() - Tier 3.2", model: "Small Model Target", inputs: "Newly generated sequence plans list, parent Act objectives.", output: "XML outlining critique analysis, status (PASS or FAIL), and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 9 up to 3 times, then rolls back to Step 5.", constraints: "Verify Frank Daniel model alignment and dramatic question sharpness." },
             11: { title: "Scene Roster Agent", function: "generateScenes() - Tier 4.1", model: "Small Model Target (Escalates to Large)", inputs: "Sequence outline, active cast lists, target sequence scope, world bible rules.", output: "XML roster of lean scenes: scene_id, title, characters, threads, objective, scene_type, transition_jump, temporal_scope, entrance/exit conditions.", gate: "Passes Programmatic Validation: at least 4 scenes created per Sequence.", retries: "Up to 3 attempts. 3 failures trigger rollback to Sequence Agent (Step 9).", constraints: "Alternate proactive scenes and reactive sequels with explicit transition jumps." },
-            12: { title: "Scene Roster Reviewer", function: "generateScenes() - Tier 4.2", model: "Small Model Target", inputs: "Generated lean scene roster, parent sequence objectives.", output: "XML outlining status (PASS or FAIL) and deviation reasons.", gate: "Reviewer status == 'PASS'", retries: "FAIL triggers retry of Step 11 up to 3 times, then rolls back to Step 9.", constraints: "Audit Swain Scene/Sequel alternation and causal linkage." },
+            12: { title: "Scene Roster Reviewer & Surgical Editor", function: "generateScenes() - Tier 4.2", model: "Small Model Target + Surgical Editor", inputs: "Generated lean scene roster, parent sequence objectives.", output: "XML outlining status (PASS or FAIL), structured issues, and deviation reasons.", gate: "Reviewer status == 'PASS' or surgical edits resolve flagged issues.", retries: "Minor/Major issues trigger Surgical Scene Editor. Critical failures trigger retry of Step 11 up to 3 times, then roll back to Step 9.", constraints: "Audit Swain Scene/Sequel alternation and causal linkage." },
             13: { title: "Scene Expander Agent", function: "generateScenes() - Tier 4.3", model: "Small Model Target", inputs: "Lean scene row, adjacent scene context (previous exit / next entrance), narrative mode library.", output: "XML expansion: rich_scene_description blueprint, dominant narrative mode, value shift, hard facts, relationship shifts.", gate: "Rich description blueprint generated.", retries: "Up to 3 attempts via the escalation loop.", constraints: "Blueprint only - no prose or dialogue. Respect adjacent-scene continuity." },
             14: { title: "Scene Expander Reviewer", function: "generateScenes() - Tier 4.4", model: "Small Model Target", inputs: "Full list of expanded scenes for the sequence.", output: "XML status report: PASS or FAIL with deviation reasons.", gate: "Continuity validated across the expanded scene flow.", retries: "FAIL is logged; scenes are kept (advisory batch review).", constraints: "Check teleportation, state collisions, and clinical tone." },
             15: { title: "Beat Planner (Beat Agent)", function: "generateBeats() - Tier 5.1", model: "Small Model Target (Escalates to Large)", inputs: "Parent scene directives, character interview profiles, relationship ledger, preceding beats.", output: "XML containing detailed choreography: start entry states, pivot turning points, end exit states, tactical actions.", gate: "Passes Programmatic Validation: at least 3 beats created per Scene.", retries: "Up to 3 attempts. 3 failures trigger rollback to Scene Roster Agent (Step 11).", constraints: "Dialogue subtext planning: surface dialogue vs hidden desires." },
@@ -11636,15 +11679,22 @@ Output Schema:
   <evaluation>A detailed developmental explanation of the surgical strategy required to address the user_directive.</evaluation>
   <actions>
     <action>
-      <action_type>REWRITE_SCENE</action_type>
-      <target_act>1</target_act>
-      <target_seq>1</target_seq>
-      <target_scene>1</target_scene>
+      <action_type>MODIFY_SCENE</action_type>
+      <target_act_idx>0</target_act_idx>
+      <target_sequence_idx>0</target_sequence_idx>
+      <target_scene_idx>0</target_scene_idx>
+      <target_beat_idx>0</target_beat_idx>
+      <target_character_id>Optional (only used for character actions)</target_character_id>
+      <description>Brief summary of what this action does.</description>
       <details>
-        <directive>Detailed instruction for the agent on how to modify the scene/beat.</directive>
-        <replace_text>Optional (only used for PATCH_PROSE, LINE_EDIT_PROSE)</replace_text>
+        <title>For modifying titles</title>
+        <genre>For modifying genre</genre>
+        <name>For character name</name>
+        <instructions>Detailed instruction for the agent on how to modify the scene/beat.</instructions>
+        <!-- Use the appropriate XML tags inside details corresponding to the specific properties you are modifying -->
       </details>
     </action>
+    <!-- Add more <action> blocks as needed -->
   </actions>
 </response>
 </output_format_description>
@@ -12216,9 +12266,33 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                             console.log("Critical issue exists, bypassing surgical inner loop.");
                         }
                     } else {
-                        // Non-writing agents
-                        setLoadingStep(`Surgical Editor: Patching ${tierName}${chunkPrefix} (Attempt ${attempt}/3)...`);
-                        const surgicalPrompt = `You are a Surgical Editor. Your task is to make targeted corrections to a generated structural outline (Act, Sequence, Scene, or Beat list) based on reviewer feedback.
+                        // Non-writing agents (Structural outlines: Scene Roster, Beats, Acts, Sequences)
+                        if (!parsedIssues.some(i => i.severity === "CRITICAL")) {
+                            let innerPass = 1;
+                            let currentDraft = genOutput;
+                            let innerIssues = parsedIssues;
+                            let innerCritique = critique;
+
+                            console.groupCollapsed(`[Surgical Inner Loop - ${tierName}${chunkPrefix}] Attempt ${attempt}`);
+
+                            while (innerPass <= 2) {
+                                console.groupCollapsed(`Pass ${innerPass}/2`);
+                                setLoadingStep(`Surgical Editor: Patching ${tierName}${chunkPrefix} (Inner Pass ${innerPass}/2, Attempt ${attempt})...`);
+                                showToast(`Surgical Editor running on ${tierName} (Pass ${innerPass}/2)...`, 'info');
+
+                                const hasMajor = innerIssues.some(i => i.severity === "MAJOR");
+                                const surgicalModel = hasMajor ? "large" : "small";
+
+                                let issuesText = innerIssues.map((iss, idx) => `Issue #${idx + 1} [${iss.severity} - ${iss.category}]:
+- Description: ${iss.description}
+${iss.location ? `- Location in structure: "${iss.location}"` : ""}
+${(iss.fixSuggestion || iss.fix_suggestion) ? `- Suggestion: ${iss.fixSuggestion || iss.fix_suggestion}` : ""}`).join('\n\n');
+
+                                if (!issuesText || issuesText.trim().length === 0) {
+                                    issuesText = reasons.map(r => `- ${r}`).join('\n');
+                                }
+
+                                const surgicalPrompt = `You are a Surgical Editor. Your task is to make targeted corrections to a generated structural outline (Act, Sequence, Scene, or Beat list) based on reviewer feedback.
 
 Rules:
 1. Identify the MINIMUM set of changes needed to fix the issues.
@@ -12244,8 +12318,8 @@ Rules:
      <target>exact element or passage to remove</target>
    </edit>
 
-4. Choose the most surgical edit type. Use search_replace for style/small corrections. Use rewrite_passage to fix detailed descriptions or structures inside a sequence block. Use insert_after to add missing scenes/sequences/beats. Use delete_passage to prune unwanted elements. Ensure you provide exact matches for search, original, anchor, and target.
-5. Maintain strict tense consistency. Check the tense of the surrounding original text (e.g. present tense vs. past tense) and ensure all edit blocks match that exact tense.
+4. Choose the most surgical edit type. Use search_replace for style/small corrections or attribute tweaks (e.g. scene_type, transition_jump, character tags). Use rewrite_passage to fix detailed descriptions or structures inside a scene block. Use insert_after to add missing scenes/sequences/beats. Use delete_passage to prune unwanted elements. Ensure you provide exact matches for search, original, anchor, and target.
+5. Maintain strict consistency with the rest of the outline.
 
 FORMATTING DIRECTIVE: Return your response strictly as XML tags enclosed in <edits>...</edits>. Do not use YAML or markdown blocks.
 
@@ -12258,54 +12332,89 @@ Output Schema:
   </edit>
 </edits>`;
 
-                        const surgicalUserPrompt = `
+                                const surgicalUserPrompt = `
 <original_text>
-${genOutput}
+${currentDraft}
 </original_text>
 
 <reviewer_feedback>
-${reasons.map(r => `- ${r}`).join('\n')}
+${issuesText}
 </reviewer_feedback>
-${critique ? `\n<critique_analysis>\n${critique}\n</critique_analysis>\n` : ''}
+${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>\n` : ''}
 `;
-                        try {
-                            const surgicalOutput = await callAI(surgicalUserPrompt, surgicalPrompt, false, `Surgical Editor (${tierName})`, "small");
-                            console.log("Non-writing Surgical Output:", surgicalOutput);
-                            const patchedOutput = applySurgicalEdits(genOutput, surgicalOutput);
-                            if (patchedOutput !== genOutput) {
-                                showToast(`Surgical Editor applied patches to ${tierName}.`, 'success');
-                                let parsedData;
                                 try {
-                                    parsedData = parserFn(patchedOutput);
-                                    if (parsedData) {
-                                        lastParsedData = parsedData;
-                                        lastGenOutput = patchedOutput;
+                                    const surgicalOutput = await callAI(surgicalUserPrompt, surgicalPrompt, false, `Surgical Editor (${tierName})`, surgicalModel);
+                                    console.log(`[Surgical Editor (${tierName})] Pass ${innerPass} Output:`, surgicalOutput);
+                                    const patchedOutput = applySurgicalEdits(currentDraft, surgicalOutput);
+                                    if (patchedOutput && patchedOutput !== currentDraft) {
+                                        showToast(`Surgical Editor applied patches to ${tierName} (Pass ${innerPass}).`, 'success');
+                                        let parsedData;
+                                        try {
+                                            parsedData = parserFn(patchedOutput);
+                                            if (!parsedData) throw new Error("Parser returned null.");
+                                            lastParsedData = parsedData;
+                                        } catch (parseError) {
+                                            console.error(`Surgical edit produced unparseable output for ${tierName}:`, parseError);
+                                            console.groupEnd(); // Close Pass group
+                                            break;
+                                        }
+
                                         // Re-review
-                                        setLoadingStep(`Reviewing patched ${tierName}${chunkPrefix} output...`);
+                                        setLoadingStep(`Reviewing patched ${tierName}${chunkPrefix} output (Inner Pass ${innerPass})...`);
                                         const reviewPrompt = reviewerPromptFn(patchedOutput);
                                         const reviewOutput = await callAI(reviewPrompt, reviewerSystemPrompt, false, `${tierName} Reviewer`, "small");
-                                        const reviewResult = extractReviewStatus(reviewOutput);
-                                        const reviewStatus = reviewResult.status;
-                                        console.log("Non-writing Re-review Status:", reviewStatus);
-                                        if (reviewStatus === 'PASS') {
-                                            showToast(`${tierName} passed review after surgical edit!`);
-                                            console.log(`[Pipeline - ${tierName}${chunkPrefix}] PASS after surgical edit`);
+                                        const reviewResultVal = extractReviewStatus(reviewOutput);
+                                        const reviewStatus = reviewResultVal.status;
+                                        const reasonsVal = reviewResultVal.reasons;
+                                        const critiqueVal = reviewResultVal.critique;
+                                        let reviewBriefs = reviewResultVal.briefs;
+                                        await spawnNewCharacters(reviewBriefs);
+
+                                        console.log(`[${tierName} Re-review Pass ${innerPass}] Status:`, reviewStatus);
+                                        if (reviewStatus.trim().toUpperCase() === 'PASS') {
+                                            showToast(`${tierName} passed review after surgical edits!`);
+                                            console.log(`[Pipeline - ${tierName}${chunkPrefix}] PASS after surgical edit on inner pass ${innerPass}`);
                                             setFeedbackLedger(prev => {
                                                 const next = { ...prev };
                                                 delete next[tierName];
                                                 return next;
                                             });
                                             triggerLoreExtraction(patchedOutput, activeActNum, activeSceneNum);
-                                            console.groupEnd(); // Close attempt group
+                                            console.groupEnd(); // Close Pass group
+                                            console.groupEnd(); // Close Surgical Inner Loop group
+                                            console.groupEnd(); // Close Attempt group
                                             return { genOutput: patchedOutput, parsedData, spawnedBriefs };
+                                        } else {
+                                            innerIssues = reviewResultVal.issues && reviewResultVal.issues.length > 0 ? reviewResultVal.issues : parseIssuesFromReview(reviewOutput);
+                                            deviationReasons = reasonsVal.length > 0 ? reasonsVal : ["Failing after surgical edit"];
+                                            innerCritique = critiqueVal;
+                                            currentDraft = patchedOutput;
+                                            lastGenOutput = patchedOutput;
+
+                                            console.log("Remaining issues after pass:", innerIssues);
+
+                                            if (innerIssues.some(i => i.severity === "CRITICAL")) {
+                                                console.log("Critical issue encountered, aborting inner loop.");
+                                                console.groupEnd(); // Close Pass group
+                                                break;
+                                            }
                                         }
+                                    } else {
+                                        showToast(`Surgical Editor: No patches matched for ${tierName} in pass ${innerPass}.`, 'warning');
+                                        console.groupEnd(); // Close Pass group
+                                        break;
                                     }
-                                } catch (e) {
-                                    console.error(`Surgical edit produced unparseable output for ${tierName}:`, e);
+                                } catch (surgicalError) {
+                                    console.error(`Surgical editor failed for ${tierName} in inner pass ${innerPass}:`, surgicalError);
+                                    console.groupEnd(); // Close Pass group
+                                    break;
                                 }
+                                console.groupEnd(); // Close Pass group
+                                innerPass++;
                             }
-                        } catch (surgicalError) {
-                            console.error(`Surgical editor failed for ${tierName}:`, surgicalError);
+                            console.groupEnd(); // Close Surgical Inner Loop group
+                        } else {
+                            console.log("Critical issue exists, bypassing surgical inner loop.");
                         }
                     }
 
@@ -16093,7 +16202,7 @@ BEGIN DEVELOPING CURRENT SEQUENCE SCENES
 `,
                         systemPrompt: PROMPTS.sceneRosterAgent,
                         reviewerSystemPrompt: PROMPTS.sceneRosterReview,
-                        reviewerPromptFn: (genOutput) => `<input_payload_schema>\n  <overall_story_information>Macro narrative framework</overall_story_information>\n  <act_descriptions>The act structure context</act_descriptions>\n  <active_character_profiles>Characters for the story</active_character_profiles>\n  <continuity_ledger>Context regarding what has happened recently</continuity_ledger>\n  <available_narrative_modes>The narrative modes allowed</available_narrative_modes>\n  <scene_target_block>Target constraints for the scenes</scene_target_block>\n  <generated_scenes>The generated scenes to evaluate</generated_scenes>\n</input_payload_schema>\n\n${getSceneContextIntro()}\n\n<continuity_ledger>\n${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}\n</continuity_ledger>\n\n${getSceneActsAndStyle()}\n\n<available_narrative_modes>\n${allNarrativeModesXml}\n</available_narrative_modes>\n\n${getSceneTargetBlock()}\n\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Critique the generated scenes based on narrative modes, dramatic conflict, and character flaws. Note: Characters are identified by their names, and the system automatically reconciles IDs.</critique_analysis>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`,
+                        reviewerPromptFn: (genOutput) => `<input_payload_schema>\n  <overall_story_information>Macro narrative framework</overall_story_information>\n  <act_descriptions>The act structure context</act_descriptions>\n  <active_character_profiles>Characters for the story</active_character_profiles>\n  <continuity_ledger>Context regarding what has happened recently</continuity_ledger>\n  <available_narrative_modes>The narrative modes allowed</available_narrative_modes>\n  <scene_target_block>Target constraints for the scenes</scene_target_block>\n  <generated_scenes>The generated scenes to evaluate</generated_scenes>\n</input_payload_schema>\n\n${getSceneContextIntro()}\n\n<continuity_ledger>\n${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}\n</continuity_ledger>\n\n${getSceneActsAndStyle()}\n\n<available_narrative_modes>\n${allNarrativeModesXml}\n</available_narrative_modes>\n\n${getSceneTargetBlock()}\n\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Critique the generated scenes based on narrative modes, dramatic conflict, and character flaws. Note: Characters are identified by their names, and the system automatically reconciles IDs.</critique_analysis>\n  <issues>\n    <issue>\n      <severity>MINOR</severity> <!-- CRITICAL | MAJOR | MINOR -->\n      <category>SWAIN_FLOW</category> <!-- SWAIN_FLOW | CAUSALITY | TRANSITION | CAST | OBJECTIVES | SCALE -->\n      <description>Clear explanation of the problem.</description>\n      <location>Scene ID (e.g. Scene ${currentSequence.number}.1)</location>\n      <fix_suggestion>Exact surgical edit to resolve the issue.</fix_suggestion>\n    </issue>\n  </issues>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`,
                         parserFn: (text) => {
                             const scenesMatch = /<scenes>([\s\S]*?)<\/scenes>/i.exec(text);
                             const scenesXML = scenesMatch ? scenesMatch[1] : text;
@@ -16542,6 +16651,15 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 Output Schema:
 <response>
   <critique_analysis>Perform a step-by-step critical analysis of each criterion across the expanded scenes.</critique_analysis>
+  <issues>
+    <issue>
+      <severity>MINOR</severity> <!-- CRITICAL | MAJOR | MINOR -->
+      <category>VALUE_SHIFT</category> <!-- VALUE_SHIFT | CAUSALITY | CONTINUITY | CONCRETE_ACTION -->
+      <description>Clear explanation of the problem.</description>
+      <location>Scene ID (e.g. Scene ${currentSequence.number}.1)</location>
+      <fix_suggestion>Exact surgical edit to resolve the issue.</fix_suggestion>
+    </issue>
+  </issues>
   <status>PASS</status> <!-- or FAIL -->
   <deviation_reasons>
     <reason>Explain the exact issue and how to fix it.</reason>
@@ -16563,12 +16681,15 @@ BEGIN EXPANSION CRITIQUE REVIEW
                         "small"
                     );
 
-                    let reviewStatus = extractTag(reviewOutput, 'status') || "FAIL";
-                    let deviationReasons = extractTagList(reviewOutput, 'deviation_reasons', 'reason');
-                    let critiqueAnalysis = extractTag(reviewOutput, 'critique_analysis');
+                    let reviewResult = extractReviewStatus(reviewOutput);
+                    let reviewStatus = reviewResult.status || extractTag(reviewOutput, 'status') || "FAIL";
+                    let deviationReasons = reviewResult.reasons || extractTagList(reviewOutput, 'deviation_reasons', 'reason');
+                    let critiqueAnalysis = reviewResult.critique || extractTag(reviewOutput, 'critique_analysis');
+                    let parsedExpanderIssues = reviewResult.issues && reviewResult.issues.length > 0 ? reviewResult.issues : parseIssuesFromReview(reviewOutput);
 
                     console.log("[Scene Expander Reviewer] Initial Status:", reviewStatus);
                     console.log("[Scene Expander Reviewer] Deviation Reasons:", deviationReasons);
+                    console.log("[Scene Expander Reviewer] Parsed Issues:", parsedExpanderIssues);
 
                     if (reviewStatus.trim().toUpperCase() !== "PASS") {
                         showToast("Scene Expander Review flagged issues. Running Surgical Editor...", "warning");
@@ -16584,9 +16705,19 @@ BEGIN EXPANSION CRITIQUE REVIEW
                         // Surgical Editor Loop (up to 2 passes)
                         let surgicalPass = 1;
                         let currentPayload = reviewPayload;
+                        let currentIssues = parsedExpanderIssues;
+                        let currentCritique = critiqueAnalysis;
+
                         while (surgicalPass <= 2 && reviewStatus.trim().toUpperCase() !== "PASS") {
                             setLoadingStep(`Surgical Editor: Patching Expanded Scenes (Pass ${surgicalPass}/2)...`);
                             showToast(`Surgical Editor patching scenes (Pass ${surgicalPass}/2)...`, "info");
+
+                            let issuesText = (currentIssues && currentIssues.length > 0)
+                                ? currentIssues.map((iss, idx) => `Issue #${idx + 1} [${iss.severity} - ${iss.category}]:
+- Description: ${iss.description}
+${iss.location ? `- Location: "${iss.location}"` : ""}
+${(iss.fixSuggestion || iss.fix_suggestion) ? `- Suggestion: ${iss.fixSuggestion || iss.fix_suggestion}` : ""}`).join('\n\n')
+                                : deviationReasons.map(r => `- ${r}`).join('\n');
 
                             const surgicalPrompt = `You are a Surgical Editor specializing in repairing scene expansion blueprints based on reviewer feedback.
 
@@ -16622,9 +16753,9 @@ ${currentPayload}
 </original_text>
 
 <reviewer_feedback>
-${deviationReasons.map(r => `- ${r}`).join('\n')}
+${issuesText}
 </reviewer_feedback>
-${critiqueAnalysis ? `\n<critique_analysis>\n${critiqueAnalysis}\n</critique_analysis>` : ''}
+${currentCritique ? `\n<critique_analysis>\n${currentCritique}\n</critique_analysis>` : ''}
 `;
 
                             try {
@@ -16671,9 +16802,12 @@ ${critiqueAnalysis ? `\n<critique_analysis>\n${critiqueAnalysis}\n</critique_ana
                                         "Scene Expander Reviewer",
                                         "small"
                                     );
-                                    reviewStatus = extractTag(reReviewOutput, 'status') || "FAIL";
-                                    deviationReasons = extractTagList(reReviewOutput, 'deviation_reasons', 'reason');
-                                    critiqueAnalysis = extractTag(reReviewOutput, 'critique_analysis');
+                                    const reReviewResult = extractReviewStatus(reReviewOutput);
+                                    reviewStatus = reReviewResult.status || extractTag(reReviewOutput, 'status') || "FAIL";
+                                    deviationReasons = reReviewResult.reasons || extractTagList(reReviewOutput, 'deviation_reasons', 'reason');
+                                    critiqueAnalysis = reReviewResult.critique || extractTag(reReviewOutput, 'critique_analysis');
+                                    currentIssues = reReviewResult.issues && reReviewResult.issues.length > 0 ? reReviewResult.issues : parseIssuesFromReview(reReviewOutput);
+                                    currentCritique = critiqueAnalysis;
 
                                     if (reviewStatus.trim().toUpperCase() === "PASS") {
                                         showToast("Expanded scenes passed review after surgical edits!", "success");
@@ -17398,10 +17532,34 @@ BEGIN BEAT CHOREOGRAPHY
                     const actData = storyToUse.acts ? storyToUse.acts.find(a => a.number === (sequenceData.parent_act || 1)) : null;
 
                     // Shared context for the Writing Agent's generator AND reviewer prompts -
-                    // previously duplicated verbatim inside both promptFns (~95 lines each).
-                    const getProseContext = () => `${buildStoryInfoBlock(storyToUse)}
+                    // compiles data elements in the standardized order matching Step 18 schema.
+                    const getProseContext = () => `<style_and_tone>
+Genre: ${storyToUse.style?.genre || 'Fiction'}
+Prose Voice: ${storyToUse.style?.writing_guide || 'Standard'}
+Narrative POV: ${storyToUse.style?.pov || 'Third-Person Limited'}
+Tense: ${storyToUse.style?.tense || 'Present Tense'}
+Tone/Mood: ${storyToUse.style?.mood || 'Engaging'}
+Lore Context:
+${loreContext}
+</style_and_tone>
 
-${buildCharacterArcsBlock(storyToUse)}
+<scene_blueprint>
+Scene ID: ${scene.number || `${sequenceData.number}.${s + 1}`}
+Title: ${scene.title}
+Scene Type: ${scene.scene_type || (s % 2 === 0 ? "PROACTIVE" : "REACTIVE")}
+Transition Jump: ${scene.transition_jump || "Seamless temporal/spatial continuation"}
+Value Shift: ${scene.start_valence || scene.value_shift?.start_state || "Neutral"} -> ${scene.end_valence || scene.value_shift?.end_state || "Shifted"}
+Objective: ${scene.objective || ""}
+Entrance Conditions: ${scene.entrance_conditions || scene.entrance_condition || "Established in scene description"}
+Exit Conditions: ${scene.exit_conditions || scene.exit_condition || "Established in scene description"}
+${scene.setting || scene.environment ? `Setting/Environment: ${scene.setting || scene.environment}\n` : ""}${actData ? `Act Context: Act ${actData.number}: ${actData.title} (Mandate: ${actData.act_mandate || actData.description})\n` : ""}Sequence Context: Sequence ${sequenceData.number}: ${sequenceData.title} (Objective: ${sequenceData.sequence_objective || sequenceData.description || ""})
+Description:
+${scene.description}
+</scene_blueprint>
+
+<continuity_ledger>
+${formatContinuityLedgerForPrompt(storyToUse, { sequence: sequenceData.number, scene: s + 1, act: sequenceData.parent_act })}
+</continuity_ledger>
 
 <active_characters_profiles>
 ${activeCast.map(ch => `<character_profile>
@@ -17420,56 +17578,17 @@ ${ch.details?.deep_profile || 'No profile available.'}
 ${buildRelationshipFrictionBlock(activeCast, storyToUse.relationships || {})}
 </relationship_friction_matrix>
 
-<continuity_ledger>
-${formatContinuityLedgerForPrompt(storyToUse, { sequence: sequenceData.number, scene: s + 1, act: sequenceData.parent_act })}
-</continuity_ledger>
-${actData ? `
-<act_description>
-Act ${actData.number}: ${actData.title}
-Mandate: ${actData.act_mandate || actData.description}
-</act_description>
-` : ""}
-<sequence_description>
-Sequence ${sequenceData.number}: ${sequenceData.title}
-Function: ${sequenceData.sequence_function || ""}
-Objective: ${sequenceData.sequence_objective || ""}
-Description: ${sequenceData.description || ""}
-</sequence_description>
-${previousScene ? `
-<previous_scene_description>
-Scene ID: ${previousScene.number}
-Title: ${previousScene.title}
-Description:
+<previous_context>
+${previousScene ? `Previous Scene (${previousScene.number || (s > 0 ? `${sequenceData.number}.${s}` : `${sequenceData.number - 1}.last`)}: ${previousScene.title}):
 ${previousScene.description}
-</previous_scene_description>
-` : ""}
-${previousSceneProseText ? `
-<previous_scene_prose>
-${previousSceneProseText}
-</previous_scene_prose>
-` : ""}
-<current_scene_description>
-Scene ID: ${scene.number || `${sequenceData.number}.${s + 1}`}
-Title: ${scene.title}
-Scene Type: ${scene.scene_type || (s % 2 === 0 ? "PROACTIVE" : "REACTIVE")}
-Transition Jump: ${scene.transition_jump || "Seamless temporal/spatial continuation"}
-Value Shift: ${scene.start_valence || "Neutral"} -> ${scene.end_valence || "Shifted"}
-Objective: ${scene.objective || ""}
-Description:
-${scene.description}
-</current_scene_description>
+` : "This is the opening scene of the novel.\n"}
+${previousSceneProseText ? `Ending Prose of Previous Scene:
+${previousSceneProseText}` : "No previous scene prose available."}
+</previous_context>
 
-<current_scene_beats>
+<current_chunk_choreography_blueprint>
 ${beatSequenceText}
-</current_scene_beats>
-
-<style_and_tone>
-Genre: ${storyToUse.style?.genre || 'Fiction'}
-Style Guide: ${storyToUse.style?.writing_guide || 'Standard'}
-Tone: ${storyToUse.style?.mood || 'Engaging'}
-Lore Context:
-${loreContext}
-</style_and_tone>
+</current_chunk_choreography_blueprint>
 
 <writing_lens>
 <lens_id>${activeModeId}</lens_id>
@@ -17479,46 +17598,84 @@ ${injectionPrompt || 'Default standard pacing and narrative voice.'}
 </lens_instructions>
 </writing_lens>
 ${dInst ? `
-<directive_rewrite_mandate>
+<directive_requirement>
 You MUST rewrite this scene's prose to satisfy the following instruction:
 "${dInst}"
-</directive_rewrite_mandate>
+</directive_requirement>
 ` : ""}`;
 
                     const proseResult = await runAgentWithEscalation({
                         tierName: "Writing Agent",
                         isAutopilot: autoP,
-                        generatorPromptFn: () => `
-<input_payload_schema>
-This prompt provides the following context blocks. Your responsibility is to translate the beat choreography into final prose:
-- <overall_story_information>: The macro narrative framework.
-- <character_psychological_arcs>: The global character arcs.
-- <active_characters_profiles>: The characters actively participating in this scene.
-- <relationship_friction_matrix>: Existing relationship dynamics to leverage.
-- <continuity_ledger>: Hard facts established in the story. Do not contradict them.
-- <act_description>: The macro Act structure.
-- <sequence_description>: The Sequence structure.
-- <scene_blueprint>: The scene's dramatic blueprint and objectives.
-- <style_and_tone>: The genre and style guidelines, including lore.
-- <writing_lens>: The narrative lens for this scene.
-- <directive_requirement>: (If applicable) Specific user instructions for this scene.
-- <previously_written_beats>: (If chunking) The prose already generated for this scene.
-- <previous_scene_prose_ending>: (If applicable) The ending prose of the previous scene for seamless transition.
-- <current_chunk_choreography_blueprint>: The exact micro-beats (MRUs) you must translate into prose. This is your primary instruction set.
+                        generatorPromptFn: () => `<input_payload_schema>
+This prompt provides the following context blocks to guide your prose generation. Pay special attention to the style constraints and the chronological beat choreography.
+- <style_and_tone>: The global genre, prose voice, narrative POV, and tense.
+- <scene_blueprint>: The scene's environment, objectives, and entrance/exit conditions.
+- <continuity_ledger>: Hard facts, spatial geometry, and held inventory.
+- <active_characters_profiles>: The characters in this scene and their specific vocal cadences.
+- <relationship_friction_matrix>: Existing tensions and trust levels between active characters.
+- <previous_context>: The ending prose of the previous scene OR the previously generated beats (to ensure a seamless, physically continuous opening).
+- <current_chunk_choreography_blueprint>: The exact chronological micro-beats (MRUs) you must translate into prose. This is your core instruction set.
+- <writing_lens>: The narrative mode specifically active for this scene.
+- <directive_requirement>: (If applicable) Specific user instructions or corrections for this generation.
 - <output_format_description>: The required XML output schema.
 </input_payload_schema>
 
 ${getProseContext()}
 
 <output_format_description>
-FORMATTING DIRECTIVE: Output the final narrative prose enclosed strictly within <prose_text> and </prose_text> tags. Absolutely NO pre-draft scratchpads, thinking steps, outline planning, or conversational commentary before the <prose_text> tag. Output ONLY the story paragraphs within the tags. Do NOT include any internal self-notes, reviews, checklist evaluations, or reasoning after the prose. Stop writing immediately after the final </prose_text> tag.
+FORMATTING DIRECTIVE: Output the final narrative prose enclosed strictly within <prose_text> and </prose_text> tags. Absolutely no pre-draft scratchpads, thinking steps, outline planning, or conversational commentary before the <prose_text> tag. Output only the story paragraphs within the tags. Do not include any internal self-notes, reviews, checklist evaluations, or reasoning after the prose. Stop writing immediately after the final </prose_text> tag.
 </output_format_description>
 
-BEGIN WRITING CURRENT SCENE PROSE
+Begin writing current scene prose.
 `,
                         systemPrompt: finalWritingSystemPrompt,
                         reviewerSystemPrompt: PROMPTS.writingReview,
-                        reviewerPromptFn: (genOutput) => `<input_payload_schema>\n  <overall_story_information>Macro narrative framework</overall_story_information>\n  <character_psychological_arcs>Global character arcs</character_psychological_arcs>\n  <active_character_profiles>Characters in this scene</active_character_profiles>\n  <scene_context>The scene parameters</scene_context>\n  <current_scene_beats>The required beats to follow</current_scene_beats>\n  <generated_prose>The prose to evaluate</generated_prose>\n</input_payload_schema>\n\n${getProseContext()}\n\n\n<generated_prose>\n${genOutput}\n</generated_prose>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nCRITICAL AUDIT DIRECTIVE: Conduct an exhaustive, beat-by-beat comparison between <current_scene_beats> and <generated_prose>. Verify that every plot event, specific challenge, wager, rule, dialogue exchange, and turning point from each beat is translated with absolute fidelity. If the prose softens, dilutes, alters, or omits any crucial plot condition or dialogue premise (such as changing a specific challenge, wager, or rule into something vague or trivial), you MUST mark <status>FAIL</status> with CRITICAL severity under category: CHOREOGRAPHY, quote the mismatch, and demand a fix.\n\nOutput Schema:\n<response>\n  <critique_analysis>Perform a focused analysis of choreography and plot point compliance (comparing each beat's dialogue/stakes to the prose), epistemic boundaries, continuity, and style. Be specific — quote exact passages.</critique_analysis>\n  <issues>\n    <issue>\n      <severity>CRITICAL</severity> <!-- CRITICAL | MAJOR | MINOR -->\n      <category>CHOREOGRAPHY</category> <!-- CHOREOGRAPHY | CONTINUITY | EPISTEMIC | VOICE | STYLE -->\n      <description>Clear explanation of the problem (e.g. 'Beat 1.2 specified challenge X, but prose changed it to Y').</description>\n      <location>Quote of the offending text passage.</location>\n      <fix_suggestion>How to restore the exact beat premise/dialogue terms in the prose.</fix_suggestion>\n    </issue>\n  </issues>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>List each critical or major issue description briefly here.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN PROSE CRITIQUE REVIEW`,
+                        reviewerPromptFn: (genOutput) => `<input_payload_schema>
+  <style_and_tone>Global style, POV, tense, and lore</style_and_tone>
+  <scene_blueprint>Scene parameters, environment, objectives, and entrance/exit conditions</scene_blueprint>
+  <continuity_ledger>Active canon facts and inventory</continuity_ledger>
+  <active_characters_profiles>Characters participating in this scene</active_characters_profiles>
+  <relationship_friction_matrix>Interpersonal relationship dynamics</relationship_friction_matrix>
+  <previous_context>Previous scene description and prose</previous_context>
+  <current_chunk_choreography_blueprint>The required beats to follow</current_chunk_choreography_blueprint>
+  <writing_lens>Active narrative mode</writing_lens>
+  <generated_prose>The prose to evaluate</generated_prose>
+</input_payload_schema>
+
+${getProseContext()}
+
+
+<generated_prose>
+${genOutput}
+</generated_prose>
+
+<output_format_description>
+FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+CRITICAL AUDIT DIRECTIVE: Conduct an exhaustive, beat-by-beat comparison between <current_chunk_choreography_blueprint> and <generated_prose>. Verify that every plot event, specific challenge, wager, rule, dialogue exchange, and turning point from each beat is translated with absolute fidelity. If the prose softens, dilutes, alters, or omits any crucial plot condition or dialogue premise (such as changing a specific challenge, wager, or rule into something vague or trivial), you MUST mark <status>FAIL</status> with CRITICAL severity under category: CHOREOGRAPHY, quote the mismatch, and demand a fix.
+
+Output Schema:
+<response>
+  <critique_analysis>Perform a focused analysis of choreography and plot point compliance (comparing each beat's dialogue/stakes to the prose), epistemic boundaries, continuity, and style. Be specific — quote exact passages.</critique_analysis>
+  <issues>
+    <issue>
+      <severity>CRITICAL</severity> <!-- CRITICAL | MAJOR | MINOR -->
+      <category>CHOREOGRAPHY</category> <!-- CHOREOGRAPHY | CONTINUITY | EPISTEMIC | VOICE | STYLE -->
+      <description>Clear explanation of the problem (e.g. 'Beat 1.2 specified challenge X, but prose changed it to Y').</description>
+      <location>Quote of the offending text passage.</location>
+      <fix_suggestion>How to restore the exact beat premise/dialogue terms in the prose.</fix_suggestion>
+    </issue>
+  </issues>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <reason>List each critical or major issue description briefly here.</reason>
+  </deviation_reasons>
+</response>
+</output_format_description>
+
+BEGIN PROSE CRITIQUE REVIEW`,
                         parserFn: (text) => parseWritingOutput(text),
                         modelSize: "large",
                         spawningContext: `Sequence ${seq + 1} Scene ${s + 1} Full Scene Prose Writing`,
@@ -19068,7 +19225,9 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                                                 </span>
                                                                                             )}
                                                                                         </div>
-                                                                                        <EditButton title={`Arc: ${charDisplayName}`} value={ca.description} onSave={() => openEditModal(`Arc: ${charDisplayName}`, ca.description, (val) => { setStory(prev => { const newArcs = [...(prev.character_arcs || [])]; newArcs[cIdx] = { ...newArcs[cIdx], description: val }; return { ...prev, character_arcs: newArcs }; }); })} />
+                                                                                        <div className="flex flex-wrap gap-x-6 gap-y-3 p-4 bg-mist-50 rounded-xl border border-edge-strong/50">
+                                                                                            <EditButton title={`Arc: ${charDisplayName}`} value={ca.description} onSave={() => openEditModal(`Arc: ${charDisplayName}`, ca.description, (val) => { setStory(prev => { const newArcs = [...(prev.character_arcs || [])]; newArcs[cIdx] = { ...newArcs[cIdx], description: val }; return { ...prev, character_arcs: newArcs }; }); })} />
+                                                                                        </div>
                                                                                     </div>
                                                                                     <p className="text-xs text-ink-700 leading-relaxed font-serif">{ca.description}</p>
                                                                                     <div className="flex flex-wrap gap-4 pt-1 text-xs">
@@ -19875,7 +20034,11 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                         if (act.action_type === 'SURGICAL_PATCH_PROSE') typeColor = 'bg-plum-tint text-plum-800 border-plum-edge';
                                                         if (act.action_type === 'LINE_EDIT_PROSE') typeColor = 'bg-orchid-tint text-orchid-800 border-orchid-edge';
                                                         if (act.action_type === 'REWRITE_PROSE') typeColor = 'bg-plum-tint text-plum-800 border-plum-edge';
+                                                        if (['MODIFY_STORY_METADATA'].includes(act.action_type)) typeColor = 'bg-purple-tint text-purple-800 border-purple-edge';
+                                                        if (['ADD_CHARACTER', 'MODIFY_CHARACTER', 'DELETE_CHARACTER'].includes(act.action_type)) typeColor = 'bg-teal-tint text-teal-800 border-teal-edge';
 
+                                                        const isStoryLevel = act.action_type === 'MODIFY_STORY_METADATA';
+                                                        const isCharacterLevel = ['ADD_CHARACTER', 'MODIFY_CHARACTER', 'DELETE_CHARACTER'].includes(act.action_type);
                                                         const isActLevel = act.action_type === 'MODIFY_ACT';
                                                         const isSeqLevel = act.action_type === 'MODIFY_SEQUENCE';
                                                         const isSceneLevel = act.action_type === 'MODIFY_SCENE' || act.action_type === 'ADD_SCENE' || act.action_type === 'DELETE_SCENE';
@@ -20015,6 +20178,62 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
 
                                                                     {/* Action Modification Details Box */}
                                                                     <div className="bg-inset p-4 rounded-xl border border-edge-strong space-y-3">
+                                                                        {/* SCALE 0: STORY & METADATA DETAILS */}
+                                                                        {act.action_type === 'MODIFY_STORY_METADATA' && (
+                                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                                <div className="space-y-1">
+                                                                                    <label className="text-[9px] text-purple-800 font-bold uppercase font-mono">Title</label>
+                                                                                    <input type="text" value={act.details.title || ""} onChange={(e) => handleUpdateActionDetail(actIdx, 'title', e.target.value)} className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono" disabled={isExecutingDirective} />
+                                                                                </div>
+                                                                                <div className="space-y-1">
+                                                                                    <label className="text-[9px] text-purple-800 font-bold uppercase font-mono">Genre</label>
+                                                                                    <input type="text" value={act.details.genre || ""} onChange={(e) => handleUpdateActionDetail(actIdx, 'genre', e.target.value)} className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono" disabled={isExecutingDirective} />
+                                                                                </div>
+                                                                                <div className="space-y-1">
+                                                                                    <label className="text-[9px] text-purple-800 font-bold uppercase font-mono">Mood</label>
+                                                                                    <input type="text" value={act.details.mood || ""} onChange={(e) => handleUpdateActionDetail(actIdx, 'mood', e.target.value)} className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono" disabled={isExecutingDirective} />
+                                                                                </div>
+                                                                                <div className="space-y-1 md:col-span-2">
+                                                                                    <label className="text-[9px] text-purple-800 font-bold uppercase font-mono">Status Quo</label>
+                                                                                    <textarea value={act.details.status_quo || ""} onChange={(e) => handleUpdateActionDetail(actIdx, 'status_quo', e.target.value)} className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full h-16 resize-none" disabled={isExecutingDirective} />
+                                                                                </div>
+                                                                                <div className="space-y-1 md:col-span-2">
+                                                                                    <label className="text-[9px] text-purple-800 font-bold uppercase font-mono">Inciting Incident</label>
+                                                                                    <textarea value={act.details.inciting_incident || ""} onChange={(e) => handleUpdateActionDetail(actIdx, 'inciting_incident', e.target.value)} className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full h-16 resize-none" disabled={isExecutingDirective} />
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
+                                                                        {/* SCALE 0: CHARACTER DETAILS */}
+                                                                        {['ADD_CHARACTER', 'MODIFY_CHARACTER', 'DELETE_CHARACTER'].includes(act.action_type) && (
+                                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                                <div className="space-y-1">
+                                                                                    <label className="text-[9px] text-teal-800 font-bold uppercase font-mono">Target Character ID</label>
+                                                                                    <input type="text" value={act.target_character_id || ""} onChange={(e) => {
+                                                                                        const nextPlan = { ...directivePlan };
+                                                                                        nextPlan.actions[actIdx].target_character_id = e.target.value;
+                                                                                        setDirectivePlan(nextPlan);
+                                                                                    }} className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono" disabled={isExecutingDirective || act.action_type === 'ADD_CHARACTER'} />
+                                                                                </div>
+                                                                                <div className="space-y-1">
+                                                                                    <label className="text-[9px] text-teal-800 font-bold uppercase font-mono">Character Name</label>
+                                                                                    <input type="text" value={act.details.name || ""} onChange={(e) => handleUpdateActionDetail(actIdx, 'name', e.target.value)} className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono" disabled={isExecutingDirective} />
+                                                                                </div>
+                                                                                <div className="space-y-1">
+                                                                                    <label className="text-[9px] text-teal-800 font-bold uppercase font-mono">Role</label>
+                                                                                    <input type="text" value={act.details.role || ""} onChange={(e) => handleUpdateActionDetail(actIdx, 'role', e.target.value)} className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono" disabled={isExecutingDirective} />
+                                                                                </div>
+                                                                                <div className="space-y-1">
+                                                                                    <label className="text-[9px] text-teal-800 font-bold uppercase font-mono">Core Flaw</label>
+                                                                                    <input type="text" value={act.details.core_flaw || ""} onChange={(e) => handleUpdateActionDetail(actIdx, 'core_flaw', e.target.value)} className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono" disabled={isExecutingDirective} />
+                                                                                </div>
+                                                                                <div className="space-y-1 md:col-span-2">
+                                                                                    <label className="text-[9px] text-teal-800 font-bold uppercase font-mono">Core Desire</label>
+                                                                                    <textarea value={act.details.core_desire || ""} onChange={(e) => handleUpdateActionDetail(actIdx, 'core_desire', e.target.value)} className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full h-16 resize-none" disabled={isExecutingDirective} />
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+
                                                                         {/* SCALE 1: ACT DETAILS */}
                                                                         {act.action_type === 'MODIFY_ACT' && (
                                                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
