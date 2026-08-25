@@ -1390,7 +1390,7 @@
             font-size: 11px;
             color: var(--text-muted);
             font-family: var(--font-mono);
-            padding-top: 4px;
+            padding-top: 6px;
             margin-top: auto;
             border-top: 1px solid var(--lib-meta-edge);
         }
@@ -1398,8 +1398,18 @@
         .lib-meta-left {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .lib-meta-right {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            flex-shrink: 0;
         }
 
         .lib-meta-sep {
@@ -1424,7 +1434,7 @@
 
         .lib-progress-track {
             display: inline-block;
-            width: 44px;
+            width: 40px;
             height: 3px;
             border-radius: 2px;
             background: var(--progress-track);
@@ -1438,6 +1448,75 @@
             border-radius: 2px;
             background: var(--accent-gold);
             transition: width 500ms var(--ease-snappy);
+        }
+
+        /* Quick Action Toolbar on Book Cover */
+        .lib-card-actions {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 25;
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            padding: 3px 5px;
+            border-radius: 980px;
+            background: rgba(18, 18, 22, 0.78);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+            opacity: 0;
+            transform: translateY(-4px) scale(0.95);
+            transition: opacity 180ms ease, transform 180ms var(--ease-snappy);
+            pointer-events: none;
+        }
+
+        /* Reveal on card hover, focus-within, or tap (active card) */
+        .lib-card:hover .lib-card-actions,
+        .lib-card:focus-within .lib-card-actions,
+        .lib-card.lib-card--show-actions .lib-card-actions {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+
+        .lib-card-action-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            color: rgba(255, 255, 255, 0.88);
+            background: transparent;
+            border: none;
+            cursor: pointer;
+            transition: background 140ms ease, color 140ms ease, transform 120ms ease;
+        }
+
+        .lib-card-action-btn:hover {
+            background: rgba(255, 255, 255, 0.22);
+            color: #ffffff;
+            transform: scale(1.08);
+        }
+
+        .lib-card-action-btn:active {
+            transform: scale(0.92);
+        }
+
+        .lib-card-action-btn--danger:hover {
+            background: rgba(225, 29, 72, 0.85);
+            color: #ffffff;
+        }
+
+        .lib-card-action-btn--gold {
+            color: #F3DC9B;
+        }
+
+        .lib-card-action-btn--gold:hover {
+            background: rgba(201, 169, 110, 0.35);
+            color: #FFF2D1;
         }
 
         /* Responsive */
@@ -6641,7 +6720,7 @@ INSTRUCTIONS:
                 >
                     {/* TOP FLOATING HUD (Auto-Hides) */}
                     <div className={`fixed top-0 inset-x-0 z-30 transition-all duration-300 ${isReaderHudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none'}`}>
-                        <div className="mx-auto max-w-4xl px-3 sm:px-6 pt-3 pb-2 flex items-center justify-between gap-2 backdrop-blur-md reader-ui-bg border-b reader-ui-border rounded-b-2xl shadow-sm">
+                        <div className="mx-auto max-w-4xl px-3 sm:px-6 pt-[max(1.25rem,calc(env(safe-area-inset-top,0px)+0.5rem))] pb-2.5 flex items-center justify-between gap-2 backdrop-blur-md reader-ui-bg border-b reader-ui-border rounded-b-2xl shadow-sm">
                             {/* Left Actions: Exit / Back to Studio */}
                             <div className="flex items-center gap-1.5">
                                 <button
@@ -6756,7 +6835,7 @@ INSTRUCTIONS:
                         {/* Prose Content Area */}
                         {readerSettings.readingMode === 'paginated' ? (
                             /* PAGINATED BOOK MODE (Multi-column) */
-                            <div className={`w-full ${widthClass} mx-auto px-4 sm:px-8 py-10 sm:py-14 h-full flex flex-col justify-center overflow-hidden relative z-15`}>
+                            <div className={`w-full ${widthClass} mx-auto px-4 sm:px-8 pt-[max(5rem,calc(env(safe-area-inset-top,0px)+3.75rem))] pb-[max(4.5rem,calc(env(safe-area-inset-bottom,0px)+3.25rem))] sm:py-14 h-full flex flex-col justify-center overflow-hidden relative z-15`}>
                                 {hasProse ? (
                                     <div className={`w-full h-full overflow-hidden relative ${pageSlideDirection === 'next' ? 'reader-page-slide-next' : pageSlideDirection === 'prev' ? 'reader-page-slide-prev' : ''}`}>
                                         <div
@@ -6808,7 +6887,7 @@ INSTRUCTIONS:
                             /* CONTINUOUS SCROLL MODE */
                             <div
                                 ref={readerScrollContainerRef}
-                                className={`w-full ${widthClass} mx-auto px-4 sm:px-8 py-16 h-full overflow-y-auto z-15 touch-scroll ${pageSlideDirection === 'next' ? 'reader-page-slide-next' : pageSlideDirection === 'prev' ? 'reader-page-slide-prev' : ''}`}
+                                className={`w-full ${widthClass} mx-auto px-4 sm:px-8 pt-[max(5.5rem,calc(env(safe-area-inset-top,0px)+4.25rem))] pb-[max(5rem,calc(env(safe-area-inset-bottom,0px)+3.5rem))] sm:py-16 h-full overflow-y-auto z-15 touch-scroll ${pageSlideDirection === 'next' ? 'reader-page-slide-next' : pageSlideDirection === 'prev' ? 'reader-page-slide-prev' : ''}`}
                             >
                                 {hasProse ? (
                                     <div className={`space-y-6 ${readerSettings.paragraphStyle === 'indented' ? 'reader-indented' : ''} reader-drop-cap reader-prose`} style={textStyle}>
@@ -6849,7 +6928,7 @@ INSTRUCTIONS:
 
                     {/* BOTTOM FLOATING HUD & PROGRESS BAR (Auto-Hides) */}
                     <div className={`fixed bottom-0 inset-x-0 z-30 transition-all duration-300 ${isReaderHudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-full pointer-events-none'}`}>
-                        <div className="mx-auto max-w-4xl px-3 sm:px-6 pt-2 pb-3 backdrop-blur-md reader-ui-bg border-t reader-ui-border rounded-t-2xl shadow-md space-y-2">
+                        <div className="mx-auto max-w-4xl px-3 sm:px-6 pt-2.5 pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+0.5rem))] backdrop-blur-md reader-ui-bg border-t reader-ui-border rounded-t-2xl shadow-md space-y-2">
                             {/* DUAL MINIMAL PROGRESS BAR */}
                             <div className="space-y-1">
                                 {/* Track 1: Sequence Overall Progress */}
@@ -6905,7 +6984,7 @@ INSTRUCTIONS:
                             {/* Drawer Content */}
                             <div className="relative w-full max-w-sm sm:max-w-md h-full reader-ui-card border-r shadow-2xl flex flex-col z-10 animate-fade-in">
                                 {/* Header */}
-                                <div className="p-4 border-b flex items-center justify-between reader-ui-border">
+                                <div className="p-4 pt-[max(1rem,calc(env(safe-area-inset-top,0px)+0.5rem))] border-b flex items-center justify-between reader-ui-border">
                                     <div className="flex items-center gap-2">
                                         <BookOpen size={16} className="text-gold" />
                                         <h2 className="font-serif font-bold text-base">Table of Contents</h2>
@@ -9584,6 +9663,7 @@ INSTRUCTIONS:
             // Story Library Extended State
             const [librarySearchQuery, setLibrarySearchQuery] = useState("");
             const [libraryCovers, setLibraryCovers] = useState({});
+            const [libraryActiveCardId, setLibraryActiveCardId] = useState(null);
             const [libraryViewMode, setLibraryViewMode] = useState(() => localStorage.getItem("ellipsisprose_library_view_mode") || 'grid');
             const [librarySortBy, setLibrarySortBy] = useState(() => localStorage.getItem("ellipsisprose_library_sort_by") || 'recent');
             const [libraryFilterGenre, setLibraryFilterGenre] = useState('all');
@@ -21877,7 +21957,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                 };
 
                                 return (
-                                    <div className="lib-magazine-root animate-fade-in">
+                                    <div className="lib-magazine-root animate-fade-in" onClick={() => setLibraryActiveCardId(null)}>
                                         {/* ── Header ── */}
                                         <header className="lib-header">
                                             <div className="lib-header-top">
@@ -22000,6 +22080,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                     {filteredStories.map(item => {
                                                         const s = item.data || {};
                                                         const isActive = item.id === activeStoryId;
+                                                        const isActionsActive = libraryActiveCardId === item.id;
                                                         const stats = item.stats;
                                                         const coverSrc = libraryCovers[item.id];
 
@@ -22016,12 +22097,23 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                         return (
                                                             <article
                                                                 key={item.id}
-                                                                className={`lib-card group${isActive ? ' lib-card--active' : ''}`}
+                                                                className={`lib-card group${isActive ? ' lib-card--active' : ''}${isActionsActive ? ' lib-card--show-actions' : ''}`}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    if (!isActionsActive) {
+                                                                        setLibraryActiveCardId(item.id);
+                                                                    }
+                                                                }}
                                                             >
                                                                 {/* Physical 3D Book Object */}
                                                                 <div
-                                                                    onClick={() => {
-                                                                        handleSelectLibraryStory(item, 'dashboard');
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        if (!isActionsActive) {
+                                                                            setLibraryActiveCardId(item.id);
+                                                                        } else {
+                                                                            handleSelectLibraryStory(item, 'dashboard');
+                                                                        }
                                                                     }}
                                                                     className="lib-book-obj"
                                                                 >
@@ -22029,6 +22121,54 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                     <div className="book-spine-shadow" />
                                                                     <div className="book-spine-crease" />
                                                                     <div className="book-edge-trim" />
+
+                                                                    {/* Quick Action Toolbar on Book Cover (Reveals on hover / tap) */}
+                                                                    <div className="lib-card-actions" onClick={(e) => e.stopPropagation()}>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleSelectLibraryStory(item, 'reader');
+                                                                            }}
+                                                                            className="lib-card-action-btn lib-card-action-btn--gold"
+                                                                            title="Read Novel"
+                                                                        >
+                                                                            <BookOpen size={13} />
+                                                                        </button>
+                                                                        {!coverSrc && (
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    const currentStyle = typeof s.coverStyle === 'number' ? s.coverStyle : getCoverStyleIndex(item.id || s.title);
+                                                                                    const nextStyle = (currentStyle + 1) % 8;
+                                                                                    handleUpdateStoryCoverStyle(item.id, nextStyle);
+                                                                                }}
+                                                                                className="lib-card-action-btn"
+                                                                                title="Cycle Typography & Palette"
+                                                                            >
+                                                                                <Sparkles size={13} />
+                                                                            </button>
+                                                                        )}
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleDuplicateStory(item);
+                                                                            }}
+                                                                            className="lib-card-action-btn"
+                                                                            title="Duplicate Story"
+                                                                        >
+                                                                            <Copy size={13} />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                handleDeleteLibraryStory(item, e);
+                                                                            }}
+                                                                            className="lib-card-action-btn lib-card-action-btn--danger"
+                                                                            title="Delete Story"
+                                                                        >
+                                                                            <Trash2 size={13} />
+                                                                        </button>
+                                                                    </div>
 
                                                                     {coverSrc ? (
                                                                         <img
@@ -22042,12 +22182,6 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                             story={s}
                                                                             theme={theme}
                                                                             isLarge={false}
-                                                                            onCycleStyle={(e) => {
-                                                                                e.stopPropagation();
-                                                                                const currentStyle = typeof s.coverStyle === 'number' ? s.coverStyle : getCoverStyleIndex(item.id || s.title);
-                                                                                const nextStyle = (currentStyle + 1) % 8;
-                                                                                handleUpdateStoryCoverStyle(item.id, nextStyle);
-                                                                            }}
                                                                         />
                                                                     )}
                                                                 </div>
@@ -22060,7 +22194,8 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                             <span className="lib-active-dot" title="Active project" />
                                                                         )}
                                                                         <h2
-                                                                            onClick={() => {
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
                                                                                 handleSelectLibraryStory(item, 'dashboard');
                                                                             }}
                                                                             className="lib-card-title font-serif"
@@ -22072,7 +22207,8 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
 
                                                                     {/* Concept preview */}
                                                                     <p
-                                                                        onClick={() => {
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
                                                                             handleSelectLibraryStory(item, 'dashboard');
                                                                         }}
                                                                         className="lib-concept cursor-pointer"
@@ -22083,45 +22219,18 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                     {/* Metadata row */}
                                                                     <div className="lib-meta">
                                                                         <div className="lib-meta-left">
-                                                                            <span>{stats.words.toLocaleString()} count</span>
+                                                                            <span>{stats.words.toLocaleString()} words</span>
                                                                             <span className="lib-meta-sep">&middot;</span>
                                                                             <span>{formatDate(item)}</span>
                                                                         </div>
-                                                                        <div className="flex items-center gap-1.5">
-                                                                            <button
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    handleDuplicateStory(item);
-                                                                                }}
-                                                                                className="p-1 rounded-md hover:bg-wash text-ink-400 hover:text-ink-700 transition-colors cursor-pointer"
-                                                                                title="Duplicate Story"
-                                                                            >
-                                                                                <Copy size={13} />
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    handleSelectLibraryStory(item, 'reader');
-                                                                                }}
-                                                                                className="p-1 rounded-md hover:bg-wash text-ink-600 transition-colors cursor-pointer"
-                                                                                title="Read Novel"
-                                                                            >
-                                                                                <BookOpen size={13} className="text-gold-ink" />
-                                                                            </button>
-                                                                            <button
-                                                                                onClick={(e) => handleDeleteLibraryStory(item, e)}
-                                                                                className="p-1 rounded-md hover:bg-blush-tint text-ink-400 hover:text-blush-600 transition-colors cursor-pointer"
-                                                                                title="Delete Story"
-                                                                            >
-                                                                                <Trash2 size={13} />
-                                                                            </button>
+                                                                        <div className="lib-meta-right">
                                                                             {isComplete ? (
-                                                                                <span className="lib-meta-complete">
+                                                                                <span className="lib-meta-complete" title="All sequences completed">
                                                                                     <CheckCircle size={10} />
                                                                                     Done
                                                                                 </span>
                                                                             ) : (
-                                                                                <span className="lib-meta-progress">
+                                                                                <span className="lib-meta-progress" title={`Completion: ${seqPct}%`}>
                                                                                     <span className="text-[10px]">{seqPct}%</span>
                                                                                     <span className="lib-progress-track">
                                                                                         <span
