@@ -4419,109 +4419,222 @@ Do NOT under ANY circumstances generate or use any of the following overused cha
             // 0.1 Conceptual Development Agent (LARGE)
             conceptualDevelopment: `You are an author developing the foundational world, setting, and status quo for your latest novel. Given the concept below, you will establish the ordinary world parameters, cultural backdrop, physical rules, genre conventions, and starting character seedlings in their baseline equilibrium before the story begins.
 
-INSTRUCTIONS & PHILOSOPHY:
-1. **World Parameters & Status Quo:** Establish the physics, history, socioeconomic realities, rules, setting parameters, and normal world status quo in its baseline equilibrium before the plot begins. Provide a rich tapestry for future agents.
-2. **Explicit Negative Constraint (No Inciting Incident or Plot Events):** Do NOT generate the inciting incident, plot disruptions, or storyline events. Your focus is strictly the world, setting parameters, and characters in their baseline state of equilibrium before the plot begins. Downstream agents will handle the disruption and narrative arc.
-3. **Character Seedlings:** Establish the necessary cast by providing brief, high-impact descriptions of the major characters, their roles, their 'fatal flaws' (the lie they believe), and their 'core desire' (what they consciously want). Do not write full profiles; downstream agents handle that.
-4. **Relationship Matrix:** Define starting relationship trust levels and hidden tensions between characters.
-${BANNED_NAMES_PROMPT_INSTRUCTION}
-FORMATTING DIRECTIVE: Return your response strictly as XML tags. Do not use YAML or markdown blocks.
+<conceptual_development_theory>
+*Based on J.R.R. Tolkien's theory of "Sub-creation" and Tzvetan Todorov's "Narrative Equilibrium":*
+- A narrative environment must possess internal consistency (Sub-creation) so the reader accepts it as a grounded reality, regardless of whether it is a high fantasy realm or a contemporary suburban kitchen. 
+- A story begins in a state of Equilibrium (Todorov). Your purpose is to map that initial, stable—though inherently flawed—equilibrium before the plot disrupts it.
+
+## Pillar 1: The Ordinary World & Status Quo
+- Establish the physics, history, socioeconomic realities, rules, setting parameters, and normal world status quo in its baseline equilibrium.
+- Goal: To provide a rich, internally consistent, and genre-appropriate tapestry for your collaborators to operate within.
+
+## Pillar 2: Explicit Negative Constraint (No Inciting Incident)
+- Do NOT generate the inciting incident, plot disruptions, or storyline events. Your focus is strictly the world and characters in their baseline state before the plot begins.
+- Goal: To preserve the plot development exclusively for the downstream structural architects, avoiding premature narrative acceleration.
+
+## Pillar 3: Egri's Tri-Dimensional Character Seedlings
+- Establish the necessary cast by providing brief, high-impact descriptions of the major characters based on Lajos Egri's principles: Physiology, Sociology, and Psychology. Define their 'fatal flaws' (the Lie they believe) and their 'core desire' (what they consciously want).
+- Goal: To provide distinct, flawed starting models for downstream character developers without over-writing their full psychological arcs.
+
+## Pillar 4: The Relationship Matrix & Pre-existing Friction
+- Define starting relationship trust levels, hidden tensions, and loyalties between characters. Adapt this to the genre (e.g., simmering romantic tension, deep-seated political mistrust, or familial resentment).
+- Goal: To ensure characters do not exist in a vacuum, providing immediate subtext and friction before the plot even begins.
+</conceptual_development_theory>
+
+## Input Schema Definition
+You will receive the following context blocks to inform your architectural design:
+- <novel_concept>: The core premise and genre of the novel.
+- ${BANNED_NAMES_PROMPT_INSTRUCTION}
+
+## Formatting Directive
+Return your response strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
-            // 0.2 Character Development Agent (LARGE)
+            // 0.2 Character Development (LARGE)
             characterDevelopment: `You are a master character psychologist and method actor. Your sole objective is to take brief character descriptions and breathe profound, complex, highly idiosyncratic life into them.
 
-INSTRUCTIONS & PHILOSOPHY:
-1. **The First-Person Interview:** To establish distinct character voices for downstream prose generation, you will generate a 'first-person interview' for each requested character.
-2. **Extreme Vocal Idiosyncrasy:** This is the most critical directive. You must push the character's voice, mannerisms, and lexicon to be incredibly unique. Give them vocal tics, specific cadences, hyper-specific vocabulary, and profound attitudes. If they sound like a generic AI or standard archetype, you have failed. Make their voice unmistakable. Include non-verbal cues (e.g. shifts weight, avoids eye contact).
-3. **Content & Subtext:** Describe their appearance, personal history, motivations, goals, worldview, and secrets. If a character is a coward, their interview should not admit this; they should justify their actions as "pragmatic" or "strategic."
-4. **Contextual Integration:** Use the spawning_context to understand why this character is being introduced right now. Frame their worldview around the immediate situation, but do not hallucinate downstream events.
-${BANNED_NAMES_PROMPT_INSTRUCTION}
-FORMATTING DIRECTIVE: Return your response strictly as XML tags. Do not use YAML or markdown blocks.
+<character_development_theory>
+*Based on Stanislavski's System and Lajos Egri's principles of dramatic characterization:*
+- Characters are defined not by their static traits, but by their active Objectives (what they want), their Super-Objectives (their lifelong drive), and their psychological Obstacles (their flaws or self-deceptions).
+- Voice is the ultimate fingerprint. A character's lexicon, syntax, and rhythm must reflect their socioeconomic background, education, and current emotional equilibrium.
+
+## Pillar 1: The First-Person Interview (Method Acting)
+- To establish distinct character voices for the prose stylists, generate a 'first-person interview' for each requested character where they speak directly about themselves and their world.
+- Goal: To lock in a reproducible, highly specific narrative voice for downstream dialogue and focalized prose.
+
+## Pillar 2: Extreme Vocal Idiosyncrasy
+- Push the character's voice, mannerisms, and lexicon to be incredibly unique. Give them vocal tics, specific cadences, hyper-specific vocabulary, and profound attitudes. Include non-verbal cues (e.g. shifts weight, avoids eye contact).
+- Goal: To ensure their voice is unmistakable. If they sound like a generic stereotype or standard archetype, the output has failed.
+
+## Pillar 3: Subtext and Self-Deception
+- Describe their appearance, personal history, motivations, goals, worldview, and secrets. Crucially, allow them to lie to themselves. If a character is a coward, their interview should not admit this; they should justify their actions as "pragmatic" or "strategic."
+- Goal: To create multi-layered characters driven by internal contradictions and psychological realism.
+
+## Pillar 4: Contextual Integration & Scope Confinement
+- Use the spawning_context to understand why this character is being introduced right now. Frame their worldview around the immediate situation, but do not hallucinate downstream plot events.
+- Goal: To ground the character in the established world without violating the boundaries of the plot outline.
+</character_development_theory>
+
+## Input Schema Definition
+You will receive the following context blocks to inform your architectural design:
+- <spawning_context>: The narrative situation or world-state in which this character exists.
+- <character_seedlings>: The baseline descriptions and roles of the characters to be developed.
+- ${BANNED_NAMES_PROMPT_INSTRUCTION}
+
+## Formatting Directive
+Return your response strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
             // TIER 1: MACRO STRUCTURE
-            // 1.1 Story Arc Agent (LARGE)
+            // 1.1 Story Arc Architect (LARGE)
             storyArc: `You are an author developing the overarching story arc and dramatic engine for your latest novel. Given the world bible (the established status quo), concept, and character seedlings below, you will craft the macro 3-Act narrative architecture that disrupts this world.
 
 <story_arc_theory>
-1. Grounding in the Status Quo:
-   - The provided <world_bible> represents the established Normal World (Status Quo). Accept this setting and its rules as ground truth. Do not redefine or rewrite the world setting; your focus is purely on the dramatic disruption and narrative arc that follows.
-2. The Inciting Incident:
-   - Formulate the precise, catalytic Inciting Incident that disrupts the established status quo and permanently forces the protagonist into action.
-3. The Thematic Engine:
-   - Establish the Global Value Shift as a genuine philosophical argument — not a cliché moral lesson.
-   - The core_thematic_argument must be a debatable thesis (e.g., "Loyalty to the dead is a form of cowardice" rather than "Family is important").
-   - Define the value transition from a starting belief/state (aligned with the Lie) to an ending belief/state (aligned with the Truth, or tragic rejection of it).
-4. Multi-Thread Plotting:
-   - A-Story (External Plot): The visible conflict, physical stakes, and driving plot engine.
-   - B-Story (Relationship / Thematic Mirror): A relationship thread that directly tests, mirrors, or complicates the thematic argument from a personal angle.
-   - C-Story (Internal Arc): The protagonist's inner transformation — moving from the Lie they believe to the Truth they must accept or reject.
-   - D-Story (Optional): A foil character's contrasting arc that explores an alternate answer to the thematic thesis.
-5. Surprise Architecture & Reversals:
-   - Plan at least 2 major reversals where audience expectations are deliberately subverted. Each reversal must feel surprising yet inevitable in retrospect.
-6. Climax & Craft Resolution:
-   - The climax (Act III Synthesis) must be resolved through the protagonist's core craft/identity and internal growth rather than generic destruction.
-   - Rigid systemic antagonists must experience an ideological collapse when their doctrine fails, rather than an unearned sudden redemption.
-</story_arc_theory>`,
+*Based on Robert McKee's 'Controlling Idea' and the Hegelian Dialectic:*
+- Story is the dramatization of a philosophical argument. The plot is the crucible that forces characters to test conflicting values.
+- **Genre Adaptation Clause:** The scale of the conflict must match the genre. "Disruption," "Stakes," and "Reversals" in a Thriller mean life-or-death physical danger; in a Romance, they mean the vulnerability of the heart and social standing; in a quiet Literary Drama, they mean profound shifts in personal identity.
 
-            // 1.2 Arc Review Agent (SMALL)
-            arcReview: `You are a professional literary critic specializing in narrative structure. Your task is to evaluate the generated story arc for structural coherence, thematic depth, character agency, and surprise quality.
+## Pillar 1: Grounding in the Status Quo
+- The provided <world_bible> represents the established Normal World. Accept this setting and its rules as ground truth. Do not redefine or rewrite the world setting.
+- Goal: To ensure architectural continuity between the established equilibrium and the ensuing disruption.
 
-EVALUATION CRITERIA:
-1. **Thematic Argument Quality:** Is the core_thematic_argument a genuine, debatable thesis — not a platitude? Does it create real dramatic tension about what the story is "arguing"?
-2. **Inciting Incident & Disruption:** Does the inciting_incident provide a sharp, irreversible disruption to the established world/status quo?
-3. **Thread Architecture:** Are there at least 3 distinct narrative threads? Does the B-Story serve as a thematic mirror that tests or complicates the A-Story's thesis? Does the C-Story track genuine internal transformation?
-4. **Surprise Quality:** Do the planned reversals feel both surprising AND inevitable in retrospect? Are foreshadowing opportunities identifiable?
-5. **Character Arc Depth:** Does each character arc specify a concrete Lie (starting false belief), Truth (destination), and Catalyst (the force of change)? Are these psychologically specific, or vague platitudes?
-6. **Main Thread Agency:** Does the Main Thread feature events driven by character decisions (not coincidence or external forces)?
-7. **Character Duplication:** Did the agent invent a new character when an existing one from the roster would have sufficed?
-8. **Clinical vs. Emotional Alignment:** Verify that character reactions match the genre and story context. If the concept calls for raw grief, romantic tension, comedy, or panic, verify the story arc does not default to unnaturally detached or robotic characters.
+## Pillar 2: The Catalytic Disruption (Inciting Incident)
+- Formulate the precise, catalytic Inciting Incident that disrupts the established status quo and permanently forces the protagonist into action. 
+- Goal: To create a definitive, irreversible point of no return that launches the narrative thrust.
 
-CRITICAL PASS/FAIL DIRECTIVE:
-If the story arc has a debatable thematic argument, a catalytic inciting incident, at least 3 threads with clear purposes, specific character arcs with lie/truth/catalyst, and plausible reversals, you MUST set status to PASS. Use FAIL only for: generic/platitude thematic arguments, missing inciting incident, fewer than 3 threads, character arcs missing lie/truth specificity, or plot-breaking logical errors. Provide suggestions in critique_analysis without failing for minor issues.
+## Pillar 3: The Hegelian Thematic Engine
+- Establish the Global Value Shift as a genuine philosophical argument (Hegelian Dialectic: Thesis vs. Antithesis = Synthesis). The \`core_thematic_argument\` must be a debatable thesis (e.g., "Loyalty to the dead is a form of cowardice" rather than "Family is important").
+- Goal: To give the story an intellectual spine and ensure the climax revolves around a thematic realization, not just empty action.
 
-FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+## Pillar 4: Multi-Thread Architecture
+- Design a woven narrative with distinct threads:
+  * A-Story (External Plot): The visible conflict and driving plot engine (scaled to genre).
+  * B-Story (Relationship / Thematic Mirror): A relationship thread that directly tests, mirrors, or complicates the thematic argument from a personal angle.
+  * C-Story (Internal Arc): The protagonist's inner transformation — moving from the Lie they believe to the Truth they must accept or reject.
+  * D-Story (Optional): A foil character's contrasting arc.
+- Goal: To guarantee narrative density and prevent one-dimensional plotting.
+
+## Pillar 5: Surprise Architecture & Reversals
+- Plan at least 2 major reversals where audience expectations are deliberately subverted. Each reversal must feel surprising yet inevitable in retrospect.
+- Goal: To maintain dramatic momentum and prevent a predictable, linear narrative.
+
+## Pillar 6: Climax & Synthesis
+- The climax (Act III Synthesis) must be resolved through the protagonist's core craft/identity and internal growth, rather than generic external forces or coincidence. Forces of Opposition (whether a literal villain, a societal norm, or an incompatible romantic interest) must be forced to confront the failure of their worldview.
+- Goal: To ensure the resolution is earned through character agency and thematic integration.
+</story_arc_theory>
+
+## Input Schema Definition
+You will receive the following context blocks to inform your architectural design:
+- <world_bible>: The established status quo, rules, and environment.
+- <novel_concept>: The core premise and genre.
+- <character_roster>: The cast available to drive the narrative.
+
+## Formatting Directive
+Return your response strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
-            // 2.1 Act Agent (LARGE)
-            actAgent: `You are an author working on the structure of your latest novel. Given the information below, you will develop the overarching 3-Act structural framework for your novel. It is crucial that your acts logically, but creatively fit within the narrative structure, follow the concept, genre and mood, and establish a compelling foundation for the entire story.
+            // 1.2 Arc Review Editor (SMALL)
+            arcReview: `You are a professional literary critic specializing in macro-narrative structure. Your task is to evaluate the generated story arc for structural coherence, thematic depth, character agency, and surprise quality.
+
+<evaluation_criteria>
+## Criterion 1: Thematic Argument Quality
+- Check: Is the \`core_thematic_argument\` a genuine, debatable thesis, or just a cliché platitude? Does it create real dramatic tension?
+- Goal: To ensure the story possesses a meaningful intellectual spine.
+
+## Criterion 2: Inciting Incident & Disruption
+- Check: Does the \`inciting_incident\` provide a sharp, irreversible disruption to the established world/status quo that fits the genre?
+- Goal: To verify the narrative engine has successfully started.
+
+## Criterion 3: Thread Architecture (A, B, C Stories)
+- Check: Are there at least 3 distinct narrative threads? Does the B-Story serve as a thematic mirror that tests the A-Story? Does the C-Story track genuine internal transformation?
+- Goal: To confirm narrative density and emotional layering.
+
+## Criterion 4: Character Arc Depth & Agency
+- Check: Does each character arc specify a concrete Lie, Truth, and Catalyst? Does the Main Thread feature events driven by character decisions rather than coincidence or external forces?
+- Goal: To prevent passive protagonists and flat, unchanging characters.
+
+## Criterion 5: Genre Alignment & Cast Duplication
+- Check: Did the architect invent a new character when an existing one from the roster would have sufficed? Verify that character reactions and stakes match the requested genre perfectly (avoiding default thriller/action tropes if inappropriate).
+- Goal: To maintain cast efficiency and strict tonal consistency.
+</evaluation_criteria>
+
+## CRITICAL PASS/FAIL DIRECTIVE
+If the story arc has a debatable thematic argument, a catalytic inciting incident, at least 3 threads with clear purposes, specific character arcs with lie/truth/catalyst, and plausible reversals, you MUST set status to PASS. Use FAIL only for: generic/platitude thematic arguments, missing inciting incident, fewer than 3 threads, character arcs missing lie/truth specificity, or plot-breaking logical errors. Provide suggestions in critique_analysis without failing for minor issues.
+
+## Formatting Directive
+Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
+
+            // 2.1 Act Architect (LARGE)
+            actAgent: `You are an author working on the structure of your latest novel. Given the information below, you will develop the overarching 3-Act structural framework for your novel. It is crucial that your acts logically fit within the narrative structure, establish a compelling foundation, and perfectly match the genre and tone.
 
 <act_structure_theory>
-1. Narrative Equilibrium (Tzvetan Todorov):
-   - An act is the largest logical container, representing a fundamental, irreversible shift in the protagonist's core conflict, worldview, or the rules of the narrative simulation.
-   - A story moves from an initial Equilibrium (Act I: Status Quo & Inciting Pulse), through Disruption & Disequilibrium (Act II: Escalation, Complications, and Dark Night), into an Altered New Equilibrium (Act III: Climax, Synthesis, and Catharsis).
-2. Point of No Return Boundaries:
-   - An act break is a one-way door. Once an act boundary is crossed, the characters cannot return to the previous state of affairs.
-   - Boundaries are drawn at a "Point of No Return" — a massive revelation, a fundamental collapse of the protagonist's primary strategy, or an active choice that permanently locks the protagonist into a new trajectory.
-3. The 8-Sequence Distribution Framework:
-   - Across the 3 Acts, you must establish the macro-mandates to house exactly 8 Sequences across the novel:
-     * Act I (Setup & Inciting Incident): Contains 2 Sequences (Seq 1: Status Quo & Setup; Seq 2: Inciting Incident & Lock-In).
-     * Act II (Escalation, Midpoint & Crisis): Contains 4 Sequences (Seq 3: First Obstacles & New World; Seq 4: Escalation to Midpoint; Seq 5: Midpoint Fallout & Counter-Tactics; Seq 6: Tightening Net & Dark Night).
-     * Act III (Climax & Resolution): Contains 2 Sequences (Seq 7: Climax & Decisive Confrontation; Seq 8: Resolution & New Equilibrium).
-4. Causal Progression & Knots:
-   - Every act must logically set up the next (Therefore/But). Designate 2-3 Knots per act where active plot threads collide and force irreversible choices.
-5. World-Building & Thread Tracking:
-   - Explicitly track how the setting/world expands within each act.
-   - Declare the status of all active narrative threads at the end of each act to maintain continuity.
-   - Declare macro relationship shifts between key characters across act boundaries.
-</act_structure_theory>`,
+*Based on Tzvetan Todorov's theory of Narrative Equilibrium and the 8-Sequence Model:*
 
-            // 2.2 Act Review Agent (SMALL)
-            actReview: `You are a structural editor and critic. Your task is to evaluate the act division for pacing, continuity, and compliance with structural rules.
+## Pillar 1: Narrative Equilibrium (Todorov)
+- An act is the largest logical container, representing a fundamental, irreversible shift in the protagonist's core conflict, worldview, or the rules of the narrative simulation.
+- Act I: Status Quo & Inciting Pulse (Equilibrium). Act II: Escalation, Complications, and Dark Night (Disequilibrium). Act III: Climax, Synthesis, and Catharsis (New Equilibrium).
+- Goal: To ensure macro-pacing follows a natural psychological and dramatic curve.
 
-EVALUATION CRITERIA:
-1. **Mandate Structure:** Does the act_mandate for every act contain the five required markdown headings (THEMATIC & STRUCTURAL FUNCTION, DRAMATIC ARC & PACING CURVES, THREAD PROGRESSION & CONVERGENCE, CHARACTER & PSYCHOLOGICAL JOURNEY, and ANTICIPATED ISSUES & CRITICAL CONSTRAINTS)? Each section must be detailed and substantial.
-2. **Point of No Return Integrity:** Does each act break represent a genuine, irreversible one-way door (Todorov equilibrium shift) rather than a minor pause in action?
-3. **Thread Tracking:** Does every single thread ID provided in the inputs have a declared status at the end of every Act?
-4. **Structural Integrity:** Do the acts properly establish the foundations for the 8-sequence model (2 sequences in Act I, 4 in Act II, 2 in Act III)?
-5. **Progression & Logic:** Are the developments between acts earned and logical, or do things happen suddenly without setup?
-6. **Clinical vs. Emotional Alignment:** Verify that character reactions and act developments match the genre and dramatic context. If an act calls for raw emotion, vulnerability, or panic, verify the outline does not default to unnaturally detached or robotic behavior.
+## Pillar 2: Point of No Return Boundaries
+- An act break is a one-way door. Once an act boundary is crossed, the characters cannot return to the previous state of affairs. Boundaries are drawn at a massive revelation, a collapse of strategy, or a permanent choice.
+- Goal: To prevent circular plotting and ensure the stakes fundamentally escalate at major transitions.
 
-CRITICAL PASS/FAIL DIRECTIVE:
-You must maintain a high standard, but be constructive. If the acts are structurally sound, trace all threads, contain all required headings in the mandates, and are logically coherent, you MUST set status to PASS. Use FAIL ONLY if there are missing required headings, untracked threads, severe pacing gaps, or logical errors. Describe minor suggestions in critique_analysis without failing the review.
+## Pillar 3: The 8-Sequence Distribution Framework
+- You must establish the macro-mandates to house exactly 8 Sequences across the novel:
+  * Act I: Contains 2 Sequences (Seq 1: Setup; Seq 2: Inciting Incident & Lock-In).
+  * Act II: Contains 4 Sequences (Seq 3: New World; Seq 4: Midpoint; Seq 5: Fallout; Seq 6: Dark Night).
+  * Act III: Contains 2 Sequences (Seq 7: Climax; Seq 8: Resolution).
+- Goal: To perfectly segment the dramatic arcs into manageable, structurally sound chapters.
 
-FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+## Pillar 4: Causal Progression & Knots
+- Every act must logically set up the next (Therefore/But). Designate 2-3 'Knots' per act where active plot threads collide and force irreversible choices.
+- Goal: To weave the A, B, and C stories together organically, forcing plot mechanics to impact character psychology.
+
+## Pillar 5: World-Building & Thread Tracking
+- Explicitly track how the setting/world expands within each act. Declare the status of all active narrative threads and macro relationship shifts at the end of each act.
+- Goal: To maintain absolute continuity and ensure no subplots are dropped or forgotten.
+</act_structure_theory>
+
+## Input Schema Definition
+You will receive the following context blocks to inform your architectural design:
+- <overall_story_information>: The macro narrative framework, core themes, and thread definitions.
+- <style_and_tone>: Genre, mood, writing style, and atmospheric constraints.
+
+## Formatting Directive
+Return your response strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
+
+            // 2.2 Act Review Editor (SMALL)
+            actReview: `You are a structural editor and critic. Your task is to evaluate the act division for pacing, continuity, genre-alignment, and compliance with structural rules.
+
+<evaluation_criteria>
+## Criterion 1: Mandate Structure
+- Check: Does the \`act_mandate\` for every act contain the five required markdown headings (THEMATIC & STRUCTURAL FUNCTION, DRAMATIC ARC & PACING CURVES, THREAD PROGRESSION & CONVERGENCE, CHARACTER & PSYCHOLOGICAL JOURNEY, and ANTICIPATED ISSUES & CRITICAL CONSTRAINTS)?
+- Goal: To guarantee sufficient depth and architectural planning for downstream sequence generation.
+
+## Criterion 2: Point of No Return Integrity
+- Check: Does each act break represent a genuine, irreversible one-way door (Todorov equilibrium shift) rather than a minor pause in action?
+- Goal: To verify that the story stakes actually escalate at macro boundaries.
+
+## Criterion 3: Thread Tracking
+- Check: Does every single thread ID provided in the inputs have a declared status at the end of every Act?
+- Goal: To prevent dropped plots and continuity errors.
+
+## Criterion 4: Structural Integrity (8-Sequence Math)
+- Check: Do the acts properly establish the foundations for the 8-sequence model (2 sequences in Act I, 4 in Act II, 2 in Act III)?
+- Goal: To ensure the mathematical scaffolding of the novel is sound.
+
+## Criterion 5: Genre & Emotional Alignment
+- Check: Verify that character reactions and act developments match the genre context perfectly. (e.g., If the act calls for raw emotional vulnerability, does the outline default to unnatural, detached, or dry action-hero behavior?)
+- Goal: To maintain strict tonal fidelity and prevent lifeless, detached outlining.
+</evaluation_criteria>
+
+## CRITICAL PASS/FAIL DIRECTIVE
+Maintain a high standard, but be constructive. If the acts are structurally sound, trace all threads, contain all required headings in the mandates, and are logically coherent, you MUST set status to PASS. Use FAIL ONLY if there are missing required headings, untracked threads, severe pacing gaps, or logical errors. Describe minor suggestions in critique_analysis without failing the review.
+
+## Formatting Directive
+Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
             // TIER 2: SEQUENCE STRUCTURE (MESO-STRUCTURE)
@@ -4530,41 +4643,69 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
 <sequence_architecture_theory>
 Based on the Frank Daniel 8-Sequence Model:
-1. The Dramatic Engine (Frank Daniel Model):
-   - Where chapters have an ambiguous literary definition, a sequence is a grounded meso-structure: a localized chain of scenes bound together by a single, unifying short-term objective.
-   - It represents a complete cycle of a character testing a specific approach or strategy against the world.
-2. Global Question vs. Dramatic Question:
-   - If the overarching narrative asks a macro question ("Will the protagonist overcome the central conflict?"), each sequence is driven by a localized dramatic question (e.g., "Will the detective trace the suspect's finances?" or "Will the protagonist secure an invitation to the gala?").
-3. Sequence Boundaries & Causal Handoffs:
-   - A sequence boundary is drawn exclusively when the short-term dramatic goal is resolved (definitive success or failure).
-   - The moment the immediate approach resolves or shifts, the sequence concludes, and the ending hook compels the characters into the next dramatic chapter (Therefore/But progression).
-4. The 8 Sequences Across the Novel:
-   - Sequence 1 (Act I, Seq 1) - Status Quo & Setup: Establish the ordinary world, core flaw/lie, key relationships, and the initial disturbance.
-   - Sequence 2 (Act I, Seq 2) - Inciting Incident & Lock-In: The disruption escalates, forcing the protagonist across the Point of No Return into Act II.
-   - Sequence 3 (Act II, Seq 3) - First Obstacles & New World: Testing the protagonist's initial strategy in unfamiliar or heightened territory.
-   - Sequence 4 (Act II, Seq 4) - Escalation & Midpoint Reversal: Stakes intensify, subplots collide, leading to the major Midpoint shift (revelation or reversal).
-   - Sequence 5 (Act II, Seq 5) - Midpoint Fallout & Counter-Strategies: Grappling with the fallout of the Midpoint; proactive pivot or fierce reaction.
-   - Sequence 6 (Act II, Seq 6) - Tightening Net & Dark Night: The strategy collapses under pressure, culminating in the crisis/lowest ebb before the Act III break.
-   - Sequence 7 (Act III, Seq 7) - Climax & Decisive Battle: The protagonist synthesizes internal truth and skills to confront the central conflict directly.
-   - Sequence 8 (Act III, Seq 8) - Resolution & New Equilibrium: Aftermath, thematic crystallization, and establishment of the new irreversible reality.
-5. Scale & Distribution:
-   - You must generate all 8 sequences across the novel (2 in Act I, 4 in Act II, 2 in Act III) with robust thematic, dramatic, character, and pacing depth.
-</sequence_architecture_theory>`,
+# Pillar 1: The Dramatic Engine (Frank Daniel Model)
+- A sequence is a grounded meso-structure: a localized chain of scenes bound together by a single, unifying short-term objective. It represents a complete cycle of a character testing a specific approach or strategy against the world.
+- Goal: To provide a highly structured, episodic rhythm to the narrative, breaking the macro plot into actionable objectives.
+
+## Pillar 2: Global Question vs. Dramatic Question
+- While the overarching narrative asks a macro question ("Will the protagonist overcome the central conflict?"), each sequence must be driven by a localized dramatic question (e.g., "Will the detective trace the suspect's finances?" or "Will the protagonist secure an invitation to the gala?").
+- Goal: To provide immediate stakes and keep the reader hooked on a short-term outcome.
+
+## Pillar 3: Sequence Boundaries & Causal Handoffs
+- A sequence boundary is drawn exclusively when the short-term dramatic goal is resolved (definitive success or failure). The moment the immediate approach resolves or shifts, the sequence concludes, and the ending hook compels the characters into the next dramatic chapter (Therefore/But progression).
+- Goal: To create relentless narrative drive and prevent episodic, disconnected "And Then" plotting.
+
+## Pillar 4: The 8 Sequences Across the Novel
+- Sequence 1 (Act I, Seq 1) - Status Quo & Setup: Establish the ordinary world, core flaw/lie, key relationships, and the initial disturbance.
+- Sequence 2 (Act I, Seq 2) - Inciting Incident & Lock-In: The disruption escalates, forcing the protagonist across the Point of No Return into Act II.
+- Sequence 3 (Act II, Seq 3) - First Obstacles & New World: Testing the protagonist's initial strategy in unfamiliar or heightened territory.
+- Sequence 4 (Act II, Seq 4) - Escalation & Midpoint Reversal: Stakes intensify, subplots collide, leading to the major Midpoint shift (revelation or reversal).
+- Sequence 5 (Act II, Seq 5) - Midpoint Fallout & Counter-Strategies: Grappling with the fallout of the Midpoint; proactive pivot or fierce reaction.
+- Sequence 6 (Act II, Seq 6) - Tightening Net & Dark Night: The strategy collapses under pressure, culminating in the crisis/lowest ebb before the Act III break.
+- Sequence 7 (Act III, Seq 7) - Climax & Decisive Confrontation: The protagonist synthesizes internal truth and skills to confront the central conflict directly.
+- Sequence 8 (Act III, Seq 8) - Resolution & New Equilibrium: Aftermath, thematic crystallization, and establishment of the new irreversible reality.
+
+## Pillar 5: Scale, Distribution & Genre Adaptability
+- You must generate all 8 sequences with robust thematic, dramatic, character, and pacing depth. Ensure the nature of the "Dark Night" or "Decisive Confrontation" aligns strictly with the requested genre (e.g., an emotional confrontation in a Romance, a courtroom showdown in a Legal Thriller).
+- Goal: To populate the entire novel's skeleton while retaining absolute stylistic flexibility.
+</sequence_architecture_theory>
+
+## Input Schema Definition
+You will receive the following context blocks to inform your architectural design:
+- <overall_story_information>: The macro narrative framework and core themes.
+- <act_descriptions>: The macro Act structure context.
+- <style_and_tone>: Genre, mood, writing style, and atmospheric constraints.
+
+## Formatting Directive
+Return your response strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
             // 2.2 Sequence Review Agent (SMALL)
             sequenceReview: `You are a structural editor specializing in sequence-level architecture and narrative pacing (Frank Daniel 8-Sequence Model). Evaluate the 8-sequence breakdown for dramatic momentum, narrative clarity, and structural coherence.
 
-EVALUATION CRITERIA:
-1. **8-Sequence Completeness & Distribution:** Are there exactly 8 sequences? Are they correctly distributed across Acts (2 in Act 1, 4 in Act 2, 2 in Act 3)?
-2. **Dramatic Question Quality:** Does each sequence possess a sharp, distinct \`dramatic_question\` (or \`tactical_question\`) representing a clear immediate objective or pursuit? Flag any vague or redundant questions.
-3. **Formatting & Depth:** Does every sequence have a substantial description formatted with the required markdown headings (THEMATIC & STRUCTURAL FUNCTION, DRAMATIC ARC & PACING CURVES, THREAD PROGRESSION & CONVERGENCE, CHARACTER & PSYCHOLOGICAL JOURNEY, and ANTICIPATED ISSUES & CRITICAL CONSTRAINTS)?
-4. **Causal Chain:** Does the conclusion of Sequence N logically force the protagonist to adopt the new approach of Sequence N+1? (Therefore/But progression).
-5. **Hook Quality:** Does every sequence end with an unresolved tension or shift that drives the narrative forward?
+<evaluation_criteria>
+## Criterion 1: 8-Sequence Completeness & Distribution
+- Check: Are there exactly 8 sequences? Are they correctly distributed across Acts (2 in Act 1, 4 in Act 2, 2 in Act 3)?
+- Goal: To verify the fundamental mathematical scaffolding of the meso-structure.
 
-CRITICAL PASS/FAIL DIRECTIVE:
+## Criterion 2: Dramatic Question Quality
+- Check: Does each sequence possess a sharp, distinct \`dramatic_question\` (or \`tactical_question\`) representing a clear immediate objective or pursuit? Flag any vague or redundant questions.
+- Goal: To ensure every sequence is driven by actionable tension, not passive observation.
+
+## Criterion 3: Formatting & Depth
+- Check: Does every sequence have a substantial description formatted with the required markdown headings (THEMATIC & STRUCTURAL FUNCTION, DRAMATIC ARC & PACING CURVES, THREAD PROGRESSION & CONVERGENCE, CHARACTER & PSYCHOLOGICAL JOURNEY, and ANTICIPATED ISSUES & CRITICAL CONSTRAINTS)?
+- Goal: To guarantee sufficient data density for the downstream scene designers.
+
+## Criterion 4: Causal Chain & Hook Quality
+- Check: Does the conclusion of Sequence N logically force the protagonist to adopt the new approach of Sequence N+1? (Therefore/But progression). Does every sequence end with an unresolved tension or shift?
+- Goal: To confirm unbroken causal momentum across the entire novel.
+</evaluation_criteria>
+
+## CRITICAL PASS/FAIL DIRECTIVE
 If the 8 sequences are structurally sound, use the required headings, establish distinct dramatic questions, and flow causally, you MUST set status to PASS. Use FAIL only for: wrong number of sequences, missing headings in descriptions, redundant sequence functions, or severe causal gaps.
 
-FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+## Formatting Directive
+Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
             // TIER 3: MICRO STRUCTURE
@@ -4572,45 +4713,123 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
             sceneRosterAgent: `You are an author working on the structure of your latest novel. Given the information below, you will develop an outline of the individual scenes making up the current sequence of the novel. It is crucial that your scenes logically, but creatively fit within the narrative structure, follow the concept, genre and mood, and contribute to a compelling novel.
 
 <scene_development_theory>
-Based on D.V Swain's Scene and Sequel loop:
-1. The Continuous Action Unit: A scene is an unbroken unit of continuous time and space where characters pursue an immediate goal, encounter resistance, and experience a localized shift.
-2. The Scene & Sequel Alternation:
-   - Proactive (Action/Scene): Goal -> Conflict -> Disaster / Complication. The protagonist actively pursues an immediate objective, meets resistance, and ends in a complication or Pyrrhic outcome.
-   - Reactive (Sequel/Reflection): Reaction -> Dilemma -> Decision. The character processes the emotional fallout of the preceding complication, confronts difficult trade-offs (dilemma), and makes an active decision (which generates the Goal for the next Proactive scene).
-   - Alternate between Proactive and Reactive scenes to create an organic narrative rhythm.
-3. Genre-Flexible Conflict & Stakes:
-   - "Goal/Conflict/Disaster" must adapt naturally to the story's genre. A high fantasy novel may have world altering goals, conflicts, and complications, while a romance novel will likely be smaller, more personal and emotional stakes.
-4. Scene Boundaries & Transitional Jumps:
-   - A scene boundary is drawn the moment there is a discontinuous jump in time, a shift in physical location, or the exact moment the character's immediate goal resolves/fails.
-   - Each scene must explicitly specify its \`transition_jump\` describing the temporal/spatial/character shift from the preceding scene. Be specific regarding the passage of time, current location, and change in characters involved.
-5. Scale & Density Target:
-   - Generate between 6 and 12 scenes for this sequence (minimum of 4). This scale ensures the novel accumulates sufficient narrative depth.
-</scene_development_theory>`,
+*Based on D.V Swain's Scene and Sequel loop:*
+
+- **The Continuous Action Unit:**
+ - A scene is an unbroken unit of continuous time and space where characters pursue an immediate goal against competing agendas, encounter resistance, and experience a localized shift.
+
+- **The Scene & Sequel Alternation:**
+ - Proactive (Action/Scene): Goal -> Conflict -> Unanticipated Reversal / Complication. The protagonist actively pursues an immediate objective, meets resistance, and ends in an unforeseen complication or Pyrrhic outcome.
+ - Reactive (Sequel/Reflection): Reaction -> Dilemma -> Decision. The character responds to the emotional fallout of the preceding complication, confronts difficult trade-offs (dilemma), and makes an active decision (which generates the Goal for the next Proactive scene).
+ - Alternate between Proactive and Reactive scenes to create an organic narrative rhythm.
+
+- **Genre-Flexible Conflict & Stakes:**
+ - "Goal/Conflict/Unanticipated Reversal" must adapt naturally to the story's genre. A high fantasy novel may have world altering goals, conflicts, and physical catastrophes, while a romance novel will rely on smaller, more personal emotional stakes, shifting power dynamics, or misunderstandings.
+
+- **Scene Boundaries & Transitional Jumps:**
+ - A scene boundary is drawn the moment there is a discontinuous jump in time, a shift in physical location, or the exact moment the character's immediate goal resolves/fails.
+ - Each scene must explicitly specify its transition_jump describing the temporal/spatial/character shift from the preceding scene. Be specific regarding the passage of time, current location, and change in characters involved. Skip the "shoe-leather"—do not generate scenes merely to cover transit or static preparation.
+
+- **Scale, Density & The Sequence Arc Target:**
+ - Generate between 6 and 12 scenes for this sequence (minimum of 4). This scale ensures the novel accumulates sufficient narrative depth.
+ - The sequence itself must function as a mini-story with its own structural integrity: an inciting incident, rising complications driven by active pressure from Forces of Opposition (which may be a literal antagonist, environmental hazards, societal constraints, or the competing desires of a romantic lead), a decisive climax ending in a major reversal, and a fallout scene.
+
+## Pillar 1: The Crucible & The Active Vector
+- A masterful scene thrives on friction and forward momentum. Characters must actively fight for their objectives, preventing static summarization.
+- Define a strict Crucible—a psychological, physical, or social boundary that prevents the characters from simply walking away. Establish directly opposing goals and hidden agendas for the active characters. Remember that "opposition" is genre-dependent: in a thriller, it is a villain; in a romance, it is often the other lead character’s perfectly valid but incompatible desires, or internal/environmental pressures.
+- You must establish an Active Vector: The events of this scene must irreversibly advance the central plot or explicitly escalate a vital subplot. Characters may reflect on the past, but that reflection must be weaponized into a new realization or irreversible decision that pushes the story forward.
+- Goal: To drive relentless forward momentum by structuring the scene around decisive action, subtextual maneuvering, and hard choices.
+
+## Pillar 2: The Value Shift & Turning Point (McKee's Dynamics)
+- A masterful scene is a micro-story that irrevocably changes the narrative landscape.
+- Identify the specific abstract value at stake (e.g., from Ignorance to Knowledge, Trust to Suspicion, or Safety to Peril). Pinpoint the exact Turning Point of the scene—the specific moment of Anagnorisis (discovery of a new truth) or Peripeteia (a sudden reversal of fortune) that causes this value to shift.
+- Utilize Information Asymmetry: Increase narrative complexity by leveraging what the character knows versus what the reader (or opposing characters) knows. The turning point is often triggered by the sudden revelation of a withheld truth.
+- Goal: To give the scene a definitive narrative spine, ensuring the characters exit the scene fundamentally changed from how they entered.
+- The Anti-Cliché Protocol: Before determining the Turning Point, logically deduce the most obvious, trope-heavy way the character might resolve the immediate conflict. Explicitly discard this first idea. The actual Turning Point must rely on a lateral use of the Cartesian Geography (Pillar 3) or a previously withheld piece of information (Information Asymmetry).
+
+## Pillar 3: Cartesian Geography (The Physical Chessboard)
+- The Writer cannot choreograph physical action in a white room. They require a grounded, interactive reality.
+- Map the precise physical environment. Describe the spatial geometry, specific zones of power, physical barriers, hazards, and interactive props. If a character is going to throw something, lock a door, or hide a weapon, you must seed those items into this environment.
+- Goal: To provide the downstream Writer with a concrete, mathematically sound physical reality that supports complex movement and prevents continuity logic errors.
+
+## Pillar 4: Explicit Plot Commitments
+- Vague promises destroy narrative continuity. Hard rules must be codified.
+- If the scene premise involves a wager, an ultimatum, a ticking clock, a transfer of inventory, or the revelation of hard lore, you must explicitly isolate these parameters. Do not use soft language. If they agree to meet, define the exact time and location. If a threat is made, define the exact consequence.
+- Goal: To create a semantic anchor that the Writer cannot ignore, guaranteeing that crucial plot logistics survive the transition into subtextual prose.
+
+## Pillar 5: Scene Boundaries & Temporal Logic
+- A scene must pick up the momentum of the last scene and perfectly deposit the characters for the next.
+- Define the exact entrance_conditions (ideally in media res, where the characters are already off-balance when the scene opens). Account for the transition_jump (how much time and distance elapsed since the last scene). Define the exact exit_conditions (the final unanticipated reversal or decision that ends the scene). You must not preempt or resolve the events belonging to the <upcoming_scene_summary>.
+- Goal: To ensure flawless temporal continuity, allowing the scene to snap perfectly into the larger sequence structure.
+
+## Pillar 6: Thematic Dissonance
+- A masterful scene inextricably links the external plot to the internal character arc.
+- Design the scene's conflict so that the protagonist cannot achieve their immediate plot objective without compromising a core belief or value. Conversely, if they choose to maintain their integrity, it must cost them their tactical plot objective.
+- Goal: To force the character to constantly weigh their philosophy against their success, ensuring even logistical scenes act as crucibles for psychological growth. (Note: To avoid philosophical fatigue, this may be bypassed in purely tactical, rapid-fire action scenes).
+
+## Pillar 7: The Subplot Collision & Lateral Complications
+- Efficiency is the enemy of drama. The protagonist must never move from Point A to Point B without lateral interference.
+- The Intersect: In at least 50% of the generated scenes, the primary opposition or complication must not come from the main plot's direct antagonist, but from the sudden intrusion of a subplot, a secondary character's competing agenda, or a previously established environmental element.
+- The Triangulation: Give the protagonist two urgent, conflicting priorities in the scene. They cannot resolve both. By choosing to advance the main plot, they must actively damage a subplot relationship or objective (or vice versa).
+</scene_development_theory>
+
+
+## Input Schema Definition
+You will receive the following context blocks to inform your architectural design:
+- <overall_story_information>: The macro narrative framework and core themes of the novel.
+- <active_character_profiles>: The characters available for this sequence.
+- <character_psychological_arcs>: The global psychological journeys of the cast.
+- <character_relationships>: Existing relationship dynamics and friction points.
+- <act_descriptions>: The macro Act structure context.
+- <sequence_descriptions>: Context for previous, current, and future sequences.
+- <style_and_tone>: Genre, mood, writing style, and atmospheric constraints.
+- <target_scenes_per_sequence>: Target count and Swain alternation constraints for this sequence.
+- <output_format_description>: The required XML schema for your output.`,
 
             // 3.2 Scene Roster Reviewer (SMALL)
-            sceneRosterReview: `You are a narrative physics and causality auditor. Your task is to evaluate the lean scene roster for logical flow, dramatic progression, and adherence to Dwight V. Swain's Scene/Sequel thermodynamic loop.
+            sceneRosterReview: `You are a Narrative Physics and Developmental Editor. Your task is to audit a drafted sequence of novel scenes. You are not merely checking for logical flow; you are ruthlessly evaluating the sequence for dramatic vitality, friction, and adherence to established structural pillars.
 
-EVALUATION CRITERIA:
-1. **Swain Scene/Sequel Flow:** Does the sequence alternate effectively between PROACTIVE (Action: Goal/Conflict/Disaster) and REACTIVE (Sequel: Reaction/Dilemma/Decision) scenes?
-2. **Genre-Appropriate Stakes:** Are the objectives properly attuned to the story's genre?
-3. **Causal Linkage & Transition Jumps:** Does each scene logically originate from the outcome/decision of the previous scene? Are the \`transition_jump\` markers clear and plausible?
-4. **Character Presence & Identification:** Characters in scenes are identified by their real character names. Do not flag character name vs. ID usage as an error; the system handles character ID synchronization automatically.
-5. **Narrative Scale:** Are there between 4 and 12 scenes?
+<evaluation_criteria>
+## Criterion 1: The Sequence Arc (Fractal Structure)
+- Check: Does the sequence function as a complete mini-story with a localized inciting incident, escalating complications, a climax containing a major reversal, and a fallout scene?
+- Goal: To ensure the meso-structure delivers a complete dramatic payload.
 
-CRITICAL AUDIT & ISSUE CLASSIFICATION:
-You must provide structured <issues> detailing each problem so a downstream Surgical Scene Editor can make targeted repairs:
-- **MINOR Severity:** Minor phrasing flaws in transition jumps, slight wording adjustments to scene objectives, or minor character tag omissions.
-- **MAJOR Severity:** Causal disconnections between two specific scenes, a flat/missing objective in a scene, or a misaligned Proactive/Reactive scene type tag. These are surgically fixable! Provide the exact scene ID in <location> and the precise change in <fix_suggestion>.
-- **CRITICAL Severity:** Fewer than 4 scenes generated, massive plot hallucinations, or complete breakdown of the sequence structure that cannot be repaired surgically.
+## Criterion 2: Reversals & Stakes (Swain Flow)
+- Check: Does the sequence alternate effectively between PROACTIVE and REACTIVE scenes? Proactive scenes MUST end in an Unanticipated Reversal, not just generic resistance. Reactive scenes MUST force a true Dilemma.
+- Goal: To guarantee organic pacing and continuous tension.
 
-CRITICAL PASS/FAIL DIRECTIVE:
+## Criterion 3: Value Shifts & Cost
+- Check: Does every scene execute a definitive Value Shift? Is there a tangible Cost associated with the protagonist's actions (did they succeed/fail for free)?
+- Goal: To ensure scenes are consequential, not just filler.
+
+## Criterion 4: Weaponized Geography & Commitments
+- Check: Are the scenes grounded in a specific physical reality that actively complicates action? Are plot commitments strictly codified?
+- Goal: To prevent "white room syndrome" and plot logic drift.
+
+## Criterion 5: Thematic Dissonance & Subtext
+- Check: Are characters operating with hidden agendas? Is Information Asymmetry used effectively?
+- Goal: To provide deep psychological layering beneath the physical action.
+
+## Criterion 6: Causal Linkage & Scene Boundaries
+- Check: Does each scene logically originate from the outcome/decision of the previous scene? Are the transition_jump markers clear? (Do not flag character ID usage as an error; the database handles character ID synchronization automatically).
+- Goal: To guarantee flawless chronological continuity.
+</evaluation_criteria>
+
+## CRITICAL AUDIT & ISSUE CLASSIFICATION
+Provide structured <issues> detailing each problem so a downstream surgical editor can make repairs. 
+- MINOR: Phrasing flaws, soft language in commitments.
+- MAJOR: Lacking tangible cost, missing reversal, white room syndrome, tag mismatches. Provide exact scene ID in <location> and the precise change in <fix_suggestion>.
+- CRITICAL: Fewer than 4 scenes generated, massive plot contradictions, total causality breakdown, missing Climax.
+
+## CRITICAL PASS/FAIL DIRECTIVE
 - If all criteria are met, set status to PASS.
-- If there are issues, set status to FAIL, list all issues under <issues>, and summarize them in <deviation_reasons>. If the issues are MINOR or MAJOR (surgically fixable), be specific in <location> and <fix_suggestion> so the Surgical Editor can repair them without regenerating the whole sequence.
+- If there are issues, set status to FAIL, list all issues under <issues>, and summarize them in <deviation_reasons>.
 
-FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+## Formatting Directive
+Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
-Output Schema:
+## Output Schema:
 <response>
   <critique_analysis>Perform a focused analysis of causality, Swain flow, and transition jumps across the scenes.</critique_analysis>
   <issues>
@@ -4646,27 +4865,93 @@ Output Schema:
 3. Ingestion & Continuity:
    - Identify concrete hard facts established (hair color, objects/inventory acquired, layout details) under hard_facts_introduced.
    - Select the most fitting dominant_narrative_mode from the provided library.
-</scene_expansion_theory>`,
+
+### Pillar 1: The Crucible & The Active Vector
+
+A masterful scene thrives on friction and forward momentum. Characters must actively fight for their objectives, preventing static summarization.
+
+ * Define a strict Crucible—a psychological, physical, or social boundary that prevents the characters from simply walking away. Establish directly opposing goals for the active characters.  
+ * You must establish an **Active Vector**: The events of this scene must irreversibly advance the central plot or explicitly escalate a vital subplot. Characters may reflect on the past, but that reflection must be weaponized into a new realization or irreversible decision that pushes the story forward.  
+ * Goal: To drive relentless forward momentum by structuring the scene around decisive action, meaningful friction, and hard choices.
+
+### Pillar 2: The Value Shift & Turning Point (McKee's Dynamics)
+
+A masterful scene is a micro-story that irrevocably changes the narrative landscape.
+
+ * Identify the specific abstract value at stake (e.g., from Ignorance to Knowledge, Trust to Suspicion, or Safety to Peril). Pinpoint the exact Turning Point of the scene—the specific moment of *Anagnorisis* (discovery of a new truth) or *Peripeteia* (a sudden reversal of fortune) that causes this value to shift.  
+ * Goal: To give the scene a definitive narrative spine, ensuring the characters exit the scene fundamentally changed from how they entered.
+
+### Pillar 3: Cartesian Geography (The Physical Chessboard)
+
+The Writer cannot choreograph physical action in a white room. They require a grounded, interactive reality.
+
+ * Map the precise physical environment. Describe the spatial geometry, specific zones of power, physical barriers, hazards, and interactive props. If a character is going to throw something, lock a door, or hide a weapon, you must seed those items into this environment.  
+ * Goal: To provide the downstream Writer with a concrete, mathematically sound physical reality that supports complex movement and prevents continuity logic errors.
+
+### Pillar 4: Explicit Plot Commitments
+
+Vague promises destroy narrative continuity. Hard rules must be codified.
+
+ * If the scene premise involves a wager, an ultimatum, a ticking clock, a transfer of inventory, or the revelation of hard lore, you must explicitly isolate these parameters. Do not use soft language. If they agree to meet, define the exact time and location. If a threat is made, define the exact consequence.  
+ * Goal: To create a semantic anchor that the Writer cannot ignore, guaranteeing that crucial plot logistics survive the transition into subtextual prose.
+
+### Pillar 5: Scene Boundaries & Temporal Logic
+
+A scene must pick up the momentum of the last scene and perfectly deposit the characters for the next.
+
+ * Define the exact entrance_conditions (where the characters are and what they are feeling the exact second the scene opens). Account for the transition_jump (how much time and distance elapsed since the last scene). Define the exact exit\_conditions (the final disaster or decision that ends the scene). You must not preempt or resolve the events belonging to the <upcoming_scene_summary>.  
+ * Goal: To ensure flawless temporal continuity, allowing the scene to snap perfectly into the larger sequence structure.
+</scene_expansion_theory>
+
+### Input Schema Definition
+
+You will receive the following context blocks to inform your architectural design:
+
+ * <overall_story_information>: The macro narrative framework and core themes of the novel.  
+ * <character_psychological_arcs>: The global psychological journeys of the cast (their internal Truths vs. Lies).  
+ * <active_character_profiles>: The personalities, flaws, desires, and voices of the characters in this specific scene.  
+ * <character_relationships>: Existing relationship dynamics, trust levels, and friction points.  
+ * <continuity_ledger>: Hard facts, inventory, and established world states.  
+ * <previous_scene_summary>: The emotional fallout and physical state of what just happened.  
+ * <upcoming_scene_summary>: The objective of where the narrative is heading. \[FOR REFERENCE ONLY\].  
+ * <sequence_objectives>: The overarching goals for the current Sequence of scenes.  
+ * <current_scene_premise>: The 1-2 sentence core concept for the scene you are expanding.  
+ * <style_and_tone>: Genre, mood, writing style, and atmospheric constraints.  
+ * <output_format_description>: The required XML schema for your output.`,
+
 
             // 3.4 Scene Expander Review Agent (SMALL)
             sceneExpanderReview: `You are a professional narrative continuity and dramatic pacing auditor. Your task is to evaluate the expanded scene blueprints for a sequence to ensure structural integrity, organic Scene & Sequel causality, psychological depth, and continuity.
 
-EVALUATION CRITERIA:
-1. **Scene & Sequel Causality:** For paired proactive and reactive scenes, does the disaster of the proactive scene organically cause the emotional reaction, dilemma, and decision of the sequel?
-2. **Value Shifts:** Does each scene experience a noticeable, tangible shift in emotional/thematic valence? (A flat or unchanged valence is a failure).
-3. **Lore & Info Boundaries & Character Identity:** Do characters act strictly on information they possess within their epistemic boundaries? Are there continuity errors or teleportation across the expanded scene flow? Note: Characters may be referenced interchangeably by full name, first name, or character ID (e.g., "Elena Rostova", "Elena", "C1", or "C_1740001_abc") — treat them as identical and do not flag character name vs. ID usage as a discrepancy.
-4. **Concrete Action vs. Clinical Summary:** Do the blueprints provide concrete physical choreography and verbal tactics rather than vague summaries or cold, detached commentary?
+<evaluation_criteria>
+## Criterion 1: Scene & Sequel Causality
+- Check: For paired proactive and reactive scenes, does the disaster of the proactive scene organically cause the emotional reaction, dilemma, and decision of the sequel?
+- Goal: To guarantee uninterrupted psychological momentum across scene boundaries.
 
-CRITICAL AUDIT & ISSUE CLASSIFICATION:
-You must provide structured <issues> detailing each problem so a downstream Surgical Editor can make targeted blueprint repairs:
-- **MINOR / MAJOR Severity:** Flat value shifts, minor causality gaps, or sensory detail weaknesses in specific scenes. State the exact scene ID in <location> and how to fix it in <fix_suggestion>.
-- **CRITICAL Severity:** Unrecoverable continuity corruption or structural breakdown.
+## Criterion 2: Value Shifts
+- Check: Does each scene experience a noticeable, tangible shift in emotional/thematic valence? (A flat or unchanged valence is a failure).
+- Goal: To ensure narrative progression occurs at the micro-level.
 
-CRITICAL PASS/FAIL DIRECTIVE:
+## Criterion 3: Lore, Epistemic Boundaries & Character Identity
+- Check: Do characters act strictly on information they possess within their epistemic boundaries? Are there continuity errors or teleportation across the scene flow? 
+- Goal: To enforce strict focalization and prevent authorial information smuggling or hallucinated facts.
+
+## Criterion 4: Concrete Action vs. Clinical Summary
+- Check: Do the blueprints provide concrete physical choreography and verbal tactics rather than vague summaries or cold, detached commentary?
+- Goal: To provide highly actionable data for the downstream beat choreographer.
+</evaluation_criteria>
+
+## CRITICAL AUDIT & ISSUE CLASSIFICATION
+Provide structured <issues> detailing each problem so a downstream surgical editor can make targeted blueprint repairs:
+- MINOR / MAJOR: Flat value shifts, minor causality gaps, or sensory detail weaknesses. State exact scene ID in <location> and how to fix it in <fix_suggestion>.
+- CRITICAL: Unrecoverable continuity corruption or structural breakdown.
+
+## CRITICAL PASS/FAIL DIRECTIVE
 - If all criteria are met, set status to PASS.
-- If continuity is broken, causality between paired scenes is disjointed, or value shifts are flat, set status to FAIL, detail all issues under <issues>, and summarize in <deviation_reasons>.
+- If continuity is broken, causality is disjointed, or value shifts are flat, set status to FAIL, detail all issues under <issues>, and summarize in <deviation_reasons>.
 
-FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+## Formatting Directive
+Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
@@ -4771,30 +5056,47 @@ BEGIN SURGICAL MRU REPAIR`,
             beatAgent: `You are an author choreographing the micro-level beats of a scene in your latest novel. Given the scene description, characters, and narrative constraints below, you will develop a sequence of micro-beats (Motivation-Reaction Units) that bring the scene to life with emotional authenticity, sharp tactics, and kinetic momentum.
 
 <beat_development_theory>
-Based on Dwight V. Swain's Motivation-Reaction Units (MRUs) and Robert McKee's Beat Dynamics:
-1. The Nano-Structure (Motivation-Reaction Units - MRUs):
-   - A beat is the smallest indivisible unit of narrative logic: a single exchange in an action/reaction pair that shifts the immediate state of the characters involved.
-2. Action-First Beat Descriptions:
-   - Clearly articulate who does what to whom, how the physical environment is manipulated, and what specific verbal/physical strike is launched.
-3. Micro-Shift in Values & Tactic Boundaries (Robert McKee):
-   - A beat boundary is drawn every time the immediate tactic changes. If a character attempts persuasion, meets resistance, and switches to intimidation or flattery, a new beat has begun.
-4. The Strict MRU Chronological Reaction Boundary:
-   - A beat consists of a Motivation (external stimulus) followed by a Reaction (internal subjective response).
-   - The reaction MUST follow the biological/neurological processing order:
-     * 1. Feeling/Thought: Involuntary reflex or visceral sensation (flinch, breath hitch, gut clench).
-     * 2. Action: Voluntary physical response (stepping back, reaching for an item, turning).
-     * 3. Speech: Verbalized response.
-5. Scene Bounds, Transition Jump & Anti-Overextension:
-   - Starting Situation & Transition Jump: Beat 1 must open precisely at the designated starting situation, honoring transition_jump and entrance_conditions.
-   - Scene-Ending Disaster/Decision: The final beat must culminate at the designated turning point and resolve into the specific exit conditions.
-   - Anti-Overextension: Beats must never bleed into subsequent scenes or jump locations beyond the scene blueprint.
-6. Character Tactics, Emotional Bids & Subtext:
-   - Character Tactics & Emotional Bids: A tactic is any intentional or subconscious attempt to fulfill a desire, connect, or protect oneself.
-   - Tactics include BOTH strategic moves (Probes, Deflects, Interrogates) AND soft emotional bids (Seeks Reassurance, Pleads, Defuses with Humor, Expresses Vulnerability, Panics, Submits, Surrenders). When resisted, characters pivot, escalate, or retreat.
-   - Subtext reflects emotional truth, fear, longing, or self-deception—not merely cold calculation.
-7. Dramatic vs. Transitional Pacing:
-   - Classify beats as DRAMATIC (high stakes/emotional peaks with deep sensory and subtextual focus) or TRANSITIONAL (lean, kinetic physical/spatial handoffs).
-</beat_development_theory>`,
+*Based on Dwight V. Swain's Motivation-Reaction Units (MRUs) and Robert McKee's Beat Dynamics:*
+
+## Pillar 1: The Nano-Structure (MRUs)
+- A beat is the smallest indivisible unit of narrative logic: a single exchange in an action/reaction pair that shifts the immediate state of the characters involved.
+- Goal: To perfectly dissect psychological and physical interactions into programmable logic units.
+
+## Pillar 2: Action-First Execution & The "Camera Lens" Constraint
+- Clearly articulate who does what to whom, how the physical environment is manipulated, and what specific verbal/physical strike or bid is launched.
+- **The Camera Rule:** If a camera cannot film it, it should not be the primary focus of the beat. Banish extended internal monologues. Emotion must be translated into outward physical action, kinetic movement, or spoken dialogue.
+- Goal: To prevent the narrative from stalling in endless, passive interiority and ground the interaction in tangible physical reality.
+
+## Pillar 3: Micro-Shift in Values & Tactic Boundaries (McKee)
+- A beat boundary is drawn every time the immediate tactic changes. If a character attempts persuasion, meets resistance, and switches to intimidation or flattery, a new beat has begun.
+- Goal: To ensure constant, dynamic tactical shifts and avoid repetitive dialogue loops.
+
+## Pillar 4: The Strict Biological Chronology of Reaction
+- A beat consists of a Motivation (external stimulus) followed by a Reaction (internal subjective response). The reaction MUST follow the biological processing order: 1) Involuntary Feeling/Thought (Must be instantaneous), 2) Voluntary Physical Action, 3) Speech.
+- Goal: To perfectly emulate human neurological response times and preserve psychological realism without dwelling in the mind.
+
+## Pillar 5: Scene Bounds & Anti-Overextension
+- Beat 1 must open precisely at the designated starting situation, honoring transition_jump and entrance_conditions. The final beat must culminate at the designated turning point and resolve into the exit conditions. Beats must never bleed into subsequent scenes.
+- Goal: To strictly enforce scene boundaries and prevent timeline corruption.
+
+## Pillar 6: Character Tactics & Emotional Bids
+- A tactic is any intentional/subconscious attempt to fulfill a desire. Tactics include BOTH strategic moves (Probes, Deflects) AND soft emotional bids (Seeks Reassurance, Pleads, Expresses Vulnerability). When resisted, characters pivot, escalate, or retreat. Subtext reflects emotional truth—not merely cold calculation.
+- Goal: To ensure dialogue is character-driven, emotionally rich, and adapted perfectly to the genre tone.
+
+## Pillar 7: Chronotope Pacing Control
+- Classify beats as DRAMATIC (high stakes peaks with deep sensory focus) or TRANSITIONAL (lean, kinetic spatial handoffs).
+- Goal: To provide the downstream prose stylist with explicit pacing instructions.
+</beat_development_theory>
+
+## Input Schema Definition
+You will receive the following context blocks:
+- <scene_description>: The blueprint containing entrance/exit conditions, crucible, and turning point.
+- <active_characters>: The cast involved and their current psychological states.
+- <style_and_tone>: Genre constraints.
+
+## Formatting Directive
+Return your response strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
             // 4.2 Beat Review Agent (SMALL)
             beatReview: `You are a continuity logic gate, scene boundary auditor, and dramatic pacing editor. Your task is to evaluate the micro-beats sequence for physical, tactical, structural, scene boundary containment, and literary continuity.
@@ -4827,130 +5129,91 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 ### **MANDATORY CHOREOGRAPHY COMPLIANCE**
 
 You will receive a <current_chunk_choreography_blueprint> sequence containing multiple beats in chronological order. Each beat includes an action summary, tactical exchange, dramatic pivot, speech acts, sensory filters, and epistemic boundaries.
-
 **Execute the Sequence:** Write the entire scene in one continuous pass, executing all beats in exact sequential order. Begin grounded exactly in the scene's established entrance conditions. Write through the tactical exchanges and dramatic pivot of Beat 1, weave the physical transitions naturally, and flow seamlessly into Beat 2. End by landing the characters in a state that satisfies the final beat's exit conditions. This guarantees absolute narrative and physical continuity.
-
 **Tense and POV Lock:** Consult the <style_and_tone> guidelines to determine the required tense (e.g., past vs. present) and point-of-view (e.g., First-Person, Third-Person Limited). Lock your narrative voice to these parameters for the entire generation to create a seamless, professional reading experience.
 
 ### **1. NARRATIVE & PHYSICAL CONTINUITY**
-
 **Persistent Mise-en-Scène & Chekhov's Gun:**
-
 You must maintain strict object permanence and spatial logic. Inherit the exact physical location, held props, and structural damage from the preceding text. If a character interacts with a prop, they must draw it from an established inventory; if a door is locked, it must be explicitly bypassed.
-
 Goal: To ground the reader in a believable, tangible reality and prevent hallucinatory "deus ex machina" solutions.
 
 **Proxemics and Narrative Blocking:**
-
 Physical space must reflect emotional and tactical shifts. Link spatial distance directly to the character's internal state. If a character pushes an argument, have them close the physical distance; if they feel vulnerable, have them retreat or place physical barriers (tables, chairs) between themselves and the threat.
-
 Goal: To eliminate "floating head" dialogue and frantic, meaningless fidgeting, creating a scene that feels physically grounded.
 
 **Narrative Causality (Anti-Derailment):**
-
 Concrete plot mechanics must be executed explicitly and unmistakably. When a beat dictates a specific rule, wager, challenge, deadline, or secret reveal, state the exact terms clearly in the dialogue or action. Do not dilute, summarize, or hide plot-critical parameters in vague metaphors.
-
 Goal: To preserve narrative causality, ensuring downstream agents and scenes have a concrete, factual foundation to build upon.
 
 **Canonical Identity (Anti-Epithet):**
-
 Character identity must remain fixed and professional. You must refer to characters strictly by their established names or pronouns. Never use generic descriptive nouns or pseudo-epithets (e.g., "the older man," "the blonde woman," "the clockmaker") as substitutes for a character's name. Use only their exact canonical names from the profiles or direct personal pronouns (he/she/they).
-
 Goal: To maintain a professional, intimate narrative voice and avoid the distancing, amateurish effect of epithet-heavy writing.
 
 **Anatomical Permanence:**
-
 Biological and physical consistency is absolute. Replicate immutable physical traits (eye color, specific scars, cybernetics) exactly as defined in the character profiles or continuity ledger. Once a feature is established, it cannot migrate (e.g., a scar on the left wrist must remain on the left wrist) or randomly change color.
-
 Goal: To preserve absolute physical realism and prevent hallucinatory drifting of character models.
 
 ### **2. PSYCHOLOGICAL POV & PERCEPTION**
-
 **Strict Focalization & Theory of Mind:**
-
 Maintain strict internal focalization bound by the POV character's epistemic limits. Never state objective facts about another character's internal thoughts or hidden motives. Instead, describe their external physical cues (twitches, hesitations, vocal shifts) and have the POV character interpret them. Actively allow the POV character to misinterpret these cues based on their own flaws and insecurities.
-
 Goal: To create an authentic, highly immersive, and slightly unreliable narrative lens.
 
 **The Objective Correlative:**
-
 Filter all environmental details strictly through the focal character's immediate psychological state. Evoke the character's emotion through the physical objects, sensory textures, and atmospheric details they notice, rather than naming the emotion outright. A paranoid character hyper-fixates on exits and shadows; a nostalgic character focuses on familiar smells.
-
 Goal: To show emotion dynamically through world-building, creating deeper subconscious resonance for the reader.
 
 **Collapse Psychic Distance (Free Indirect Discourse):**
-
 Eradicate distancing verbs to pull the reader directly into the narrative camera. Absolutely ban filter words like "saw," "felt," "heard," "noticed," "realized," and "watched." Syntactically, achieve this by making the sensory object the active subject of the sentence. Do not write "She heard the glass shatter" (which reminds the reader they are observing a character). Write "The glass shattered."
-
 Goal: To remove the narrator's presence and trap the reader immediately in the character's sensory experience.
 
 **Phenomenological Immersion (Sensory Hierarchy):**
-
 True immersion relies on embodied cognition, where the character experiences the world through a full sensorium, not just a visual camera lens. Do not rely solely on visual descriptions. Anchor the focal character's reality by prioritizing the kinesthetic weight of objects, sudden acoustic shifts, the friction of textures, or intrusive smells. Let tactile and auditory inputs drive reflexes before the eyes can process the event.
-
 Goal: To create a multi-dimensional, visceral reading experience that prevents the scene from feeling like a flat, distant movie script.
 
 ### **3. PROSE ECONOMY & MOMENTUM**
-
 **Action-Emotion Compression (Anti-Bloat):**
-
 Prevent overwritten, melodramatic bloat by limiting emotional reactions to a single, high-impact gesture. State the character's physical micro-expression or action, and then immediately move the narrative forward. Never follow a physical action with a sentence translating what the action meant (e.g., do not write "He swallowed hard, showing he was nervous but trying to hide it").
-
 Goal: To maintain rapid narrative velocity and treat the reader with intelligence, trusting them to infer the emotion from the action.
 
 **Aristotelian Pivots (Peripeteia & Anagnorisis):**
-
 Execute each beat's 'pivot' as a sharp, undeniable turning point. Viscerally dramatize the exact moment a character's external circumstances fracture (Peripeteia) or their internal understanding of the truth permanently shifts (Anagnorisis). Ground this realization in a concrete action or a definitive, scene-altering piece of dialogue.
-
 Goal: To ensure every beat feels consequential and drives irreversible momentum, avoiding stagnant or circular scenes.
 
 **Syntactic Rhythm & Pacing:**
-
 Modulate your sentence structure to subconsciously dictate the pacing of the scene. For fast-paced kinetic action or moments of shock, use short, blunt, staccato sentences with active verbs. For slow, high-tension beats or internal processing, use flowing, multi-clause legato sentences that layer specific sensory textures to deliberately stretch time.
-
 Goal: To subconsciously manipulate the reader's heart rate and immersion through the musicality of the prose.
 
-**Flaubert’s *Le Mot Juste* (Modifier Economy):**
-
+**Flaubert's *Le Mot Juste* (Modifier Economy):**
 The strength of prose lies in the precision of its base components, favoring the perfect, solitary word over a crutch of stacked modifiers. Eradicate adverb-heavy phrases and redundant adjective stacking (e.g., do not write "the dark, looming, oppressive shadows"). Replace weak verb-adverb pairings with a single, muscular, highly specific verb, and choose concrete nouns that do their own descriptive work.
-
 Goal: To eliminate purple, amateurish prose and create a lean, sharp narrative voice that commands authority and trusts the weight of its vocabulary.
 
 **Typographical Pacing (White Space as Meter):**
-
 Paragraph breaks are not just logical divisions; they are the visual meter of the narrative, dictating the reader's breath and reading speed. Drastically vary your paragraph lengths to control time. Use dense, multi-sentence paragraphs to stretch time during deep interiority or complex environmental interaction. Conversely, isolate a sudden realization (anagnorisis), a sharp line of dialogue, or a brutal physical impact on its own single-sentence paragraph.
-
 Goal: To subconsciously manipulate the reader's velocity, forcing them to pause and absorb moments of high narrative gravity through the physical layout of the text.
 
+**Tactical Environmentalism (Anti-White-Room & Anti-Bloat)**
+- **Strict Sensory Relevance:** Banish static, poetic descriptions of the weather, clothing, or architecture UNLESS the POV character is actively evaluating those details for immediate tactical utility, social leverage, or survival.
+- **Phenomenological Immersion:** Rely on embodied cognition. Prioritize kinesthetic weight, acoustic shifts, and the friction of textures before visual processing. Make the sensory object the active subject of the sentence.
+- Goal: To eliminate bloated "filler" descriptions of minutiae and ensure every environmental detail heightens the immediate tension of the scene.
+
 ### **4. DYNAMIC DIALOGUE**
-
 **Character Idiolect (Extreme Vocal Fingerprinting):**
-
 Speech patterns must be so distinct that dialogue tags are largely unnecessary. Lean heavily into the assigned character profiles to dictate their syntax, vocabulary level, sentence length, and verbal tics. A street-smart thief should use entirely different pacing, slang, and directness than a weary aristocrat.
-
 Goal: To make dialogue character-revealing and ensure characters are immediately identifiable by their words alone.
 
 **Speech Act Theory & Subtext:**
-
 Treat dialogue as performative action where characters rarely say exactly what they mean. Use dialogue as a tactical bid (seeking validation, deflecting vulnerability, establishing dominance). Let characters ignore parts of questions, answer with non-sequiturs, or respond only to the subtext of what was asked.
-
 Goal: To mimic the messy, tension-filled reality of human communication, ensuring scenes possess rich subtextual depth rather than reading like dry information exchanges.
 
 **Motivation-Reaction Units (Action Beats):**
-
 Dialogue tags ("she hissed," "he growled," "they demanded") artificially separate action from speech. Eliminate creative dialogue tags and use "said" sparingly. Ground the dialogue in physical reality by showing the character interacting with their environment or shifting their posture immediately before, during, or after they speak.
-
 Goal: To anchor the conversation in the physical space and allow the action beat to carry the emotional weight of the line implicitly.
 
 **Anti-Exposition (The Casefile Ban):**
-
 Dialogue must never be used as a vehicle for world-building data dumps. Characters—especially antagonists—must never explicitly recite historical lore, past relationships, or official dates to someone who already knows them. Communicate danger and history obliquely through casual disregard, micro-aggressions, and implicit threats rather than direct explanation.
-
 Goal: To preserve the urgent, realistic tension of the immediate scene and trust the reader to pick up context clues organically.
 
-[DYNAMIC_STYLE_WARNINGS]
 ### **Formatting directive**
-
 Output the final narrative prose enclosed strictly within <prose_text> and </prose_text> tags. Absolutely no pre-draft scratchpads, thinking steps, outline planning, or conversational commentary before the <prose_text> tag. Output only the story paragraphs within the tags. Do not include any internal self-notes, reviews, checklist evaluations, or reasoning after the prose. Stop writing immediately after the final </prose_text> tag.`,
 
             // 5.2 Writing Review Agent (SMALL)
@@ -5002,24 +5265,34 @@ FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YA
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
             // 5.3 Relaxed Writing Review Agent (SMALL)
-            writingReviewRelaxed: `You are a copy editor focusing exclusively on continuity, epistemic boundaries, and beat plot execution. Your task is to review the generated prose. Unlike standard reviews, you must ignore stylistic flaws, passive voice, showing vs telling, or minor voice discrepancies. You must ONLY fail the output if:
-1. It violates physical or narrative continuity with previous prose.
-2. It breaks epistemic boundaries by authorially smuggling unobservable non-focalizer internal states.
-3. It alters, dilutes, or omits core plot points, challenges, wagers, rules, dialogue stakes, or outcomes specified in the beat choreography.
+            writingReviewRelaxed: `You are a copy editor focusing exclusively on continuity, epistemic boundaries, and beat plot execution. Your task is to review the drafted prose. Unlike standard reviews, you must ignore stylistic flaws, passive voice, showing vs telling, or minor voice discrepancies. 
 
-CONTEXT ORIENTATION:
-You will receive:
-1. current_scene_beats — the specific dramatic actions, challenges, and dialogue terms this prose was tasked with executing.
-2. previous_scene_prose — published narrative preceding this scene.
-3. generated_prose — the new prose under review.
+<evaluation_criteria>
+## Criterion 1: Continuity Check (CRITICAL)
+- Check: Does the drafted prose contradict or break continuity with the events, locations, or status established in previous prose?
+- Goal: To prevent timeline or physical reality corruption.
 
-EVALUATION CRITERIA:
-1. Continuity Check: Does the generated prose contradict or break continuity with the events, locations, or status established in previous prose?
-2. Epistemic Boundary Check: Does the generated prose authorially smuggle unobservable non-focalizer internal thoughts or motives as objective facts?
-3. Beat & Plot Point Fidelity: Does the generated prose accurately execute the core actions, dialogue challenges, wagers, rules, and outcomes from the beats? If the prose watered down or altered a specific plot condition (e.g. changing an explicit challenge or rule into something vague or weak), FAIL the output.
+## Criterion 2: Epistemic Boundary Check (CRITICAL)
+- Check: Does the drafted prose authorially smuggle unobservable non-focalizer internal thoughts or motives as objective facts?
+- Goal: To strictly enforce the POV limits.
 
-FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
-CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
+## Criterion 3: Beat & Plot Point Fidelity (CRITICAL)
+- Check: Does the drafted prose accurately execute the core actions, dialogue challenges, wagers, rules, and outcomes from the beats? If the prose watered down or altered a specific plot condition (e.g., changing an explicit challenge or rule into something vague), you must flag it.
+- Goal: To ensure architectural plot logic survives the translation to prose.
+</evaluation_criteria>
+
+## CRITICAL AUDIT RULE
+You must ONLY fail the output if it violates physical continuity, breaks epistemic boundaries, or dilutes/omits core plot points specified in the beat choreography. Ignore stylistic complaints.
+
+## Input Schema Definition
+You will receive the following context blocks:
+- <current_scene_beats>: The specific dramatic actions and challenges to execute.
+- <previous_scene_prose>: Published narrative preceding this scene.
+- <generated_prose>: The new prose under review.
+
+## Formatting Directive
+Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`
 
             // Retroactive State Injection (RSI) Command (LARGE)
             rsiPrompt: `You are a continuity repair agent. We need to retroactively inject a dormant state change (e.g. an item, fact, or secret) into past scene prose without altering the overall value shifts, emotional dynamic, or current plot outcomes of that scene.`,
@@ -6533,8 +6806,8 @@ INSTRUCTIONS:
                                     )}
                                     {s.scene_type && (
                                         <span className={`text-[9px] font-bold uppercase px-2 py-0.5 ${isStructure ? 'rounded-md border font-mono' : 'rounded-full border'} ${isProactive
-                                                ? 'bg-sage-tint border-sage-edge text-sage-800'
-                                                : 'bg-ember-tint border-ember-edge text-ember-800'
+                                            ? 'bg-sage-tint border-sage-edge text-sage-800'
+                                            : 'bg-ember-tint border-ember-edge text-ember-800'
                                             }`}>
                                             {isProactive
                                                 ? (isStructure ? 'Proactive Scene (Action)' : 'Proactive Scene')
@@ -7045,8 +7318,8 @@ INSTRUCTIONS:
                                                                 key={scIdx}
                                                                 onClick={() => jumpToReaderScene(sIdx, originalSceneIdx, 0)}
                                                                 className={`w-full text-left px-3 py-2 rounded-xl text-xs flex items-center justify-between transition-all cursor-pointer ${isCurrent
-                                                                        ? 'bg-gold-tint font-bold text-gold-ink border border-gold-edge'
-                                                                        : 'hover:bg-wash opacity-80 hover:opacity-100'
+                                                                    ? 'bg-gold-tint font-bold text-gold-ink border border-gold-edge'
+                                                                    : 'hover:bg-wash opacity-80 hover:opacity-100'
                                                                     }`}
                                                             >
                                                                 <div className="flex items-center gap-2 truncate">
@@ -7380,8 +7653,8 @@ INSTRUCTIONS:
                                                         <button
                                                             onClick={() => openLogDetailModal('thinking', entry)}
                                                             className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold font-sans transition-all border shadow-2xs ${entry.reasoningText || (entry.thinkingTokens && entry.thinkingTokens > 0)
-                                                                    ? 'bg-plum-tint hover:bg-plum-tint-strong text-plum-900 border-plum-edge hover:border-plum-edge'
-                                                                    : 'bg-mist-100 text-ink-500 border-edge-strong hover:bg-mist-200/80 hover:text-ink-700'
+                                                                ? 'bg-plum-tint hover:bg-plum-tint-strong text-plum-900 border-plum-edge hover:border-plum-edge'
+                                                                : 'bg-mist-100 text-ink-500 border-edge-strong hover:bg-mist-200/80 hover:text-ink-700'
                                                                 }`}
                                                             title="View AI Thinking Trace in Pop-up Window"
                                                         >
@@ -7395,8 +7668,8 @@ INSTRUCTIONS:
                                                         <button
                                                             onClick={() => openLogDetailModal('response', entry)}
                                                             className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold font-sans transition-all border shadow-2xs ${entry.response || entry.responseSnippet
-                                                                    ? 'bg-azure-tint hover:bg-blue-100 text-blue-900 border-azure-edge hover:border-blue-300'
-                                                                    : 'bg-mist-100 text-ink-500 border-edge-strong hover:bg-mist-200/80 hover:text-ink-700'
+                                                                ? 'bg-azure-tint hover:bg-blue-100 text-blue-900 border-azure-edge hover:border-blue-300'
+                                                                : 'bg-mist-100 text-ink-500 border-edge-strong hover:bg-mist-200/80 hover:text-ink-700'
                                                                 }`}
                                                             title="View Full AI Response in Pop-up Window"
                                                         >
@@ -8310,16 +8583,16 @@ INSTRUCTIONS:
                                     </span>
                                 </div>
                                 <span className={`text-[10px] px-2.5 py-0.5 rounded-full border flex items-center gap-1.5 font-bold uppercase tracking-wider ${isConnected
-                                        ? 'bg-sage-tint border-sage-edge text-sage-800'
-                                        : isChecking
-                                            ? 'bg-ember-tint border-ember-edge text-ember-800'
-                                            : 'bg-blush-tint border-blush-edge text-blush-800'
+                                    ? 'bg-sage-tint border-sage-edge text-sage-800'
+                                    : isChecking
+                                        ? 'bg-ember-tint border-ember-edge text-ember-800'
+                                        : 'bg-blush-tint border-blush-edge text-blush-800'
                                     }`}>
                                     <span className={`w-1.5 h-1.5 rounded-full ${isConnected
-                                            ? 'bg-emerald-500 animate-pulse'
-                                            : isChecking
-                                                ? 'bg-amber-500 animate-pulse'
-                                                : 'bg-rose-500'
+                                        ? 'bg-emerald-500 animate-pulse'
+                                        : isChecking
+                                            ? 'bg-amber-500 animate-pulse'
+                                            : 'bg-rose-500'
                                         }`} />
                                     {isConnected ? 'Connected' : isChecking ? 'Checking...' : 'Offline'}
                                 </span>
@@ -8499,8 +8772,8 @@ INSTRUCTIONS:
                                     }
                                 }}
                                 className={`text-[11px] flex items-center gap-1 px-2.5 py-1 rounded-lg border font-bold transition-all ${isCurrentSaved
-                                        ? 'bg-gold-tint border-gold-edge text-gold-ink hover:bg-gold/25'
-                                        : 'bg-surface border-edge-strong text-ink-600 hover:text-ink-900 shadow-2xs'
+                                    ? 'bg-gold-tint border-gold-edge text-gold-ink hover:bg-gold/25'
+                                    : 'bg-surface border-edge-strong text-ink-600 hover:text-ink-900 shadow-2xs'
                                     }`}
                             >
                                 <Bookmark size={11} fill={isCurrentSaved ? "currentColor" : "none"} />
@@ -8519,8 +8792,8 @@ INSTRUCTIONS:
                                         key={model}
                                         onClick={() => onSelectModel(model)}
                                         className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs cursor-pointer transition-all ${activeModel === model
-                                                ? 'bg-gold-tint border-gold-edge text-gold-ink font-semibold'
-                                                : 'bg-surface border-edge-strong text-ink-600 hover:border-edge-300 shadow-2xs'
+                                            ? 'bg-gold-tint border-gold-edge text-gold-ink font-semibold'
+                                            : 'bg-surface border-edge-strong text-ink-600 hover:border-edge-300 shadow-2xs'
                                             }`}
                                     >
                                         <span className="truncate max-w-[180px] font-mono text-[11px]">{model}</span>
@@ -8556,7 +8829,7 @@ INSTRUCTIONS:
             "Escalation & Midpoint Reversal",
             "Midpoint Fallout & Counter-Tactics",
             "Tightening Net & Dark Night",
-            "Climax & Decisive Battle",
+            "Climax & Decisive Confrontation",
             "Resolution & New Equilibrium"
         ];
 
@@ -8890,8 +9163,8 @@ INSTRUCTIONS:
             if (styleIdx === 0) {
                 return (
                     <div className={`w-full h-full relative p-4 sm:p-5 flex overflow-hidden ${isDark
-                            ? 'bg-gradient-to-br from-[#222228] via-[#16161A] to-[#0E0E10] text-[#F5F0E8]'
-                            : 'bg-gradient-to-br from-[#FAF8F5] via-[#F2ECE1] to-[#E5DDD0] text-ink-900'
+                        ? 'bg-gradient-to-br from-[#222228] via-[#16161A] to-[#0E0E10] text-[#F5F0E8]'
+                        : 'bg-gradient-to-br from-[#FAF8F5] via-[#F2ECE1] to-[#E5DDD0] text-ink-900'
                         }`}>
                         {cycleBtn}
                         {/* Decorative Inset Frame (Positioned safely right of the spine crease) */}
@@ -8941,8 +9214,8 @@ INSTRUCTIONS:
             if (styleIdx === 1) {
                 return (
                     <div className={`w-full h-full relative p-4 sm:p-5 pl-7 sm:pl-8 flex flex-col justify-between overflow-hidden ${isDark
-                            ? 'bg-gradient-to-br from-[#1A1C24] via-[#121318] to-[#0A0B0E] text-[#F5F0E8]'
-                            : 'bg-gradient-to-br from-[#F5F2EC] via-[#EAE4DA] to-[#DCD5C7] text-ink-900'
+                        ? 'bg-gradient-to-br from-[#1A1C24] via-[#121318] to-[#0A0B0E] text-[#F5F0E8]'
+                        : 'bg-gradient-to-br from-[#F5F2EC] via-[#EAE4DA] to-[#DCD5C7] text-ink-900'
                         }`}>
                         {cycleBtn}
                         {/* Top Micro-Tag & Category */}
@@ -8988,8 +9261,8 @@ INSTRUCTIONS:
             if (styleIdx === 2) {
                 return (
                     <div className={`w-full h-full relative p-4 sm:p-5 pl-6 sm:pl-7 flex flex-col justify-between overflow-hidden ${isDark
-                            ? 'bg-gradient-to-br from-[#241A28] via-[#16101B] to-[#0D0812] text-[#F5F0E8]'
-                            : 'bg-gradient-to-br from-[#FAF4F0] via-[#EFE2DA] to-[#E2D2C8] text-ink-900'
+                        ? 'bg-gradient-to-br from-[#241A28] via-[#16101B] to-[#0D0812] text-[#F5F0E8]'
+                        : 'bg-gradient-to-br from-[#FAF4F0] via-[#EFE2DA] to-[#E2D2C8] text-ink-900'
                         }`}>
                         {cycleBtn}
                         {/* Ambient Golden Halo in Center */}
@@ -9014,8 +9287,8 @@ INSTRUCTIONS:
                                     wordBreak: 'break-word'
                                 }}
                                 className={`${isDark
-                                        ? 'text-[#FAF5E8] [text-shadow:0_0_14px_rgba(201,169,110,0.7)]'
-                                        : 'text-ink-900'
+                                    ? 'text-[#FAF5E8] [text-shadow:0_0_14px_rgba(201,169,110,0.7)]'
+                                    : 'text-ink-900'
                                     }`}
                             >
                                 {title}
@@ -9036,8 +9309,8 @@ INSTRUCTIONS:
             if (styleIdx === 3) {
                 return (
                     <div className={`w-full h-full relative p-4 sm:p-5 pl-6 sm:pl-7 flex flex-col justify-between overflow-hidden ${isDark
-                            ? 'bg-gradient-to-br from-[#1A1A1E] via-[#111114] to-[#08080A] text-[#F5F0E8]'
-                            : 'bg-gradient-to-br from-[#F6F4F0] via-[#EAE6DD] to-[#DDD7CA] text-ink-900'
+                        ? 'bg-gradient-to-br from-[#1A1A1E] via-[#111114] to-[#08080A] text-[#F5F0E8]'
+                        : 'bg-gradient-to-br from-[#F6F4F0] via-[#EAE6DD] to-[#DDD7CA] text-ink-900'
                         }`}>
                         {cycleBtn}
                         {/* Minimalist Top Tag */}
@@ -9090,8 +9363,8 @@ INSTRUCTIONS:
                 const firstLetter = title.charAt(0) || "E";
                 return (
                     <div className={`w-full h-full relative p-4 sm:p-5 pl-6 sm:pl-7 flex flex-col justify-between overflow-hidden ${isDark
-                            ? 'bg-gradient-to-br from-[#221B27] via-[#16111C] to-[#0C0812] text-[#F5F0E8]'
-                            : 'bg-gradient-to-br from-[#F8F5EE] via-[#EBE2D2] to-[#DECDB7] text-ink-900'
+                        ? 'bg-gradient-to-br from-[#221B27] via-[#16111C] to-[#0C0812] text-[#F5F0E8]'
+                        : 'bg-gradient-to-br from-[#F8F5EE] via-[#EBE2D2] to-[#DECDB7] text-ink-900'
                         }`}>
                         {cycleBtn}
                         {/* Classical Inset Frame (Safely to the right of the spine) */}
@@ -9155,8 +9428,8 @@ INSTRUCTIONS:
             if (styleIdx === 5) {
                 return (
                     <div className={`w-full h-full relative p-4 sm:p-5 pl-6 sm:pl-7 flex overflow-hidden ${isDark
-                            ? 'bg-gradient-to-br from-[#16181E] via-[#0E1014] to-[#07080A] text-[#F5F0E8]'
-                            : 'bg-gradient-to-br from-[#F4F2EB] via-[#E7E1D4] to-[#D9D1C0] text-ink-900'
+                        ? 'bg-gradient-to-br from-[#16181E] via-[#0E1014] to-[#07080A] text-[#F5F0E8]'
+                        : 'bg-gradient-to-br from-[#F4F2EB] via-[#E7E1D4] to-[#D9D1C0] text-ink-900'
                         }`}>
                         {cycleBtn}
                         {/* Left Vertical Title Column (Rotated 90°, clear of spine) */}
@@ -9213,8 +9486,8 @@ INSTRUCTIONS:
             if (styleIdx === 6) {
                 return (
                     <div className={`w-full h-full relative p-4 sm:p-5 pl-6 sm:pl-7 flex flex-col justify-between overflow-hidden ${isDark
-                            ? 'bg-gradient-to-br from-[#161822] via-[#0E1018] to-[#07080E] text-[#F5F0E8]'
-                            : 'bg-gradient-to-br from-[#FAF7F2] via-[#EFE7DC] to-[#E1D7C8] text-ink-900'
+                        ? 'bg-gradient-to-br from-[#161822] via-[#0E1018] to-[#07080E] text-[#F5F0E8]'
+                        : 'bg-gradient-to-br from-[#FAF7F2] via-[#EFE7DC] to-[#E1D7C8] text-ink-900'
                         }`}>
                         {cycleBtn}
                         {/* Oversized Golden Moon Bleeding Off the Top Right */}
@@ -9265,8 +9538,8 @@ INSTRUCTIONS:
             // --- STYLE 7: The Angled Vintage Sash & Headline (Prata Slanted Sash) ---
             return (
                 <div className={`w-full h-full relative p-4 sm:p-5 flex flex-col justify-between overflow-hidden ${isDark
-                        ? 'bg-gradient-to-br from-[#1C1917] via-[#12100F] to-[#0A0908] text-[#F5F0E8]'
-                        : 'bg-gradient-to-br from-[#F8F4EB] via-[#EAE0CE] to-[#DCCEB8] text-ink-900'
+                    ? 'bg-gradient-to-br from-[#1C1917] via-[#12100F] to-[#0A0908] text-[#F5F0E8]'
+                    : 'bg-gradient-to-br from-[#F8F4EB] via-[#EAE0CE] to-[#DCCEB8] text-ink-900'
                     }`}>
                     {cycleBtn}
                     {/* Vintage Corner Brackets (Positioned safely clear of the left spine crease) */}
@@ -9327,12 +9600,12 @@ INSTRUCTIONS:
             return (
                 <div
                     className={`fixed z-50 px-5 py-3.5 rounded-2xl shadow-xl border flex items-center gap-3 animate-fade-in backdrop-blur-xl transition-all max-w-md ${toast.type === 'error'
-                            ? 'bg-blush-tint border-blush-edge text-blush-900 shadow-rose-900/10'
-                            : toast.type === 'warning'
-                                ? 'bg-ember-tint border-ember-edge text-ember-900 shadow-amber-900/10'
-                                : toast.type === 'info'
-                                    ? 'bg-stone-900 border-stone-800 text-white shadow-stone-950/20'
-                                    : 'bg-sage-tint border-sage-edge text-sage-900 shadow-emerald-900/10'
+                        ? 'bg-blush-tint border-blush-edge text-blush-900 shadow-rose-900/10'
+                        : toast.type === 'warning'
+                            ? 'bg-ember-tint border-ember-edge text-ember-900 shadow-amber-900/10'
+                            : toast.type === 'info'
+                                ? 'bg-stone-900 border-stone-800 text-white shadow-stone-950/20'
+                                : 'bg-sage-tint border-sage-edge text-sage-900 shadow-emerald-900/10'
                         }`}
                     style={{
                         bottom: 'max(1.5rem, calc(1rem + env(safe-area-inset-bottom, 0px)))',
@@ -11020,7 +11293,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         details.find_text = getField('find_text') || getField('find');
                         details.replace_text = getField('replace_text') || getField('replace');
                         details.line_edits = [];
-                        
+
                         details.concept = getField('concept');
                         details.status_quo = getField('status_quo');
                         details.inciting_incident = getField('inciting_incident');
@@ -11149,7 +11422,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             if (action.details.genre) currentStory.style.genre = action.details.genre;
                             if (action.details.mood) currentStory.style.mood = action.details.mood;
                             if (action.details.writing_guide) currentStory.style.writing_guide = action.details.writing_guide;
-                            
+
                             setStory(currentStory);
                             logMessage(`[Action ${actionNum}/${totalActions}] Success: Surgically modified story metadata.`, 'success');
                         }
@@ -11172,7 +11445,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             if (charIdx === -1 && action.details.name) {
                                 charIdx = castList.findIndex(c => c.name.toLowerCase() === action.details.name.toLowerCase());
                             }
-                            
+
                             if (charIdx > -1) {
                                 const char = { ...castList[charIdx] };
                                 if (action.details.name) char.name = action.details.name;
@@ -11180,7 +11453,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                                 if (action.details.core_flaw) char.core_flaw = action.details.core_flaw;
                                 if (action.details.core_desire) char.core_desire = action.details.core_desire;
                                 if (action.details.vocal_cadence) char.vocal_cadence = action.details.vocal_cadence;
-                                
+
                                 castList[charIdx] = char;
                                 currentStory = { ...currentStory, cast: castList };
                                 setStory(currentStory);
@@ -11195,7 +11468,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             if (charIdx === -1 && action.details.name) {
                                 charIdx = castList.findIndex(c => c.name.toLowerCase() === action.details.name.toLowerCase());
                             }
-                            
+
                             if (charIdx > -1) {
                                 const deletedName = castList[charIdx].name;
                                 castList.splice(charIdx, 1);
@@ -16235,10 +16508,11 @@ Structure them with Dwight Swain's Scene and Sequel alternation (Proactive Scene
 <input_payload_schema>
 A description of the provided information is below to help guide you.
 - <overall_story_information>: The macro narrative framework. Keep the overarching themes and concepts in mind.
-- <act_descriptions>: The macro Act structure. Ensure your scenes fulfill the current Sequence's objective.
-- <active_character_profiles>: The characters available for this scene.
+- <active_character_profiles>: The characters available for this sequence.
 - <character_psychological_arcs>: The global character arcs. Ensure scene events test these arcs.
 - <character_relationships>: Existing relationship dynamics.
+- <act_descriptions>: The macro Act structure. Ensure your scenes fulfill the current Sequence's objective.
+- <sequence_descriptions>: Context for previous, current, and future sequences.
 - <style_and_tone>: The genre and style guidelines.
 - <target_scenes_per_sequence>: The structural constraints for your generation.
 - <output_format_description>: The required XML output schema.
@@ -16282,7 +16556,7 @@ BEGIN DEVELOPING CURRENT SEQUENCE SCENES
 `,
                         systemPrompt: PROMPTS.sceneRosterAgent,
                         reviewerSystemPrompt: PROMPTS.sceneRosterReview,
-                        reviewerPromptFn: (genOutput) => `<input_payload_schema>\n  <overall_story_information>Macro narrative framework</overall_story_information>\n  <act_descriptions>The act structure context</act_descriptions>\n  <active_character_profiles>Characters for the story</active_character_profiles>\n  <continuity_ledger>Context regarding what has happened recently</continuity_ledger>\n  <available_narrative_modes>The narrative modes allowed</available_narrative_modes>\n  <scene_target_block>Target constraints for the scenes</scene_target_block>\n  <generated_scenes>The generated scenes to evaluate</generated_scenes>\n</input_payload_schema>\n\n${getSceneContextIntro()}\n\n<continuity_ledger>\n${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}\n</continuity_ledger>\n\n${getSceneActsAndStyle()}\n\n<available_narrative_modes>\n${allNarrativeModesXml}\n</available_narrative_modes>\n\n${getSceneTargetBlock()}\n\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Critique the generated scenes based on narrative modes, dramatic conflict, and character flaws. Note: Characters are identified by their names, and the system automatically reconciles IDs.</critique_analysis>\n  <issues>\n    <issue>\n      <severity>MINOR</severity> <!-- CRITICAL | MAJOR | MINOR -->\n      <category>SWAIN_FLOW</category> <!-- SWAIN_FLOW | CAUSALITY | TRANSITION | CAST | OBJECTIVES | SCALE -->\n      <description>Clear explanation of the problem.</description>\n      <location>Scene ID (e.g. Scene ${currentSequence.number}.1)</location>\n      <fix_suggestion>Exact surgical edit to resolve the issue.</fix_suggestion>\n    </issue>\n  </issues>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`,
+                        reviewerPromptFn: (genOutput) => `<input_payload_schema>\n  <overall_story_information>Macro narrative framework</overall_story_information>\n  <active_character_profiles>Characters for the story</active_character_profiles>\n  <character_psychological_arcs>Global character arcs</character_psychological_arcs>\n  <character_relationships>Character relationship dynamics</character_relationships>\n  <continuity_ledger>Context regarding what has happened recently</continuity_ledger>\n  <act_descriptions>The act structure context</act_descriptions>\n  <sequence_descriptions>Sequence context</sequence_descriptions>\n  <style_and_tone>Genre, mood, and writing guide</style_and_tone>\n  <target_scenes_per_sequence>Target constraints for the scenes</target_scenes_per_sequence>\n  <generated_scenes>The generated scenes to evaluate</generated_scenes>\n</input_payload_schema>\n\n${getSceneContextIntro()}\n\n<continuity_ledger>\n${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}\n</continuity_ledger>\n\n${getSceneActsAndStyle()}\n\n${getSceneTargetBlock()}\n\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Critique the generated scenes based on causality, Swain Scene/Sequel flow, transition jumps, and dramatic conflict. Note: Characters are identified by their names, and the system automatically reconciles IDs.</critique_analysis>\n  <issues>\n    <issue>\n      <severity>MINOR</severity> <!-- CRITICAL | MAJOR | MINOR -->\n      <category>SWAIN_FLOW</category> <!-- SWAIN_FLOW | CAUSALITY | TRANSITION | CAST | OBJECTIVES | SCALE -->\n      <description>Clear explanation of the problem.</description>\n      <location>Scene ID (e.g. Scene ${currentSequence.number}.1)</location>\n      <fix_suggestion>Exact surgical edit to resolve the issue.</fix_suggestion>\n    </issue>\n  </issues>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`,
                         parserFn: (text) => {
                             const scenesMatch = /<scenes>([\s\S]*?)<\/scenes>/i.exec(text);
                             const scenesXML = scenesMatch ? scenesMatch[1] : text;
@@ -16386,88 +16660,101 @@ BEGIN DEVELOPING CURRENT SEQUENCE SCENES
                         const activePairCast = (storyToUse.cast || []).filter(c => pairCharNames.has(c.name) || pairCharNames.has(c.id));
                         const effectiveCast = activePairCast.length > 0 ? activePairCast : (storyToUse.cast || []);
 
-                        const getPairContextIntro = () => {
-                            const storyBlock = stripSceneExclusions(buildStoryInfoBlock(storyToUse));
-                            const profilesBlock = `<active_character_profiles>\n${effectiveCast.map(c => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || c.details?.history || 'Unspecified flaw'}, Desire: ${c.core_desire || c.details?.goals || 'Unspecified desire'}, Cadence: ${c.vocal_cadence || c.voice_sample || 'Standard'}`).join('\n')}\n</active_character_profiles>`;
-                            const arcsBlock = buildSceneCharacterArcsBlock(storyToUse, effectiveCast);
-                            const relsBlock = buildSceneRelationshipsBlock(effectiveCast, storyToUse.relationships || {});
-                            return [storyBlock, profilesBlock, arcsBlock, relsBlock].filter(Boolean).join('\n\n');
-                        };
+                        // 1. Overall Story Information
+                        const overallStoryInfoBlock = stripSceneExclusions(buildStoryInfoBlock(storyToUse));
 
-                        // Preceding scenes in this sequence before this pair
-                        const prevScenesInSeq = leanScenes.slice(0, pIdx * 2);
-                        const prevScenesContext = prevScenesInSeq.map(ps => {
-                            const alreadyExpanded = expandedScenes.find(es => es.number === ps.number);
-                            if (alreadyExpanded && alreadyExpanded.description) {
-                                return `<scene id="${alreadyExpanded.number}">\nTitle: ${alreadyExpanded.title}\nType: ${alreadyExpanded.scene_type}\nExit Conditions: ${alreadyExpanded.exit_conditions}\nValue Shift: ${alreadyExpanded.value_shift?.start_state} -> ${alreadyExpanded.value_shift?.end_state}\nSummary: ${alreadyExpanded.description.substring(0, 300)}...\n</scene>`;
+                        // 2. Character Psychological Arcs
+                        const characterArcsBlock = buildSceneCharacterArcsBlock(storyToUse, effectiveCast) || `<character_psychological_arcs>\n${(storyToUse.character_arcs || []).map(ca => {
+                            const charObj = resolveCharacter(ca.char_id, storyToUse.cast || []);
+                            return `- ${charObj ? charObj.name : ca.char_id}: ${ca.description}${ca.lie_believed ? ` (Lie: ${ca.lie_believed})` : ''}${ca.truth_needed ? ` (Truth: ${ca.truth_needed})` : ''}`;
+                        }).join('\n') || 'No global character arcs recorded.'}\n</character_psychological_arcs>`;
+
+                        // 3. Active Character Profiles
+                        const activeCharacterProfilesBlock = `<active_character_profiles>\n${effectiveCast.map(c => `- ${c.name} (${c.role || 'Character'}): Flaw: ${c.core_flaw || c.details?.history || 'Unspecified flaw'}, Desire: ${c.core_desire || c.details?.goals || 'Unspecified desire'}, Cadence: ${c.vocal_cadence || c.voice_sample || 'Standard rhythm and tone'}, Psychology: ${c.details?.deep_profile || c.details?.personality || 'No additional notes'}`).join('\n')}\n</active_character_profiles>`;
+
+                        // 4. Character Relationships
+                        const characterRelationshipsBlock = `<character_relationships>\n${buildRelationshipFrictionBlock(effectiveCast, storyToUse.relationships || {})}\n</character_relationships>`;
+
+                        // 5. Continuity Ledger
+                        const continuityLedgerBlock = `<continuity_ledger>\n${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber }) || 'No prior continuity facts recorded.'}\n</continuity_ledger>`;
+
+                        // 6. Previous Scene Summary
+                        let prevSceneSummaryContent = "";
+                        if (expandedScenes.length > 0) {
+                            prevSceneSummaryContent = expandedScenes.map(es => `[Scene ${es.number}: ${es.title}] (${es.scene_type || 'SCENE'})
+- Exit State & Physical Conditions: ${es.exit_conditions || "Standard transition state"}
+- Value Shift: ${es.value_shift?.start_state ?? 0} -> ${es.value_shift?.end_state ?? 1}
+- Summary & Emotional Fallout: ${(es.description || "").substring(0, 400)}...`).join('\n\n');
+                        } else if (previousSequence) {
+                            const prevSeqScenes = (storyToUse.scenes && (storyToUse.scenes[String(seqIdx - 1)] || storyToUse.scenes[String(previousSequence.number - 1)] || storyToUse.scenes[String(previousSequence.number)] || storyToUse.scenes[previousSequence.id])) || (prevScenesList.length > 0 ? [prevScenesList[prevScenesList.length - 1]] : []);
+                            if (prevSeqScenes.length > 0) {
+                                const lastSc = prevSeqScenes[prevSeqScenes.length - 1];
+                                prevSceneSummaryContent = `[Sequence ${previousSequence.number} Climax / Scene ${lastSc.number || `${previousSequence.number}.${prevSeqScenes.length}`}: ${lastSc.title}] (${lastSc.scene_type || 'REACTIVE'})
+- Exit State: ${lastSc.exit_conditions || 'Sequence boundary'}
+- Summary & Fallout: ${(lastSc.description || lastSc.objective || 'Previous sequence concluded successfully.').substring(0, 400)}`;
+                            } else {
+                                prevSceneSummaryContent = `Previous Sequence ${previousSequence.number} (${previousSequence.title}) concluded. Objective: ${previousSequence.sequence_objective || 'Completed'}. Transitioning into current sequence.`;
                             }
-                            return `<scene id="${ps.number}">\nTitle: ${ps.title}\nType: ${ps.scene_type}\nExit Conditions: ${ps.exit_conditions}\n</scene>`;
-                        }).join('\n\n');
+                        } else {
+                            prevSceneSummaryContent = `Story & Sequence Start: Inciting incident: ${storyToUse.inciting_incident || 'The journey begins.'}. No preceding scenes.`;
+                        }
+                        const previousSceneSummaryBlock = `<previous_scene_summary>\n${prevSceneSummaryContent}\n</previous_scene_summary>`;
 
-                        // Upcoming lean scenes in this sequence after this pair
+                        // 7. Upcoming Scene Summary
                         const futureScenesInSeq = leanScenes.slice(pIdx * 2 + pair.length);
-                        const futureScenesContext = futureScenesInSeq.map(fs => `<scene id="${fs.number}">\nTitle: ${fs.title}\nType: ${fs.scene_type}\nObjective: ${fs.objective}\nEntrance Conditions: ${fs.entrance_conditions}\n</scene>`).join('\n\n');
+                        let upcomingSummaryContent = "";
+                        if (futureScenesInSeq.length > 0) {
+                            upcomingSummaryContent = futureScenesInSeq.map(fs => `[Scene ${fs.number}: ${fs.title}] (${fs.scene_type || 'PROACTIVE'})
+Objective / Narrative Heading: ${fs.objective || 'Unspecified'}
+Entrance Conditions: ${fs.entrance_conditions || 'Seamless continuation'}
+Characters Present: ${(fs.cast_names || fs.characters_present || []).join(', ')}`).join('\n\n');
+                        } else if (nextSequence) {
+                            upcomingSummaryContent = `[Following Sequence ${nextSequence.number}: ${nextSequence.title}]
+Objective: ${nextSequence.sequence_objective || 'Next sequence milestones'}
+Description: ${nextSequence.description || ''}`;
+                        } else {
+                            upcomingSummaryContent = `Sequence and Act Resolution: Target scenes conclude the current sequence objectives. No following scenes in this sequence.`;
+                        }
+                        const upcomingSceneSummaryBlock = `<upcoming_scene_summary>\n[[FOR REFERENCE ONLY. DO NOT PREEMPT OR RESOLVE THESE UPCOMING EVENTS]]\n${upcomingSummaryContent}\n</upcoming_scene_summary>`;
 
-                        const surroundingScenesBlock = `<surrounding_sequence_scenes>
-  <previous_scenes>
-    [[FOR REFERENCE ONLY. DO NOT EXPAND OR REWRITE THESE SCENES]]
-${prevScenesContext || "Sequence Start (no preceding scenes in this sequence)"}
-  </previous_scenes>
+                        // 8. Sequence Objectives
+                        const sequenceObjectivesBlock = `<sequence_objectives>
+Sequence ${currentSequence.number}: ${currentSequence.title}
+Function: ${currentSequence.sequence_function || "Sequence development"}
+Sequence Objective: ${currentSequence.sequence_objective || currentSequence.description || "Advance narrative milestones"}
+Sequence Description: ${currentSequence.description || ""}
+Parent Act: Act ${currentSequence.parent_act || actNumber}
+</sequence_objectives>`;
 
-  <target_scene_pair_to_expand>
-    [[TARGET SCENES TO EXPAND NOW — GENERATE EXPANDED BLUEPRINTS STRICTLY FOR THESE SCENES]]
+                        // 9. Current Scene Premise
+                        const currentScenePremiseBlock = `<current_scene_premise>
 ${pair.map(sc => `<scene id="${sc.number}">
   Title: ${sc.title}
   Type: ${sc.scene_type} (${sc.scene_type === 'PROACTIVE' ? 'Goal -> Conflict -> Disaster' : 'Reaction -> Dilemma -> Decision'})
-  Objective: ${sc.objective}
+  Premise / Objective: ${sc.objective}
   Transition Jump: ${sc.transition_jump}
   Entrance Conditions: ${sc.entrance_conditions}
   Exit Conditions: ${sc.exit_conditions}
   Characters Present: ${(sc.cast_names || sc.characters_present || []).join(', ')}
   Active Threads: ${(sc.active_thread_ids || sc.thread_ids || []).join(', ')}
 </scene>`).join('\n\n')}
-  </target_scene_pair_to_expand>
+</current_scene_premise>`;
 
-  <future_scenes>
-    [[FOR REFERENCE ONLY. DO NOT PREEMPT OR RESOLVE THESE UPCOMING EVENTS]]
-${futureScenesContext || "Sequence End (no following scenes in this sequence)"}
-  </future_scenes>
-</surrounding_sequence_scenes>`;
+                        // 10. Style and Tone
+                        const styleAndToneBlock = `<style_and_tone>
+Genre: ${storyToUse.style?.genre || 'Unspecified'}
+Mood: ${storyToUse.style?.mood || 'Unspecified'}
+Writing Style / Guide: ${storyToUse.style?.writing_guide || 'Standard'}
+Atmospheric Constraints: ${storyToUse.style?.tone || storyToUse.style?.atmosphere || 'Ground physical environments with sensory details and avoid clinical summarization.'}
+</style_and_tone>`;
 
-                        const expanderPromptFn = () => `
-<input_payload_schema>
-A description of the provided information is below to help guide you.
-- <overall_story_information>: The macro narrative framework, themes, and value states.
-- <active_character_profiles>: Profiles of characters present in the target scenes.
-- <character_psychological_arcs>: Psychological transformation arcs (Lie, Truth, Catalyst) for active characters.
-- <character_relationships>: Interpersonal dynamics, hidden tensions, and trust levels for active characters.
-- <act_descriptions>: The macro Act structure and current Act mandate.
-- <sequence_descriptions>: The current sequence objective and surrounding sequence context.
-- <style_and_tone>: Genre, mood, writing guide, and RAG lore/world context.
-- <continuity_ledger>: Hard facts established in the story.
-- <available_narrative_modes>: The library of narrative modes to select from.
-- <surrounding_sequence_scenes>: Surrounding previous and future scenes in the sequence for reference.
-- <target_scene_pair_to_expand>: The exact scene(s) to expand in this run.
-- <output_format_description>: The required XML output schema.
-</input_payload_schema>
-
-${getPairContextIntro()}
-
-${getSceneActsAndStyle()}
-
-<continuity_ledger>
-${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}
-</continuity_ledger>
-
-${surroundingScenesBlock}
-
-<available_narrative_modes>
-${allNarrativeModesXml}
-</available_narrative_modes>
-
-<output_format_description>
+                        // 11. Output Format Description
+                        const outputFormatDescriptionBlock = `<output_format_description>
 FORMATTING DIRECTIVE: Return your expansion strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+Available Narrative Modes for <dominant_narrative_mode>:
+${allNarrativeModesXml}
 
 Output Schema:
 <response>
@@ -16475,7 +16762,7 @@ Output Schema:
 ${pair.map(sc => `    <scene>
       <scene_id>${sc.number}</scene_id>
       <dominant_narrative_mode>
-        <mode_id>KINETIC_ACTION</mode_id> <!-- Select from <available_narrative_modes> above. DO NOT invent new IDs. -->
+        <mode_id>KINETIC_ACTION</mode_id> <!-- Select from available narrative modes above. DO NOT invent new IDs. -->
         <justification>Reason based on scene's analytical subtext explaining why this mode best serves the scene's dramatic function.</justification>
       </dominant_narrative_mode>
       <rich_scene_description>
@@ -16511,7 +16798,45 @@ ${pair.map(sc => `    <scene>
     </scene>`).join('\n')}
   </scenes>
 </response>
-</output_format_description>
+</output_format_description>`;
+
+                        const expanderPromptFn = () => `
+<input_payload_schema>
+A description of the provided information is below to help guide you.
+- <overall_story_information>: The macro narrative framework and core themes of the novel.
+- <character_psychological_arcs>: The global psychological journeys of the cast (their internal Truths vs. Lies).
+- <active_character_profiles>: The personalities, flaws, desires, and voices of the characters in this specific scene.
+- <character_relationships>: Existing relationship dynamics, trust levels, and friction points.
+- <continuity_ledger>: Hard facts, inventory, and established world states.
+- <previous_scene_summary>: The emotional fallout and physical state of what just happened.
+- <upcoming_scene_summary>: The objective of where the narrative is heading. [FOR REFERENCE ONLY].
+- <sequence_objectives>: The overarching goals for the current Sequence of scenes.
+- <current_scene_premise>: The 1-2 sentence core concept for the scene you are expanding.
+- <style_and_tone>: Genre, mood, writing style, and atmospheric constraints.
+- <output_format_description>: The required XML schema for your output.
+</input_payload_schema>
+
+${overallStoryInfoBlock}
+
+${characterArcsBlock}
+
+${activeCharacterProfilesBlock}
+
+${characterRelationshipsBlock}
+
+${continuityLedgerBlock}
+
+${previousSceneSummaryBlock}
+
+${upcomingSceneSummaryBlock}
+
+${sequenceObjectivesBlock}
+
+${currentScenePremiseBlock}
+
+${styleAndToneBlock}
+
+${outputFormatDescriptionBlock}
 
 BEGIN EXPANDING SCENE PAIR
 `;
@@ -16705,7 +17030,7 @@ ${currentSequence.title}: ${currentSequence.description}
 </sequence_descriptions>
 
 <act_descriptions>
-${parentAct.title}: ${parentAct.description}
+${parentAct.title}: ${parentAct.act_mandate || parentAct.description || ""}
 </act_descriptions>
 
 <expanded_scenes_payload>
@@ -18622,8 +18947,8 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                             setIsSidebarOpen(false);
                                                                         }}
                                                                         className={`w-full flex items-center justify-between text-[10.5px] font-semibold px-2 py-0.5 rounded text-left transition-colors ${(view === 'sequence_dashboard' || view === 'chapter_dashboard') && selectedSequence === seqIdx
-                                                                                ? 'text-gold-ink bg-gold-tint font-bold'
-                                                                                : 'text-ink-600 hover:text-ink-900 hover:bg-wash'
+                                                                            ? 'text-gold-ink bg-gold-tint font-bold'
+                                                                            : 'text-ink-600 hover:text-ink-900 hover:bg-wash'
                                                                             }`}
                                                                     >
                                                                         <span className="truncate">Seq {sequence.number || seqIdx + 1}: {sequence.title}</span>
@@ -18647,8 +18972,8 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                                     setIsSidebarOpen(false);
                                                                                 }}
                                                                                 className={`w-full text-left pl-3 pr-2 py-0.5 rounded text-[10px] flex items-center justify-between group transition-colors ${isSelected
-                                                                                        ? 'bg-gold-tint text-gold-ink font-semibold'
-                                                                                        : 'text-ink-500 hover:text-ink-800 hover:bg-wash'
+                                                                                    ? 'bg-gold-tint text-gold-ink font-semibold'
+                                                                                    : 'text-ink-500 hover:text-ink-800 hover:bg-wash'
                                                                                     }`}
                                                                             >
                                                                                 <div className="flex items-center gap-1.5 truncate">
@@ -18698,8 +19023,8 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                 <button
                                     onClick={() => setContinuousAutopilot(!continuousAutopilot)}
                                     className={`w-full py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 border ${continuousAutopilot
-                                            ? 'bg-blush-tint border-blush-edge text-blush-800 hover:bg-blush-tint-strong'
-                                            : 'bg-btn hover:bg-btn-hover border-transparent text-btn-ink'
+                                        ? 'bg-blush-tint border-blush-edge text-blush-800 hover:bg-blush-tint-strong'
+                                        : 'bg-btn hover:bg-btn-hover border-transparent text-btn-ink'
                                         }`}
                                 >
                                     {continuousAutopilot ? (
@@ -18789,8 +19114,8 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                         <button
                                             onClick={() => setContinuousAutopilot(!continuousAutopilot)}
                                             className={`px-3 py-1.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 border shrink-0 ${continuousAutopilot
-                                                    ? 'bg-blush-tint border-blush-edge text-blush-800 hover:bg-blush-tint-strong'
-                                                    : 'bg-surface border-edge-strong hover:border-edge-300 text-ink-800 shadow-2xs'
+                                                ? 'bg-blush-tint border-blush-edge text-blush-800 hover:bg-blush-tint-strong'
+                                                : 'bg-surface border-edge-strong hover:border-edge-300 text-ink-800 shadow-2xs'
                                                 }`}
                                             title="Toggle autonomous end-to-end generation across the entire novel"
                                         >
@@ -21092,8 +21417,8 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
 
                                                         {currentScene.scene_type && (
                                                             <span className={`text-[10px] font-bold uppercase px-2.5 py-0.5 rounded-full border ${String(currentScene.scene_type).toLowerCase().includes('proactive') || currentScene.scene_type === 'scene'
-                                                                    ? 'bg-sage-tint border-sage-edge text-sage-800'
-                                                                    : 'bg-ember-tint border-ember-edge text-ember-800'
+                                                                ? 'bg-sage-tint border-sage-edge text-sage-800'
+                                                                : 'bg-ember-tint border-ember-edge text-ember-800'
                                                                 }`}>
                                                                 {String(currentScene.scene_type).toLowerCase().includes('proactive') || currentScene.scene_type === 'scene' ? 'Proactive Scene (Action)' : 'Reactive Sequel (Reflection)'}
                                                             </span>
@@ -21665,10 +21990,10 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                         key={step.id}
                                                                         onClick={() => setInspectedStepId(inspectedStepId === step.id ? null : step.id)}
                                                                         className={`p-4 rounded-2xl border transition-all cursor-pointer shadow-sm ${isActiveStep
-                                                                                ? 'border-gold bg-inset ring-2 ring-gold/20'
-                                                                                : isInspected
-                                                                                    ? 'border-stone-400 bg-surface ring-1 ring-edge-strong'
-                                                                                    : 'bg-surface border-edge hover:border-edge-300'
+                                                                            ? 'border-gold bg-inset ring-2 ring-gold/20'
+                                                                            : isInspected
+                                                                                ? 'border-stone-400 bg-surface ring-1 ring-edge-strong'
+                                                                                : 'bg-surface border-edge hover:border-edge-300'
                                                                             }`}
                                                                     >
                                                                         <div className="flex items-center justify-between gap-2 mb-2">
@@ -23044,9 +23369,9 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                     </div>
                                 </div>
                             )}
-                                </main>
+                        </main>
                         {/* TOAST NOTIFICATION */}
-                            <ToastNotification toast={toast} onDismiss={() => setToast(null)} />
+                        <ToastNotification toast={toast} onDismiss={() => setToast(null)} />
                     </div >
                     {/* GLOBAL EDIT MODAL */}
                     <EditModal
@@ -23115,8 +23440,8 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                     }}
                                                     title={ico.label}
                                                     className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${isSelected
-                                                            ? 'bg-btn text-btn-ink scale-110 shadow-sm border border-[#1C1917]'
-                                                            : 'bg-inset hover:bg-wash text-ink-600 hover:text-ink-900 hover:scale-105 border border-edge-strong'
+                                                        ? 'bg-btn text-btn-ink scale-110 shadow-sm border border-[#1C1917]'
+                                                        : 'bg-inset hover:bg-wash text-ink-600 hover:text-ink-900 hover:scale-105 border border-edge-strong'
                                                         }`}
                                                 >
                                                     <Icon name={ico.value} className="w-4 h-4" />
