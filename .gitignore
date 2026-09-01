@@ -2,3 +2,8 @@ Implementation Plans/Clinical Character Bias Analysis.md
 Implementation Plans/EllipsisProse Prompt Standardization Plan.md
 .agents/rules/project-overview.md
 index.html
+agent_input_reference.md
+pipeline_field_reference.md
+.gitignore
+server.js
+.agents/skills/webapp-testing/SKILL.md
