@@ -13550,7 +13550,7 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                         id: newStoryId,
                         title: inputTitle || "My New Story",
                         concept: conceptToUse,
-                        status_quo: worldBible,
+                        status_quo: statusQuo || "",
                         inciting_incident: "",
                         themes: "",
                         style: {
@@ -14317,12 +14317,12 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                     // accumulated from imports or the archivist (vectors or story.lore)
                     setLoadingStep("Archiving world lore...");
                     const worldBibleEntry = {
-                        topic: "World Bible Setting",
+                        topic: "Status Quo Setting",
                         detail: storyToUse.status_quo || "",
                         valid_from_act: 1,
                         valid_from_scene: 1
                     };
-                    const existingWorldBible = (storyToUse.lore || []).find(l => l && l.topic === "World Bible Setting");
+                    const existingWorldBible = (storyToUse.lore || []).find(l => l && (l.topic === "Status Quo Setting" || l.topic === "World Bible Setting"));
                     let persistedWorldBible = existingWorldBible || null;
                     if (worldBibleEntry.detail && (!existingWorldBible || existingWorldBible.detail !== worldBibleEntry.detail)) {
                         // Upsert under a stable vector id: overwrites the previous World Bible vector in place
@@ -14365,7 +14365,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         sequences: normalizedSequences,
                         relationships: nextRels,
                         lore: (persistedWorldBible && persistedWorldBible.detail)
-                            ? [...(storyToUse.lore || []).filter(l => l && l.topic !== "World Bible Setting"), persistedWorldBible]
+                            ? [...(storyToUse.lore || []).filter(l => l && l.topic !== "Status Quo Setting" && l.topic !== "World Bible Setting"), persistedWorldBible]
                             : (storyToUse.lore || []),
                         thread_statuses: actResult.parsedData.thread_statuses || [],
                         generation_ranges: parsedPacing,
