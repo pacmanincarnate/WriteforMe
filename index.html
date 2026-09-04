@@ -647,6 +647,9 @@
         /* Typography & Editorial Prose */
         .prose {
             color: var(--prose-ink);
+            max-width: 100%;
+            overflow-wrap: break-word;
+            word-break: break-word;
         }
 
         .prose p {
@@ -749,6 +752,9 @@
             margin-bottom: 1rem;
             border: 1px solid var(--prose-pre-edge);
             color: var(--prose-ink);
+            max-width: 100%;
+            white-space: pre-wrap;
+            word-break: break-word;
         }
 
         .prose pre code {
@@ -2034,9 +2040,77 @@
 
         // Configure marked ONCE at module init - marked.use() mutates global parser state,
         // and the old per-parse call re-appended the config on every render.
+        // In this novel writing studio, narrative text and blueprints frequently use indentation
+        // for bullet hierarchy. Disabling the indented-code-block tokenizer rule prevents 4+ space
+        // indents from accidentally becoming unwrapped <pre><code> blocks, while retaining standard
+        // fenced (```) code blocks.
         if (window.marked) {
-            try { marked.use({ gfm: true, breaks: true }); } catch (e) { console.warn("marked configuration failed:", e); }
+            try {
+                marked.use({
+                    gfm: true,
+                    breaks: true,
+                    tokenizer: {
+                        code(src) { return undefined; }
+                    }
+                });
+            } catch (e) {
+                console.warn("marked configuration failed:", e);
+            }
         }
+
+        // Normalize leading and excessive indentation in Markdown strings.
+        // Strips common block indentation (e.g. from indented XML tags) and caps
+        // deep sub-indentations (4+ spaces) to 2 spaces so they render as clean nested
+        // lists or continuation text without overflowing UI containers.
+        const normalizeMarkdownIndentation = (text) => {
+            if (!text || typeof text !== 'string') return '';
+            let str = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+            const lines = str.split('\n');
+            while (lines.length > 0 && lines[0].trim() === '') lines.shift();
+            while (lines.length > 0 && lines[lines.length - 1].trim() === '') lines.pop();
+            if (lines.length === 0) return '';
+
+            let commonIndent = Infinity;
+            for (const line of lines) {
+                if (line.trim().length > 0) {
+                    const match = line.match(/^([ \t]*)/);
+                    const indentLen = match ? match[1].replace(/\t/g, '  ').length : 0;
+                    if (indentLen < commonIndent) commonIndent = indentLen;
+                }
+            }
+
+            let dedentedLines = lines;
+            if (commonIndent > 0 && commonIndent !== Infinity) {
+                dedentedLines = lines.map(line => {
+                    if (line.trim().length === 0) return '';
+                    let count = 0;
+                    let i = 0;
+                    while (i < line.length && count < commonIndent) {
+                        if (line[i] === '\t') count += 2;
+                        else count += 1;
+                        i++;
+                    }
+                    return line.slice(i);
+                });
+            }
+
+            let inFence = false;
+            const finalLines = dedentedLines.map(line => {
+                if (/^```/.test(line.trim())) {
+                    inFence = !inFence;
+                    return line;
+                }
+                if (inFence) return line;
+                const leadingMatch = line.match(/^(\s+)/);
+                if (leadingMatch && leadingMatch[1].length >= 4) {
+                    return '  ' + line.trim();
+                }
+                return line;
+            });
+
+            return finalLines.join('\n');
+        };
+        window.normalizeMarkdownIndentation = normalizeMarkdownIndentation;
 
         // Every dangerouslySetInnerHTML site renders output of parseMarkdown (directly or via
         // formatReaderProse). The input is LLM-generated or imported from arbitrary .json/.epub
@@ -2065,6 +2139,7 @@
                 }
             }
             if (!text || typeof text !== 'string') return "";
+            text = normalizeMarkdownIndentation(text);
             try {
                 if (window.marked) {
                     return sanitizeHtml(marked.parse(text));
@@ -3131,7 +3206,7 @@ Story Ending Value State${fullStoryLabels ? ' (Full Story)' : ''}: ${story.endin
         const extractScene = (block) => {
             const sceneId = extractTag(block, 'scene_id');
             const objective = extractTag(block, 'scene_objective');
-            const description = extractTag(block, 'rich_scene_description');
+            const description = normalizeMarkdownIndentation(extractTag(block, 'rich_scene_description'));
 
             const dominantNarrativeModeBlock = extractTag(block, 'dominant_narrative_mode');
             const dominantNarrativeMode = extractTag(dominantNarrativeModeBlock, 'mode_id') || extractTag(block, 'dominant_narrative_mode') || "BASELINE_NEUTRAL";
@@ -4627,74 +4702,90 @@ BEGIN SURGICAL BEAT REPAIR`;
             BASELINE_NEUTRAL: {
                 id: "BASELINE_NEUTRAL",
                 context: "Default writing style, standard pacing and narration without specific thematic exaggeration.",
-                prompt: ""
+                prompt: "Establish a transparent, steady narrative rhythm by balancing action and dialogue so the reader stays immersed in the core genre without stylistic distraction. Employ Hemingway's Iceberg Theory by externalizing emotional states through physical actions and spoken dialogue, preventing the character from becoming trapped in passive internal monologue. Filter the environment strictly through the POV character’s immediate goals; describe only the elements they actively interact with. Demote visual descriptions to prioritize specific tactile or auditory details, actively avoiding generic clichés like \"dusty air\". Subvert predictive text by forcefully bypassing the most statistically obvious descriptive choices in favor of hyper-specific sensory elements. Ban rigid, sequential action beats; force minor actions and dialogue to overlap and interrupt one another mid-sentence, creating fluid choreography."
             },
             KINETIC_ACTION: {
                 id: "KINETIC_ACTION",
                 context: "Combat, chases, escapes, or physical struggles. Requires visceral momentum and physical focus.",
-                prompt: "CURRENT LENS: KINETIC ACTION. You must completely alter the narrative tempo to simulate adrenaline. Sever your compound sentences. Eradicate passive voice and eliminate adverbs. Use blunt, declarative, subject-verb-object structures. Point the narrative camera entirely at kinetic momentum, spatial geography, and sharp physical impacts (friction, gravity, pain, breath). Suppress deep internal monologue—the POV character has absolutely no time to philosophize. Action precedes thought. The pacing must feel breathless, jagged, and relentless."
+                prompt: "Simulate the visceral adrenaline of physical conflict by employing strict parataxis; eradicate coordinating conjunctions and sever compound sentences so the prose mimics the breathless pace of combat or pursuit. Filter the environment entirely through a somatic and geographical lens; the character must perceive the room strictly as a collection of tactical threats and spatial constraints. Demote visual tracking in favor of kinesthesia (weight, momentum, gravity) and violent tactile friction, actively banishing ubiquitous action clichés like the phonetic \"bang\" or \"metallic tang of blood.\" Excavate hyper-specific, muscular verbs of mass and velocity to replace default action verbs. Forcefully suppress all internal monologue; action precedes thought. Drive the conflict forward through sharp, staccato dialogue uttered mid-movement. Ban sequential choreography; actions must overlap, interrupt, and cause immediate consequences simultaneously."
             },
             BUILDING_ROMANCE: {
                 id: "BUILDING_ROMANCE",
                 context: "Establishing chemistry, yearning, and romantic tension. Focus on the \"slow burn\" and gravity between characters.",
-                prompt: "CURRENT LENS: BUILDING ROMANCE. The priority is chemistry, yearning, and the electric tension of the unsaid. Slow the pacing drastically. Point the narrative camera at the magnetic gravity between the characters: accidental touches, lingering eye contact, the specific cadence of a breath, and the heightened awareness of physical proximity. The syntax should be flowing and highly observant. The internal monologue must analyze the terrifying, thrilling vulnerability of attraction. Do not rush toward physical resolution; revel in the unbearable tension of the build-up."
+                prompt: "Cultivate an atmosphere of electric tension and yearning by radically dilating narrative time, using extreme temporal focus so the reader feels the magnetic gravity between the characters. Filter the environment strictly through the character's hyper-awareness of proximity and desire. Shift the sensory hierarchy away from broad visuals to focus on radiant heat, the friction of breath, and the displacement of air. Rigorously ban amateur anatomical clichés—no pounding hearts, catching breath, or fluttering stomachs. Force the prose past standard romantic metaphors by inventing idiosyncratic, highly specific physical details that capture the terrifying vulnerability of attraction. Focus on micro-gestural semiotics: the exact mechanics of a gaze or the negative space between hands. Utilize flowing, hypotactic sentence structures. Manifest attraction externally using T.S. Eliot’s objective correlative. Force them into subtextual, hesitant dialogue where overlapping, unfinished sentences serve as a proxy for physical intimacy."
             },
             ATMOSPHERIC_SUSPENSE: {
                 id: "ATMOSPHERIC_SUSPENSE",
                 context: "Stealth, hunting, creeping dread. Focus on paranoia and the dilation of time.",
-                prompt: "CURRENT LENS: ATMOSPHERIC SUSPENSE. You must stretch a fraction of a second into a lifetime. The pacing must slow to an agonizing, hyper-observant crawl. Hyper-focus on micro-acoustics (a creaking floorboard, a swallowed breath) and the geometry of shadows. The POV character is hyper-aware and deeply paranoid. Structure your sentences to build toward delayed resolutions, withholding the primary verb or the release of tension until the absolute end of the paragraph. Make the environment feel oppressive, unpredictable, and alive."
+                prompt: "Instill a profound sense of creeping dread and paranoia by leveraging informational asymmetry, stretching a fraction of a second into a lifetime through hypotactic sentence structures that delay the primary verb until the absolute end of the paragraph. Filter the environment strictly through the character's fear of the unknown; hyper-focus on the geometry of shadows, blind spots, and thresholds, personifying the space as oppressive or alive. Demote visual clarity to prioritize micro-acoustics and negative space. Actively avoid generic suspense clichés like \"the smell of decay\" or \"a chill in the air.\" Discard the first, most obvious sensory false alarms; manufacture hyper-specific, mundane auditory triggers that ground the paranoia in reality. Explicitly ban naming the emotion (e.g., \"scared\"); describe the physiological reality of hyper-vigilance. Force the characters to externalize their fear through hushed, urgent, and overlapping dialogue. Choreograph simultaneous, agonizingly slow movements that are abruptly interrupted by shifting environmental variables."
             },
             VERBAL_SPARRING: {
                 id: "VERBAL_SPARRING",
                 context: "High-stakes arguments, negotiations, interrogations. Dialogue is the primary weapon.",
-                prompt: "CURRENT LENS: VERBAL SPARRING. This is a combat sequence fought entirely with rhetoric and subtext. Physical action must be minimal, used only as micro-punctuation (a shifted glance, a forced smile) to control the rhythm of the dialogue. The prose must feel sharp, structured, and rhetorically complex. The internal monologue must be defensive and strategic, focused on anticipating the opponent's next logical trap and guarding vulnerabilities. Analyze exactly what the characters are hiding beneath their words."
+                prompt: "Treat this sequence as a high-stakes combat encounter fought entirely through rhetoric and subtext by adopting Bakhtinian polyphony, ensuring each character uses a distinct vocabulary tier, rhythm, and rhetorical strategy based on their motivations. Filter the environment strictly through the lens of conversational dominance; describe only the physical props that characters can actively wield or manipulate to emphasize a point. Demote broad sensory descriptions in favor of the sharp, tactile manipulation of these specific objects. Elevate the dialogue by employing stichomythia—rapid-fire, overlapping exchanges—while ruthlessly excising superfluous dialogue tags. Manufacture idiosyncratic, multi-layered rhetorical traps and evasions instead of relying on standard angry retorts. Force the characters to test each other out loud rather than retreating into deep internal strategy. Choreograph the scene so that physical micro-movements overlap perfectly with the verbal strikes to control the pacing of the argument."
             },
             PROCEDURAL_MYSTERY: {
                 id: "PROCEDURAL_MYSTERY",
                 context: "Investigations, analyzing clues, logical deduction. Focus on objective reality and empirical thought.",
-                prompt: "CURRENT LENS: PROCEDURAL MYSTERY. Adopt a cold, methodical, and empirical perspective. Focus intensely on environmental anomalies, the spatial relationship between objects, and forensic details. The internal monologue should be structured like a shifting hypothesis, actively weighing variables and eliminating impossibilities. Vocabulary should be precise, analytical, and highly specific. Suppress emotional hyperbole; the character is attempting to impose logic and order upon the unknown."
+                prompt: "Adopt a cold, methodical, and empirical perspective by applying literary formalism to your prose, experiencing the scene as a process of objective logical deduction. Filter the room strictly as a grid of empirical variables, spatial relationships, and forensic anomalies, ignoring any environmental details that do not serve the hypothesis. Shift the sensory hierarchy to prioritize highly specific tactile weights, precise measurements, and exact olfactory clues, actively avoiding generic investigator clichés like \"musty smells.\" Seek Flaubert's le mot juste for every noun. Subvert the standard investigative narrative by inventing bizarre, hyper-specific forensic anomalies that challenge the characters, rather than obvious clues. Suppress all emotional hyperbole. Externalize the deductive process through collaborative, interrogative dialogue rather than internal monologue. Choreograph the scene so characters are moving through the space simultaneously, physically dismantling the environment and overlapping their spoken hypotheses in real time."
             },
             GRAND_SCALE: {
                 id: "GRAND_SCALE",
                 context: "In-the-moment macro-scale events (e.g., troop movements, docking shuttles, arriving crowds).",
-                prompt: "CURRENT LENS: GRAND SCALE. Pull the narrative camera far back. The priority is capturing the choreography, logistics, and visual magnitude of a massive, unfolding event in real-time. Focus on macro-forces: the synchronous movement of large groups, the looming weight of architecture or vehicles, and the physical impact of the event on the environment. Individual psychology and tight dialogue should be muted; replace it with an omniscient-feeling observation of the spectacle. The syntax must be sweeping, highly descriptive, and structured to paint a massive, moving canvas."
+                prompt: "Pull the narrative camera far back to capture the sheer magnitude of an unfolding event by adopting a near-omniscient focalization, overwhelming the reader with the logistics and choreography of macro-forces. Evoke the Sublime by filtering the massive event strictly through the tiny, vulnerable human perspective of awe, terror, or logistical desperation. Shift the sensory hierarchy away from standard visuals to capture the kinesthetic pressure of the event: the physical vibration of the ground, deafening synchronous noise, and atmospheric displacement. Rigorously avoid generic disaster clichés like \"the smell of smoke\" or bombastic purple prose. Reject asymmetrical metaphors; forge unexpected, hyper-specific analogies that convey sheer scale through stark juxtaposition with the mundane. Utilize sweeping, rhythmic sentence structures that build in volume. Do not let the protagonist freeze in internal awe. Choreograph massive, overlapping forces where millions of variables resolve simultaneously. Ground this scale by having focal characters shout tactical commands over the environmental noise."
             },
             WORLD_BUILDING: {
                 id: "WORLD_BUILDING",
                 context: "Zooming in to creatively invent/explain specific details about histories, cultural practices, systems, or environments.",
-                prompt: "CURRENT LENS: WORLD-BUILDING. The priority is the creative expansion of the universe's lore. Pause the immediate plot momentum to provide a deep, fascinating explanation of a specific cultural practice, systemic rule, architectural quirk, or historical event. You are explicitly authorized to invent new, creative details that enrich the setting. Crucially, do not write a dry encyclopedia entry. Anchor this authorial explanation in the sensory experience of the POV character—the lore must be triggered by something they are currently looking at, touching, or remembering."
+                prompt: "Expand the universe's lore through seamless diegetic embedding, so the reader absorbs complex systemic rules or cultural histories without feeling like they are reading an encyclopedia. Filter the lore strictly through the POV character's personal bias—whether it is reverence, annoyance, or normalized routine—so the world feels lived-in. Anchor the exposition in the immediate sensory experience; demote broad visual establishing shots in favor of highly specific tactile interactions with a relevant artifact or tool. Actively ban generic fantasy or sci-fi clichés. Discard the most obvious world-building tropes; manufacture highly specific, defamiliarized sensory details that make the lore feel profoundly real and grounded. The prosody should be conversational but richly textured. Prevent passive internal monologues by forcing characters to actively debate, teach, or argue about the lore through organic dialogue. Choreograph the scene so the physical manipulation of the world-building artifact overlaps simultaneously with the characters' spoken explanations and interruptions."
             },
             LIGHTHEARTED: {
                 id: "LIGHTHEARTED",
                 context: "Comedic relief, joyful banter, whimsical situations providing a breather from heavy stakes.",
-                prompt: "CURRENT LENS: LIGHTHEARTED. Elevate the tone to feel bright, swift, and buoyant. The priority is warmth, wit, or absurdity. Focus on the humorous juxtaposition of events, clever banter, and colorful, inviting sensory details. The syntax should be built for comedic timing, utilizing understatement or punchy conclusions. The internal monologue should be amused, playfully cynical, or genuinely joyful. Allow the characters to connect easily, lowering their psychological defenses."
+                prompt: "Elevate the tone to feel swift, bright, and buoyant by using comedic juxtaposition and bathos, providing a joyful or absurd reprieve from heavier stakes. Filter the environment through a lens of buoyancy, actively noticing absurdities, colorful contrasts, and whimsical inconveniences while filtering out oppressive or grim details. Shift the sensory focus toward quirky, unexpected inputs—a bizarre, contrasting texture, an oddly pitched sound, or a clumsy kinesthetic interaction. Avoid forced jokes, generic slapstick, or obvious witty clichés. Reject standard comedic pacing; manufacture highly specific situational irony and understatements that rely on the characters' contrasting worldviews. The prose must utilize a swift, bouncy prosody with sharp comedic pauses and overlapping dialogue. Minimize deep, brooding internal monologues, allowing the characters to connect externally. Choreograph the scene using physical comedy and synchronized action; banter, clumsy mistakes, and environmental interactions must happen simultaneously."
             },
             ORGANIC_EXPOSITION: {
                 id: "ORGANIC_EXPOSITION",
                 context: "Characters organically explaining context, plot, or plans to one another (e.g., heist planning).",
-                prompt: "CURRENT LENS: ORGANIC EXPOSITION. The priority is the transfer of vital plot information, but it MUST be delivered organically through character interaction. Absolutely no authorial \"info-dumping\" or paragraph-long summaries of the plan. The context must be revealed entirely through active dialogue, debate, and the manipulation of physical props (e.g., pointing at maps, reviewing files, pacing a room). The internal monologue should focus on whether the POV character trusts the information being presented, the flaws they see in the plan, or the shifting power dynamics of the characters delivering the exposition."
+                prompt: "Transfer vital plot information without resorting to authorial info-dumping by applying Speech Act Theory, treating the exposition as an active, character-driven event where words perform actions like persuading, deceiving, or commanding. Filter the environment strictly through the lens of tactical advantage and shifting trust; describe only the diagnostic tools, maps, or physical evidence the characters are actively using. Shift the sensory focus to the tactile friction of these props. Avoid dry recitations of facts. Bypass standard heist-planning clichés; invent idiosyncratic, highly specific metaphors and analogies that characters use to explain complex plans. The prosody must shift dynamically based on the power dynamics of the conversation. Force the characters to challenge the information out loud, voicing skepticism or trust through heated dialogue rather than summarizing the plan internally. Choreograph a chaotic, overlapping environment where characters are pacing, interrupting each other mid-sentence, and physically manipulating evidence simultaneously."
             },
             REVELATION: {
                 id: "REVELATION",
                 context: "Major plot twists or the climax of a character arc where the truth shatters established reality.",
-                prompt: "CURRENT LENS: REVELATION. This is a moment of profound, narrative-shattering realization. The pacing must swell musically, beginning with tight, grounded sentences and expanding into soaring, transcendent syntax. Blend the absolute macro with the absolute micro—the character should feel the weight of this new truth reflected in a single, perfectly observed detail. The boundary between the character's soul and the physical world dissolves. Deliver maximum emotional catharsis and conceptual shock."
+                prompt: "Deliver a narrative-shattering realization by structuring the scene around the Aristotelian concept of anagnorisis, generating conceptual shock and maximum emotional catharsis. Filter the entire environment through the shattering of the character's worldview; all broad descriptions must vanish, replaced by a hyper-fixation on a single, perfectly observed micro-detail that symbolically reflects their new reality. Shift the sensory hierarchy drastically; demote standard sight and sound to focus on the sudden kinesthetic sensation of vertigo, a precipitous temperature drop, or a single hyper-specific sound. Ban melodramatic clichés—no gasping, dropping to the knees, or internal screaming. Reject standard epiphany markers; invent a deeply unsettling, highly specific physical response to the shock. Swell the prosody musically, beginning with tight, fragmented sentences that expand into soaring, breathless syntax. Choreograph the scene so the epiphany overlaps directly with a raw, unfiltered physical or vocal reaction; they must speak their shock through dialogue whose rhetorical polish has been entirely stripped away."
             },
             UNCERTAINTY: {
                 id: "UNCERTAINTY",
                 context: "Facing the terrifying unknown, groping in the dark, trying to understand a completely alien situation.",
-                prompt: "CURRENT LENS: UNCERTAINTY. The priority is disorientation and a profound lack of information. The focal length is constrained; the character cannot see the full picture. Point the narrative camera at what is missing, obscured, or incomprehensible. Use hesitant, questioning syntax. The internal monologue must be filled with doubt, spiraling questions, and a hyper-fixation on the few sensory inputs the character can actually grasp. The prose should feel tense, blind, and deeply unsettled."
+                prompt: "Plunge the narrative into deep disorientation by utilizing Shklovsky’s concept of defamiliarization (ostranenie), ensuring the reader shares the character's terrifying inability to comprehend their situation. Filter the environment strictly through a complete lack of context and desperate groping; describe common objects and environments as if encountered for the first time, stripping them of normal linguistic labels. Demote visual clarity entirely; focus on bizarre, unidentifiable textures, muffled acoustics, and disorienting kinesthetic feedback. Actively ban generic clichés like \"cold and damp\" or \"pitch black.\" Bypass standard fear responses; forge alien, highly specific phrasing for mundane sensations that reflects a fractured psyche. Utilize a hesitant, fragmented prosody with frequent caesuras. Force the character to externalize their panic through questioning, unconfident dialogue as they call out to the void or each other. Choreograph stumbling, hesitant, and overlapping physical reactions as they try to physically map an incomprehensible space."
             },
             REFLECTION: {
                 id: "REFLECTION",
                 context: "The aftermath of an event, processing grief, trauma, or complex emotions internally.",
-                prompt: "CURRENT LENS: REFLECTION. The immediate external conflict has ended; the narrative exists within the architecture of the character's mind. Use deeply layered, complex, and meandering sentence structures that mimic the recursive nature of human thought and memory. The external environment matters only as a reflection of the character's internal emotional weather. The prose must feel expansive, philosophical, melancholy, and deeply internalized as they synthesize what they have lost or learned."
+                prompt: "Guide the character through the aftermath of trauma or complex emotion by utilizing a controlled stream-of-consciousness syntax, with liquid consonants and meandering sentence structures that mimic the recursive nature of human memory. Filter the external world entirely through the character's internal landscape; the environment must strictly mirror or starkly contrast their grief via T.S. Eliot's objective correlative. Shift the sensory focus to deeply specific, mundane tactile sensations that anchor their wandering mind. Actively avoid obvious emotional labels like \"sadness\" or \"grief.\" Reject standard emotional markers; manufacture deeply personal, mundane symbolic actions that externalize the pain instead of relying on obvious grief tropes (like staring out a rainy window). Prevent the protagonist from simply sitting and thinking in a vacuum; choreograph a repetitive, grounded physical task that overlaps continuously with their internal processing. Bring other characters into this space; use quiet, deeply vulnerable dialogue that interrupts the physical task."
             },
             RELATIONAL: {
                 id: "RELATIONAL",
                 context: "Non-romantic dialogue sequences deepening platonic, familial, or allied bonds; revealing backstory.",
-                prompt: "CURRENT LENS: RELATIONAL. The priority is deepening the emotional connective tissue between characters. Focus the narrative camera on empathy, shared history, and the subtle cues of trust (or the building thereof). The dialogue should be revealing, allowing characters to unspool their backstories, fears, and personal context. The syntax should feel comfortable and organic. The internal monologue must analyze the shifting dynamics of friendship, respect, or familial duty, cementing the characters' reliance on one another."
+                prompt: "Deepen the emotional connective tissue and shared history between characters by applying social semiotics to their interactions, illustrating the unspoken rules and deep trust that govern their bond. Filter the physical space through a lens of safety, warmth, or shared history, focusing on the acoustic resonance of a familiar room or comfortable tactile interactions. Shift the sensory hierarchy to emphasize proximity and familiar friction. Avoid generic markers of friendship like \"smiling and nodding.\" Bypass standard camaraderie tropes; invent highly idiosyncratic, specific micro-habits, shared shorthand, or nostalgic physical props that prove their long-term bond without explicitly explaining it. The prosody should be relaxed, utilizing an empathetic pacing and easy rhythm. Minimize internal monologues; let them unspool their fears aloud through organic, highly revealing dialogue. Choreograph seamless, synchronized collaborative tasks where their physical movements and casual interruptions overlap perfectly."
+            },
+            ENVIRONMENTAL_IMMERSION: {
+                id: "ENVIRONMENTAL_IMMERSION",
+                context: "Sensory immersion in setting and atmosphere; exploring a new environment as a flâneur to ground the reader in place.",
+                prompt: "Establish a profound sense of place and atmosphere by adopting the perspective of a flâneur, focusing purely on sensory immersion rather than immediate plot momentum to ground the reader in the new setting. Filter the architecture, weather, and ambient life strictly through the character’s initial emotional reaction to the space (e.g., alienation, wonder, claustrophobia), ensuring the environment is never described objectively. Utilize a sweeping, rhythmic prosody with rich sensory layering that slows the reader's pace to match the character's observation. Demote broad visual skylines in favor of zooming in on a highly specific, idiosyncratic micro-interaction. Rigorously avoid generic establishing clichés like \"bustling streets\" or \"towering structures.\" Bypass standard architectural descriptions; manufacture highly specific, localized textures and ambient noises that prove the world is deeply lived-in before the character arrived. Do not trap the character in a static gaze; choreograph their physical movement through the environment, forcing them to brush against the local texture and react to the noise in real time."
+            },
+            MORAL_DILEMMA: {
+                id: "MORAL_DILEMMA",
+                context: "The agonizing weight of an imminent, high-stakes decision; internal fracture and psychological pressure.",
+                prompt: "Plunge the narrative into the agonizing weight of an imminent, high-stakes decision by structuring the prose around a Hegelian dialectic, actively wrestling with the thesis and antithesis of the character's choice so the reader feels the psychological pressure. Shift the environmental filtering to reflect this binary state, aggressively highlighting contrasts in the room (light versus shadow, warmth versus cold, open spaces versus constraints) to mirror the fracturing of the character's resolve. Use jagged, fragmented syntax and rhetorical questions that rapidly alternate between opposing justifications and terrifying consequences. Discard obvious internal monologue framing like \"He didn't know what to do.\" Push the prose past standard physical markers of stress; invent idiosyncratic, stressful physical micro-tics or fixations on mundane objects that externalize the internal fracture. Do not allow the character to sit in static thought; externalize the crushing pressure by forcing them to physically interact with a symbolic object while overlapping these actions with their fractured, out-loud rationalizations or fragmented dialogue."
+            },
+            CATHARTIC_INTIMACY: {
+                id: "CATHARTIC_INTIMACY",
+                context: "Transitioning from tension into profound emotional and physical vulnerability, raw intimacy, and dissolved boundaries.",
+                prompt: "Dissolve the boundaries between characters, transitioning from the tension of the build-up into a state of profound emotional and physical vulnerability by prioritizing raw intimacy over rhetorical defense. Shift the narrative camera away from the surrounding room entirely; the outside world ceases to exist, leaving only the immediate, hyper-focused geography of the other person and the profound safety of the connection. Utilize a breathless, hypotactic syntax that mimics the overwhelming sensory flood of the moment, employing soft consonants and flowing rhythms. Eradicate generic romantic or anatomical clichés (no \"melting,\" \"exploding,\" or \"sparks\"). Shift the sensory focus away from visuals entirely to capture the exact friction of skin, the displacement of weight, and the synchronization of breath. Discard the most obvious behavioral responses to physical closeness; invent highly idiosyncratic, tactile micro-details that capture the unique physical reality of their specific bond. Strip dialogue of all rhetorical defense, reducing it to raw whispers or profound silence, choreographing the scene so verbal confessions overlap seamlessly with synchronous physical micro-movements."
             }
         };
+        window.NARRATIVE_MODES = NARRATIVE_MODES;
 
 
         // ===
@@ -5226,6 +5317,7 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
    - Character & Relationship Dynamics: Psychological shifts, flaw tests, focalizer epistemic boundaries, and relationship evolution.
    - Sensory & Environmental Landscape: Physical setting, lighting, props/objects to interact with, and cognitive sensory filters.
    - Thematic Connection: How each scene tests or illuminates the core thematic argument.
+   - Markdown Formatting Constraint: Inside <rich_scene_description>, use clean, flush-left markdown bullet points (- ) and bold labels. Do NOT indent lines with 4 or more spaces or tabs, as deep indentation triggers unwanted code block formatting in markdown.
 3. Ingestion & Continuity:
    - Identify concrete hard facts established (hair color, objects/inventory acquired, layout details) under hard_facts_introduced.
    - Select the most fitting dominant_narrative_mode from the provided library.
@@ -7335,9 +7427,9 @@ INSTRUCTIONS:
                                     </p>
                                 ))}
                                 {isStructure ? (
-                                    <p className="text-xs sm:text-sm text-ink-700 leading-relaxed font-serif">{s.description}</p>
+                                    <p className="text-xs sm:text-sm text-ink-700 leading-relaxed font-serif break-words">{s.description}</p>
                                 ) : (
-                                    <p className="text-sm text-ink-700 mt-1.5 leading-relaxed line-clamp-3 font-serif">{s.description}</p>
+                                    <p className="text-sm text-ink-700 mt-1.5 leading-relaxed line-clamp-3 font-serif break-words">{s.description}</p>
                                 )}
 
                                 {s.cast_names && s.cast_names.length > 0 && (
@@ -8676,7 +8768,10 @@ INSTRUCTIONS:
             REVELATION: "sparkles",
             UNCERTAINTY: "help-circle",
             REFLECTION: "brain",
-            RELATIONAL: "users"
+            RELATIONAL: "users",
+            ENVIRONMENTAL_IMMERSION: "compass",
+            MORAL_DILEMMA: "scale",
+            CATHARTIC_INTIMACY: "flame"
         };
 
         const getModeIcon = (modeId) => {
@@ -8725,6 +8820,7 @@ INSTRUCTIONS:
             { value: "fingerprint", label: "Fingerprint (Identity)" },
             { value: "flower", label: "Flower (Beauty)" },
             { value: "gavel", label: "Gavel (Law)" },
+            { value: "scale", label: "Scale (Justice/Dilemma)" },
             { value: "ghost", label: "Ghost (Horror)" },
             { value: "gift", label: "Gift (Surprise)" },
             { value: "hammer", label: "Hammer (Craft)" },
@@ -17202,11 +17298,11 @@ ${pair.map(sc => `    <scene>
         <justification>Reason based on scene's analytical subtext explaining why this mode best serves the scene's dramatic function.</justification>
       </dominant_narrative_mode>
       <rich_scene_description>
-        - **DRAMATIC STRUCTURE & SEQUENCE:** The exact sequence of events. Detail the starting situation, rising action/complications, turning point (Peripeteia or Anagnorisis), and the scene-ending disaster or decision.
-        - **BEAT CHOREOGRAPHY DIRECTIVES:** Outline verbal tactics and emotional bids, performative speech acts, physical movements, and key subtext.
-        - **CHARACTER & RELATIONSHIP DYNAMICS:** Explain how this scene tests character flaws and desires, psychological shifts, epistemic boundaries, and relationship dynamics.
-        - **SENSORY & ENVIRONMENTAL LANDSCAPE:** Setting, lighting, temperature, key interactive props/objects, and cognitive sensory filters.
-        - **THEMATIC CONNECTION:** How this scene tests, complicates, or illuminates the core_thematic_argument.
+- **DRAMATIC STRUCTURE & SEQUENCE:** The exact sequence of events. Detail the starting situation, rising action/complications, turning point (Peripeteia or Anagnorisis), and the scene-ending disaster or decision.
+- **BEAT CHOREOGRAPHY DIRECTIVES:** Outline verbal tactics and emotional bids, performative speech acts, physical movements, and key subtext.
+- **CHARACTER & RELATIONSHIP DYNAMICS:** Explain how this scene tests character flaws and desires, psychological shifts, epistemic boundaries, and relationship dynamics.
+- **SENSORY & ENVIRONMENTAL LANDSCAPE:** Setting, lighting, temperature, key interactive props/objects, and cognitive sensory filters.
+- **THEMATIC CONNECTION:** How this scene tests, complicates, or illuminates the core_thematic_argument.
       </rich_scene_description>
       <value_shift>
         <start_state>Starting emotional valence</start_state>
@@ -17343,7 +17439,7 @@ BEGIN EXPANDING SCENE PAIR
 
                                 parsedList.push({
                                     scene_id: sceneId,
-                                    description: extractTag(sData, 'rich_scene_description') || "",
+                                    description: normalizeMarkdownIndentation(extractTag(sData, 'rich_scene_description')) || "",
                                     dominant_narrative_mode: modeId,
                                     dominant_narrative_mode_justification: modeJustification,
                                     value_shift: { start_state: startValence, end_state: endValence },
@@ -17367,7 +17463,7 @@ BEGIN EXPANDING SCENE PAIR
 
                                 parsedList.push({
                                     scene_id: targetPair[0]?.number || "",
-                                    description: extractTag(text, 'rich_scene_description') || "",
+                                    description: normalizeMarkdownIndentation(extractTag(text, 'rich_scene_description')) || "",
                                     dominant_narrative_mode: modeId,
                                     dominant_narrative_mode_justification: modeJustification,
                                     value_shift: { start_state: startValence, end_state: endValence },
@@ -21898,7 +21994,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                 <EditButton title={`Act ${actNum} Title`} value={act.title} onSave={() => openEditModal(`Act ${actNum} Title`, act.title, (val) => { setStory(prev => { const newActs = [...prev.acts]; newActs[idx] = { ...newActs[idx], title: val }; return { ...prev, acts: newActs }; }); })} />
                                                             </h3>
                                                             <div className="text-base text-ink-800 text-wrap break-words mt-3 flex items-start gap-3 leading-relaxed">
-                                                                <div className="prose dark:prose-invert max-w-none flex-1 text-[15px] sm:text-base text-ink-800 font-serif leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(act.description) }} />
+                                                                <div className="prose dark:prose-invert max-w-none flex-1 min-w-0 text-[15px] sm:text-base text-ink-800 font-serif leading-relaxed break-words" dangerouslySetInnerHTML={{ __html: parseMarkdown(act.description) }} />
                                                                 <EditButton title={`Act ${actNum} Description`} value={act.description} onSave={() => openEditModal(`Act ${actNum} Description`, act.description, (val) => { setStory(prev => { const newActs = [...prev.acts]; newActs[idx] = { ...newActs[idx], description: val }; return { ...prev, acts: newActs }; }); })} />
                                                             </div>
                                                         </div>
@@ -22064,7 +22160,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                     )}
                                                     {(sequence.description || sequence.summary) && (
                                                         <div className="text-base text-ink-800 mt-4 flex items-start gap-3 leading-relaxed">
-                                                            <div className="prose dark:prose-invert max-w-none flex-1 text-[15px] sm:text-base text-ink-800 font-serif leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(sequence.description || sequence.summary) }} />
+                                                            <div className="prose dark:prose-invert max-w-none flex-1 min-w-0 text-[15px] sm:text-base text-ink-800 font-serif leading-relaxed break-words" dangerouslySetInnerHTML={{ __html: parseMarkdown(sequence.description || sequence.summary) }} />
                                                             <EditButton title={`Sequence Description`} value={sequence.description || sequence.summary} onSave={() => openEditModal(`Sequence Description`, sequence.description || sequence.summary, (val) => { setStory(prev => { const newSeqs = [...(prev.sequences || [])]; newSeqs[selectedSequence] = { ...(newSeqs[selectedSequence] || {}), description: val, summary: val }; return { ...prev, sequences: newSeqs }; }); })} />
                                                         </div>
                                                     )}
@@ -22196,7 +22292,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                     )}
 
                                                     <div className="text-ink-700 mt-2.5 flex items-start gap-2.5 text-sm sm:text-[15px] leading-relaxed">
-                                                        <div className="prose dark:prose-invert max-w-none flex-1 text-sm sm:text-[15px] text-ink-700 font-serif leading-relaxed" dangerouslySetInnerHTML={{ __html: parseMarkdown(currentScene.description) }} />
+                                                        <div className="prose dark:prose-invert max-w-none flex-1 min-w-0 text-sm sm:text-[15px] text-ink-700 font-serif leading-relaxed break-words" dangerouslySetInnerHTML={{ __html: parseMarkdown(currentScene.description) }} />
                                                         <EditButton title={`Scene Description`} value={currentScene.description} onSave={() => openEditModal(`Scene Description`, currentScene.description, (val) => { setStory(prev => { const newScenes = { ...prev.scenes }; newScenes[writerSceneKey] = [...(newScenes[writerSceneKey] || [])]; newScenes[writerSceneKey][selectedScene] = { ...(newScenes[writerSceneKey][selectedScene] || {}), description: val }; return { ...prev, scenes: newScenes }; }); })} />
                                                     </div>
 
