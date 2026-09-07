@@ -5560,13 +5560,15 @@ Provide structured <issues> detailing each problem so a downstream surgical edit
             // TIER 6: DIRECTIVE & MULTI-SCALE SURGICAL REFORMS
             // TIER 6.0: Directive Scoper Agent (SMALL)
             directiveScoper: `You are a narrative editor selecting scene context for a directive planner.
-Given <user_directive> and <current_story_structure>, select up to 6 existing scenes whose full beats or prose are needed. Use 0-based sequence_idx and scene_idx from the overview. Set needs_prose to true for edits to written prose or exact text replacements. Do not plan actions.
+Given <user_directive> and <current_story_structure>, select up to 6 existing scenes whose full beats or prose are needed. Use scope_kind local for a localized change, or arc for a change spanning a narrative arc; arc may select up to 12 scenes. For arc, include short bullet consistency_notes covering names, objects, timeline and relationship state that must remain consistent. Use 0-based sequence_idx and scene_idx from the overview. Set needs_prose to true for edits to written prose or exact text replacements. When previous_plan and refinement_request are present, select context needed to revise that plan. Do not plan actions.
 Return only this XML, with one <scene> per target:
 <response>
   <target_scenes>
     <scene><sequence_idx>0</sequence_idx><scene_idx>1</scene_idx><reason>Why this scene needs inspection.</reason></scene>
   </target_scenes>
   <needs_prose>true</needs_prose>
+  <scope_kind>local</scope_kind> <!-- local | arc -->
+  <consistency_notes>For arc: short bullet text of invariants across the selected scenes.</consistency_notes>
 </response>`,
 
             // TIER 6.1: Directive Planner Agent (LARGE)
@@ -5619,8 +5621,13 @@ INSTRUCTIONS:
 1. **Strategic Evaluation:** Analyze the user's directive. Explain how it can be achieved with surgical precision and minimal disruption to established narrative work.
 2. **Action Planning:** Generate a sequence of discrete actions chosen from the 23 action types above. Specify 0-based indices for target_act_idx, target_sequence_idx, target_scene_idx, target_beat_idx, or target_character_id where applicable. When cascade is enabled, beat changes on written scenes automatically trigger a surgical prose patch; avoid scheduling a duplicate prose action for the same change.
 3. **Format Output:** Return your response strictly as XML tags. Do not use YAML or markdown blocks.
+4. If <previous_plan> and <refinement_request> are present, revise that plan: keep actions the user did not ask to change (same order, same fields), and only add, remove, or alter what the request requires.
+5. When <scope_kind> is arc, respect the supplied <consistency_notes> across all scenes and return your refined <consistency_notes> at the top level of <response>.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 BEGIN DIRECTIVE PLANNING`,
+
+            // TIER 6.5: Cross-scene directive consistency review (SMALL)
+            directiveConsistencyReview: `Check <scene_excerpts> against <consistency_notes> for contradictions across scenes in names, objects, timeline and relationship state. Each scene gives its number/title and first and last 600 characters; do not infer missing middle events. Report only evidenced contradictions, with no automatic fixes. Return XML: <response><critique_analysis>Brief evidence.</critique_analysis><issues><issue><severity>MAJOR</severity><category>CONTINUITY</category><description>Contradiction.</description><location>Scene numbers and quoted evidence.</location><fix_suggestion>How to reconcile.</fix_suggestion></issue></issues><status>FAIL</status></response>. Severity is CRITICAL, MAJOR or MINOR. If no contradictions are found, return empty <issues> and <status>PASS</status>.`,
 
             // TIER 6.2: Surgical Writing Retry Editor
             surgicalEditorProse: `You are a Surgical Editor. Your task is to make targeted corrections to a generated text based on reviewer feedback.
@@ -11196,6 +11203,17 @@ INSTRUCTIONS:
                 catch (err) { console.warn('Could not save directive cascade preference:', err); }
             }, [cascadeBeatChanges]);
 
+            const [verifyDirectiveEdits, setVerifyDirectiveEdits] = useState(() => {
+                try { return localStorage.getItem('ellipsisprose_directive_verify') !== 'false'; }
+                catch { return true; }
+            });
+            useEffect(() => {
+                try { localStorage.setItem('ellipsisprose_directive_verify', String(verifyDirectiveEdits)); }
+                catch (err) { console.warn('Could not save directive verification preference:', err); }
+            }, [verifyDirectiveEdits]);
+            const [directiveRefinement, setDirectiveRefinement] = useState('');
+            const [directivePlanHistory, setDirectivePlanHistory] = useState([]);
+
             // Archetype State
             const [archetypeOptions, setArchetypeOptions] = useState([]);
 
@@ -12020,12 +12038,395 @@ BEGIN RETROACTIVE STATE INJECTION`;
                 return { slot: openSlot, item };
             };
 
+            const getSceneActiveCast = (scene, mutableCast) => {
+                let activeCast = mutableCast.filter(ch => {
+                    const idMatch = (scene.cast_ids || []).some(cid => {
+                        const resolved = resolveCharacter(cid, mutableCast);
+                        return resolved && (resolved.id === ch.id || resolved.name === ch.name);
+                    });
+                    const nameMatch = (scene.cast_names || []).some(cn => {
+                        const resolved = resolveCharacter(cn, mutableCast);
+                        return resolved && (resolved.id === ch.id || resolved.name === ch.name);
+                    });
+                    const presMatch = (scene.characters_present || []).some(cp => {
+                        const resolved = resolveCharacter(cp, mutableCast);
+                        return resolved && (resolved.id === ch.id || resolved.name === ch.name);
+                    });
+                    return idMatch || nameMatch || presMatch;
+                });
+                if (!activeCast || activeCast.length === 0) activeCast = mutableCast.slice(0, 3);
+                return activeCast;
+            };
+
+            // TIER 6.4: Shared scene archivist, used after writing and directive verification.
+            const runArchivistForScene = async (storyState, seqIdx, sceneIdx) => {
+                try {
+                    const scenes = storyState.scenes?.[`${seqIdx}`] || storyState.scenes?.[`${seqIdx}-0`] || storyState.scenes?.[`0-${seqIdx}`] || storyState.scenes?.['0-0'] || [];
+                    const scene = scenes[sceneIdx] || (Array.isArray(scenes) ? scenes[0] : null) || { title: "Scene", description: "Scene", cast_names: [] };
+                    const sequenceData = storyState.sequences?.[seqIdx] || { number: seqIdx + 1, parent_act: actForSequence(seqIdx + 1) };
+                    const finalProseText = storyState.prose?.[`${seqIdx}-${sceneIdx}`]?.final || '';
+                    const activeCast = getSceneActiveCast(scene, storyState.cast || []);
+                    const currentLoreList = (storyState.lore || []).map(l => l.topic).join(', ');
+                    const archivistBlueprint = formatArchivistBlueprintContext(scene);
+                    const archivistPrompt = `<scene_text>
+${finalProseText}
+</scene_text>
+<cast_list>
+${activeCast.map(ch => ch.name).join(', ')}
+</cast_list>
+${archivistBlueprint}
+<current_lore_topics>
+${currentLoreList}
+</current_lore_topics>
+
+<output_format_description>
+FORMATTING DIRECTIVE: Output format must be strictly valid JSON. Do not write markdown code blocks, preamble, or explanations. Start directly with '{' and end with '}'.
+
+Output Schema:
+{
+  "cast_updates": [
+    {
+      "name": "Character Name",
+      "append_history": "Backstory revealed in the scene to append.",
+      "append_story_events": "New narrative events from the scene to append.",
+      "update_goals": "Updated short/long-term character goal."
+    }
+  ],
+  "new_characters": [
+    {
+      "name": "New Character Name",
+      "role": "Their role (e.g. Ally, Antagonist, Witness)",
+      "details": {
+        "history": "their backstory",
+        "story_events": "their initial scene events",
+        "goals": "their goals"
+      }
+    }
+  ],
+  "lore_updates": [
+    {
+      "topic": "Category (e.g. History, Lore, Magic, Object, Rule, Character Appearance)",
+      "detail": "Objective, encyclopedic description of the newly established fact."
+    }
+  ],
+  "continuity_facts": [
+    {
+      "category": "Appearance | Object | Place | Opinion | Agreement",
+      "key": "Specific Subject (e.g. Elara Hair Color)",
+      "detail": "Concrete detail established in the prose text.",
+      "character": "Character Name or entity"
+    }
+  ],
+  "relationship_updates": [
+    {
+      "from": "Character A",
+      "to": "Character B",
+      "new_feeling": "New relationship dynamic",
+      "trigger": "Scene event that triggered this shift"
+    }
+  ]
+}
+</output_format_description>
+
+BEGIN EXTRACTING SCENE ARCHIVE FACTS
+`;
+                    const rawArchivistOutput = await callAI(archivistPrompt, PROMPTS.archivist, false, "Archivist", "large");
+                    let updates = null;
+                    if (rawArchivistOutput) {
+                        const jsonStr = extractTag(rawArchivistOutput, 'archived_facts') || extractTag(rawArchivistOutput, 'response');
+                        if (jsonStr) {
+                            try {
+                                updates = JSON.parse(jsonStr.trim());
+                            } catch (e) {
+                                console.warn("Failed to parse tagged archivist JSON, attempting fallback:", e);
+                            }
+                        }
+                        if (!updates) {
+                            try {
+                                const cleaned = rawArchivistOutput.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+                                const firstBrace = cleaned.indexOf('{');
+                                const lastBrace = cleaned.lastIndexOf('}');
+                                if (firstBrace !== -1 && lastBrace !== -1) {
+                                    updates = JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
+                                }
+                            } catch (e) {
+                                console.warn("Archivist direct JSON parse failed:", e);
+                            }
+                        }
+                    }
+                    if (updates) {
+                        const mergedStory = await handleWorldUpdates(updates, sequenceData.parent_act || 1, scene.number, storyState);
+                        if (mergedStory) {
+                            return mergedStory;
+                        }
+                    }
+                    console.warn("Archivist returned no usable updates.");
+                } catch (archError) {
+                    console.warn("Archivist step failed or skipped:", archError);
+                }
+                return storyState;
+            };
+
+            const formatBeatsForBlueprint = (beats, sId) => {
+                return (beats || []).map((beat, bIdx) => {
+                    const beatId = beat.id || beat.beat_id || `${sId}.${bIdx + 1}`;
+                    const beatType = beat.beat_type || 'DRAMATIC';
+                    const actionDesc = beat.action_description || beat.description || '';
+                    const tactic = beat.char_A_tactic || beat.tactic || '';
+                    const action = beat.char_A_action || beat.action || '';
+                    const reaction = beat.char_B_reaction || beat.reaction || '';
+                    const powerShift = beat.power_shift || '';
+
+                    let pivot = '';
+                    if (beat.beat_structure && typeof beat.beat_structure === 'object') {
+                        pivot = beat.beat_structure.pivot || beat.beat_structure.start || '';
+                    } else if (beat.pivot) {
+                        pivot = beat.pivot;
+                    } else if (beat.beat_structure) {
+                        pivot = String(beat.beat_structure);
+                    }
+
+                    let charIntent = '';
+                    if (beat.character_intent) {
+                        charIntent = typeof beat.character_intent === 'object' ? JSON.stringify(beat.character_intent) : String(beat.character_intent).trim();
+                    }
+
+                    let atmosphere = '';
+                    if (beat.atmosphere_and_feel) {
+                        if (typeof beat.atmosphere_and_feel === 'object') {
+                            const atm = beat.atmosphere_and_feel;
+                            const anchors = Array.isArray(atm.cognitive_sensory_filters)
+                                ? atm.cognitive_sensory_filters.join("; ")
+                                : (Array.isArray(atm.sensory_anchors) ? atm.sensory_anchors.join("; ") : (atm.sensory_anchors || atm.cognitive_sensory_filters || ""));
+                            atmosphere = `Mood: ${atm.mood || ''}${anchors ? `\nSensory Filters: ${anchors}` : ''}${atm.subtext ? `\nSubtext: ${atm.subtext}` : ''}`.trim();
+                        } else {
+                            atmosphere = String(beat.atmosphere_and_feel).trim();
+                        }
+                    }
+
+                    let epistemic = '';
+                    if (beat.epistemic_boundaries) {
+                        epistemic = typeof beat.epistemic_boundaries === 'object' ? JSON.stringify(beat.epistemic_boundaries) : String(beat.epistemic_boundaries).trim();
+                    }
+
+                    let authorial = '';
+                    if (beat.authorial_intent) {
+                        authorial = typeof beat.authorial_intent === 'object' ? JSON.stringify(beat.authorial_intent) : String(beat.authorial_intent).trim();
+                    }
+
+                    const lines = [];
+                    lines.push(`<beat index="${bIdx + 1}" id="${beatId}" type="${beatType}">`);
+                    if (actionDesc) {
+                        lines.push(`  <action_summary>${actionDesc}</action_summary>`);
+                    }
+                    lines.push(`  <tactical_exchange>`);
+                    lines.push(`    <stimulus_action${tactic ? ` tactic="${tactic}"` : ''}>${action || 'Action executed.'}</stimulus_action>`);
+                    lines.push(`    <mru_reaction>${reaction || 'Reaction registered.'}</mru_reaction>`);
+                    if (powerShift) lines.push(`    <power_shift>${powerShift}</power_shift>`);
+                    lines.push(`  </tactical_exchange>`);
+                    if (pivot) lines.push(`  <dramatic_pivot>${pivot}</dramatic_pivot>`);
+                    if (charIntent) lines.push(`  <speech_acts_and_intent>\n${charIntent}\n  </speech_acts_and_intent>`);
+                    if (atmosphere) lines.push(`  <sensory_filters_and_mood>\n${atmosphere}\n  </sensory_filters_and_mood>`);
+                    if (epistemic) lines.push(`  <epistemic_boundaries>\n${epistemic}\n  </epistemic_boundaries>`);
+                    if (authorial) lines.push(`  <authorial_intent>\n${authorial}\n  </authorial_intent>`);
+                    lines.push(`</beat>`);
+
+                    return lines.join('\n');
+                }).join('\n\n');
+            };
+
+            const directiveReviewOutputFormat = `<output_format_description>
+FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
+CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
+
+CRITICAL AUDIT DIRECTIVE: Conduct an exhaustive, beat-by-beat comparison between <current_chunk_choreography_blueprint> and <generated_prose>. Verify that every plot event, specific challenge, wager, rule, dialogue exchange, and turning point from each beat is translated with absolute fidelity. If the prose softens, dilutes, alters, or omits any crucial plot condition or dialogue premise (such as changing a specific challenge, wager, or rule into something vague or trivial), you MUST mark <status>FAIL</status> with CRITICAL severity under category: CHOREOGRAPHY, quote the mismatch, and demand a fix.
+
+Output Schema:
+<response>
+  <critique_analysis>Perform a focused analysis of choreography and plot point compliance (comparing each beat's dialogue/stakes to the prose), epistemic boundaries, continuity, and style. Be specific — quote exact passages.</critique_analysis>
+  <issues>
+    <issue>
+      <severity>CRITICAL</severity> <!-- CRITICAL | MAJOR | MINOR -->
+      <category>CHOREOGRAPHY</category> <!-- CHOREOGRAPHY | CONTINUITY | EPISTEMIC | VOICE | STYLE -->
+      <description>Clear explanation of the problem (e.g. 'Beat 1.2 specified challenge X, but prose changed it to Y').</description>
+      <location>Quote of the offending text passage.</location>
+      <fix_suggestion>How to restore the exact beat premise/dialogue terms in the prose.</fix_suggestion>
+    </issue>
+  </issues>
+  <status>PASS</status> <!-- or FAIL -->
+  <deviation_reasons>
+    <reason>List each critical or major issue description briefly here.</reason>
+  </deviation_reasons>
+</response>
+</output_format_description>
+
+BEGIN PROSE CRITIQUE REVIEW`;
+
+            const buildDirectiveReviewContext = (storyState, seqIdx, sceneIdx) => {
+                const sId = `${seqIdx}-${sceneIdx}`;
+                const scene = storyState.scenes?.[`${seqIdx}`]?.[sceneIdx];
+                if (!scene) throw new Error(`Scene ${seqIdx + 1}.${sceneIdx + 1} no longer exists.`);
+                const sequence = storyState.sequences?.[seqIdx];
+                const blueprint = Object.fromEntries(['title', 'objective', 'description', 'scene_type', 'value_shift', 'cast_names'].map(key => [key, scene[key] || (key === 'cast_names' ? [] : '')]));
+                const profiles = getSceneActiveCast(scene, storyState.cast || []).map(ch => Object.fromEntries(
+                    ['name', 'role', 'core_flaw', 'core_desire', 'vocal_cadence'].map(key => [key, ch[key] || ''])
+                ));
+                return `<scene_blueprint>
+${JSON.stringify(blueprint, null, 2)}
+</scene_blueprint>
+<continuity_ledger>
+${formatContinuityLedgerForPrompt(storyState, { sequence: seqIdx + 1, act: sequence?.parent_act || actForSequence(seqIdx + 1) })}
+</continuity_ledger>
+<active_characters_profiles>
+${JSON.stringify(profiles, null, 2)}
+</active_characters_profiles>
+<current_chunk_choreography_blueprint>
+${formatBeatsForBlueprint(storyState.beats?.[sId] || [], sId)}
+</current_chunk_choreography_blueprint>
+<generated_prose>
+${storyState.prose?.[sId]?.final || ''}
+</generated_prose>
+
+${directiveReviewOutputFormat}`;
+            };
+
+            const parseDirectiveReview = (output) => {
+                const parsed = extractReviewStatus(output);
+                const issues = parseIssuesFromReview(output);
+                // The pipeline's heuristic auto-pass is inappropriate for recording edited canon.
+                if (!parsed.isValid) throw new Error('Reviewer returned no valid PASS/FAIL evaluation.');
+                return { status: parsed.status === 'PASS' && !issues.length ? 'PASS' : 'FAIL', issues, critique: parsed.critique || '' };
+            };
+
+            const directiveReviewFailure = (err) => ({
+                status: 'FAIL', critique: err?.message || String(err),
+                issues: [{ severity: 'CRITICAL', category: 'CONTINUITY', description: `Verification could not complete: ${err?.message || String(err)}`, location: '', fix_suggestion: 'Resolve the review error and verify the scene again.' }],
+                error: true
+            });
+
+            const verifyAndArchiveDirectiveScene = async (storyState, sId, logMessage) => {
+                const [seqIdx, sceneIdx] = sId.split('-').map(Number);
+                const label = `${seqIdx + 1}.${sceneIdx + 1}`;
+                let review;
+                try {
+                    const output = await callAI(buildDirectiveReviewContext(storyState, seqIdx, sceneIdx), PROMPTS.writingReview, false, 'Directive Prose Reviewer', 'small');
+                    review = parseDirectiveReview(output);
+                } catch (err) {
+                    console.warn('Directive prose verification failed:', err);
+                    review = directiveReviewFailure(err);
+                }
+                logMessage(`[Verify] Scene ${label}: ${review.status === 'PASS' ? 'PASS' : `FAIL (${review.issues.length} issues)`}`, review.status === 'PASS' ? 'success' : 'error');
+                if (!review.issues.some(issue => issue.severity === 'CRITICAL')) {
+                    const archived = await runArchivistForScene(storyState, seqIdx, sceneIdx);
+                    logMessage(`[Archive] Scene ${label}: ${archived !== storyState ? 'updated continuity' : 'no updates returned'}`, archived !== storyState ? 'success' : 'pending');
+                    storyState = archived;
+                }
+                return { story: storyState, review };
+            };
+
+            const reviewDirectiveConsistency = async (storyState, sceneIds, consistencyNotes, logMessage) => {
+                let review;
+                try {
+                    const excerpts = sceneIds.map(sId => {
+                        const [seqIdx, sceneIdx] = sId.split('-').map(Number);
+                        const scene = storyState.scenes?.[`${seqIdx}`]?.[sceneIdx];
+                        const prose = storyState.prose?.[sId]?.final || '';
+                        return `<scene><number>${seqIdx + 1}.${sceneIdx + 1}</number><title>${escapeXml(scene?.title || '')}</title><first>${escapeXml(prose.slice(0, 600))}</first><last>${escapeXml(prose.slice(-600))}</last></scene>`;
+                    }).join('\n');
+                    const output = await callAI(`<consistency_notes>\n${escapeXml(consistencyNotes || '')}\n</consistency_notes>\n<scene_excerpts>\n${excerpts}\n</scene_excerpts>`, PROMPTS.directiveConsistencyReview, false, 'Directive Consistency Reviewer', 'small');
+                    review = parseDirectiveReview(output);
+                } catch (err) {
+                    console.warn('Directive cross-scene review failed:', err);
+                    review = directiveReviewFailure(err);
+                }
+                logMessage(`[Consistency] Cross-scene consistency: ${review.status === 'PASS' ? 'PASS' : `FAIL (${review.issues.length} issues)`}`, review.status === 'PASS' ? 'success' : 'error');
+                return review;
+            };
+
+            const handleFixDirectiveReview = async (actionIdx) => {
+                if (isPlanningDirective || isExecutingDirective) return;
+                const action = directivePlan?.actions[actionIdx];
+                const result = action?.result;
+                if (!result?.review?.issues?.length || result.review.error || result.reviewFixAttempted || !result.proseSceneId) return;
+                const sId = result.proseSceneId;
+                const currentProse = story.prose?.[sId]?.final || '';
+                if (!currentProse.trim()) return;
+                setIsExecutingDirective(true);
+                const updateResult = (updates) => setDirectivePlan(prev => prev ? {
+                    ...prev, actions: prev.actions.map((item, idx) => idx === actionIdx ? { ...item, result: { ...item.result, ...updates } } : item)
+                } : prev);
+                const logMessage = (text, status = 'pending') => setDirectiveExecutionLogs(prev => [...prev, { id: Date.now() + Math.random(), text, status }]);
+                updateResult({ reviewFixAttempted: true });
+                try {
+                    const output = await callAI(`<original_text>\n${currentProse}\n</original_text>\n<reviewer_feedback>\n${escapeXml(JSON.stringify(result.review.issues, null, 2))}\n</reviewer_feedback>`, PROMPTS.surgicalEditorProse, false, 'Directive Surgical Review Fix', 'large');
+                    // This shared wrapper applies detailed edits and retries failed anchors at most once.
+                    const report = await applySurgicalEditsWithRetry({ originalText: currentProse, blocksText: output, systemPrompt: PROMPTS.surgicalEditorProse, logName: 'Directive Surgical Review Fix', modelSize: 'large' });
+                    if (!report.applied.length) throw new Error(report.summary || 'No surgical edits could be applied.');
+                    const changeRatio = computeChangeRatio(currentProse, report.text);
+                    if (changeRatio > SURGICAL_MAX_CHANGE_RATIO && action.allow_large_change !== true) {
+                        throw new Error(`Edit rejected: would change ${Math.round(changeRatio * 100)}% of the scene (limit 60%)`);
+                    }
+                    const prose = { ...story.prose[sId], final: report.text };
+                    delete prose.stale;
+                    let nextStory = { ...story, prose: { ...story.prose, [sId]: prose } };
+                    setStory(nextStory);
+                    updateResult({ appliedEdits: [...(result.appliedEdits || []), ...report.applied], review: undefined });
+                    setDirectivePlan(prev => prev ? { ...prev, consistencyReview: undefined } : prev);
+                    logMessage(`[Fix] ${report.summary}`, report.failed.length ? 'error' : 'success');
+                    const verified = await verifyAndArchiveDirectiveScene(nextStory, sId, logMessage);
+                    nextStory = verified.story;
+                    setStory(nextStory);
+                    updateResult({ review: verified.review });
+                    logMessage(`[Fix] Scene ${sId.split('-').map(n => Number(n) + 1).join('.')}: ${verified.review.status}`, verified.review.status === 'PASS' ? 'success' : 'error');
+                } catch (err) {
+                    console.warn('Directive surgical review fix failed:', err);
+                    logMessage(`[Fix] Failed: ${err?.message || String(err)}`, 'error');
+                } finally {
+                    setIsExecutingDirective(false);
+                }
+            };
+
+            const serializeDirectivePlan = (plan) => {
+                const tag = (name, value) => `<${name}>${escapeXml(value == null ? '' : String(value))}</${name}>`;
+                const actions = (plan?.actions || []).map(action => {
+                    const fields = ['action_type', 'target_act_idx', 'target_sequence_idx', 'target_scene_idx', 'target_beat_idx', 'target_character_id', 'description', 'allow_large_change'];
+                    const targets = fields.map(field => tag(field, field === 'target_sequence_idx' ? action.target_sequence_idx ?? action.target_seq_idx : action[field])).join('\n');
+                    const details = Object.entries(action.details || {}).map(([field, value]) => {
+                        if (field === 'line_edits') return `<line_edits>${(value || []).map(edit => `<edit>${tag('find', edit.find)}${tag('replace', edit.replace)}</edit>`).join('')}</line_edits>`;
+                        return tag(field, typeof value === 'object' && value !== null ? JSON.stringify(value) : value);
+                    }).join('\n');
+                    return `<action>\n${targets}\n<details>\n${details}\n</details>\n</action>`;
+                }).join('\n');
+                return `<response>\n${tag('evaluation', plan?.evaluation)}\n${tag('scope_kind', plan?.scope_kind || 'local')}\n${tag('consistency_notes', plan?.consistency_notes)}\n<actions>\n${actions}\n</actions>\n</response>`;
+            };
+
+            const clearDirectivePlanResults = (plan) => {
+                const { consistencyReview, ...cleanPlan } = plan;
+                return { ...cleanPlan, actions: plan.actions.map(({ result, ...action }) => ({ ...action, details: JSON.parse(JSON.stringify(action.details || {})) })) };
+            };
+
+            const restorePreviousDirectivePlan = () => {
+                if (isPlanningDirective || isExecutingDirective || !directivePlanHistory.length) return;
+                setDirectivePlan(clearDirectivePlanResults(directivePlanHistory[directivePlanHistory.length - 1]));
+                setDirectivePlanHistory(prev => prev.slice(0, -1));
+                setDirectiveRefinement('');
+                setDirectiveExecutionLogs([]);
+                setDirectiveProgress(0);
+                setDirectiveUndoSnapshot(null);
+            };
+
             const parseDirectivePlan = (planText) => {
-                if (!planText || typeof planText !== 'string') return { evaluation: "", actions: [] };
+                if (!planText || typeof planText !== 'string') return { evaluation: "", actions: [], scope_kind: 'local', consistency_notes: '' };
+                // Decode once, token by token, so a literal entity in an edited plan stays literal.
+                const decodePlanText = (text) => text.replace(/&(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);/g, entity => decodeXmlEntities(entity));
+                const readPlanTag = (text, tag) => decodePlanText(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i').exec(text || '')?.[1]?.trim() || '');
 
                 // Try XML parsing
                 // A beat's <details><action> field is nested inside the outer action block.
                 const cleanText = planText.replace(/<!--[\s\S]*?-->/g, '');
+                const planHeader = cleanText.replace(/<actions>[\s\S]*?<\/actions>/gi, '');
+                const scope_kind = extractTag(planHeader, 'scope_kind').toLowerCase() === 'arc' ? 'arc' : 'local';
+                const consistency_notes = readPlanTag(planHeader, 'consistency_notes');
                 const actionBlocks = [];
                 let actionDepth = 0, actionStart = 0;
                 for (const match of cleanText.matchAll(/<\/?action>/gi)) {
@@ -12036,7 +12437,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                     }
                 }
                 if (actionBlocks && actionBlocks.length > 0) {
-                    const evaluation = decodeXmlEntities(extractTag(planText, 'evaluation') || '');
+                    const evaluation = readPlanTag(planHeader, 'evaluation');
                     const actions = actionBlocks.map(block => {
                         const actionType = (extractTag(block, 'action_type') || '').trim();
                         const details = {};
@@ -12047,7 +12448,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             // A list's <find>/<replace> must not also become the single replacement.
                             const withoutList = text => (text || '').replace(/<line_edits>[\s\S]*?<\/line_edits>/gi, '');
                             const val = rawTag(withoutList(detBlock), tag) ?? rawTag(withoutList(block), tag) ?? '';
-                            return decodeXmlEntities(literal ? val : val.trim());
+                            return decodePlanText(literal ? val : val.trim());
                         };
 
                         details.title = getField('title');
@@ -12072,8 +12473,8 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         details.find_text = getField('find_text', true) || getField('find', true);
                         details.replace_text = getField('replace_text', true) || getField('replace', true);
                         details.line_edits = Array.from(lineEditsBlock.matchAll(/<edit>([\s\S]*?)<\/edit>/gi), match => ({
-                            find: decodeXmlEntities(rawTag(match[1], 'find') ?? ''),
-                            replace: decodeXmlEntities(rawTag(match[1], 'replace') ?? '')
+                            find: decodePlanText(rawTag(match[1], 'find') ?? ''),
+                            replace: decodePlanText(rawTag(match[1], 'replace') ?? '')
                         }));
 
                         details.concept = getField('concept');
@@ -12098,8 +12499,8 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         if (actionType === 'ADD_CONTINUITY_FACT') {
                             // Read only this action's details, never nested line edits or outer tags.
                             const factDetails = (detBlock || '').replace(/<line_edits>[\s\S]*?<\/line_edits>/gi, '');
-                            details.key = decodeXmlEntities((rawTag(factDetails, 'key') || '').trim());
-                            details.value = decodeXmlEntities((rawTag(factDetails, 'value') || '').trim());
+                            details.key = decodePlanText((rawTag(factDetails, 'key') || '').trim());
+                            details.value = decodePlanText((rawTag(factDetails, 'value') || '').trim());
                         }
                         if (actionType === 'MOVE_SCENE') {
                             // Preserve explicit out-of-scope destinations so the executor can reject them.
@@ -12120,7 +12521,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         const targetSeqStr = extractTag(block, 'target_sequence_idx') || extractTag(block, 'target_seq_idx');
                         const targetSceneStr = extractTag(block, 'target_scene_idx');
                         const targetBeatStr = extractTag(block, 'target_beat_idx');
-                        const targetCharStr = extractTag(block, 'target_character_id');
+                        const targetCharStr = readPlanTag(block, 'target_character_id');
 
                         const seqIdx = targetSeqStr !== null && targetSeqStr !== "" ? parseInt(targetSeqStr, 10) : 0;
 
@@ -12134,14 +12535,14 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             target_scene_idx: targetSceneStr !== null && targetSceneStr !== "" ? parseInt(targetSceneStr, 10) : null,
                             target_beat_idx: targetBeatStr !== null && targetBeatStr !== "" ? parseInt(targetBeatStr, 10) : null,
                             target_character_id: targetCharStr !== null ? targetCharStr : null,
-                            description: decodeXmlEntities(extractTag(block, 'description') || ''),
+                            description: readPlanTag(block.replace(/<details>[\s\S]*?<\/details>/gi, ''), 'description'),
                             details: details
                         };
                     });
-                    return { evaluation, actions };
+                    return { evaluation, actions, scope_kind, consistency_notes };
                 }
 
-                return { evaluation: "", actions: [] };
+                return { evaluation: readPlanTag(planHeader, 'evaluation'), actions: [], scope_kind, consistency_notes };
             };
 
             const applySurgicalProsePatch = async ({ story, seqIdx, sceneIdx, instructions, allowLargeChange, logName = 'Surgical Prose Editor' }) => {
@@ -12177,6 +12578,7 @@ BEGIN SURGICAL PROSE EDIT`;
             };
 
             const executeDirectivePlan = async (planActions) => {
+                if (isPlanningDirective || isExecutingDirective) return;
                 const snapshot = JSON.parse(JSON.stringify(story));
                 try {
                 setDirectiveUndoSnapshot(snapshot);
@@ -12186,12 +12588,19 @@ BEGIN SURGICAL PROSE EDIT`;
 
                 let currentStory = JSON.parse(JSON.stringify(snapshot));
                 const results = [];
+                const touchedProseScenes = new Set();
+                let lastProseActions = new Map();
                 // Keep prior edit undo targets attached to their scenes as later structural actions shift keys.
-                const rekeyResultScenes = (mapKey) => results.forEach(result => {
-                    if (result.proseSceneId) result.proseSceneId = mapKey(result.proseSceneId);
-                });
+                const rekeyResultScenes = (mapKey) => {
+                    results.forEach(result => {
+                        if (result.proseSceneId) result.proseSceneId = mapKey(result.proseSceneId);
+                    });
+                    lastProseActions = new Map([...lastProseActions].map(([key, idx]) => [mapKey(key), idx]).filter(([key]) => key !== null));
+                    touchedProseScenes.clear();
+                    lastProseActions.forEach((idx, key) => touchedProseScenes.add(key));
+                };
                 setDirectivePlan(prev => prev ? {
-                    ...prev, actions: prev.actions.map(action => ({ ...action, result: undefined }))
+                    ...prev, consistencyReview: undefined, actions: prev.actions.map(action => ({ ...action, result: undefined }))
                 } : prev);
 
                 const logMessage = (text, status = 'pending') => {
@@ -12230,6 +12639,7 @@ BEGIN SURGICAL PROSE EDIT`;
                         const sceneIdx = action.target_scene_idx !== null && action.target_scene_idx !== undefined ? parseInt(action.target_scene_idx, 10) : 0;
                         const sceneKey = `${seqIdx}`;
                         const sId = `${seqIdx}-${sceneIdx}`;
+                        const proseBeforeAction = currentStory.prose?.[sId]?.final;
 
                         // SCALE 0: STORY & METADATA OPERATIONS
                         if (action.action_type === 'MODIFY_STORY_METADATA') {
@@ -12894,6 +13304,14 @@ BEGIN SURGICAL PROSE EDIT`;
                             ...(appliedEditsForAction ? { appliedEdits: appliedEditsForAction, proseSceneId: sId } : {}),
                             ...(cascadeResult ? { cascade: cascadeResult, proseSceneId: sId } : {})
                         };
+                        if (action.action_type === 'REWRITE_PROSE') {
+                            // The full writing pipeline already reviewed and archived the replacement.
+                            touchedProseScenes.delete(sId);
+                            lastProseActions.delete(sId);
+                        } else if ((['SURGICAL_PATCH_PROSE', 'LINE_EDIT_PROSE'].includes(action.action_type) || cascadeResult?.status === 'applied') && currentStory.prose?.[sId]?.final !== proseBeforeAction) {
+                            touchedProseScenes.add(sId);
+                            lastProseActions.set(sId, i);
+                        }
                     } catch (err) {
                         const message = err?.message || String(err);
                         console.error(`Directive action ${actionNum} failed:`, err);
@@ -12906,8 +13324,23 @@ BEGIN SURGICAL PROSE EDIT`;
                     await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
+                const touchedInOrder = [...touchedProseScenes].sort((a, b) => {
+                    const [aSeq, aScene] = a.split('-').map(Number), [bSeq, bScene] = b.split('-').map(Number);
+                    return aSeq - bSeq || aScene - bScene;
+                });
+                if (verifyDirectiveEdits) {
+                    for (const sId of touchedInOrder) {
+                        const verified = await verifyAndArchiveDirectiveScene(currentStory, sId, logMessage);
+                        currentStory = verified.story;
+                        results[lastProseActions.get(sId)].review = verified.review;
+                        setStory(currentStory);
+                    }
+                }
+                const consistencyReview = directivePlan?.scope_kind === 'arc' && touchedInOrder.length >= 2
+                    ? await reviewDirectiveConsistency(currentStory, touchedInOrder, directivePlan.consistency_notes, logMessage) : undefined;
                 setDirectivePlan(prev => prev ? {
                     ...prev,
+                    consistencyReview,
                     actions: prev.actions.map((action, i) => results[i] ? { ...action, result: results[i] } : action)
                 } : prev);
                 const counts = results.reduce((totals, result) => {
@@ -12926,17 +13359,25 @@ BEGIN SURGICAL PROSE EDIT`;
             // TIER 6.1: DIRECTIVE PLANNER AGENT
             // Associated Prompt: PROMPTS.directivePlanner
             // ============================================================================
-            const runDirectivePlanner = async () => {
+            const runDirectivePlanner = async (refinementRequest = '') => {
+                if (isPlanningDirective || isExecutingDirective) return;
+                const isRefinement = typeof refinementRequest === 'string' && !!refinementRequest.trim() && !!directivePlan;
+                const previousPlan = isRefinement ? clearDirectivePlanResults(directivePlan) : null;
+                const refinementContext = isRefinement ? `\n<previous_plan>\n${serializeDirectivePlan(previousPlan)}\n</previous_plan>\n<refinement_request>\n${escapeXml(refinementRequest)}\n</refinement_request>` : '';
                 if (!directiveInput.trim()) {
                     showToast("Please enter a directive instruction.", "warning");
                     return;
                 }
                 setIsPlanningDirective(true);
                 setDirectivePlanPhase('scoping');
-                setDirectivePlan(null);
-                setDirectiveUndoSnapshot(null);
-                setDirectiveExecutionLogs([]);
-                setDirectiveProgress(0);
+                if (!isRefinement) {
+                    setDirectivePlan(null);
+                    setDirectivePlanHistory([]);
+                    setDirectiveRefinement('');
+                    setDirectiveUndoSnapshot(null);
+                    setDirectiveExecutionLogs([]);
+                    setDirectiveProgress(0);
+                }
 
                 try {
                     let latestWrittenSequence = -1;
@@ -13023,6 +13464,8 @@ BEGIN SURGICAL PROSE EDIT`;
                     };
 
                     let targetSceneDetails = '';
+                    let scopeKind = previousPlan?.scope_kind || 'local';
+                    let consistencyNotes = previousPlan?.consistency_notes || '';
                     try {
                         const scopePrompt = `<user_directive>
 ${directiveInput}
@@ -13030,8 +13473,11 @@ ${directiveInput}
 
 <current_story_structure>
 ${JSON.stringify(structureOverview, null, 2)}
-</current_story_structure>`;
+</current_story_structure>${refinementContext}`;
                         const scopeResponse = await callAI(scopePrompt, PROMPTS.directiveScoper, false, "Directive Scoper", "small");
+                        scopeKind = extractTag(scopeResponse, 'scope_kind').toLowerCase() === 'arc' ? 'arc' : 'local';
+                        consistencyNotes = scopeKind === 'arc' ? decodeXmlEntities(extractTag(scopeResponse, 'consistency_notes') || '') : '';
+                        const seenTargets = new Set();
                         const targetScenes = extractTagList(extractTag(scopeResponse, 'target_scenes'), 'scene').map(block => {
                             const sequenceText = extractTag(block, 'sequence_idx');
                             const sceneText = extractTag(block, 'scene_idx');
@@ -13041,7 +13487,13 @@ ${JSON.stringify(structureOverview, null, 2)}
                             if (!Number.isSafeInteger(sequenceIdx) || !Number.isSafeInteger(sceneIdx) ||
                                 !story.sequences?.[sequenceIdx] || !story.scenes?.[`${sequenceIdx}`]?.[sceneIdx]) return null;
                             return { sequence_idx: sequenceIdx, scene_idx: sceneIdx, reason: extractTag(block, 'reason') };
-                        }).filter(Boolean).slice(0, 6);
+                        }).filter(target => {
+                            if (!target) return false;
+                            const key = `${target.sequence_idx}-${target.scene_idx}`;
+                            if (seenTargets.has(key)) return false;
+                            seenTargets.add(key);
+                            return true;
+                        }).slice(0, scopeKind === 'arc' ? 12 : 6);
                         if (targetScenes.length === 0) throw new Error('No parseable target scenes returned.');
                         const needsProse = extractTag(scopeResponse, 'needs_prose').toLowerCase() === 'true';
                         const details = targetScenes.map(target => {
@@ -13066,7 +13518,9 @@ ${directiveInput}
 
 <current_story_structure>
 ${JSON.stringify(structureOverview, null, 2)}
-</current_story_structure>${targetSceneDetails}
+</current_story_structure>${targetSceneDetails}${refinementContext}
+<scope_kind>${scopeKind}</scope_kind>
+${scopeKind === 'arc' ? `<consistency_notes>\n${escapeXml(consistencyNotes)}\n</consistency_notes>` : ''}
 
 <output_format_description>
 FORMATTING DIRECTIVE: Return your response strictly as XML tags. Do not use YAML or markdown blocks.
@@ -13075,6 +13529,8 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 Output Schema:
 <response>
   <evaluation>A detailed developmental explanation of the surgical strategy required to address the user_directive.</evaluation>
+  <scope_kind>${scopeKind}</scope_kind>
+  <consistency_notes>For arc scope, return refined invariants across the scenes.</consistency_notes>
   <actions>
     <action>
       <action_type>MODIFY_SCENE</action_type>
@@ -13116,13 +13572,22 @@ BEGIN DEVELOPING SURGICAL DIRECTIVES
 
                     const response = await callAI(prompt, PROMPTS.directivePlanner, false, "Directive Planner", "large");
                     const parsed = parseDirectivePlan(response);
+                    parsed.scope_kind = scopeKind;
+                    if (scopeKind === 'arc' && !parsed.consistency_notes) parsed.consistency_notes = consistencyNotes;
 
                     if (!parsed.evaluation && parsed.actions.length === 0) {
                         throw new Error("Failed to parse plan. Response did not contain expected XML format.");
                     }
 
+                    if (isRefinement) {
+                        setDirectivePlanHistory(prev => [...prev, previousPlan].slice(-5));
+                        setDirectiveUndoSnapshot(null);
+                        setDirectiveExecutionLogs([]);
+                        setDirectiveProgress(0);
+                        setDirectiveRefinement('');
+                    }
                     setDirectivePlan(parsed);
-                    showToast("Directive plan generated successfully!", "success");
+                    showToast(isRefinement ? "Directive plan refined successfully!" : "Directive plan generated successfully!", "success");
                 } catch (err) {
                     console.error("Directive planning failed:", err);
                     alert("Planning failed: " + err.message);
@@ -13183,7 +13648,7 @@ BEGIN DEVELOPING SURGICAL DIRECTIVES
             };
 
             const handleUndoSurgicalEdit = (actionIdx, editIdx, isCascade = false) => {
-                if (isExecutingDirective) return;
+                if (isPlanningDirective || isExecutingDirective) return;
                 const result = directivePlan?.actions[actionIdx]?.result;
                 const edit = (isCascade ? result?.cascade : result)?.appliedEdits?.[editIdx];
                 if (!edit || edit.undone) return;
@@ -13202,6 +13667,13 @@ BEGIN DEVELOPING SURGICAL DIRECTIVES
                     } }
                 }));
                 handleUpdateAppliedEdit(actionIdx, editIdx, { undone: true }, isCascade);
+                // User-driven undo never launches verification; prior verdicts no longer describe this prose.
+                setDirectivePlan(prev => prev ? {
+                    ...prev, consistencyReview: undefined,
+                    actions: prev.actions.map(action => action.result?.proseSceneId === sId ? {
+                        ...action, result: { ...action.result, review: undefined }
+                    } : action)
+                } : prev);
             };
 
             const retryFailedSurgicalEdits = async ({ currentText, failed, systemPrompt, logName, modelSize }) => {
@@ -18922,22 +19394,7 @@ BEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`,
                     }
                 }
 
-                let activeCast = mutableCast.filter(ch => {
-                    const idMatch = (scene.cast_ids || []).some(cid => {
-                        const resolved = resolveCharacter(cid, mutableCast);
-                        return resolved && (resolved.id === ch.id || resolved.name === ch.name);
-                    });
-                    const nameMatch = (scene.cast_names || []).some(cn => {
-                        const resolved = resolveCharacter(cn, mutableCast);
-                        return resolved && (resolved.id === ch.id || resolved.name === ch.name);
-                    });
-                    const presMatch = (scene.characters_present || []).some(cp => {
-                        const resolved = resolveCharacter(cp, mutableCast);
-                        return resolved && (resolved.id === ch.id || resolved.name === ch.name);
-                    });
-                    return idMatch || nameMatch || presMatch;
-                });
-                if (!activeCast || activeCast.length === 0) activeCast = mutableCast.slice(0, 3);
+                const activeCast = getSceneActiveCast(scene, mutableCast);
 
                 try {
                     // STEP 2: Full-Scene Drafting (One Pass)
@@ -18959,71 +19416,7 @@ BEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`,
                         ? `${basePrompt}\n\n=== ACTIVE SCENE LENS MANDATE: ${activeModeId} ===\n${injectionPrompt}`
                         : basePrompt;
 
-                    let beatSequenceText = (beats || []).map((beat, bIdx) => {
-                        const beatId = beat.id || beat.beat_id || `${sId}.${bIdx + 1}`;
-                        const beatType = beat.beat_type || 'DRAMATIC';
-                        const actionDesc = beat.action_description || beat.description || '';
-                        const tactic = beat.char_A_tactic || beat.tactic || '';
-                        const action = beat.char_A_action || beat.action || '';
-                        const reaction = beat.char_B_reaction || beat.reaction || '';
-                        const powerShift = beat.power_shift || '';
-
-                        let pivot = '';
-                        if (beat.beat_structure && typeof beat.beat_structure === 'object') {
-                            pivot = beat.beat_structure.pivot || beat.beat_structure.start || '';
-                        } else if (beat.pivot) {
-                            pivot = beat.pivot;
-                        } else if (beat.beat_structure) {
-                            pivot = String(beat.beat_structure);
-                        }
-
-                        let charIntent = '';
-                        if (beat.character_intent) {
-                            charIntent = typeof beat.character_intent === 'object' ? JSON.stringify(beat.character_intent) : String(beat.character_intent).trim();
-                        }
-
-                        let atmosphere = '';
-                        if (beat.atmosphere_and_feel) {
-                            if (typeof beat.atmosphere_and_feel === 'object') {
-                                const atm = beat.atmosphere_and_feel;
-                                const anchors = Array.isArray(atm.cognitive_sensory_filters)
-                                    ? atm.cognitive_sensory_filters.join("; ")
-                                    : (Array.isArray(atm.sensory_anchors) ? atm.sensory_anchors.join("; ") : (atm.sensory_anchors || atm.cognitive_sensory_filters || ""));
-                                atmosphere = `Mood: ${atm.mood || ''}${anchors ? `\nSensory Filters: ${anchors}` : ''}${atm.subtext ? `\nSubtext: ${atm.subtext}` : ''}`.trim();
-                            } else {
-                                atmosphere = String(beat.atmosphere_and_feel).trim();
-                            }
-                        }
-
-                        let epistemic = '';
-                        if (beat.epistemic_boundaries) {
-                            epistemic = typeof beat.epistemic_boundaries === 'object' ? JSON.stringify(beat.epistemic_boundaries) : String(beat.epistemic_boundaries).trim();
-                        }
-
-                        let authorial = '';
-                        if (beat.authorial_intent) {
-                            authorial = typeof beat.authorial_intent === 'object' ? JSON.stringify(beat.authorial_intent) : String(beat.authorial_intent).trim();
-                        }
-
-                        const lines = [];
-                        lines.push(`<beat index="${bIdx + 1}" id="${beatId}" type="${beatType}">`);
-                        if (actionDesc) {
-                            lines.push(`  <action_summary>${actionDesc}</action_summary>`);
-                        }
-                        lines.push(`  <tactical_exchange>`);
-                        lines.push(`    <stimulus_action${tactic ? ` tactic="${tactic}"` : ''}>${action || 'Action executed.'}</stimulus_action>`);
-                        lines.push(`    <mru_reaction>${reaction || 'Reaction registered.'}</mru_reaction>`);
-                        if (powerShift) lines.push(`    <power_shift>${powerShift}</power_shift>`);
-                        lines.push(`  </tactical_exchange>`);
-                        if (pivot) lines.push(`  <dramatic_pivot>${pivot}</dramatic_pivot>`);
-                        if (charIntent) lines.push(`  <speech_acts_and_intent>\n${charIntent}\n  </speech_acts_and_intent>`);
-                        if (atmosphere) lines.push(`  <sensory_filters_and_mood>\n${atmosphere}\n  </sensory_filters_and_mood>`);
-                        if (epistemic) lines.push(`  <epistemic_boundaries>\n${epistemic}\n  </epistemic_boundaries>`);
-                        if (authorial) lines.push(`  <authorial_intent>\n${authorial}\n  </authorial_intent>`);
-                        lines.push(`</beat>`);
-
-                        return lines.join('\n');
-                    }).join('\n\n');
+                    const beatSequenceText = formatBeatsForBlueprint(beats, sId);
 
                     const sceneQuery = `Scene Action: ${scene.description}.`;
                     const ragLoreDocs = await retrieveContext(sceneQuery, 0.65, (meta) => {
@@ -19143,32 +19536,7 @@ Begin writing current scene prose.
 ${genOutput}
 </generated_prose>
 
-<output_format_description>
-FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
-CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
-
-CRITICAL AUDIT DIRECTIVE: Conduct an exhaustive, beat-by-beat comparison between <current_chunk_choreography_blueprint> and <generated_prose>. Verify that every plot event, specific challenge, wager, rule, dialogue exchange, and turning point from each beat is translated with absolute fidelity. If the prose softens, dilutes, alters, or omits any crucial plot condition or dialogue premise (such as changing a specific challenge, wager, or rule into something vague or trivial), you MUST mark <status>FAIL</status> with CRITICAL severity under category: CHOREOGRAPHY, quote the mismatch, and demand a fix.
-
-Output Schema:
-<response>
-  <critique_analysis>Perform a focused analysis of choreography and plot point compliance (comparing each beat's dialogue/stakes to the prose), epistemic boundaries, continuity, and style. Be specific — quote exact passages.</critique_analysis>
-  <issues>
-    <issue>
-      <severity>CRITICAL</severity> <!-- CRITICAL | MAJOR | MINOR -->
-      <category>CHOREOGRAPHY</category> <!-- CHOREOGRAPHY | CONTINUITY | EPISTEMIC | VOICE | STYLE -->
-      <description>Clear explanation of the problem (e.g. 'Beat 1.2 specified challenge X, but prose changed it to Y').</description>
-      <location>Quote of the offending text passage.</location>
-      <fix_suggestion>How to restore the exact beat premise/dialogue terms in the prose.</fix_suggestion>
-    </issue>
-  </issues>
-  <status>PASS</status> <!-- or FAIL -->
-  <deviation_reasons>
-    <reason>List each critical or major issue description briefly here.</reason>
-  </deviation_reasons>
-</response>
-</output_format_description>
-
-BEGIN PROSE CRITIQUE REVIEW`,
+${directiveReviewOutputFormat}`,
                         parserFn: (text) => parseWritingOutput(text),
                         modelSize: "large",
                         spawningContext: `Sequence ${seq + 1} Scene ${s + 1} Full Scene Prose Writing`,
@@ -19281,70 +19649,6 @@ ${finalProseText}
                     // ============================================================================
                     // STEP 4: Scene Archivist Step & State Update (D14)
                     setLoadingStep("Final Agent: Archiving scene updates (Tier 6.4)...");
-                    const currentLoreList = (storyToUse.lore || []).map(l => l.topic).join(', ');
-                    const archivistBlueprint = formatArchivistBlueprintContext(scene);
-                    const archivistPrompt = `<scene_text>
-${finalProseText}
-</scene_text>
-<cast_list>
-${activeCast.map(ch => ch.name).join(', ')}
-</cast_list>
-${archivistBlueprint}
-<current_lore_topics>
-${currentLoreList}
-</current_lore_topics>
-
-<output_format_description>
-FORMATTING DIRECTIVE: Output format must be strictly valid JSON. Do not write markdown code blocks, preamble, or explanations. Start directly with '{' and end with '}'.
-
-Output Schema:
-{
-  "cast_updates": [
-    {
-      "name": "Character Name",
-      "append_history": "Backstory revealed in the scene to append.",
-      "append_story_events": "New narrative events from the scene to append.",
-      "update_goals": "Updated short/long-term character goal."
-    }
-  ],
-  "new_characters": [
-    {
-      "name": "New Character Name",
-      "role": "Their role (e.g. Ally, Antagonist, Witness)",
-      "details": {
-        "history": "their backstory",
-        "story_events": "their initial scene events",
-        "goals": "their goals"
-      }
-    }
-  ],
-  "lore_updates": [
-    {
-      "topic": "Category (e.g. History, Lore, Magic, Object, Rule, Character Appearance)",
-      "detail": "Objective, encyclopedic description of the newly established fact."
-    }
-  ],
-  "continuity_facts": [
-    {
-      "category": "Appearance | Object | Place | Opinion | Agreement",
-      "key": "Specific Subject (e.g. Elara Hair Color)",
-      "detail": "Concrete detail established in the prose text.",
-      "character": "Character Name or entity"
-    }
-  ],
-  "relationship_updates": [
-    {
-      "from": "Character A",
-      "to": "Character B",
-      "new_feeling": "New relationship dynamic",
-      "trigger": "Scene event that triggered this shift"
-    }
-  ]
-}
-</output_format_description>
-
-BEGIN EXTRACTING SCENE ARCHIVE FACTS
-`;
                     const proseEntry = {
                         draft: proseResult.parsedData?.prose || finalProseText,
                         final: finalProseText,
@@ -19367,40 +19671,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                         prose: updatedProseMap
                     };
 
-                    try {
-                        const rawArchivistOutput = await callAI(archivistPrompt, PROMPTS.archivist, false, "Archivist", "large");
-                        let updates = null;
-                        if (rawArchivistOutput) {
-                            const jsonStr = extractTag(rawArchivistOutput, 'archived_facts') || extractTag(rawArchivistOutput, 'response');
-                            if (jsonStr) {
-                                try {
-                                    updates = JSON.parse(jsonStr.trim());
-                                } catch (e) {
-                                    console.warn("Failed to parse tagged archivist JSON, attempting fallback:", e);
-                                }
-                            }
-                            if (!updates) {
-                                try {
-                                    const cleaned = rawArchivistOutput.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
-                                    const firstBrace = cleaned.indexOf('{');
-                                    const lastBrace = cleaned.lastIndexOf('}');
-                                    if (firstBrace !== -1 && lastBrace !== -1) {
-                                        updates = JSON.parse(cleaned.substring(firstBrace, lastBrace + 1));
-                                    }
-                                } catch (e) {
-                                    console.warn("Archivist direct JSON parse failed:", e);
-                                }
-                            }
-                        }
-                        if (updates) {
-                            const mergedStory = await handleWorldUpdates(updates, sequenceData.parent_act || 1, scene.number, nextStory);
-                            if (mergedStory) {
-                                nextStory = mergedStory;
-                            }
-                        }
-                    } catch (archError) {
-                        console.warn("Archivist step failed or skipped:", archError);
-                    }
+                    nextStory = await runArchivistForScene(nextStory, seq, s);
 
                     let finalMergedProseStory = null;
                     setStory(prev => {
@@ -21658,6 +21929,10 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                 />
                                                 Cascade beat changes into written prose
                                             </label>
+                                            <label className="flex items-center gap-2 text-xs text-ink-600 font-medium cursor-pointer sm:ml-4">
+                                                <input type="checkbox" checked={verifyDirectiveEdits} onChange={(e) => setVerifyDirectiveEdits(e.target.checked)} className="rounded border-stone-300 text-[#8C6B32] focus:ring-[#8C6B32]" disabled={isPlanningDirective || isExecutingDirective} />
+                                                Verify and archive edited prose
+                                            </label>
                                         </div>
 
                                         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -21718,6 +21993,26 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                 <p className="text-xs text-ink-700 leading-relaxed font-serif whitespace-pre-wrap">
                                                     {directivePlan.evaluation}
                                                 </p>
+                                                {directivePlan.scope_kind === 'arc' && directivePlan.consistency_notes && (
+                                                    <div className="border-t border-edge pt-3 text-xs text-ink-700 whitespace-pre-wrap">
+                                                        <span className="font-bold">Arc consistency notes</span>
+                                                        <p className="mt-1">{directivePlan.consistency_notes}</p>
+                                                    </div>
+                                                )}
+                                                {directivePlan.consistencyReview && (
+                                                    <div className="border-t border-edge pt-3 space-y-2 text-xs">
+                                                        <span className={`inline-block rounded-lg border px-2.5 py-1 font-bold ${directivePlan.consistencyReview.status === 'PASS' ? 'bg-sage-tint text-sage-800 border-sage-edge' : 'bg-blush-tint text-blush-800 border-blush-edge'}`}>
+                                                            Cross-scene consistency: {directivePlan.consistencyReview.status === 'PASS' ? 'PASS' : `${directivePlan.consistencyReview.issues.length} issues`}
+                                                        </span>
+                                                        {directivePlan.consistencyReview.issues.map((issue, issueIdx) => (
+                                                            <div key={issueIdx} className="text-ink-700 whitespace-pre-wrap">
+                                                                <p><strong>{issue.severity} · {issue.category}</strong>: {issue.description}</p>
+                                                                {issue.location && <p>{issue.location}</p>}
+                                                                {issue.fix_suggestion && <p>Suggested fix: {issue.fix_suggestion}</p>}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Proposed Actions Checklist */}
@@ -21726,7 +22021,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                     <h3 className="text-xs font-bold text-ink-800 uppercase tracking-wider font-mono">Proposed Changes</h3>
                                                     <p className="text-xs text-ink-500 mt-0.5">Review the surgical plan mapped out by the Directive Agent before executing.</p>
                                                 </div>
-                                                <div className="divide-y divide-edge">
+                                                <fieldset disabled={isPlanningDirective || isExecutingDirective} className="min-w-0 divide-y divide-edge">
                                                     {directivePlan.actions.map((act, actIdx) => {
                                                         let typeColor = 'bg-mist-100 text-ink-700 border-edge-strong';
                                                         if (act.action_type === 'MODIFY_ACT') typeColor = 'bg-azure-tint text-azure-800 border-azure-edge';
@@ -21747,8 +22042,10 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                         if (act.action_type === 'MODIFY_RELATIONSHIP') typeColor = 'bg-teal-tint text-teal-800 border-teal-edge';
                                                         if (['ADD_LORE', 'MODIFY_LORE'].includes(act.action_type)) typeColor = 'bg-purple-tint text-purple-800 border-purple-edge';
                                                         if (act.action_type === 'ADD_CONTINUITY_FACT') typeColor = 'bg-azure-tint text-azure-800 border-azure-edge';
-                                                        const editResult = act.result?.cascade || act.result;
-                                                        const editsAreCascade = !!act.result?.cascade;
+                                                        const displayedEdits = [
+                                                            ...(act.result?.cascade?.appliedEdits || []).map((edit, editIdx) => ({ edit, editIdx, editsAreCascade: true })),
+                                                            ...(act.result?.appliedEdits || []).map((edit, editIdx) => ({ edit, editIdx, editsAreCascade: false }))
+                                                        ];
                                                         const blockedByProtection = isActionBlockedByProtection(act, story, protectWrittenProse);
                                                         const resultColor = act.result?.status === 'applied'
                                                             ? 'bg-sage-tint text-sage-800 border-sage-edge'
@@ -21866,13 +22163,32 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                             <p className="text-xs text-ink-600 whitespace-pre-wrap break-words">{act.result.cascade.message}</p>
                                                                         </div>
                                                                     )}
-                                                                    {editResult?.appliedEdits?.map((edit, editIdx) => {
+                                                                    {act.result?.review && (
+                                                                        <div className="space-y-2 text-xs">
+                                                                            <span className={`inline-block rounded-lg border px-2.5 py-1 font-bold ${act.result.review.status === 'PASS' ? 'bg-sage-tint text-sage-800 border-sage-edge' : 'bg-blush-tint text-blush-800 border-blush-edge'}`}>
+                                                                                Review: {act.result.review.status === 'PASS' ? 'PASS' : `${act.result.review.issues.length} issues`}
+                                                                            </span>
+                                                                            {act.result.review.issues.map((issue, issueIdx) => (
+                                                                                <div key={issueIdx} className="text-ink-700 whitespace-pre-wrap">
+                                                                                    <p><strong>{issue.severity} · {issue.category}</strong>: {issue.description}</p>
+                                                                                    {issue.location && <p>{issue.location}</p>}
+                                                                                    {issue.fix_suggestion && <p>Suggested fix: {issue.fix_suggestion}</p>}
+                                                                                </div>
+                                                                            ))}
+                                                                            {act.result.review.issues.length > 0 && (
+                                                                                <button type="button" onClick={() => handleFixDirectiveReview(actIdx)} disabled={isPlanningDirective || isExecutingDirective || act.result.reviewFixAttempted || act.result.review.error || !act.result.proseSceneId} className="px-3 py-1.5 rounded-lg border border-edge-strong bg-surface text-ink-700 font-semibold disabled:opacity-50">
+                                                                                    {act.result.reviewFixAttempted ? 'Surgical fix attempted' : 'Fix with Surgical Editor'}
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+                                                                    {displayedEdits.map(({ edit, editIdx, editsAreCascade }) => {
                                                                         const currentProse = story.prose?.[act.result.proseSceneId]?.final || '';
                                                                         const canUndo = !edit.undone && !!locateNeedle(currentProse, edit.after);
                                                                         const isLong = edit.before.length > 240 || edit.after.length > 240;
                                                                         const preview = (text) => !edit.showFull && text.length > 240 ? text.slice(0, 237) + '...' : text;
                                                                         return (
-                                                                            <div key={editIdx} className="rounded-lg border border-edge-strong bg-inset p-3 space-y-2 text-xs">
+                                                                            <div key={`${editsAreCascade ? 'cascade' : 'prose'}-${editIdx}`} className="rounded-lg border border-edge-strong bg-inset p-3 space-y-2 text-xs">
                                                                                 <div className="font-mono whitespace-pre-wrap break-words">
                                                                                     <del className="block text-blush-800">{preview(edit.before) || '(empty)'}</del>
                                                                                     <span className="block text-sage-800">{preview(edit.after) || '(empty)'}</span>
@@ -22484,24 +22800,37 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                             </div>
                                                         );
                                                     })}
-                                                </div>
+                                                </fieldset>
                                                 <div className="p-6 bg-inset border-t border-edge flex justify-end gap-3">
                                                     <button
                                                         onClick={() => setDirectivePlan(null)}
                                                         className="px-4 py-2 rounded-xl border border-edge-strong bg-surface text-ink-600 hover:text-ink-900 text-xs hover:bg-lift transition-colors shadow-2xs font-semibold"
-                                                        disabled={isExecutingDirective}
+                                                        disabled={isPlanningDirective || isExecutingDirective}
                                                     >
                                                         Cancel
                                                     </button>
                                                     <button
                                                         onClick={() => executeDirectivePlan(directivePlan.actions)}
                                                         className="bg-btn hover:bg-btn-hover px-6 py-2 rounded-xl font-bold text-xs shadow-sm text-btn-ink transition-all active:scale-95 flex items-center gap-1.5"
-                                                        disabled={isExecutingDirective}
+                                                        disabled={isPlanningDirective || isExecutingDirective}
                                                     >
                                                         <Zap size={14} className="fill-amber-300 text-amber-300" />
                                                         Apply & Execute Plan
                                                     </button>
                                                 </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {directivePlan && (
+                                        <div className="bg-surface border border-edge rounded-2xl p-6 space-y-3">
+                                            <label htmlFor="directiveRefinement" className="text-xs font-bold text-ink-700">Refine this plan</label>
+                                            <textarea id="directiveRefinement" value={directiveRefinement} onChange={(e) => setDirectiveRefinement(e.target.value)} disabled={isPlanningDirective || isExecutingDirective} placeholder="Describe which actions to change, add, or remove." className="w-full h-24 bg-inset border border-edge-strong rounded-xl p-3 text-xs text-ink-900 outline-none focus:border-gold" />
+                                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                                <button type="button" onClick={() => runDirectivePlanner(directiveRefinement)} disabled={isPlanningDirective || isExecutingDirective || !directiveRefinement.trim()} className="bg-btn text-btn-ink rounded-xl px-4 py-2 text-xs font-bold disabled:opacity-50">Refine this plan</button>
+                                                {directivePlanHistory.length > 0 && (
+                                                    <button type="button" onClick={restorePreviousDirectivePlan} disabled={isPlanningDirective || isExecutingDirective} className="text-xs text-ink-600 underline disabled:opacity-50">Restore previous plan</button>
+                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -22544,18 +22873,21 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                             onClick={() => {
                                                                 setStory(directiveUndoSnapshot);
                                                                 setDirectiveUndoSnapshot(null);
+                                                                setDirectivePlan(prev => prev ? clearDirectivePlanResults(prev) : prev);
                                                                 const text = 'Reverted all changes from this directive.';
                                                                 setDirectiveExecutionLogs(prev => [...prev, { id: Date.now() + Math.random(), text, status: 'complete' }]);
                                                                 showToast(text, 'info');
                                                             }}
                                                             className="px-5 py-2 rounded-xl border border-edge-strong bg-surface hover:bg-lift text-ink-700 font-bold text-xs transition-colors"
+                                                            disabled={isPlanningDirective}
                                                         >
                                                             Revert This Plan
                                                         </button>
                                                     )}
                                                     <button
-                                                        onClick={() => { setDirectivePlan(null); setDirectiveExecutionLogs([]); setDirectiveInput(""); }}
+                                                        onClick={() => { setDirectivePlan(null); setDirectivePlanHistory([]); setDirectiveRefinement(''); setDirectiveExecutionLogs([]); setDirectiveInput(""); }}
                                                         className="px-5 py-2 rounded-xl bg-mist-100 hover:bg-mist-200 text-ink-700 font-bold text-xs transition-colors"
+                                                        disabled={isPlanningDirective}
                                                     >
                                                         Clear
                                                     </button>
