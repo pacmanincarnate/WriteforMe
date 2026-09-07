@@ -2811,6 +2811,41 @@
             return text;
         };
 
+        const DIRECTIVE_STRUCTURAL_ACTIONS = new Set([
+            'MODIFY_ACT', 'MODIFY_SEQUENCE', 'MODIFY_SCENE', 'ADD_SCENE', 'DELETE_SCENE',
+            'MODIFY_BEAT', 'INSERT_BEAT', 'DELETE_BEAT', 'REGENERATE_BEATS', 'REWRITE_PROSE'
+        ]);
+        const DIRECTIVE_PROSE_SAFE_ACTIONS = new Set(['SURGICAL_PATCH_PROSE', 'LINE_EDIT_PROSE']);
+
+        // Test the protection boundary without the override so its checkbox stays visible when checked.
+        const isActionBlockedByProtection = (action, story, protectWrittenProse) => {
+            if (!protectWrittenProse || DIRECTIVE_PROSE_SAFE_ACTIONS.has(action.action_type) ||
+                !DIRECTIVE_STRUCTURAL_ACTIONS.has(action.action_type)) return false;
+
+            let latestWrittenSequence = -1;
+            let latestWrittenScene = -1;
+            (story.sequences || []).forEach((seq, seqIdx) => {
+                (story.scenes?.[`${seqIdx}`] || []).forEach((scene, sceneIdx) => {
+                    if (story.prose?.[`${seqIdx}-${sceneIdx}`]?.final) {
+                        latestWrittenSequence = seqIdx;
+                        latestWrittenScene = sceneIdx;
+                    }
+                });
+            });
+            if (latestWrittenSequence === -1) return false;
+
+            const targetSeq = parseInt(action.target_sequence_idx ?? action.target_seq_idx ?? 0, 10);
+            const targetScene = action.action_type === 'ADD_SCENE'
+                ? parseInt(action.details?.insert_at_idx ?? story.scenes?.[`${targetSeq}`]?.length ?? 0, 10)
+                : parseInt(action.target_scene_idx ?? 0, 10);
+            const targetAct = parseInt(action.target_act_idx ?? 0, 10);
+            const actOfLatestSeq = story.sequences[latestWrittenSequence]?.parent_act ?? -1;
+            if (action.action_type === 'MODIFY_ACT') return targetAct > -1 && targetAct <= actOfLatestSeq;
+            if (action.action_type === 'MODIFY_SEQUENCE') return targetSeq > -1 && targetSeq <= latestWrittenSequence;
+            return (targetSeq > -1 && targetSeq < latestWrittenSequence) ||
+                (targetSeq === latestWrittenSequence && targetScene > -1 && targetScene <= latestWrittenScene);
+        };
+
         // Strip one trailing newline. Shared by the edit appliers below.
         const chomp = (str) => {
             if (typeof str !== 'string') return str;
@@ -3976,7 +4011,10 @@ BEGIN SURGICAL BEAT REPAIR`;
                             (defectiveBeats.length === 1 ? defectiveBeats[0].beat : null);
 
                         if (targetBeat) {
-                            if (rep.char_A_tactic) targetBeat.char_A_tactic = rep.char_A_tactic;
+                            if (rep.char_A_tactic) {
+                                targetBeat.char_A_tactic = rep.char_A_tactic;
+                                targetBeat.tactic = rep.char_A_tactic;
+                            }
                             if (rep.char_A_action) {
                                 targetBeat.char_A_action = rep.char_A_action;
                                 targetBeat.action = rep.char_A_action;
@@ -5425,13 +5463,24 @@ Provide structured <issues> detailing each problem so a downstream surgical edit
 - If continuity is broken, causality is disjointed, or value shifts are flat, set status to FAIL, detail all issues under <issues>, and summarize in <deviation_reasons>.`,
 
             // TIER 6: DIRECTIVE & MULTI-SCALE SURGICAL REFORMS
+            // TIER 6.0: Directive Scoper Agent (SMALL)
+            directiveScoper: `You are a narrative editor selecting scene context for a directive planner.
+Given <user_directive> and <current_story_structure>, select up to 6 existing scenes whose full beats or prose are needed. Use 0-based sequence_idx and scene_idx from the overview. Set needs_prose to true for edits to written prose or exact text replacements. Do not plan actions.
+Return only this XML, with one <scene> per target:
+<response>
+  <target_scenes>
+    <scene><sequence_idx>0</sequence_idx><scene_idx>1</scene_idx><reason>Why this scene needs inspection.</reason></scene>
+  </target_scenes>
+  <needs_prose>true</needs_prose>
+</response>`,
+
             // TIER 6.1: Directive Planner Agent (LARGE)
             // Associated Payload: runDirectivePlanner() -> prompt assembly (see ~line 12276)
             directivePlanner: `You are an elite master developmental editor and multi-scale narrative architect. Your task is to evaluate a user-provided directive and design an intelligent, minimal-blast-radius plan to execute it across any narrative scale (Acts, Sequences, Scenes, Beats, and Written Prose).
 
 CORE MANDATE & SURGICAL HEURISTIC:
 1. **Prefer Surgical Edits Over Nuclear Rewrites:** Whenever a change is targeted, specific, or late in the story lifecycle, you MUST use surgical actions (MODIFY_ACT, MODIFY_SEQUENCE, MODIFY_SCENE, MODIFY_BEAT, INSERT_BEAT, DELETE_BEAT, SURGICAL_PATCH_PROSE, LINE_EDIT_PROSE) rather than discarding and regenerating whole scenes or sequences.
-2. **Preserve Hard-Won Prose & Structure:** Do not invalidate or discard polished beats or written prose unless the directive explicitly demands a total tear-down.
+2. **Preserve Hard-Won Prose & Structure:** Use SURGICAL_PATCH_PROSE or LINE_EDIT_PROSE to edit written scenes, including when protection is enabled. Preserve their structure unless the directive clearly requires structural changes.
 3. **Multi-Scale Operations Available:**
    - **Story & Cast Level (Scale 0 - Holistic):**
      - MODIFY_STORY_METADATA: Update the story's title, concept, status_quo, inciting_incident, themes, genre, mood, or writing_guide.
@@ -5455,12 +5504,13 @@ CORE MANDATE & SURGICAL HEURISTIC:
      - SURGICAL_PATCH_PROSE: Surgically inject details, revise specific paragraphs, or tweak dialogue in written scene prose while locking down untouched text.
      - LINE_EDIT_PROSE: Perform direct, deterministic search-and-replace on dialogue, names, or phrases in written scene prose.
      - REWRITE_PROSE: (Wholesale fallback) Re-draft the entire scene prose ONLY when a total rewrite from scratch is explicitly requested.
-4. **Strict Scope Compliance:** You must only modify or add to Acts and Sequences that already exist and have generated scenes. Do not invent new Sequences or Acts, and do not add scenes to empty sequences that haven't been generated yet.
+4. **Strict Scope Compliance:** You must only modify or add to Acts and Sequences that already exist and have generated scenes. Do not invent new Sequences or Acts, and do not add scenes to empty sequences that haven't been generated yet. With protection enabled, structural changes (including REWRITE_PROSE) to written regions are forbidden unless the directive clearly requires them; still emit those required actions and explain in <evaluation> that the user must override protection.
 
 ## Input Schema Definition
 You will receive the following context blocks to inform your surgical editing plan:
 - <user_directive>: The specific user request, instruction, or critique you need to resolve.
 - <current_story_structure>: A JSON tree representing the current Acts, Sequences, Scenes, and their underlying beats/prose summaries.
+- <target_scene_details>: Optional full beats and written prose for scoped scenes. Every find_text or line_edits find MUST be copied verbatim from the prose in this block; never invent an exact text anchor from summaries.
 - <output_format_description>: The required XML schema for your output.
 
 INSTRUCTIONS:
@@ -10990,6 +11040,8 @@ INSTRUCTIONS:
             const [directiveInput, setDirectiveInput] = useState("");
             const [directivePlan, setDirectivePlan] = useState(null);
             const [isPlanningDirective, setIsPlanningDirective] = useState(false);
+            const [directivePlanPhase, setDirectivePlanPhase] = useState(null);
+            const [directiveUndoSnapshot, setDirectiveUndoSnapshot] = useState(null);
             const [isExecutingDirective, setIsExecutingDirective] = useState(false);
             const [directiveExecutionLogs, setDirectiveExecutionLogs] = useState([]);
             const [directiveProgress, setDirectiveProgress] = useState(0);
@@ -11827,19 +11879,19 @@ BEGIN RETROACTIVE STATE INJECTION`;
                 if (!planText || typeof planText !== 'string') return { evaluation: "", actions: [] };
 
                 // Try XML parsing
-                const actionBlocks = extractTagList(planText, 'action');
+                const actionBlocks = Array.from(planText.matchAll(/<action>([\s\S]*?)<\/action>/gi), match => match[1]);
                 if (actionBlocks && actionBlocks.length > 0) {
                     const evaluation = decodeXmlEntities(extractTag(planText, 'evaluation') || '');
                     const actions = actionBlocks.map(block => {
                         const details = {};
-                        const detBlock = extractTag(block, 'details');
-                        const getField = (tag) => {
-                            if (detBlock) {
-                                const val = extractTag(detBlock, tag);
-                                if (val !== null) return decodeXmlEntities(val);
-                            }
-                            const val = extractTag(block, tag);
-                            return val !== null ? decodeXmlEntities(val) : "";
+                        const rawTag = (text, tag) => new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i').exec(text || '')?.[1] ?? null;
+                        const detBlock = rawTag(block, 'details');
+                        const lineEditsBlock = rawTag(detBlock, 'line_edits') ?? rawTag(block, 'line_edits') ?? '';
+                        const getField = (tag, literal = false) => {
+                            // A list's <find>/<replace> must not also become the single replacement.
+                            const withoutList = text => (text || '').replace(/<line_edits>[\s\S]*?<\/line_edits>/gi, '');
+                            const val = rawTag(withoutList(detBlock), tag) ?? rawTag(withoutList(block), tag) ?? '';
+                            return decodeXmlEntities(literal ? val : val.trim());
                         };
 
                         details.title = getField('title');
@@ -11861,9 +11913,12 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         details.character_intent = getField('character_intent');
                         details.beat_type = getField('beat_type') || "DRAMATIC";
                         details.instructions = getField('instructions');
-                        details.find_text = getField('find_text') || getField('find');
-                        details.replace_text = getField('replace_text') || getField('replace');
-                        details.line_edits = [];
+                        details.find_text = getField('find_text', true) || getField('find', true);
+                        details.replace_text = getField('replace_text', true) || getField('replace', true);
+                        details.line_edits = Array.from(lineEditsBlock.matchAll(/<edit>([\s\S]*?)<\/edit>/gi), match => ({
+                            find: decodeXmlEntities(rawTag(match[1], 'find') ?? ''),
+                            replace: decodeXmlEntities(rawTag(match[1], 'replace') ?? '')
+                        }));
 
                         details.concept = getField('concept');
                         details.status_quo = getField('status_quo');
@@ -11894,6 +11949,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
 
                         return {
                             action_type: (extractTag(block, 'action_type') || '').trim(),
+                            allow_protected: false,
                             target_act_idx: targetActStr !== null && targetActStr !== "" ? parseInt(targetActStr, 10) : 0,
                             target_sequence_idx: seqIdx,
                             target_seq_idx: seqIdx,
@@ -11911,11 +11967,17 @@ BEGIN RETROACTIVE STATE INJECTION`;
             };
 
             const executeDirectivePlan = async (planActions) => {
+                const snapshot = JSON.parse(JSON.stringify(story));
+                setDirectiveUndoSnapshot(snapshot);
                 setIsExecutingDirective(true);
                 setDirectiveProgress(0);
                 setDirectiveExecutionLogs([]);
 
-                let currentStory = { ...story };
+                let currentStory = JSON.parse(JSON.stringify(snapshot));
+                const results = [];
+                setDirectivePlan(prev => prev ? {
+                    ...prev, actions: prev.actions.map(action => ({ ...action, result: undefined }))
+                } : prev);
 
                 const logMessage = (text, status = 'pending') => {
                     setDirectiveExecutionLogs(prev => {
@@ -11928,52 +11990,20 @@ BEGIN RETROACTIVE STATE INJECTION`;
                     });
                 };
 
-                try {
-                    let latestWrittenSequence = -1;
-                    let latestWrittenScene = -1;
-                    if (protectWrittenProse) {
-                        (currentStory.sequences || []).forEach((seq, seqIdx) => {
-                            (currentStory.scenes[`${seqIdx}`] || []).forEach((scene, sceneIdx) => {
-                                const sId = `${seqIdx}-${sceneIdx}`;
-                                if (currentStory.prose[sId] && currentStory.prose[sId].final) {
-                                    if (seqIdx > latestWrittenSequence) {
-                                        latestWrittenSequence = seqIdx;
-                                        latestWrittenScene = sceneIdx;
-                                    } else if (seqIdx === latestWrittenSequence && sceneIdx > latestWrittenScene) {
-                                        latestWrittenScene = sceneIdx;
-                                    }
-                                }
-                            });
-                        });
-                    }
+                for (let i = 0; i < planActions.length; i++) {
+                    const action = planActions[i];
+                    const actionNum = i + 1;
+                    const totalActions = planActions.length;
+                    let resultMessage = '';
 
-                    for (let i = 0; i < planActions.length; i++) {
-                        const action = planActions[i];
-                        const actionNum = i + 1;
-
-                        let violatesProtection = false;
-                        if (protectWrittenProse && latestWrittenSequence > -1) {
-                            const targetSeq = action.target_sequence_idx !== undefined && action.target_sequence_idx !== null && !isNaN(action.target_sequence_idx) ? action.target_sequence_idx : -1;
-                            const targetScene = action.target_scene_idx !== undefined && action.target_scene_idx !== null && !isNaN(action.target_scene_idx) ? action.target_scene_idx : -1;
-                            const targetAct = action.target_act_idx !== undefined && action.target_act_idx !== null && !isNaN(action.target_act_idx) ? action.target_act_idx : -1;
-
-                            const actOfLatestSeq = currentStory.sequences[latestWrittenSequence]?.parent_act ?? -1;
-
-                            if (['MODIFY_ACT'].includes(action.action_type)) {
-                                if (targetAct > -1 && targetAct <= actOfLatestSeq) violatesProtection = true;
-                            } else if (['MODIFY_SEQUENCE'].includes(action.action_type)) {
-                                if (targetSeq > -1 && targetSeq <= latestWrittenSequence) violatesProtection = true;
-                            } else if (['MODIFY_SCENE', 'ADD_SCENE', 'DELETE_SCENE', 'MODIFY_BEAT', 'INSERT_BEAT', 'DELETE_BEAT', 'REGENERATE_BEATS', 'SURGICAL_PATCH_PROSE', 'LINE_EDIT_PROSE', 'REWRITE_PROSE'].includes(action.action_type)) {
-                                if (targetSeq > -1 && targetSeq < latestWrittenSequence) violatesProtection = true;
-                                else if (targetSeq === latestWrittenSequence && targetScene > -1 && targetScene <= latestWrittenScene) violatesProtection = true;
-                            }
-                        }
-
-                        if (violatesProtection) {
-                            logMessage(`[Action ${actionNum}/${planActions.length}] Skipped: Protect Written Prose is enabled. Target is in a locked section.`, 'error');
+                    try {
+                        const blockedByProtection = isActionBlockedByProtection(action, currentStory, protectWrittenProse);
+                        if (blockedByProtection && action.allow_protected !== true) {
+                            const message = 'Protect Written Prose is enabled. Target is in a locked section.';
+                            results[i] = { status: 'skipped', message };
+                            logMessage(`[Action ${actionNum}/${totalActions}] Skipped: ${message}`, 'pending');
                             continue;
                         }
-                        const totalActions = planActions.length;
 
                         logMessage(`[Action ${actionNum}/${totalActions}] Running: ${action.description}`, 'running');
 
@@ -12363,8 +12393,11 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             logMessage(`[Action ${actionNum}/${totalActions}] Applying surgical prose patch to Scene ${sceneIdx + 1}...`, 'running');
 
                             // If direct replacement provided without AI need:
-                            if (action.details.find_text && action.details.replace_text && !action.details.instructions) {
-                                const patchedText = currentProse.split(action.details.find_text).join(action.details.replace_text);
+                            if (action.details.find_text && !action.details.instructions) {
+                                if (!currentProse.includes(action.details.find_text)) {
+                                    throw new Error(`find_text not found in Scene ${sceneIdx + 1} prose: "${action.details.find_text.slice(0, 60)}"`);
+                                }
+                                const patchedText = replaceOnceLiteral(currentProse, action.details.find_text, action.details.replace_text || "");
                                 currentStory = {
                                     ...currentStory,
                                     prose: {
@@ -12428,17 +12461,24 @@ BEGIN SURGICAL PROSE EDIT`;
                                 throw new Error(`Scene ${sceneIdx + 1} has no written prose yet to line-edit.`);
                             }
 
-                            if (action.details.find_text) {
-                                currentProse = currentProse.split(action.details.find_text).join(action.details.replace_text || "");
-                            }
-
-                            if (Array.isArray(action.details.line_edits)) {
-                                for (const edit of action.details.line_edits) {
-                                    if (edit.find) {
-                                        currentProse = currentProse.split(edit.find).join(edit.replace || "");
-                                    }
+                            const edits = [
+                                ...(action.details.find_text ? [{ find: action.details.find_text, replace: action.details.replace_text || "" }] : []),
+                                ...(Array.isArray(action.details.line_edits) ? action.details.line_edits : [])
+                            ];
+                            const misses = [];
+                            let appliedEdits = 0;
+                            for (const edit of edits) {
+                                if (!edit.find || !currentProse.includes(edit.find)) {
+                                    misses.push(`find_text not found in Scene ${sceneIdx + 1} prose: "${(edit.find || '').slice(0, 60)}"`);
+                                    continue;
                                 }
+                                currentProse = replaceOnceLiteral(currentProse, edit.find, edit.replace || "");
+                                appliedEdits++;
                             }
+                            if (appliedEdits === 0) {
+                                throw new Error(misses.join('; ') || `No line edits provided for Scene ${sceneIdx + 1} prose.`);
+                            }
+                            resultMessage = `Applied ${appliedEdits} line edit(s) to Scene ${sceneIdx + 1} prose.${misses.length ? ' Misses: ' + misses.join('; ') : ''}`;
 
                             currentStory = {
                                 ...currentStory,
@@ -12448,7 +12488,7 @@ BEGIN SURGICAL PROSE EDIT`;
                                 }
                             };
                             setStory(currentStory);
-                            logMessage(`[Action ${actionNum}/${totalActions}] Success: Applied line edits to Scene ${sceneIdx + 1} prose.`, 'success');
+                            logMessage(`[Action ${actionNum}/${totalActions}] Success: ${resultMessage}`, 'success');
                         } else if (action.action_type === 'REWRITE_PROSE') {
                             logMessage(`[Action ${actionNum}/${totalActions}] Running Writing Agent for Scene ${sceneIdx + 1}...`, 'running');
 
@@ -12476,21 +12516,35 @@ BEGIN SURGICAL PROSE EDIT`;
                                 action.details.instructions
                             );
                             logMessage(`[Action ${actionNum}/${totalActions}] Success: Rewrote prose for Scene ${sceneIdx + 1}.`, 'success');
+                        } else {
+                            throw new Error(`Unsupported directive action: ${action.action_type}`);
                         }
 
+                        results[i] = { status: 'applied', message: resultMessage || action.description || action.action_type };
+                    } catch (err) {
+                        const message = err?.message || String(err);
+                        console.error(`Directive action ${actionNum} failed:`, err);
+                        results[i] = { status: 'failed', message };
+                        logMessage(`[Action ${actionNum}/${totalActions}] Failed: ${message}`, 'error');
+                        continue;
+                    } finally {
                         setDirectiveProgress(Math.round(((i + 1) / totalActions) * 100));
-                        await new Promise(resolve => setTimeout(resolve, 500));
                     }
-
-                    logMessage("All directive actions successfully applied!", 'success');
-                    showToast("Directive plan applied successfully!", "success");
-                } catch (err) {
-                    console.error("Directive execution failed:", err);
-                    logMessage(`Error applying action: ${err.message}`, 'error');
-                    showToast("Error executing plan: " + err.message, "error");
-                } finally {
-                    setIsExecutingDirective(false);
+                    await new Promise(resolve => setTimeout(resolve, 500));
                 }
+
+                setDirectivePlan(prev => prev ? {
+                    ...prev,
+                    actions: prev.actions.map((action, i) => results[i] ? { ...action, result: results[i] } : action)
+                } : prev);
+                const counts = results.reduce((totals, result) => {
+                    totals[result.status]++;
+                    return totals;
+                }, { applied: 0, failed: 0, skipped: 0 });
+                const summary = `Directive complete: ${counts.applied} applied, ${counts.failed} failed, ${counts.skipped} skipped.`;
+                logMessage(summary, 'complete');
+                showToast(summary, counts.failed || counts.skipped ? 'info' : 'success');
+                setIsExecutingDirective(false);
             };
 
             // ============================================================================
@@ -12503,7 +12557,11 @@ BEGIN SURGICAL PROSE EDIT`;
                     return;
                 }
                 setIsPlanningDirective(true);
+                setDirectivePlanPhase('scoping');
                 setDirectivePlan(null);
+                setDirectiveUndoSnapshot(null);
+                setDirectiveExecutionLogs([]);
+                setDirectiveProgress(0);
 
                 try {
                     let latestWrittenSequence = -1;
@@ -12526,7 +12584,7 @@ BEGIN SURGICAL PROSE EDIT`;
 
                     let protectionNote = "";
                     if (protectWrittenProse && latestWrittenSequence > -1) {
-                        protectionNote = `\n<protect_written_prose>\nThe story has been written up to Sequence ${latestWrittenSequence + 1}, Scene ${latestWrittenScene + 1}.\nThe user has enabled 'Protect Written Prose'. You MUST NOT output any actions (MODIFY, DELETE, ADD) targeting any act, sequence, scene, or beat at or before Sequence ${latestWrittenSequence + 1}, Scene ${latestWrittenScene + 1}. Focus entirely on future, unwritten portions of the narrative.\n</protect_written_prose>\n`;
+                        protectionNote = `\n<protect_written_prose>\nThe story has been written up to Sequence ${latestWrittenSequence + 1}, Scene ${latestWrittenScene + 1}.\nThe user has enabled 'Protect Written Prose'. SURGICAL_PATCH_PROSE and LINE_EDIT_PROSE may edit written scenes. Structural changes (including REWRITE_PROSE) at or before this written boundary are forbidden unless the directive clearly requires them. Emit any such required actions and explain in <evaluation> that the user must override protection for those actions.\n</protect_written_prose>\n`;
                     }
 
                     const structureOverview = {
@@ -12585,6 +12643,43 @@ BEGIN SURGICAL PROSE EDIT`;
                         })
                     };
 
+                    let targetSceneDetails = '';
+                    try {
+                        const scopePrompt = `<user_directive>
+${directiveInput}
+</user_directive>
+
+<current_story_structure>
+${JSON.stringify(structureOverview, null, 2)}
+</current_story_structure>`;
+                        const scopeResponse = await callAI(scopePrompt, PROMPTS.directiveScoper, false, "Directive Scoper", "small");
+                        const targetScenes = extractTagList(extractTag(scopeResponse, 'target_scenes'), 'scene').map(block => {
+                            const sequenceText = extractTag(block, 'sequence_idx');
+                            const sceneText = extractTag(block, 'scene_idx');
+                            if (!/^\d+$/.test(sequenceText) || !/^\d+$/.test(sceneText)) return null;
+                            const sequenceIdx = Number(sequenceText);
+                            const sceneIdx = Number(sceneText);
+                            if (!Number.isSafeInteger(sequenceIdx) || !Number.isSafeInteger(sceneIdx) ||
+                                !story.sequences?.[sequenceIdx] || !story.scenes?.[`${sequenceIdx}`]?.[sceneIdx]) return null;
+                            return { sequence_idx: sequenceIdx, scene_idx: sceneIdx, reason: extractTag(block, 'reason') };
+                        }).filter(Boolean).slice(0, 6);
+                        if (targetScenes.length === 0) throw new Error('No parseable target scenes returned.');
+                        const needsProse = extractTag(scopeResponse, 'needs_prose').toLowerCase() === 'true';
+                        const details = targetScenes.map(target => {
+                            const sId = `${target.sequence_idx}-${target.scene_idx}`;
+                            return {
+                                ...target,
+                                scene: story.scenes[`${target.sequence_idx}`][target.scene_idx],
+                                beats: story.beats[sId] || [],
+                                ...(needsProse && story.prose[sId]?.final ? { prose: { final: story.prose[sId].final } } : {})
+                            };
+                        });
+                        targetSceneDetails = `\n\n<target_scene_details>\n${JSON.stringify(details, null, 2)}\n</target_scene_details>`;
+                    } catch (scopeError) {
+                        console.warn('Directive scoping failed; planning with the structure overview only:', scopeError);
+                    }
+
+                    setDirectivePlanPhase('planning');
                     const prompt = `${protectionNote}
 <user_directive>
 ${directiveInput}
@@ -12592,7 +12687,7 @@ ${directiveInput}
 
 <current_story_structure>
 ${JSON.stringify(structureOverview, null, 2)}
-</current_story_structure>
+</current_story_structure>${targetSceneDetails}
 
 <output_format_description>
 FORMATTING DIRECTIVE: Return your response strictly as XML tags. Do not use YAML or markdown blocks.
@@ -12615,6 +12710,13 @@ Output Schema:
         <genre>For modifying genre</genre>
         <name>For character name</name>
         <instructions>Detailed instruction for the agent on how to modify the scene/beat.</instructions>
+        <find_text>Optional exact prose copied verbatim from target_scene_details.</find_text>
+        <replace_text>Replacement prose; may be empty to delete the match.</replace_text>
+        <!-- Optional for LINE_EDIT_PROSE: multiple replacements in one scene, instead of find_text/replace_text. -->
+        <line_edits>
+          <edit><find>Exact prose copied verbatim from target_scene_details.</find><replace>Replacement prose.</replace></edit>
+          <edit><find>Another exact passage.</find><replace>Its replacement.</replace></edit>
+        </line_edits>
         <!-- Use the appropriate XML tags inside details corresponding to the specific properties you are modifying -->
       </details>
     </action>
@@ -12639,6 +12741,7 @@ BEGIN DEVELOPING SURGICAL DIRECTIVES
                     console.error("Directive planning failed:", err);
                     alert("Planning failed: " + err.message);
                 } finally {
+                    setDirectivePlanPhase(null);
                     setIsPlanningDirective(false);
                 }
             };
@@ -12650,7 +12753,9 @@ BEGIN DEVELOPING SURGICAL DIRECTIVES
                     if (nextActions[actionIdx]) {
                         nextActions[actionIdx] = {
                             ...nextActions[actionIdx],
-                            [field]: value
+                            [field]: value,
+                            ...(['target_seq_idx', 'target_sequence_idx'].includes(field)
+                                ? { target_seq_idx: value, target_sequence_idx: value } : {})
                         };
                     }
                     return { ...prev, actions: nextActions };
@@ -21174,7 +21279,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                 disabled={isPlanningDirective || isExecutingDirective}
                                             />
                                             <label htmlFor="protectWrittenProse" className="text-xs text-stone-600 font-medium cursor-pointer">
-                                                Protect Written Prose (Prevent agent from modifying sections where prose is already written)
+                                                Protect Written Prose (Block structural changes to written regions; allow prose patches and line edits)
                                             </label>
                                         </div>
 
@@ -21213,7 +21318,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                 {isPlanningDirective ? (
                                                     <>
                                                         <Loader2 className="animate-spin text-amber-300" size={14} />
-                                                        Planning Directive...
+                                                        {directivePlanPhase === 'scoping' ? 'Scoping…' : 'Planning…'}
                                                     </>
                                                 ) : (
                                                     <>
@@ -21262,6 +21367,12 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                         if (['MODIFY_STORY_METADATA'].includes(act.action_type)) typeColor = 'bg-purple-tint text-purple-800 border-purple-edge';
                                                         if (['ADD_CHARACTER', 'MODIFY_CHARACTER', 'DELETE_CHARACTER'].includes(act.action_type)) typeColor = 'bg-teal-tint text-teal-800 border-teal-edge';
 
+                                                        const blockedByProtection = isActionBlockedByProtection(act, story, protectWrittenProse);
+                                                        const resultColor = act.result?.status === 'applied'
+                                                            ? 'bg-sage-tint text-sage-800 border-sage-edge'
+                                                            : act.result?.status === 'failed'
+                                                                ? 'bg-blush-tint text-blush-800 border-blush-edge'
+                                                                : 'bg-mist-100 text-ink-700 border-edge-strong';
                                                         const isStoryLevel = act.action_type === 'MODIFY_STORY_METADATA';
                                                         const isCharacterLevel = ['ADD_CHARACTER', 'MODIFY_CHARACTER', 'DELETE_CHARACTER'].includes(act.action_type);
                                                         const isActLevel = act.action_type === 'MODIFY_ACT';
@@ -21308,6 +21419,11 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                                     <option value="REWRITE_PROSE">Rewrite Prose (Wholesale)</option>
                                                                                 </optgroup>
                                                                             </select>
+                                                                            {act.result && (
+                                                                                <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg border ${resultColor}`}>
+                                                                                    {act.result.status === 'applied' ? 'Applied' : act.result.status === 'failed' ? 'Failed' : 'Skipped'}
+                                                                                </span>
+                                                                            )}
                                                                         </div>
                                                                         <div className="flex gap-3 text-[10px] text-ink-500 font-bold uppercase font-mono">
                                                                             <span>Act {act.target_act_idx + 1}</span>
@@ -21322,6 +21438,22 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                             )}
                                                                         </div>
                                                                     </div>
+
+                                                                    {blockedByProtection && (
+                                                                        <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={act.allow_protected === true}
+                                                                                onChange={(e) => handleUpdateActionField(actIdx, 'allow_protected', e.target.checked)}
+                                                                                className="rounded border-stone-300 text-[#8C6B32] focus:ring-[#8C6B32]"
+                                                                                disabled={isExecutingDirective}
+                                                                            />
+                                                                            Override protection for this action
+                                                                        </label>
+                                                                    )}
+                                                                    {act.result?.status === 'failed' && (
+                                                                        <p className="text-xs text-blush-800 whitespace-pre-wrap break-words">{act.result.message}</p>
+                                                                    )}
 
                                                                     {/* Action General Fields (Description & Targets) */}
                                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -21761,6 +21893,49 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                                         disabled={isExecutingDirective}
                                                                                     />
                                                                                 </div>
+                                                                                <div className="space-y-3 md:col-span-2">
+                                                                                    <div className="flex items-center justify-between gap-2">
+                                                                                        <label className="text-[9px] text-orchid-800 font-bold uppercase font-mono">Additional Line Edits</label>
+                                                                                        <button
+                                                                                            onClick={() => handleUpdateActionDetail(actIdx, 'line_edits', [...(act.details.line_edits || []), { find: '', replace: '' }])}
+                                                                                            className="px-2.5 py-1 rounded-lg border border-edge-strong bg-surface text-ink-700 text-xs hover:bg-lift transition-colors"
+                                                                                            disabled={isExecutingDirective}
+                                                                                        >
+                                                                                            Add replacement
+                                                                                        </button>
+                                                                                    </div>
+                                                                                    {(act.details.line_edits || []).map((edit, editIdx) => (
+                                                                                        <div key={editIdx} className="grid grid-cols-1 md:grid-cols-2 gap-3 border-t border-edge-strong pt-3">
+                                                                                            <div className="space-y-1">
+                                                                                                <label className="text-[9px] text-orchid-800 font-bold uppercase font-mono">Find Text {editIdx + 1}</label>
+                                                                                                <textarea
+                                                                                                    aria-label={`Find text for replacement ${editIdx + 1}`}
+                                                                                                    value={edit.find || ''}
+                                                                                                    onChange={(e) => handleUpdateActionDetail(actIdx, 'line_edits', act.details.line_edits.map((row, rowIdx) => rowIdx === editIdx ? { ...row, find: e.target.value } : row))}
+                                                                                                    className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full h-16 resize-none font-mono"
+                                                                                                    disabled={isExecutingDirective}
+                                                                                                />
+                                                                                            </div>
+                                                                                            <div className="space-y-1">
+                                                                                                <label className="text-[9px] text-orchid-800 font-bold uppercase font-mono">Replacement Text {editIdx + 1}</label>
+                                                                                                <textarea
+                                                                                                    aria-label={`Replacement text ${editIdx + 1}`}
+                                                                                                    value={edit.replace || ''}
+                                                                                                    onChange={(e) => handleUpdateActionDetail(actIdx, 'line_edits', act.details.line_edits.map((row, rowIdx) => rowIdx === editIdx ? { ...row, replace: e.target.value } : row))}
+                                                                                                    className="bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full h-16 resize-none font-mono"
+                                                                                                    disabled={isExecutingDirective}
+                                                                                                />
+                                                                                            </div>
+                                                                                            <button
+                                                                                                onClick={() => handleUpdateActionDetail(actIdx, 'line_edits', act.details.line_edits.filter((row, rowIdx) => rowIdx !== editIdx))}
+                                                                                                className="justify-self-start px-2.5 py-1 rounded-lg border border-edge-strong bg-surface text-ink-700 text-xs hover:bg-lift transition-colors"
+                                                                                                disabled={isExecutingDirective}
+                                                                                            >
+                                                                                                Remove replacement {editIdx + 1}
+                                                                                            </button>
+                                                                                        </div>
+                                                                                    ))}
+                                                                                </div>
                                                                             </div>
                                                                         )}
 
@@ -21851,7 +22026,21 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                 })}
                                             </div>
                                             {!isExecutingDirective && directiveExecutionLogs.some(l => l.status === 'complete') && (
-                                                <div className="p-4 bg-surface flex justify-end gap-3">
+                                                <div className="p-4 bg-surface flex flex-wrap justify-end gap-3">
+                                                    {directiveUndoSnapshot && (
+                                                        <button
+                                                            onClick={() => {
+                                                                setStory(directiveUndoSnapshot);
+                                                                setDirectiveUndoSnapshot(null);
+                                                                const text = 'Reverted all changes from this directive.';
+                                                                setDirectiveExecutionLogs(prev => [...prev, { id: Date.now() + Math.random(), text, status: 'complete' }]);
+                                                                showToast(text, 'info');
+                                                            }}
+                                                            className="px-5 py-2 rounded-xl border border-edge-strong bg-surface hover:bg-lift text-ink-700 font-bold text-xs transition-colors"
+                                                        >
+                                                            Revert This Plan
+                                                        </button>
+                                                    )}
                                                     <button
                                                         onClick={() => { setDirectivePlan(null); setDirectiveExecutionLogs([]); setDirectiveInput(""); }}
                                                         className="px-5 py-2 rounded-xl bg-mist-100 hover:bg-mist-200 text-ink-700 font-bold text-xs transition-colors"
