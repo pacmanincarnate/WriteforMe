@@ -6722,7 +6722,7 @@ INSTRUCTIONS:
                 const cleanBaseUrl = (baseUrl && String(baseUrl).trim())
                     ? String(baseUrl).trim().replace(/\/+$/, '')
                     : 'http://localhost:5001';
-                const modelId = model || "koboldcpp";
+                const modelId = opts.provider === 'codex' ? (model || undefined) : (model || "koboldcpp");
 
                 const messages = [];
                 if (systemPrompt && String(systemPrompt).trim()) {
@@ -10962,7 +10962,7 @@ INSTRUCTIONS:
 
             // Settings State
             const [apiProvider, setApiProvider] = useState(() => localStorage.getItem("ellipsisprose_api_provider") || 'gemini');
-            const [embeddingProvider, setEmbeddingProvider] = useState(() => localStorage.getItem("ellipsisprose_embedding_provider") || apiProvider);
+            const [embeddingProvider, setEmbeddingProvider] = useState(() => localStorage.getItem("ellipsisprose_embedding_provider") || (apiProvider === 'codex' ? 'gemini' : apiProvider));
             const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
             const [apiTimeout, setApiTimeout] = useState(() => {
                 const val = localStorage.getItem("ellipsisprose_api_timeout");
@@ -10977,6 +10977,11 @@ INSTRUCTIONS:
             const [nanoGptModel, setNanoGptModel] = useState(() => localStorage.getItem("ellipsisprose_nanogpt_model") || "gpt-4o");
             const [koboldUrl, setKoboldUrl] = useState(() => localStorage.getItem("ellipsisprose_kobold_url") || "http://localhost:5001");
             const [koboldModel, setKoboldModel] = useState(() => localStorage.getItem("ellipsisprose_kobold_model") || "koboldcpp");
+            const [codexUrl, setCodexUrl] = useState(() => localStorage.getItem("ellipsisprose_codex_url") || "http://localhost:5010");
+            const [codexModel, setCodexModel] = useState(() => localStorage.getItem("ellipsisprose_codex_model") || "");
+            const [codexModelsList, setCodexModelsList] = useState([]);
+            const [codexStatus, setCodexStatus] = useState({ online: false, model: null, error: null });
+            const codexRefreshId = useRef(0);
             const [savedModels, setSavedModels] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_saved_models");
                 return saved ? JSON.parse(saved) : ["google/gemini-2.0-flash-001"];
@@ -11008,7 +11013,7 @@ INSTRUCTIONS:
                     let active = true;
 
                     const runSearch = async () => {
-                        if (apiProvider === 'koboldcpp') {
+                        if (apiProvider === 'koboldcpp' || apiProvider === 'codex') {
                             setResults([]);
                             setIsSearching(false);
                             return;
@@ -11069,6 +11074,7 @@ INSTRUCTIONS:
             const [openRouterProseModel, setOpenRouterProseModel] = useState(() => localStorage.getItem("ellipsisprose_openrouter_prose_model") || "");
             const [nanoGptProseModel, setNanoGptProseModel] = useState(() => localStorage.getItem("ellipsisprose_nanogpt_prose_model") || "");
             const [koboldProseModel, setKoboldProseModel] = useState(() => localStorage.getItem("ellipsisprose_kobold_prose_model") || "");
+            const [codexProseModel, setCodexProseModel] = useState(() => localStorage.getItem("ellipsisprose_codex_prose_model") || "");
 
             // Thinking / Reasoning State variables
             const [enableThinkingAct, setEnableThinkingAct] = useState(() => {
@@ -13560,6 +13566,10 @@ Output Schema:
         <!-- ADD_SEQUENCE: <title>Aftermath</title><sequence_function>Consequences</sequence_function><dramatic_question>Who returns?</dramatic_question><insert_at_idx>2</insert_at_idx><parent_act>1</parent_act> -->
         <!-- DELETE_SEQUENCE: no detail fields; use target_sequence_idx to choose the sequence. -->
         <!-- MOVE_SCENE: <to_idx>1</to_idx> within the target sequence only. -->
+        <!-- MODIFY_BEAT / INSERT_BEAT: put the new beat content in the beat fields themselves: <tactic>...</tactic><action>...</action><reaction>...</reaction><pivot>...</pivot><character_intent>...</character_intent>. <description> is the beat summary, never the change request. -->
+        <!-- MODIFY_SCENE: <title>...</title><objective>...</objective><description>...</description><scene_type>PROACTIVE</scene_type><dominant_narrative_mode>...</dominant_narrative_mode><cast_names>A, B</cast_names> -->
+        <!-- MODIFY_ACT: <title>...</title><act_mandate>...</act_mandate><core_tension>...</core_tension><thematic_reversal>...</thematic_reversal>; MODIFY_SEQUENCE: <title>...</title><sequence_function>...</sequence_function><dramatic_question>...</dramatic_question> -->
+        <!-- MODIFY_CHARACTER: <name>...</name><role>...</role><core_flaw>...</core_flaw><core_desire>...</core_desire><vocal_cadence>...</vocal_cadence> -->
       </details>
     </action>
     <!-- Add more <action> blocks as needed -->
@@ -15646,6 +15656,9 @@ BEGIN SEQUENCE CRITIQUE REVIEW
             useEffect(() => { safeLocalStorageSet("ellipsisprose_nanogpt_prose_model", nanoGptProseModel); }, [nanoGptProseModel]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_kobold_url", koboldUrl); }, [koboldUrl]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_kobold_model", koboldModel); }, [koboldModel]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_codex_url", codexUrl); }, [codexUrl]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_codex_model", codexModel); }, [codexModel]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_codex_prose_model", codexProseModel); }, [codexProseModel]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_saved_models", savedModels); }, [savedModels]);
             useEffect(() => {
                 if (openRouterModelsList.length > 0) {
@@ -17142,6 +17155,9 @@ ${chapterBody}
 
                 // Determine model based on modelSize and dual-model settings
                 const getModel = () => {
+                    if (apiProvider === 'codex') {
+                        return modelSize === 'large' && useProseModel ? codexProseModel : codexModel;
+                    }
                     if (apiProvider === 'koboldcpp') {
                         if (modelSize === 'large' && useProseModel) {
                             return koboldProseModel || koboldModel || 'koboldcpp';
@@ -17245,7 +17261,8 @@ ${chapterBody}
                 const options = {
                     thinking: thinkingConfig,
                     max_tokens: agentMaxTokens,
-                    timeout: apiProvider === 'koboldcpp' ? 0 : (apiTimeout * 1000),
+                    timeout: (apiProvider === 'koboldcpp' || apiProvider === 'codex') ? 0 : (apiTimeout * 1000),
+                    ...(apiProvider === 'codex' ? { provider: 'codex' } : {}),
                     onSuccess: (metadata) => {
                         const durationSec = ((performance.now() - startTime) / 1000).toFixed(2);
                         const durationMs = Math.round(performance.now() - startTime);
@@ -17287,6 +17304,8 @@ ${chapterBody}
                             response = await callGemini(apiKey, modelToUse, prompt, finalSystemPrompt, isJson, options);
                         } else if (apiProvider === 'nanogpt') {
                             response = await callNanoGPT(nanoGptKey, modelToUse, prompt, finalSystemPrompt, isJson, options);
+                        } else if (apiProvider === 'codex') {
+                            response = await callKoboldCPP(codexUrl || 'http://localhost:5010', modelToUse, prompt, finalSystemPrompt, isJson, options);
                         } else if (apiProvider === 'koboldcpp') {
                             response = await callKoboldCPP(koboldUrl || 'http://localhost:5001', modelToUse, prompt, finalSystemPrompt, isJson, options);
                         } else {
@@ -19780,7 +19799,7 @@ ${finalProseText}
 
             // Parallelization prefetch helpers
             const prefetchBeatsForScene = (seqIdx, sceneIdx, currentStory) => {
-                if (apiProvider === 'koboldcpp') return;
+                if (apiProvider === 'koboldcpp' || apiProvider === 'codex') return;
                 const key = `beats:${seqIdx}-${sceneIdx}`;
                 if (prefetchCacheRef.current.has(key)) return;
 
@@ -19806,7 +19825,7 @@ ${finalProseText}
             };
 
             const prefetchScenesForSequence = (seqIdx, currentStory) => {
-                if (apiProvider === 'koboldcpp') return;
+                if (apiProvider === 'koboldcpp' || apiProvider === 'codex') return;
                 const key = `scenes:${seqIdx}`;
                 if (prefetchCacheRef.current.has(key)) return;
 
@@ -20190,6 +20209,29 @@ ${finalProseText}
                 }
             };
 
+            const refreshCodexModels = async () => {
+                const refreshId = ++codexRefreshId.current;
+                const baseUrl = (codexUrl.trim() || 'http://localhost:5010').replace(/\/+$/, '');
+                setCodexStatus({ online: false, model: null, error: null });
+                setCodexModelsList([]);
+                try {
+                    const [status, response] = await Promise.all([
+                        checkKoboldCPPStatus(baseUrl),
+                        fetchWithTimeout(`${baseUrl}/v1/models`, { headers: { Accept: 'application/json' } }, 3000)
+                    ]);
+                    if (!status.online) throw new Error(status.error || 'Bridge offline');
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const catalog = await response.json();
+                    if (!Array.isArray(catalog.data)) throw new Error('Invalid bridge model list');
+                    if (refreshId !== codexRefreshId.current) return;
+                    setCodexModelsList(catalog.data.filter(model => typeof model.id === 'string'));
+                    setCodexStatus(status);
+                } catch (error) {
+                    if (refreshId !== codexRefreshId.current) return;
+                    setCodexStatus({ online: false, model: null, error: error.message || 'Bridge offline' });
+                }
+            };
+
             const handleCatalogRefresh = async () => {
                 if (apiProvider === 'gemini') {
                     await fetchGeminiModels();
@@ -20197,6 +20239,8 @@ ${finalProseText}
                     await refreshOpenRouterModels(true);
                 } else if (apiProvider === 'nanogpt') {
                     await refreshNanoGptModels(true);
+                } else if (apiProvider === 'codex') {
+                    await refreshCodexModels();
                 } else if (apiProvider === 'koboldcpp') {
                     await checkKoboldStatus();
                 }
@@ -20211,11 +20255,14 @@ ${finalProseText}
                         refreshOpenRouterModels();
                     } else if (apiProvider === 'nanogpt' && nanoGptModelsList.length === 0) {
                         refreshNanoGptModels();
+                    } else if (apiProvider === 'codex') {
+                        refreshCodexModels();
                     } else if (apiProvider === 'koboldcpp') {
                         checkKoboldStatus();
                     }
                 }
-            }, [view, apiProvider, apiKey, openRouterKey, nanoGptKey, koboldUrl]);
+                return () => { codexRefreshId.current++; };
+            }, [view, apiProvider, apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl]);
 
             return (
                 <div className={`flex h-screen overflow-hidden font-sans ${theme === 'dark' ? 'dark bg-[#141416] text-[#F5F0E8]' : 'bg-void text-ink-900'}`} data-theme={theme}>
@@ -24473,7 +24520,7 @@ ${finalProseText}
                                         {/* API Provider Toggle */}
                                         <div>
                                             <label className="block text-[10px] font-bold text-ink-400 uppercase tracking-wider mb-2 font-mono">Text Generation Provider</label>
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                                                 <button
                                                     type="button"
                                                     onClick={() => setApiProvider('gemini')}
@@ -24501,6 +24548,13 @@ ${finalProseText}
                                                     className={`py-2 px-2 rounded-lg text-xs font-bold transition-all ${apiProvider === 'koboldcpp' ? 'bg-btn text-btn-ink shadow-2xs' : 'text-ink-600 hover:text-ink-900'}`}
                                                 >
                                                     KoboldCPP
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setApiProvider('codex')}
+                                                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all ${apiProvider === 'codex' ? 'bg-btn text-btn-ink shadow-2xs' : 'text-ink-600 hover:text-ink-900'}`}
+                                                >
+                                                    Codex CLI (local)
                                                 </button>
                                             </div>
                                         </div>
@@ -24608,8 +24662,46 @@ ${finalProseText}
                                             </div>
                                         )}
 
+                                        {/* Codex CLI Bridge */}
+                                        {apiProvider === 'codex' && (
+                                            <div className="animate-fade-in space-y-2">
+                                                <label htmlFor="codex-url" className="block text-xs font-bold uppercase tracking-wider text-ink-500 font-mono">Codex Bridge URL</label>
+                                                <input
+                                                    id="codex-url"
+                                                    type="text"
+                                                    value={codexUrl}
+                                                    onChange={(e) => setCodexUrl(e.target.value)}
+                                                    className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
+                                                    placeholder="http://localhost:5010"
+                                                />
+                                                <div className="flex items-center justify-between gap-3">
+                                                    <p className="text-xs text-ink-500" role="status">
+                                                        {codexStatus.online ? `Online. Default model: ${codexStatus.model}` : (codexStatus.error || 'Checking bridge...')}
+                                                    </p>
+                                                    <button type="button" onClick={handleCatalogRefresh} className="text-xs text-gold-ink hover:text-ink-900 font-medium flex items-center gap-1 transition-colors">Refresh</button>
+                                                </div>
+                                                <label htmlFor="codex-model" className="block text-xs font-bold uppercase tracking-wider text-ink-500 font-mono">Structure / Primary Model</label>
+                                                <select id="codex-model" value={codexModel} onChange={(e) => setCodexModel(e.target.value)} className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono">
+                                                    <option value="">Bridge default</option>
+                                                    {codexModel && !codexModelsList.some(model => model.id === codexModel) && <option value={codexModel}>{codexModel}</option>}
+                                                    {codexModelsList.map(model => <option key={model.id} value={model.id}>{model.display_name || model.id}</option>)}
+                                                </select>
+                                                {useProseModel && (
+                                                    <React.Fragment>
+                                                        <label htmlFor="codex-prose-model" className="block text-xs font-bold uppercase tracking-wider text-ink-500 font-mono">Prose / Large Model</label>
+                                                        <select id="codex-prose-model" value={codexProseModel} onChange={(e) => setCodexProseModel(e.target.value)} className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono">
+                                                            <option value="">Bridge default</option>
+                                                            {codexProseModel && !codexModelsList.some(model => model.id === codexProseModel) && <option value={codexProseModel}>{codexProseModel}</option>}
+                                                            {codexModelsList.map(model => <option key={model.id} value={model.id}>{model.display_name || model.id}</option>)}
+                                                        </select>
+                                                    </React.Fragment>
+                                                )}
+                                                <p className="text-xs text-ink-400">Run "npm run codex-bridge" in the project folder first. Uses your local Codex CLI login.</p>
+                                            </div>
+                                        )}
+
                                         {/* Structure Model Selection (Universal Search Component) */}
-                                        <div className="pt-2 border-t border-edge-strong">
+                                        {apiProvider !== 'codex' && <div className="pt-2 border-t border-edge-strong">
                                             <UniversalModelSearch
                                                 label="Structure / Primary Model"
                                                 apiProvider={apiProvider}
@@ -24639,7 +24731,7 @@ ${finalProseText}
                                                 koboldLoadedModel={koboldLoadedModel}
                                                 onRefreshCatalog={handleCatalogRefresh}
                                             />
-                                        </div>
+                                        </div>}
 
                                         {/* Dual Model: Large Model Allocation */}
                                         <div className="pt-5 border-t border-edge-strong">
@@ -24654,7 +24746,7 @@ ${finalProseText}
                                                 </button>
                                             </div>
                                             <p className="text-xs text-ink-500 mb-3">Allocate a larger, more powerful model for heavy reasoning/creative tasks (Concept, Character, Arc, Act, Scene, and Writing Agents) and a smaller model for evaluations and beat directors.</p>
-                                            {useProseModel && (
+                                            {useProseModel && apiProvider !== 'codex' && (
                                                 <div className="animate-fade-in pt-2">
                                                     <UniversalModelSearch
                                                         label="Prose / Large Model Allocation"
