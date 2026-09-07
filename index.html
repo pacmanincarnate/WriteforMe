@@ -2846,152 +2846,147 @@
                 (targetSeq === latestWrittenSequence && targetScene > -1 && targetScene <= latestWrittenScene);
         };
 
-        // Strip one trailing newline. Shared by the edit appliers below.
-        const chomp = (str) => {
-            if (typeof str !== 'string') return str;
-            if (str.endsWith('\r\n')) return str.slice(0, -2);
-            if (str.endsWith('\n')) return str.slice(0, -1);
-            return str;
-        };
+        // Optional anchored matching is reserved for long rewrite/delete passages.
+        const locateNeedle = (haystack, needle, allowAnchored = false) => {
+            if (typeof haystack !== 'string' || typeof needle !== 'string' || !needle.trim()) return null;
+            let start = haystack.indexOf(needle);
+            if (start !== -1) return { start, end: start + needle.length, via: 'exact' };
+            const trimmed = needle.trim();
+            start = haystack.indexOf(trimmed);
+            if (start !== -1) return { start, end: start + trimmed.length, via: 'trimmed' };
 
-        const applySearchAndReplaceBlocks = (originalText, text) => {
-            if (!text) return originalText;
+            // Every mapping preserves UTF-16 length, so offsets still address the source.
+            const normalize = (text) => text
+                .replace(/[\u2018\u2019\u201a\u201b]/g, "'")
+                .replace(/[\u201c\u201d\u201e\u201f]/g, '"')
+                .replace(/[\u2013\u2014]/g, '-')
+                .replace(/\u2026/g, '.')
+                .replace(/[\u00a0\u2009\u202f]/g, ' ');
+            const normalizedText = normalize(haystack);
+            const normalizedNeedle = normalize(trimmed);
+            start = normalizedText.indexOf(normalizedNeedle);
+            if (start !== -1) return { start, end: start + normalizedNeedle.length, via: 'normalized' };
 
-            const cleanCdata = (str) => {
-                if (!str) return "";
-                return str.replace(/^\s*<!\[CDATA\[/, "").replace(/\]\]>\s*$/, "");
-            };
+            const pattern = normalizedNeedle.split(/\s+/)
+                .map(part => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('\\s+');
+            const match = new RegExp(pattern).exec(normalizedText);
+            if (match) return { start: match.index, end: match.index + match[0].length, via: 'whitespace' };
 
-            const blocks = extractAllTags(text, 'search_replace');
-            let updatedText = originalText;
-            for (const block of blocks) {
-                let searchVal = extractTag(block, 'search');
-                let replaceVal = extractTag(block, 'replace');
-
-                searchVal = cleanCdata(searchVal);
-                replaceVal = cleanCdata(replaceVal);
-
-                if (searchVal && replaceVal) {
-                    updatedText = replaceOnceLiteral(updatedText, searchVal, replaceVal);
+            if (allowAnchored && normalizedNeedle.length >= 80) {
+                const head = normalizedNeedle.slice(0, 40);
+                const tail = normalizedNeedle.slice(-40);
+                start = normalizedText.indexOf(head);
+                if (start !== -1 && normalizedText.indexOf(head, start + 1) === -1) {
+                    const tailStart = normalizedText.indexOf(tail, start + head.length);
+                    const end = tailStart + tail.length;
+                    if (tailStart !== -1 && normalizedText.indexOf(tail, tailStart + 1) === -1 &&
+                        end - start <= 3 * normalizedNeedle.length) {
+                        return { start, end, via: 'anchored' };
+                    }
                 }
             }
-            return updatedText;
+            return null;
         };
-        window.applySearchAndReplaceBlocks = applySearchAndReplaceBlocks;
+        window.locateNeedle = locateNeedle;
+
+        const SURGICAL_MAX_CHANGE_RATIO = 0.6;
+        // Word-level weighted LCS (two-row DP): share of `after`'s non-whitespace characters that are
+        // not part of the longest common word subsequence with `before`. Paragraph-level diffs were too
+        // coarse: one small edit per paragraph read as a full rewrite.
+        const computeChangeRatio = (before, after) => {
+            const oldWords = String(before || '').split(/\s+/).filter(Boolean);
+            const newWords = String(after || '').split(/\s+/).filter(Boolean);
+            const afterChars = newWords.reduce((sum, word) => sum + word.length, 0);
+            if (afterChars === 0) return 0;
+            let prev = new Uint32Array(newWords.length + 1);
+            let curr = new Uint32Array(newWords.length + 1);
+            for (let i = 1; i <= oldWords.length; i++) {
+                for (let j = 1; j <= newWords.length; j++) {
+                    curr[j] = oldWords[i - 1] === newWords[j - 1]
+                        ? prev[j - 1] + newWords[j - 1].length
+                        : Math.max(prev[j], curr[j - 1]);
+                }
+                [prev, curr] = [curr, prev];
+            }
+            const commonCharacters = prev[newWords.length];
+            return (afterChars - commonCharacters) / afterChars;
+        };
+        window.computeChangeRatio = computeChangeRatio;
 
         const applyParsedEdits = (originalText, edits) => {
-            let updatedText = originalText;
-            if (!Array.isArray(edits)) return updatedText;
-
-            // 1. Process rewrite_passage blocks
-            const rewrites = edits.filter(e => e.type === 'rewrite_passage');
-            for (const edit of rewrites) {
-                const originalVal = edit.original;
-                const rewrittenVal = edit.rewritten;
-                if (originalVal !== undefined && rewrittenVal !== undefined) {
-                    const origStr = chomp(String(originalVal));
-                    const rewStr = chomp(String(rewrittenVal));
-                    updatedText = replaceOnceLiteral(updatedText, origStr, rewStr);
+            const report = { text: originalText, edits, applied: [], failed: [] };
+            // Retain the legacy edit-type order; each match is against the current text.
+            const fields = {
+                rewrite_passage: ['original', 'rewritten'],
+                insert_after: ['anchor', 'content'],
+                delete_passage: ['target'],
+                search_replace: ['search', 'replace']
+            };
+            const ordered = Object.keys(fields).flatMap(type => edits.filter(edit => edit.type === type));
+            ordered.push(...edits.filter(edit => !Object.prototype.hasOwnProperty.call(fields, edit.type)));
+            for (const edit of ordered) {
+                const names = Object.prototype.hasOwnProperty.call(fields, edit.type) ? fields[edit.type] : null;
+                const needle = names ? edit[names[0]] : '';
+                const fail = (reason) => report.failed.push({ index: edit.index, type: edit.type, needle: needle || '', reason });
+                if (!names) { fail('unsupported edit type'); continue; }
+                if (!needle || !needle.trim()) { fail('missing or empty needle'); continue; }
+                if (names[1] && edit[names[1]] === undefined) { fail(`missing ${names[1]}`); continue; }
+                const match = locateNeedle(report.text, needle,
+                    edit.type === 'rewrite_passage' || edit.type === 'delete_passage');
+                if (!match) { fail('needle not found'); continue; }
+                let { start, end } = match;
+                let before = report.text.slice(start, end);
+                let after = edit.type === 'delete_passage' ? '' : edit[names[1]];
+                if (edit.type === 'insert_after') after = before + after;
+                // Retain nearby text in a deletion's splice so its nonempty after can be found for undo.
+                if (after === '' && (start > 0 || end < report.text.length)) {
+                    const contextStart = Math.max(0, start - 40);
+                    const contextEnd = Math.min(report.text.length, end + 40);
+                    after = report.text.slice(contextStart, start) + report.text.slice(end, contextEnd);
+                    start = contextStart;
+                    end = contextEnd;
+                    before = report.text.slice(start, end);
                 }
+                if (before === after) { fail('edit makes no change'); continue; }
+                report.text = report.text.slice(0, start) + after + report.text.slice(end);
+                report.applied.push({ index: edit.index, type: edit.type, matchedVia: match.via, before, after });
             }
-
-            // 2. Process insert_after blocks
-            const inserts = edits.filter(e => e.type === 'insert_after');
-            for (const edit of inserts) {
-                const anchorVal = edit.anchor;
-                const contentVal = edit.content;
-                if (anchorVal !== undefined && contentVal !== undefined) {
-                    const anchStr = chomp(String(anchorVal));
-                    const contStr = chomp(String(contentVal));
-                    if (anchStr && updatedText.includes(anchStr)) {
-                        updatedText = updatedText.replace(anchStr, () => anchStr + contStr);
-                    } else {
-                        const trimmedAnch = anchStr.trim();
-                        if (trimmedAnch && updatedText.includes(trimmedAnch)) {
-                            updatedText = updatedText.replace(trimmedAnch, () => trimmedAnch + contStr.trim());
-                        }
-                    }
-                }
-            }
-
-            // 3. Process delete_passage blocks
-            const deletes = edits.filter(e => e.type === 'delete_passage');
-            for (const edit of deletes) {
-                const targetVal = edit.target;
-                if (targetVal !== undefined) {
-                    const targStr = chomp(String(targetVal));
-                    if (updatedText.includes(targStr)) {
-                        updatedText = updatedText.replace(targStr, "");
-                    } else {
-                        const trimmedTarg = targStr.trim();
-                        if (updatedText.includes(trimmedTarg)) {
-                            updatedText = updatedText.replace(trimmedTarg, "");
-                        }
-                    }
-                }
-            }
-
-            // 4. Process search_replace blocks
-            const searchReplaces = edits.filter(e => e.type === 'search_replace');
-            for (const edit of searchReplaces) {
-                const searchVal = edit.search;
-                const replaceVal = edit.replace;
-                if (searchVal !== undefined && replaceVal !== undefined) {
-                    const searchStr = chomp(String(searchVal));
-                    const repStr = chomp(String(replaceVal));
-                    updatedText = replaceOnceLiteral(updatedText, searchStr, repStr);
-                }
-            }
-
-            return updatedText;
+            return report;
         };
 
-        const applySurgicalEdits = (originalText, blocksText) => {
-            try {
-                if (!blocksText || typeof blocksText !== 'string') return originalText;
-
-                // 1. Check for XML <edit> blocks first
-                const editXmlBlocks = extractTagList(blocksText, 'edit');
-                if (editXmlBlocks && editXmlBlocks.length > 0) {
-                    const parsedEdits = [];
-                    for (const block of editXmlBlocks) {
-                        const type = (extractTag(block, 'type') || '').trim();
-                        const search = extractTag(block, 'search');
-                        const replace = extractTag(block, 'replace');
-                        const original = extractTag(block, 'original');
-                        const rewritten = extractTag(block, 'rewritten');
-                        const anchor = extractTag(block, 'anchor');
-                        const content = extractTag(block, 'content');
-                        const target = extractTag(block, 'target');
-                        parsedEdits.push({
-                            type: type || (search !== null ? 'search_replace' : original !== null ? 'rewrite_passage' : anchor !== null ? 'insert_after' : 'delete_passage'),
-                            search: search !== null ? decodeXmlEntities(search) : undefined,
-                            replace: replace !== null ? decodeXmlEntities(replace) : undefined,
-                            original: original !== null ? decodeXmlEntities(original) : undefined,
-                            rewritten: rewritten !== null ? decodeXmlEntities(rewritten) : undefined,
-                            anchor: anchor !== null ? decodeXmlEntities(anchor) : undefined,
-                            content: content !== null ? decodeXmlEntities(content) : undefined,
-                            target: target !== null ? decodeXmlEntities(target) : undefined
-                        });
-                    }
-                    if (parsedEdits.length > 0) {
-                        return applyParsedEdits(originalText, parsedEdits);
-                    }
-                }
-
-                // 2. Check for <search_replace> XML blocks (e.g. from applySearchAndReplaceBlocks)
-                if (blocksText.includes('<search_replace>') || blocksText.includes('<search>')) {
-                    const srApplied = applySearchAndReplaceBlocks(originalText, blocksText);
-                    if (srApplied !== originalText) return srApplied;
-                }
-
-                return originalText;
-            } catch (err) {
-                console.error("Failed to apply surgical edits:", err);
-                return originalText;
+        const applySurgicalEditsDetailed = (originalText, blocksText) => {
+            const edits = [];
+            if (typeof blocksText !== 'string' || !blocksText) return applyParsedEdits(originalText, edits);
+            // Slice raw blocks so encoded XML inside structural needles is decoded only once.
+            let blocks = Array.from(blocksText.matchAll(/<edit>([\s\S]*?)<\/edit>/gi), match => match[1]);
+            if (!blocks.length) {
+                blocks = Array.from(blocksText.matchAll(/<search_replace>([\s\S]*?)<\/search_replace>/gi), match => match[1]);
             }
+            if (!blocks.length && /<search>/i.test(blocksText)) blocks = [blocksText];
+            for (const block of blocks) {
+                const field = (name) => {
+                    const match = new RegExp(`<${name}>([\\s\\S]*?)</${name}>`, 'i').exec(block);
+                    if (!match) return undefined;
+                    const cdata = /^\s*<!\[CDATA\[([\s\S]*?)\]\]>\s*$/.exec(match[1]);
+                    return cdata ? cdata[1] : decodeXmlEntities(match[1]);
+                };
+                const edit = { index: edits.length };
+                for (const name of ['search', 'original', 'anchor', 'target', 'replace', 'rewritten', 'content']) {
+                    const value = field(name);
+                    // Empty needles are absent; an explicitly empty replacement is a valid deletion.
+                    if (value !== undefined && (['replace', 'rewritten', 'content'].includes(name) || value.trim())) edit[name] = value;
+                }
+                edit.type = (field('type') || '').trim() || (edit.search ? 'search_replace' :
+                    edit.original ? 'rewrite_passage' : edit.anchor ? 'insert_after' : edit.target ? 'delete_passage' : '');
+                edits.push(edit);
+            }
+            return applyParsedEdits(originalText, edits);
         };
+        const applySurgicalEdits = (originalText, blocksText) => applySurgicalEditsDetailed(originalText, blocksText).text;
+        const applySearchAndReplaceBlocks = (originalText, blocksText) => applySurgicalEdits(originalText, blocksText);
+        window.applySearchAndReplaceBlocks = applySearchAndReplaceBlocks;
         window.applySurgicalEdits = applySurgicalEdits;
+        window.applySurgicalEditsDetailed = applySurgicalEditsDetailed;
 
 
         const extractCharacterBrief = (block) => {
@@ -4836,6 +4831,37 @@ BEGIN SURGICAL BEAT REPAIR`;
 Do NOT under ANY circumstances generate or use any of the following overused character names for any primary, secondary, or background character: ${BANNED_CHARACTER_NAMES.join(", ")}. Choose original, fresh, and world-appropriate names.
 `;
 
+        const SURGICAL_EDIT_PROTOCOL = `Rules for all surgical edits:
+1. Identify the MINIMUM set of changes needed. Return edits only; do NOT rewrite the entire text or XML payload.
+2. Quote \`search\`/\`original\`/\`anchor\`/\`target\` character-for-character from <original_text>, including punctuation and quote marks; never paraphrase.
+3. Maintain strict tense consistency. Check the tense of the surrounding original text (e.g. present tense vs. past tense) and ensure all edit blocks match that exact tense.
+4. Choose the most surgical edit type and preserve all text outside the requested changes. Include any needed spacing in replacement or inserted content.
+5. If a field value must itself contain < or &, wrap that value in CDATA.
+
+FORMATTING DIRECTIVE: Return ONLY XML enclosed in <edits>...</edits>. Do not use YAML, markdown blocks, commentary, or a full-prose response.
+Output Schema (four available edit types; emit only the edits needed):
+<edits>
+  <edit>
+    <type>search_replace</type>
+    <search>exact original text passage</search>
+    <replace>corrected text passage</replace>
+  </edit>
+  <edit>
+    <type>rewrite_passage</type>
+    <original>entire paragraph or block containing the issue</original>
+    <rewritten>new improved paragraph or block</rewritten>
+  </edit>
+  <edit>
+    <type>insert_after</type>
+    <anchor>sentence, phrase, or element after which to insert</anchor>
+    <content>new text, dialogue, sensory details, or block to insert</content>
+  </edit>
+  <edit>
+    <type>delete_passage</type>
+    <target>exact element or passage to remove</target>
+  </edit>
+</edits>`;
+
         const PROMPTS = {
             // TIER 0: CONCEPTUAL FOUNDATION
             // TIER 0.1: Conceptual Development Agent (LARGE)
@@ -5520,6 +5546,42 @@ INSTRUCTIONS:
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 BEGIN DIRECTIVE PLANNING`,
 
+            // TIER 6.2: Surgical Writing Retry Editor
+            surgicalEditorProse: `You are a Surgical Editor. Your task is to make targeted corrections to a generated text based on reviewer feedback.
+
+Choose the most surgical edit type. Use search_replace for style/word-choice/filter words. Use rewrite_passage for voice, emotional shifts or larger paragraph changes. Use insert_after for missing detail/actions. Use delete_passage to remove bloat.
+
+${SURGICAL_EDIT_PROTOCOL}`,
+
+            // TIER 2-5: Surgical Structural Retry Editor (Acts, Sequences, Scenes, Beats)
+            surgicalEditorStructural: `You are a Surgical Editor. Your task is to make targeted corrections to a generated structural outline (Act, Sequence, Scene, or Beat list) based on reviewer feedback.
+
+Choose the most surgical edit type. Use search_replace for style/small corrections or attribute tweaks (e.g. scene_type, transition_jump, character tags). Use rewrite_passage to fix detailed descriptions or structures inside a scene block. Use insert_after to add missing scenes/sequences/beats. Use delete_passage to prune unwanted elements.
+Maintain strict consistency with the rest of the outline.
+
+${SURGICAL_EDIT_PROTOCOL}`,
+
+            // TIER 4.2: Surgical Scene Expansion Editor
+            surgicalEditorSceneExpansion: `You are a Surgical Editor specializing in repairing scene expansion blueprints based on reviewer feedback.
+
+Identify the MINIMUM set of changes needed to fix the issues flagged in the reviewer feedback (e.g. fixing flat value shifts, smoothing Scene & Sequel causality, resolving info boundary collisions).
+Use search_replace or rewrite_passage to repair the affected paragraphs or blocks.
+
+${SURGICAL_EDIT_PROTOCOL}`,
+
+            // TIER 6.2: Surgical Banned Words Editor
+            surgicalEditorBannedWords: `You are a Surgical Editor Agent specializing in removing banned words and phrases from prose using search-and-replace blocks in XML format.
+
+Your task is to surgically edit this prose to remove ALL occurrences of the detected banned words and phrases.
+Rules:
+1. Identify the sentences that contain any of the banned words/phrases.
+2. Formulate search-and-replace blocks targeting only the sentences that contain banned words, replacing them with new, high-quality, emotionally resonant sentences that do NOT contain any of the banned words/phrases.
+3. Do NOT modify the rest of the prose. Preserve the surrounding context, the narrative flow, and all other sentences exactly as they are.
+
+${SURGICAL_EDIT_PROTOCOL}
+
+BEGIN SURGICAL BANNED WORDS EDIT`,
+
             // TIER 6.2: Surgical Prose Editor (Scale 5 Nano-Patching)
             // Associated Payload: executeDirectiveAction() -> patchPrompt assembly (see ~line 12080)
             surgicalProseEditor: `You are an elite surgical prose editor and continuity specialist. Your mission is to apply targeted edits, dialogue adjustments, sensory enhancements, or detail injections to an existing scene's prose with ABSOLUTE MINIMAL BLAST RADIUS.
@@ -5531,11 +5593,11 @@ CRITICAL MANDATES:
 
 ## Input Schema Definition
 You will receive the following context blocks:
-- <existing_prose>: The original scene prose to be edited.
+- <original_text>: The original scene prose to be edited.
 - <surgical_instructions>: The precise modifications, detail injections, or dialogue adjustments to make.
 - <output_format_description>: The required XML schema for your response.
 
-FORMATTING DIRECTIVE: Output the final updated narrative prose enclosed strictly within <prose_text> and </prose_text> tags. Absolutely NO markdown code blocks, conversational commentary, or explanations before or after the tags.
+${SURGICAL_EDIT_PROTOCOL}
 
 BEGIN SURGICAL EXPANSION EDIT`,
 
@@ -5884,12 +5946,12 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
 ## Input Schema Definition
 You will receive the following context blocks:
-- <prose_to_rewrite>: The original scene text to modify.
+- <original_text>: The original scene text to modify.
 - <injection_mandate>: The specific detail, fact, or item to inject into the text.
 - <output_format_description>: The required format for your response.
 
 ## Formatting Directive
-Output the updated narrative prose enclosed strictly within <prose_text> and </prose_text> tags. Absolutely NO markdown code blocks, conversational commentary, or explanations before or after the tags.`,
+${SURGICAL_EDIT_PROTOCOL}`,
 
             // TIER 6.4: World Lore Archivist (End of Scene) (LARGE)
             // Associated Payload: writeSceneProse() -> archivistPrompt assembly (see ~line 18283)
@@ -11807,34 +11869,30 @@ INSTRUCTIONS:
                 setLoadingStep(`RSI: Injecting [${item}] into Sequence ${openSlot.seqNumber}, Scene ${openSlot.sceneIdx + 1}...`);
 
                 const sysPrompt = PROMPTS.rsiPrompt;
-                const rsiUserPrompt = `<prose_to_rewrite>
+                const rsiUserPrompt = `<original_text>
 ${openSlot.prose}
-</prose_to_rewrite>
+</original_text>
 
 <injection_mandate>
 Seamlessly insert the following detail: "Seamlessly include an action where ${charName} acquires or pockets the item: \"${item}\"."
 Ensure this is done subtly (e.g. pocketing an item, glancing at a document, mentioning a fact). Do not change the scene's emotional climax or outcome.
 </injection_mandate>
 
-<output_format_description>
-FORMATTING DIRECTIVE: Output the updated narrative prose enclosed strictly within <prose_text> and </prose_text> tags. Absolutely NO markdown code blocks, conversational commentary, or explanations before or after the tags.
-
-Output Schema:
-<prose_text>
-The updated scene prose with the retroactive injection cleanly integrated.
-</prose_text>
-</output_format_description>
-
 BEGIN RETROACTIVE STATE INJECTION`;
-                const rsiOutput = await callAI(rsiUserPrompt, sysPrompt, false, "RSI Injector", "large");
-
-                let newProse = extractTag(rsiOutput, 'prose_text');
-                if (!newProse) {
-                    newProse = rsiOutput.trim();
+                const rsiOutput = await callAI(rsiUserPrompt, sysPrompt, false, "Surgical RSI Injector", "large");
+                const surgicalReport = await applySurgicalEditsWithRetry({
+                    originalText: openSlot.prose, blocksText: rsiOutput, systemPrompt: sysPrompt,
+                    logName: "Surgical RSI Injector", modelSize: "large"
+                });
+                if (!surgicalReport.applied.length) {
+                    console.warn("RSI: no surgical edits could be applied");
+                    return null;
                 }
-
-                if (!newProse || newProse.trim() === "") {
-                    throw new Error("RSI: Failed to generate rewritten prose.");
+                const newProse = surgicalReport.text;
+                const changeRatio = computeChangeRatio(openSlot.prose, newProse);
+                if (changeRatio > SURGICAL_MAX_CHANGE_RATIO) {
+                    console.warn(`Edit rejected: would change ${Math.round(changeRatio * 100)}% of the scene (limit 60%)`);
+                    return null;
                 }
 
                 const sceneIdStr = `${openSlot.seqNumber}.${openSlot.sceneIdx + 1}`;
@@ -11848,7 +11906,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
 
                 setStory(prev => {
                     const nextProse = { ...prev.prose };
-                    nextProse[openSlot.sId] = { ...nextProse[openSlot.sId], final: newProse.trim() };
+                    nextProse[openSlot.sId] = { ...nextProse[openSlot.sId], final: newProse };
 
                     // Coordinated Metadata RSI: update scene description or first beat
                     const nextBeats = { ...prev.beats };
@@ -11871,7 +11929,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                     };
                 });
 
-                showToast(`RSI: Successfully injected [${item}] into historical prose!`, 'success');
+                showToast(surgicalReport.summary, surgicalReport.failed.length ? 'warning' : 'success');
                 return { slot: openSlot, item };
             };
 
@@ -11950,6 +12008,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         return {
                             action_type: (extractTag(block, 'action_type') || '').trim(),
                             allow_protected: false,
+                            allow_large_change: (extractTag(block, 'allow_large_change') || '').trim().toLowerCase() === 'true',
                             target_act_idx: targetActStr !== null && targetActStr !== "" ? parseInt(targetActStr, 10) : 0,
                             target_sequence_idx: seqIdx,
                             target_seq_idx: seqIdx,
@@ -11968,6 +12027,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
 
             const executeDirectivePlan = async (planActions) => {
                 const snapshot = JSON.parse(JSON.stringify(story));
+                try {
                 setDirectiveUndoSnapshot(snapshot);
                 setIsExecutingDirective(true);
                 setDirectiveProgress(0);
@@ -11995,6 +12055,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                     const actionNum = i + 1;
                     const totalActions = planActions.length;
                     let resultMessage = '';
+                    let appliedEditsForAction;
 
                     try {
                         const blockedByProtection = isActionBlockedByProtection(action, currentStory, protectWrittenProse);
@@ -12391,68 +12452,54 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             }
 
                             logMessage(`[Action ${actionNum}/${totalActions}] Applying surgical prose patch to Scene ${sceneIdx + 1}...`, 'running');
-
+                            let surgicalReport;
+                            const isDirectPatch = action.details.find_text && !action.details.instructions;
                             // If direct replacement provided without AI need:
-                            if (action.details.find_text && !action.details.instructions) {
-                                if (!currentProse.includes(action.details.find_text)) {
+                            if (isDirectPatch) {
+                                surgicalReport = applyParsedEdits(currentProse, [{
+                                    index: 0, type: 'search_replace', search: action.details.find_text, replace: action.details.replace_text || ""
+                                }]);
+                                if (!surgicalReport.applied.length) {
                                     throw new Error(`find_text not found in Scene ${sceneIdx + 1} prose: "${action.details.find_text.slice(0, 60)}"`);
                                 }
-                                const patchedText = replaceOnceLiteral(currentProse, action.details.find_text, action.details.replace_text || "");
-                                currentStory = {
-                                    ...currentStory,
-                                    prose: {
-                                        ...currentStory.prose,
-                                        [sId]: { ...proseObj, final: patchedText }
-                                    }
-                                };
-                                setStory(currentStory);
-                                logMessage(`[Action ${actionNum}/${totalActions}] Success: Applied direct patch to Scene ${sceneIdx + 1} prose.`, 'success');
                             } else {
                                 // ============================================================================
                                 // TIER 6.2: SURGICAL PROSE EDITOR
                                 // Associated Prompt: PROMPTS.surgicalProseEditor
                                 // ============================================================================
                                 const instructions = action.details.instructions || action.description || "Apply surgical edits seamlessly.";
-                                const patchPrompt = `<existing_prose>
+                                const patchPrompt = `<original_text>
 ${currentProse}
-</existing_prose>
+</original_text>
 
 <surgical_instructions>
 ${instructions}
 </surgical_instructions>
 
-<output_format_description>
-FORMATTING DIRECTIVE: Return your response strictly as XML tags. Do not use YAML or markdown blocks.
-CRITICAL XML RULE: Enclose the entire response in <prose_text>...</prose_text>.
-
-Output Schema:
-<prose_text>
-The complete updated scene prose with the surgical edits cleanly integrated.
-</prose_text>
-</output_format_description>
-
 BEGIN SURGICAL PROSE EDIT`;
                                 const patchOutput = await callAI(patchPrompt, PROMPTS.surgicalProseEditor, false, "Surgical Prose Editor", "large");
-
-                                let newProse = extractTag(patchOutput, 'prose_text');
-                                if (!newProse) {
-                                    newProse = patchOutput.trim();
-                                }
-
-                                if (!newProse || newProse.trim() === "") {
-                                    throw new Error("Surgical Prose Editor failed to return edited prose.");
-                                }
-
-                                currentStory = {
-                                    ...currentStory,
-                                    prose: {
-                                        ...currentStory.prose,
-                                        [sId]: { ...proseObj, final: newProse.trim() }
-                                    }
-                                };
-                                setStory(currentStory);
-                                logMessage(`[Action ${actionNum}/${totalActions}] Success: Surgically patched Scene ${sceneIdx + 1} prose.`, 'success');
+                                surgicalReport = await applySurgicalEditsWithRetry({
+                                    originalText: currentProse, blocksText: patchOutput, systemPrompt: PROMPTS.surgicalProseEditor,
+                                    logName: "Surgical Prose Editor", modelSize: "large"
+                                });
+                                if (!surgicalReport.applied.length) throw new Error("no surgical edits could be applied");
                             }
+
+                            const changeRatio = computeChangeRatio(currentProse, surgicalReport.text);
+                            if (changeRatio > SURGICAL_MAX_CHANGE_RATIO && action.allow_large_change !== true) {
+                                throw new Error(`Edit rejected: would change ${Math.round(changeRatio * 100)}% of the scene (limit 60%)`);
+                            }
+                            currentStory = {
+                                ...currentStory,
+                                prose: {
+                                    ...currentStory.prose,
+                                    [sId]: { ...proseObj, final: surgicalReport.text }
+                                }
+                            };
+                            appliedEditsForAction = surgicalReport.applied;
+                            resultMessage = surgicalReport.summary || `Applied direct patch to Scene ${sceneIdx + 1} prose.`;
+                            setStory(currentStory);
+                            logMessage(`[Action ${actionNum}/${totalActions}] Success: ${resultMessage}`, 'success');
                         } else if (action.action_type === 'LINE_EDIT_PROSE') {
                             const proseObj = currentStory.prose[sId];
                             let currentProse = proseObj?.final || "";
@@ -12467,12 +12514,15 @@ BEGIN SURGICAL PROSE EDIT`;
                             ];
                             const misses = [];
                             let appliedEdits = 0;
-                            for (const edit of edits) {
-                                if (!edit.find || !currentProse.includes(edit.find)) {
+                            appliedEditsForAction = [];
+                            for (const [index, edit] of edits.entries()) {
+                                const report = applyParsedEdits(currentProse, [{ index, type: 'search_replace', search: edit.find, replace: edit.replace || "" }]);
+                                if (!report.applied.length) {
                                     misses.push(`find_text not found in Scene ${sceneIdx + 1} prose: "${(edit.find || '').slice(0, 60)}"`);
                                     continue;
                                 }
-                                currentProse = replaceOnceLiteral(currentProse, edit.find, edit.replace || "");
+                                currentProse = report.text;
+                                appliedEditsForAction.push(...report.applied);
                                 appliedEdits++;
                             }
                             if (appliedEdits === 0) {
@@ -12520,7 +12570,10 @@ BEGIN SURGICAL PROSE EDIT`;
                             throw new Error(`Unsupported directive action: ${action.action_type}`);
                         }
 
-                        results[i] = { status: 'applied', message: resultMessage || action.description || action.action_type };
+                        results[i] = {
+                            status: 'applied', message: resultMessage || action.description || action.action_type,
+                            ...(appliedEditsForAction ? { appliedEdits: appliedEditsForAction, proseSceneId: sId } : {})
+                        };
                     } catch (err) {
                         const message = err?.message || String(err);
                         console.error(`Directive action ${actionNum} failed:`, err);
@@ -12544,7 +12597,9 @@ BEGIN SURGICAL PROSE EDIT`;
                 const summary = `Directive complete: ${counts.applied} applied, ${counts.failed} failed, ${counts.skipped} skipped.`;
                 logMessage(summary, 'complete');
                 showToast(summary, counts.failed || counts.skipped ? 'info' : 'success');
-                setIsExecutingDirective(false);
+                } finally {
+                    setIsExecutingDirective(false);
+                }
             };
 
             // ============================================================================
@@ -12777,6 +12832,79 @@ BEGIN DEVELOPING SURGICAL DIRECTIVES
                     }
                     return { ...prev, actions: nextActions };
                 });
+            };
+
+            const handleUpdateAppliedEdit = (actionIdx, editIdx, updates) => {
+                setDirectivePlan(prev => prev ? {
+                    ...prev,
+                    actions: prev.actions.map((action, index) => index === actionIdx && action.result ? {
+                        ...action,
+                        result: {
+                            ...action.result,
+                            appliedEdits: action.result.appliedEdits.map((edit, index) => index === editIdx ? { ...edit, ...updates } : edit)
+                        }
+                    } : action)
+                } : prev);
+            };
+
+            const handleUndoSurgicalEdit = (actionIdx, editIdx) => {
+                if (isExecutingDirective) return;
+                const result = directivePlan?.actions[actionIdx]?.result;
+                const edit = result?.appliedEdits?.[editIdx];
+                if (!edit || edit.undone) return;
+                // Keep the scene used at execution, even if the action's target controls were later edited.
+                const sId = result.proseSceneId;
+                const currentProse = story.prose?.[sId]?.final || '';
+                const match = locateNeedle(currentProse, edit.after);
+                if (!match) return;
+                const restored = currentProse.slice(0, match.start) + edit.before + currentProse.slice(match.end);
+                setStory(prev => ({
+                    ...prev,
+                    prose: { ...prev.prose, [sId]: { ...prev.prose[sId], final: restored } }
+                }));
+                handleUpdateAppliedEdit(actionIdx, editIdx, { undone: true });
+            };
+
+            const retryFailedSurgicalEdits = async ({ currentText, failed, systemPrompt, logName, modelSize }) => {
+                if (!failed.length) return applySurgicalEditsDetailed(currentText, '');
+                const retryPrompt = `<original_text>
+${currentText}
+</original_text>
+
+<failed_edits>
+${failed.map(edit => `<edit><type>${escapeXml(edit.type)}</type><needle>${escapeXml(edit.needle)}</needle><requested_edit>${escapeXml(JSON.stringify(edit.requestedEdit || {}))}</requested_edit></edit>`).join('\n')}
+</failed_edits>
+
+These did not match; re-issue them quoting the text exactly as it appears in <original_text>.
+Return one edit per failure, in listed order, preserving the requested replacement or insertion. Do not re-issue edits that already applied. Output only <edits> blocks.`;
+                const output = await callAI(retryPrompt, systemPrompt, false, logName + " Retry", modelSize);
+                return applySurgicalEditsDetailed(currentText, output);
+            };
+
+            const applySurgicalEditsWithRetry = async ({ originalText, blocksText, systemPrompt, logName, modelSize }) => {
+                const report = applySurgicalEditsDetailed(originalText, blocksText);
+                let recovered = 0;
+                if (report.failed.length > 0) {
+                    try {
+                        const retry = await retryFailedSurgicalEdits({
+                            currentText: report.text,
+                            failed: report.failed.map(edit => ({ ...edit, requestedEdit: report.edits.find(item => item.index === edit.index) })),
+                            systemPrompt, logName, modelSize
+                        });
+                        const offset = report.edits.length;
+                        const omitted = report.failed.slice(retry.edits.length);
+                        report.text = retry.text;
+                        report.edits.push(...retry.edits.map(edit => ({ ...edit, index: edit.index + offset })));
+                        report.applied.push(...retry.applied.map(edit => ({ ...edit, index: edit.index + offset })));
+                        report.failed = [...retry.failed.map(edit => ({ ...edit, index: edit.index + offset })), ...omitted];
+                        recovered = retry.applied.length;
+                    } catch (err) {
+                        console.warn(`[${logName}] Surgical retry failed:`, err);
+                    }
+                }
+                report.summary = `Surgical edits: ${report.applied.length} applied, ${report.failed.length} failed (${recovered} recovered on retry)`;
+                console.log(`[${logName}] ${report.summary}`);
+                return report;
             };
 
             const runAgentWithEscalation = async ({
@@ -13106,45 +13234,7 @@ BEGIN DEVELOPING SURGICAL DIRECTIVES
 ${iss.location ? `- Location in text: "${iss.location}"` : ""}
 ${iss.fixSuggestion ? `- Suggestion: ${iss.fixSuggestion}` : ""}`).join('\n\n');
 
-                                const surgicalPrompt = `You are a Surgical Editor. Your task is to make targeted corrections to a generated text based on reviewer feedback.
-
-Rules:
-1. Identify the MINIMUM set of changes needed to fix the issues.
-2. Return XML tags describing the edits. Do NOT rewrite the entire text.
-3. You can use any of the following edit types in your <edits> list:
-   <edit>
-     <type>search_replace</type>
-     <search>exact original text passage</search>
-     <replace>corrected text passage</replace>
-   </edit>
-   <edit>
-     <type>rewrite_passage</type>
-     <original>entire paragraph containing the issue</original>
-     <rewritten>new improved paragraph</rewritten>
-   </edit>
-   <edit>
-     <type>insert_after</type>
-     <anchor>sentence or phrase after which to insert</anchor>
-     <content>new text/dialogue/sensory details to insert</content>
-   </edit>
-   <edit>
-     <type>delete_passage</type>
-     <target>exact text passage to remove</target>
-   </edit>
-
-4. Choose the most surgical edit type. Use search_replace for style/word-choice/filter words. Use rewrite_passage for voice, emotional shifts or larger paragraph changes. Use insert_after for missing detail/actions. Use delete_passage to remove bloat. Ensure you provide exact matches for search, original, anchor, and target.
-5. Maintain strict tense consistency. Check the tense of the surrounding original text (e.g. present tense vs. past tense) and ensure all edit blocks match that exact tense.
-
-FORMATTING DIRECTIVE: Return your response strictly as XML tags enclosed in <edits>...</edits>. Do not use YAML or markdown blocks.
-
-Output Schema:
-<edits>
-  <edit>
-    <type>search_replace</type>
-    <search>...</search>
-    <replace>...</replace>
-  </edit>
-</edits>`;
+                                const surgicalPrompt = PROMPTS.surgicalEditorProse;
 
                                 const surgicalUserPrompt = `
 <original_text>
@@ -13159,10 +13249,14 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                 try {
                                     const surgicalOutput = await callAI(surgicalUserPrompt, surgicalPrompt, false, `Surgical Editor (${tierName})`, surgicalModel);
                                     console.log("Surgical Output:", surgicalOutput);
-                                    const patchedOutput = applySurgicalEdits(currentDraft, surgicalOutput);
+                                    const surgicalReport = await applySurgicalEditsWithRetry({
+                                        originalText: currentDraft, blocksText: surgicalOutput, systemPrompt: surgicalPrompt,
+                                        logName: `Surgical Editor (${tierName})`, modelSize: surgicalModel
+                                    });
+                                    const patchedOutput = surgicalReport.text;
+                                    showToast(surgicalReport.summary, surgicalReport.failed.length ? 'warning' : surgicalReport.applied.length ? 'success' : 'info');
 
                                     if (patchedOutput !== currentDraft) {
-                                        showToast(`Surgical Editor applied patches (Pass ${innerPass}).`, 'success');
                                         let parsedData;
                                         try {
                                             parsedData = parserFn(patchedOutput);
@@ -13264,45 +13358,7 @@ ${(iss.fixSuggestion || iss.fix_suggestion) ? `- Suggestion: ${iss.fixSuggestion
                                     issuesText = reasons.map(r => `- ${r}`).join('\n');
                                 }
 
-                                const surgicalPrompt = `You are a Surgical Editor. Your task is to make targeted corrections to a generated structural outline (Act, Sequence, Scene, or Beat list) based on reviewer feedback.
-
-Rules:
-1. Identify the MINIMUM set of changes needed to fix the issues.
-2. Return XML tags describing the edits. Do NOT rewrite the entire text.
-3. You can use any of the following edit types in your <edits> list:
-   <edit>
-     <type>search_replace</type>
-     <search>exact original text passage</search>
-     <replace>corrected text passage</replace>
-   </edit>
-   <edit>
-     <type>rewrite_passage</type>
-     <original>entire block containing the issue</original>
-     <rewritten>new improved block</rewritten>
-   </edit>
-   <edit>
-     <type>insert_after</type>
-     <anchor>element after which to insert</anchor>
-     <content>new block to insert</content>
-   </edit>
-   <edit>
-     <type>delete_passage</type>
-     <target>exact element or passage to remove</target>
-   </edit>
-
-4. Choose the most surgical edit type. Use search_replace for style/small corrections or attribute tweaks (e.g. scene_type, transition_jump, character tags). Use rewrite_passage to fix detailed descriptions or structures inside a scene block. Use insert_after to add missing scenes/sequences/beats. Use delete_passage to prune unwanted elements. Ensure you provide exact matches for search, original, anchor, and target.
-5. Maintain strict consistency with the rest of the outline.
-
-FORMATTING DIRECTIVE: Return your response strictly as XML tags enclosed in <edits>...</edits>. Do not use YAML or markdown blocks.
-
-Output Schema:
-<edits>
-  <edit>
-    <type>search_replace</type>
-    <search>...</search>
-    <replace>...</replace>
-  </edit>
-</edits>`;
+                                const surgicalPrompt = PROMPTS.surgicalEditorStructural;
 
                                 const surgicalUserPrompt = `
 <original_text>
@@ -13317,9 +13373,13 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                 try {
                                     const surgicalOutput = await callAI(surgicalUserPrompt, surgicalPrompt, false, `Surgical Editor (${tierName})`, surgicalModel);
                                     console.log(`[Surgical Editor (${tierName})] Pass ${innerPass} Output:`, surgicalOutput);
-                                    const patchedOutput = applySurgicalEdits(currentDraft, surgicalOutput);
+                                    const surgicalReport = await applySurgicalEditsWithRetry({
+                                        originalText: currentDraft, blocksText: surgicalOutput, systemPrompt: surgicalPrompt,
+                                        logName: `Surgical Editor (${tierName})`, modelSize: surgicalModel
+                                    });
+                                    const patchedOutput = surgicalReport.text;
+                                    showToast(surgicalReport.summary, surgicalReport.failed.length ? 'warning' : surgicalReport.applied.length ? 'success' : 'info');
                                     if (patchedOutput && patchedOutput !== currentDraft) {
-                                        showToast(`Surgical Editor applied patches to ${tierName} (Pass ${innerPass}).`, 'success');
                                         let parsedData;
                                         try {
                                             parsedData = parserFn(patchedOutput);
@@ -17821,33 +17881,7 @@ ${iss.location ? `- Location: "${iss.location}"` : ""}
 ${(iss.fixSuggestion || iss.fix_suggestion) ? `- Suggestion: ${iss.fixSuggestion || iss.fix_suggestion}` : ""}`).join('\n\n')
                                 : deviationReasons.map(r => `- ${r}`).join('\n');
 
-                            const surgicalPrompt = `You are a Surgical Editor specializing in repairing scene expansion blueprints based on reviewer feedback.
-
-Rules:
-1. Identify the MINIMUM set of changes needed to fix the issues flagged in the reviewer feedback (e.g. fixing flat value shifts, smoothing Scene & Sequel causality, resolving info boundary collisions).
-2. Return XML tags describing the edits. Do NOT rewrite the entire XML payload.
-3. You can use any of the following edit types in your <edits> list:
-   <edit>
-     <type>search_replace</type>
-     <search>exact original text passage</search>
-     <replace>corrected text passage</replace>
-   </edit>
-   <edit>
-     <type>rewrite_passage</type>
-     <original>entire paragraph or block containing the issue</original>
-     <rewritten>new improved paragraph or block</rewritten>
-   </edit>
-
-FORMATTING DIRECTIVE: Return your response strictly as XML tags enclosed in <edits>...</edits>. Do not use YAML or markdown blocks.
-
-Output Schema:
-<edits>
-  <edit>
-    <type>search_replace</type>
-    <search>...</search>
-    <replace>...</replace>
-  </edit>
-</edits>`;
+                            const surgicalPrompt = PROMPTS.surgicalEditorSceneExpansion;
 
                             const surgicalUserPrompt = `
 <original_text>
@@ -17869,7 +17903,12 @@ ${currentCritique ? `\n<critique_analysis>\n${currentCritique}\n</critique_analy
                                     "small"
                                 );
                                 console.log(`[Surgical Editor (Scene Expansion)] Pass ${surgicalPass} Output:`, surgicalOutput);
-                                const patchedPayload = applySurgicalEdits(currentPayload, surgicalOutput);
+                                const surgicalReport = await applySurgicalEditsWithRetry({
+                                    originalText: currentPayload, blocksText: surgicalOutput, systemPrompt: surgicalPrompt,
+                                    logName: "Surgical Editor (Scene Expansion)", modelSize: "small"
+                                });
+                                const patchedPayload = surgicalReport.text;
+                                showToast(surgicalReport.summary, surgicalReport.failed.length ? 'warning' : surgicalReport.applied.length ? 'success' : 'info');
 
                                 if (patchedPayload && patchedPayload !== currentPayload) {
                                     currentPayload = patchedPayload;
@@ -18867,40 +18906,25 @@ BEGIN PROSE CRITIQUE REVIEW`,
 ${detectedListStr}
 </banned_words_detected>
 
-<original_prose>
+<original_text>
 ${finalProseText}
-</original_prose>
-
-Your task is to surgically edit this prose to remove ALL occurrences of these banned words and phrases.
-Rules:
-1. Identify the sentences that contain any of the banned words/phrases.
-2. Formulate search-and-replace blocks targeting only the sentences that contain banned words, replacing them with new, high-quality, emotionally resonant sentences that do NOT contain any of the banned words/phrases.
-3. Do NOT modify the rest of the prose. Preserve the surrounding context, the narrative flow, and all other sentences exactly as they are.
-4. Output ONLY valid XML tags enclosed in <edits>...</edits>. Do NOT output any markdown blocks, YAML, or explanation.
-5. Maintain strict tense consistency. Check the tense of the surrounding original text (e.g. present tense vs. past tense) and ensure all edit blocks match that exact tense.
-
-FORMATTING DIRECTIVE: Return your response strictly as XML tags enclosed in <edits>...</edits>. Do not use YAML or markdown blocks.
-
-Output Schema:
-<edits>
-  <edit>
-    <type>search_replace</type>
-    <search>exact original text block containing banned word</search>
-    <replace>new updated text block without banned word</replace>
-  </edit>
-</edits>
+</original_text>
 `;
                         const surgicalRes = await callAI(
                             surgicalPrompt,
-                            "You are a Surgical Editor Agent specializing in removing banned words and phrases from prose using search-and-replace blocks in XML format.\n\nBEGIN SURGICAL BANNED WORDS EDIT",
+                            PROMPTS.surgicalEditorBannedWords,
                             false,
                             "Surgical Editor (Banned Words)",
                             "large"
                         );
-                        const patchedProse = applySurgicalEdits(finalProseText, surgicalRes);
+                        const surgicalReport = await applySurgicalEditsWithRetry({
+                            originalText: finalProseText, blocksText: surgicalRes, systemPrompt: PROMPTS.surgicalEditorBannedWords,
+                            logName: "Surgical Editor (Banned Words)", modelSize: "large"
+                        });
+                        const patchedProse = surgicalReport.text;
+                        showToast(surgicalReport.summary, surgicalReport.failed.length ? 'warning' : surgicalReport.applied.length ? 'success' : 'info');
                         if (patchedProse && patchedProse !== finalProseText) {
                             finalProseText = patchedProse;
-                            showToast(`Surgical edit for banned words in scene completed!`, "success");
                         }
                     }
 
@@ -21451,6 +21475,52 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                             Override protection for this action
                                                                         </label>
                                                                     )}
+                                                                    {act.action_type === 'SURGICAL_PATCH_PROSE' && (
+                                                                        <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer">
+                                                                            <input
+                                                                                type="checkbox"
+                                                                                checked={act.allow_large_change === true}
+                                                                                onChange={(e) => handleUpdateActionField(actIdx, 'allow_large_change', e.target.checked)}
+                                                                                className="rounded border-stone-300 text-[#8C6B32] focus:ring-[#8C6B32]"
+                                                                                disabled={isExecutingDirective}
+                                                                            />
+                                                                            Allow large rewrite
+                                                                        </label>
+                                                                    )}
+                                                                    {act.result?.appliedEdits?.map((edit, editIdx) => {
+                                                                        const currentProse = story.prose?.[act.result.proseSceneId]?.final || '';
+                                                                        const canUndo = !edit.undone && !!locateNeedle(currentProse, edit.after);
+                                                                        const isLong = edit.before.length > 240 || edit.after.length > 240;
+                                                                        const preview = (text) => !edit.showFull && text.length > 240 ? text.slice(0, 237) + '...' : text;
+                                                                        return (
+                                                                            <div key={editIdx} className="rounded-lg border border-edge-strong bg-inset p-3 space-y-2 text-xs">
+                                                                                <div className="font-mono whitespace-pre-wrap break-words">
+                                                                                    <del className="block text-blush-800">{preview(edit.before) || '(empty)'}</del>
+                                                                                    <span className="block text-sage-800">{preview(edit.after) || '(empty)'}</span>
+                                                                                </div>
+                                                                                <div className="flex gap-3 items-center">
+                                                                                    {isLong && (
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            className="text-ink-600 underline"
+                                                                                            onClick={() => handleUpdateAppliedEdit(actIdx, editIdx, { showFull: !edit.showFull })}
+                                                                                        >
+                                                                                            {edit.showFull ? 'show less' : 'show full'}
+                                                                                        </button>
+                                                                                    )}
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        className="px-2.5 py-1 rounded-lg border border-edge-strong bg-surface text-ink-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                                        onClick={() => handleUndoSurgicalEdit(actIdx, editIdx)}
+                                                                                        disabled={isExecutingDirective || !canUndo}
+                                                                                        title={!edit.undone && !canUndo ? 'text has since changed' : undefined}
+                                                                                    >
+                                                                                        {edit.undone ? 'Undone' : 'Undo this edit'}
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+                                                                        );
+                                                                    })}
                                                                     {act.result?.status === 'failed' && (
                                                                         <p className="text-xs text-blush-800 whitespace-pre-wrap break-words">{act.result.message}</p>
                                                                     )}
