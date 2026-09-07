@@ -2813,6 +2813,7 @@
 
         const DIRECTIVE_STRUCTURAL_ACTIONS = new Set([
             'MODIFY_ACT', 'MODIFY_SEQUENCE', 'MODIFY_SCENE', 'ADD_SCENE', 'DELETE_SCENE',
+            'ADD_SEQUENCE', 'DELETE_SEQUENCE', 'MOVE_SCENE',
             'MODIFY_BEAT', 'INSERT_BEAT', 'DELETE_BEAT', 'REGENERATE_BEATS', 'REWRITE_PROSE'
         ]);
         const DIRECTIVE_PROSE_SAFE_ACTIONS = new Set(['SURGICAL_PATCH_PROSE', 'LINE_EDIT_PROSE']);
@@ -2834,14 +2835,24 @@
             });
             if (latestWrittenSequence === -1) return false;
 
+            if (action.action_type === 'ADD_SEQUENCE') {
+                const parentAct = Number(action.target_act_idx ?? 0) + 1;
+                const sequences = story.sequences || [];
+                const nextActIdx = sequences.findIndex((seq, idx) => (seq.parent_act || actForSequence(idx + 1)) > parentAct);
+                const insertIdx = action.details?.insert_at_idx;
+                const targetIdx = insertIdx !== undefined && insertIdx !== null && insertIdx !== ''
+                    ? Number(insertIdx) : nextActIdx === -1 ? sequences.length : nextActIdx;
+                return targetIdx >= 0 && targetIdx <= latestWrittenSequence;
+            }
             const targetSeq = parseInt(action.target_sequence_idx ?? action.target_seq_idx ?? 0, 10);
-            const targetScene = action.action_type === 'ADD_SCENE'
+            let targetScene = action.action_type === 'ADD_SCENE'
                 ? parseInt(action.details?.insert_at_idx ?? story.scenes?.[`${targetSeq}`]?.length ?? 0, 10)
                 : parseInt(action.target_scene_idx ?? 0, 10);
             const targetAct = parseInt(action.target_act_idx ?? 0, 10);
             const actOfLatestSeq = story.sequences[latestWrittenSequence]?.parent_act ?? -1;
             if (action.action_type === 'MODIFY_ACT') return targetAct > -1 && targetAct <= actOfLatestSeq;
-            if (action.action_type === 'MODIFY_SEQUENCE') return targetSeq > -1 && targetSeq <= latestWrittenSequence;
+            if (['MODIFY_SEQUENCE', 'DELETE_SEQUENCE'].includes(action.action_type)) return targetSeq > -1 && targetSeq <= latestWrittenSequence;
+            if (action.action_type === 'MOVE_SCENE') targetScene = Math.min(targetScene, Number(action.details?.to_idx ?? targetScene));
             return (targetSeq > -1 && targetSeq < latestWrittenSequence) ||
                 (targetSeq === latestWrittenSequence && targetScene > -1 && targetScene <= latestWrittenScene);
         };
@@ -4135,6 +4146,64 @@ BEGIN SURGICAL BEAT REPAIR`;
         // Single source of truth for inferring a sequence's act when parent_act is absent.
         // Takes the 1-based sequence number; sequences beyond the 8-sequence model default to Act 3.
         const actForSequence = (seqNumber) => SEQUENCE_ACT_MAP[seqNumber - 1] || 3;
+
+        // Preserve act membership before changing positional keys. Never mutate the input story.
+        const reindexStoryForSequenceInsert = (story, insertIdx, newSequence) => {
+            const original = story.sequences || [];
+            if (!Number.isInteger(insertIdx) || insertIdx < 0 || insertIdx > original.length) throw new Error('Invalid sequence insertion index.');
+            const sequences = original.map((seq, idx) => ({ ...seq, parent_act: seq.parent_act || actForSequence(idx + 1) }));
+            sequences.splice(insertIdx, 0, { ...newSequence });
+            const scenes = {};
+            Object.entries(story.scenes || {}).forEach(([key, list]) => {
+                const oldIdx = Number(key);
+                const nextIdx = oldIdx >= insertIdx ? oldIdx + 1 : oldIdx;
+                scenes[String(nextIdx)] = list.map((scene, sceneIdx) => ({
+                    ...scene, id: `${nextIdx + 1}.${sceneIdx + 1}`, number: `${nextIdx + 1}.${sceneIdx + 1}`,
+                    ...(scene.parent_sequence !== undefined ? { parent_sequence: nextIdx + 1 } : {})
+                }));
+            });
+            scenes[String(insertIdx)] = [];
+            const rekey = (map) => Object.fromEntries(Object.entries(map || {}).map(([key, value]) => {
+                const match = /^(\d+)-(.*)$/.exec(key);
+                if (!match) return [key, value];
+                const oldIdx = Number(match[1]);
+                return [`${oldIdx >= insertIdx ? oldIdx + 1 : oldIdx}-${match[2]}`, value];
+            }));
+            return {
+                ...story, sequences: sequences.map((seq, idx) => ({ ...seq, number: idx + 1 })),
+                scenes, beats: rekey(story.beats), prose: rekey(story.prose)
+            };
+        };
+        window.reindexStoryForSequenceInsert = reindexStoryForSequenceInsert;
+
+        const reindexStoryForSequenceDelete = (story, deleteIdx) => {
+            const original = story.sequences || [];
+            if (!Number.isInteger(deleteIdx) || deleteIdx < 0 || deleteIdx >= original.length) throw new Error('Invalid sequence deletion index.');
+            const sequences = original.map((seq, idx) => ({ ...seq, parent_act: seq.parent_act || actForSequence(idx + 1) }));
+            sequences.splice(deleteIdx, 1);
+            const scenes = {};
+            Object.entries(story.scenes || {}).forEach(([key, list]) => {
+                const oldIdx = Number(key);
+                if (oldIdx === deleteIdx) return;
+                const nextIdx = oldIdx > deleteIdx ? oldIdx - 1 : oldIdx;
+                scenes[String(nextIdx)] = list.map((scene, sceneIdx) => ({
+                    ...scene, id: `${nextIdx + 1}.${sceneIdx + 1}`, number: `${nextIdx + 1}.${sceneIdx + 1}`,
+                    ...(scene.parent_sequence !== undefined ? { parent_sequence: nextIdx + 1 } : {})
+                }));
+            });
+            const rekey = (map) => Object.fromEntries(Object.entries(map || {}).flatMap(([key, value]) => {
+                const match = /^(\d+)-(.*)$/.exec(key);
+                if (!match) return [[key, value]];
+                const oldIdx = Number(match[1]);
+                if (oldIdx === deleteIdx) return [];
+                return [[`${oldIdx > deleteIdx ? oldIdx - 1 : oldIdx}-${match[2]}`, value]];
+            }));
+            return {
+                ...story, sequences: sequences.map((seq, idx) => ({ ...seq, number: idx + 1 })),
+                scenes, beats: rekey(story.beats), prose: rekey(story.prose)
+            };
+        };
+        window.reindexStoryForSequenceDelete = reindexStoryForSequenceDelete;
 
         // Legacy 'Valence Shift' / 'Emotional Arc' ledger entries are pruned everywhere the
         // continuity ledger is consumed; one predicate replaces the same four-clause filter
@@ -5513,14 +5582,21 @@ CORE MANDATE & SURGICAL HEURISTIC:
      - ADD_CHARACTER: Insert a brand new character into the story's cast list.
      - MODIFY_CHARACTER: Update an existing character's properties (name, role, core_flaw, core_desire, vocal_cadence) using target_character_id.
      - DELETE_CHARACTER: Remove an obsolete character from the cast list using target_character_id.
+     - MODIFY_RELATIONSHIP: Update current, hidden_tension, or trust_level (1-10), targeting relationship_key (NameA->NameB) or from_name/to_name. Both names must match the cast, case-insensitively.
+     - ADD_LORE: Add topic/detail to the story lore, merging an existing topic case-insensitively.
+     - MODIFY_LORE: Replace detail for an existing lore topic, matched case-insensitively.
+     - ADD_CONTINUITY_FACT: Add or replace a key/value fact with category (default Directive) and optional entity_name from the cast. Optional target indices set its starting act/sequence/scene; omitted indices start at 1.
    - **Act Level (Scale 1):**
      - MODIFY_ACT: Update an act's title, mandate, core tension, or thematic reversal.
    - **Sequence Level (Scale 2):**
      - MODIFY_SEQUENCE: Update a sequence's title, dramatic function, or central question.
+     - ADD_SEQUENCE: Insert a sequence inside an existing target_act_idx, with title, sequence_function, dramatic_question and optional insert_at_idx (global 0-based index; default end of that act). parent_act is derived as target_act_idx + 1. It starts with no scenes.
+     - DELETE_SEQUENCE: Remove the target sequence and its scenes, beats and prose.
    - **Scene Level (Scale 3):**
      - MODIFY_SCENE: Update scene title, objective, description, scene_type (PROACTIVE / REACTIVE), dominant_narrative_mode, or cast.
      - ADD_SCENE: Insert a new scene into a sequence at insert_at_idx.
      - DELETE_SCENE: Remove an obsolete scene.
+     - MOVE_SCENE: Move target_scene_idx to to_idx (0-based) within the same target_sequence_idx, carrying its beats and prose. Never move across sequences.
    - **Beat Level (Scale 4 - Surgical Choreography):**
      - MODIFY_BEAT: Surgically edit a single beat's tactic, action, reaction, pivot, or character intent without altering other beats in the scene.
      - INSERT_BEAT: Insert a single new MRU beat at insert_at_idx.
@@ -5530,7 +5606,7 @@ CORE MANDATE & SURGICAL HEURISTIC:
      - SURGICAL_PATCH_PROSE: Surgically inject details, revise specific paragraphs, or tweak dialogue in written scene prose while locking down untouched text.
      - LINE_EDIT_PROSE: Perform direct, deterministic search-and-replace on dialogue, names, or phrases in written scene prose.
      - REWRITE_PROSE: (Wholesale fallback) Re-draft the entire scene prose ONLY when a total rewrite from scratch is explicitly requested.
-4. **Strict Scope Compliance:** You must only modify or add to Acts and Sequences that already exist and have generated scenes. Do not invent new Sequences or Acts, and do not add scenes to empty sequences that haven't been generated yet. With protection enabled, structural changes (including REWRITE_PROSE) to written regions are forbidden unless the directive clearly requires them; still emit those required actions and explain in <evaluation> that the user must override protection.
+4. **Strict Scope Compliance:** Work within existing Acts. ADD_SEQUENCE may insert a new sequence inside an existing act; never invent new Acts. Do not add scenes to empty sequences that haven't been generated yet. With protection enabled, structural changes (including ADD_SEQUENCE, DELETE_SEQUENCE, MOVE_SCENE and REWRITE_PROSE) to written regions are forbidden unless the directive clearly requires them; still emit those required actions and explain in <evaluation> that the user must override protection. Action indices refer to the story after all preceding actions, including insertions, deletions and moves.
 
 ## Input Schema Definition
 You will receive the following context blocks to inform your surgical editing plan:
@@ -5541,7 +5617,7 @@ You will receive the following context blocks to inform your surgical editing pl
 
 INSTRUCTIONS:
 1. **Strategic Evaluation:** Analyze the user's directive. Explain how it can be achieved with surgical precision and minimal disruption to established narrative work.
-2. **Action Planning:** Generate a sequence of discrete actions chosen from the 16 action types above. Specify 0-based indices for target_act_idx, target_sequence_idx, target_scene_idx, target_beat_idx, or target_character_id where applicable.
+2. **Action Planning:** Generate a sequence of discrete actions chosen from the 23 action types above. Specify 0-based indices for target_act_idx, target_sequence_idx, target_scene_idx, target_beat_idx, or target_character_id where applicable. When cascade is enabled, beat changes on written scenes automatically trigger a surgical prose patch; avoid scheduling a duplicate prose action for the same change.
 3. **Format Output:** Return your response strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 BEGIN DIRECTIVE PLANNING`,
@@ -7457,7 +7533,7 @@ INSTRUCTIONS:
            variant="structure" renders the denser row (lens selector, causality, inline title edit);
            variant="dashboard" renders the dark-mode-aware dashboard row. Class strings are kept
            byte-identical to the originals per variant — the .dark override block is keyed to them. */
-        const SceneRow = ({ variant, scene: s, sceneIdx: si, seqIdx, sequence, getModeIcon, allNarrativeModes, openEditModal, setStory, showToast, setSelectedSequence, setSelectedScene, setView, handleDeleteScene }) => {
+        const SceneRow = ({ variant, scene: s, sceneIdx: si, seqIdx, sequence, proseStale, getModeIcon, allNarrativeModes, openEditModal, setStory, showToast, setSelectedSequence, setSelectedScene, setView, handleDeleteScene }) => {
             const isStructure = variant === 'structure';
             const isProactive = String(s.scene_type).toLowerCase().includes('proactive') || s.scene_type === 'scene';
             return (
@@ -7480,6 +7556,9 @@ INSTRUCTIONS:
                                             <Icon name={getModeIcon(s.dominant_narrative_mode || "BASELINE_NEUTRAL")} className="w-4 h-4 text-gold-ink shrink-0" />
                                             {s.title}
                                         </h4>
+                                    )}
+                                    {proseStale && (
+                                        <span title={proseStale.reason} className="text-[9px] font-bold px-2 py-0.5 rounded-full border bg-tangerine-tint text-tangerine-800 border-tangerine-edge">Prose out of date</span>
                                     )}
                                     {s.scene_type && (
                                         <span className={`text-[9px] font-bold uppercase px-2 py-0.5 ${isStructure ? 'rounded-md border font-mono' : 'rounded-full border'} ${isProactive
@@ -11108,6 +11187,14 @@ INSTRUCTIONS:
             const [directiveExecutionLogs, setDirectiveExecutionLogs] = useState([]);
             const [directiveProgress, setDirectiveProgress] = useState(0);
             const [protectWrittenProse, setProtectWrittenProse] = useState(true);
+            const [cascadeBeatChanges, setCascadeBeatChanges] = useState(() => {
+                try { return localStorage.getItem('ellipsisprose_directive_cascade') !== 'false'; }
+                catch { return true; }
+            });
+            useEffect(() => {
+                try { localStorage.setItem('ellipsisprose_directive_cascade', String(cascadeBeatChanges)); }
+                catch (err) { console.warn('Could not save directive cascade preference:', err); }
+            }, [cascadeBeatChanges]);
 
             // Archetype State
             const [archetypeOptions, setArchetypeOptions] = useState([]);
@@ -11937,10 +12024,21 @@ BEGIN RETROACTIVE STATE INJECTION`;
                 if (!planText || typeof planText !== 'string') return { evaluation: "", actions: [] };
 
                 // Try XML parsing
-                const actionBlocks = Array.from(planText.matchAll(/<action>([\s\S]*?)<\/action>/gi), match => match[1]);
+                // A beat's <details><action> field is nested inside the outer action block.
+                const cleanText = planText.replace(/<!--[\s\S]*?-->/g, '');
+                const actionBlocks = [];
+                let actionDepth = 0, actionStart = 0;
+                for (const match of cleanText.matchAll(/<\/?action>/gi)) {
+                    if (match[0][1] !== '/') {
+                        if (actionDepth++ === 0) actionStart = match.index + match[0].length;
+                    } else if (actionDepth > 0 && --actionDepth === 0) {
+                        actionBlocks.push(cleanText.slice(actionStart, match.index));
+                    }
+                }
                 if (actionBlocks && actionBlocks.length > 0) {
                     const evaluation = decodeXmlEntities(extractTag(planText, 'evaluation') || '');
                     const actions = actionBlocks.map(block => {
+                        const actionType = (extractTag(block, 'action_type') || '').trim();
                         const details = {};
                         const rawTag = (text, tag) => new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`, 'i').exec(text || '')?.[1] ?? null;
                         const detBlock = rawTag(block, 'details');
@@ -11992,6 +12090,27 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         details.core_desire = getField('core_desire');
                         details.vocal_cadence = getField('vocal_cadence');
 
+                        ['relationship_key', 'from_name', 'to_name', 'current', 'hidden_tension', 'trust_level',
+                            'topic', 'detail', 'category', 'entity_name', 'to_idx', 'parent_act'].forEach(field => {
+                            const value = getField(field);
+                            if (value !== '' || rawTag(detBlock, field) !== null) details[field] = value;
+                        });
+                        if (actionType === 'ADD_CONTINUITY_FACT') {
+                            // Read only this action's details, never nested line edits or outer tags.
+                            const factDetails = (detBlock || '').replace(/<line_edits>[\s\S]*?<\/line_edits>/gi, '');
+                            details.key = decodeXmlEntities((rawTag(factDetails, 'key') || '').trim());
+                            details.value = decodeXmlEntities((rawTag(factDetails, 'value') || '').trim());
+                        }
+                        if (actionType === 'MOVE_SCENE') {
+                            // Preserve explicit out-of-scope destinations so the executor can reject them.
+                            const toSequence = getField('to_sequence_idx');
+                            if (toSequence !== '') details.to_sequence_idx = toSequence;
+                            ['to_sequence_idx', 'target_sequence_idx', 'target_seq_idx'].forEach(field => {
+                                const value = rawTag(detBlock, field);
+                                if (value !== null) details[field] = value.trim();
+                            });
+                        }
+
                         const insertAt = getField('insert_at_idx');
                         if (insertAt !== "") {
                             details.insert_at_idx = parseInt(insertAt, 10);
@@ -12006,7 +12125,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                         const seqIdx = targetSeqStr !== null && targetSeqStr !== "" ? parseInt(targetSeqStr, 10) : 0;
 
                         return {
-                            action_type: (extractTag(block, 'action_type') || '').trim(),
+                            action_type: actionType,
                             allow_protected: false,
                             allow_large_change: (extractTag(block, 'allow_large_change') || '').trim().toLowerCase() === 'true',
                             target_act_idx: targetActStr !== null && targetActStr !== "" ? parseInt(targetActStr, 10) : 0,
@@ -12025,6 +12144,38 @@ BEGIN RETROACTIVE STATE INJECTION`;
                 return { evaluation: "", actions: [] };
             };
 
+            const applySurgicalProsePatch = async ({ story, seqIdx, sceneIdx, instructions, allowLargeChange, logName = 'Surgical Prose Editor' }) => {
+                const sId = `${seqIdx}-${sceneIdx}`;
+                const proseObj = story.prose?.[sId];
+                const currentProse = proseObj?.final || '';
+                if (!currentProse.trim()) throw new Error(`Scene ${sceneIdx + 1} has no written prose yet. Generate prose first or use Write Prose.`);
+                const patchPrompt = `<original_text>
+${currentProse}
+</original_text>
+
+<surgical_instructions>
+${instructions}
+</surgical_instructions>
+
+BEGIN SURGICAL PROSE EDIT`;
+                const patchOutput = await callAI(patchPrompt, PROMPTS.surgicalProseEditor, false, logName, 'large');
+                const report = await applySurgicalEditsWithRetry({
+                    originalText: currentProse, blocksText: patchOutput, systemPrompt: PROMPTS.surgicalProseEditor,
+                    logName, modelSize: 'large'
+                });
+                if (!report.applied.length) throw new Error('no surgical edits could be applied');
+                const changeRatio = computeChangeRatio(currentProse, report.text);
+                if (changeRatio > SURGICAL_MAX_CHANGE_RATIO && allowLargeChange !== true) {
+                    throw new Error(`Edit rejected: would change ${Math.round(changeRatio * 100)}% of the scene (limit 60%)`);
+                }
+                const updatedProse = { ...proseObj, final: report.text };
+                delete updatedProse.stale;
+                return {
+                    story: { ...story, prose: { ...story.prose, [sId]: updatedProse } },
+                    appliedEdits: report.applied, message: report.summary || `Applied prose patch to Scene ${sceneIdx + 1}.`
+                };
+            };
+
             const executeDirectivePlan = async (planActions) => {
                 const snapshot = JSON.parse(JSON.stringify(story));
                 try {
@@ -12035,6 +12186,10 @@ BEGIN RETROACTIVE STATE INJECTION`;
 
                 let currentStory = JSON.parse(JSON.stringify(snapshot));
                 const results = [];
+                // Keep prior edit undo targets attached to their scenes as later structural actions shift keys.
+                const rekeyResultScenes = (mapKey) => results.forEach(result => {
+                    if (result.proseSceneId) result.proseSceneId = mapKey(result.proseSceneId);
+                });
                 setDirectivePlan(prev => prev ? {
                     ...prev, actions: prev.actions.map(action => ({ ...action, result: undefined }))
                 } : prev);
@@ -12056,6 +12211,8 @@ BEGIN RETROACTIVE STATE INJECTION`;
                     const totalActions = planActions.length;
                     let resultMessage = '';
                     let appliedEditsForAction;
+                    let cascadeInstructions = '';
+                    let cascadeResult;
 
                     try {
                         const blockedByProtection = isActionBlockedByProtection(action, currentStory, protectWrittenProse);
@@ -12142,6 +12299,83 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             }
                         }
 
+                        else if (action.action_type === 'MODIFY_RELATIONSHIP') {
+                            const details = action.details;
+                            const names = details.relationship_key ? details.relationship_key.split('->') : [details.from_name, details.to_name];
+                            if (names.length !== 2) throw new Error('relationship_key must use NameA->NameB.');
+                            const resolveName = (name) => {
+                                const character = (currentStory.cast || []).find(c => c.name.toLowerCase() === String(name || '').trim().toLowerCase());
+                                if (!character) throw new Error(`Unknown relationship character: ${name || '(missing name)'}.`);
+                                return character.name;
+                            };
+                            const from = resolveName(names[0]);
+                            const to = resolveName(names[1]);
+                            const relationships = { ...(currentStory.relationships || {}) };
+                            const key = Object.keys(relationships).find(key => key.split('->').map(name => name.trim().toLowerCase()).join('->') === `${from}->${to}`.toLowerCase()) || `${from}->${to}`;
+                            const entry = { current: '', hidden_tension: '', trust_level: 5, ...relationships[key] };
+                            ['current', 'hidden_tension'].forEach(field => {
+                                if (details[field] !== undefined) entry[field] = details[field];
+                            });
+                            if (details.trust_level !== undefined && details.trust_level !== '') {
+                                const trust = Number(details.trust_level);
+                                if (!Number.isFinite(trust) || trust < 1 || trust > 10) throw new Error('trust_level must be between 1 and 10.');
+                                entry.trust_level = trust;
+                            }
+                            entry.history = [...(entry.history || []), { chapter: 'Directive', change: details.current || `Updated relationship ${from}->${to}.` }];
+                            relationships[key] = entry;
+                            currentStory = { ...currentStory, relationships };
+                            resultMessage = `Updated relationship ${from}->${to}.`;
+                            setStory(currentStory);
+                            logMessage(`[Action ${actionNum}/${totalActions}] Success: ${resultMessage}`, 'success');
+                        }
+                        else if (action.action_type === 'ADD_LORE' || action.action_type === 'MODIFY_LORE') {
+                            const topic = String(action.details.topic || '').trim();
+                            const detail = action.details.detail;
+                            if (!topic || detail === undefined) throw new Error('Lore requires topic and detail.');
+                            const lore = [...(currentStory.lore || [])];
+                            const loreIdx = lore.findIndex(item => item.topic.toLowerCase() === topic.toLowerCase());
+                            if (action.action_type === 'ADD_LORE') {
+                                const processed = await ingestLore({ topic, detail });
+                                if (loreIdx === -1) lore.push(processed);
+                                else lore[loreIdx] = { ...lore[loreIdx], detail: processed.detail };
+                                currentStory = { ...currentStory, lore };
+                                setStory(currentStory);
+                            } else {
+                                if (loreIdx === -1) throw new Error(`Lore topic "${topic}" not found.`);
+                                lore[loreIdx] = { ...lore[loreIdx], detail };
+                                currentStory = { ...currentStory, lore };
+                                setStory(currentStory);
+                                try { await ingestLore(lore[loreIdx]); }
+                                catch (err) { console.warn('[Directive] Lore updated; vector indexing failed:', err); }
+                            }
+                            resultMessage = `Updated lore topic "${topic}".`;
+                            logMessage(`[Action ${actionNum}/${totalActions}] Success: ${resultMessage}`, 'success');
+                        }
+                        else if (action.action_type === 'ADD_CONTINUITY_FACT') {
+                            const key = String(action.details.key || '').trim();
+                            const value = String(action.details.value ?? '').trim();
+                            const category = String(action.details.category || 'Directive').trim() || 'Directive';
+                            if (!key || !value) throw new Error('Continuity fact requires key and value.');
+                            const entityName = String(action.details.entity_name || '').trim();
+                            const entity = entityName ? (currentStory.cast || []).find(c => c.name.toLowerCase() === entityName.toLowerCase()) : null;
+                            if (entityName && !entity) throw new Error(`Unknown continuity character: ${entityName}.`);
+                            if (![actIdx, seqIdx, sceneIdx].every(idx => Number.isInteger(idx) && idx >= 0)) throw new Error('Continuity target indices must be non-negative integers.');
+                            const tag = `fact:${category}:${key}`.toLowerCase().replace(/\s+/g, '_');
+                            const entry = {
+                                key, value, category, source_scene: 'Directive',
+                                valid_from_act: actIdx + 1, valid_from_sequence: seqIdx + 1, valid_from_scene: sceneIdx + 1,
+                                entity_id: entity?.id || '', tracking_tag: tag, created_at: Date.now(), status: 'active'
+                            };
+                            const ledger = [...(currentStory.continuity_ledger || [])];
+                            const existingIdx = ledger.findIndex(item => item.tracking_tag === tag);
+                            if (existingIdx === -1) ledger.push(entry);
+                            else ledger[existingIdx] = entry;
+                            currentStory = { ...currentStory, continuity_ledger: ledger };
+                            resultMessage = `Recorded continuity fact "${key}".`;
+                            setStory(currentStory);
+                            logMessage(`[Action ${actionNum}/${totalActions}] Success: ${resultMessage}`, 'success');
+                        }
+
                         // SCALE 1: ACT LEVEL SURGICAL OPERATIONS
                         else if (action.action_type === 'MODIFY_ACT') {
                             const actsList = [...(currentStory.acts || [])];
@@ -12180,6 +12414,34 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             } else {
                                 throw new Error(`Sequence at index ${seqIdx} not found.`);
                             }
+                        }
+
+                        else if (action.action_type === 'ADD_SEQUENCE') {
+                            if (!currentStory.acts?.[actIdx]) throw new Error(`Act at index ${actIdx} not found.`);
+                            const parentAct = actIdx + 1;
+                            const sequences = currentStory.sequences || [];
+                            const firstIdx = sequences.findIndex((seq, idx) => (seq.parent_act || actForSequence(idx + 1)) >= parentAct);
+                            const nextActIdx = sequences.findIndex((seq, idx) => (seq.parent_act || actForSequence(idx + 1)) > parentAct);
+                            const startIdx = firstIdx === -1 ? sequences.length : firstIdx;
+                            const endIdx = nextActIdx === -1 ? sequences.length : nextActIdx;
+                            const requestedIdx = action.details.insert_at_idx;
+                            const insertIdx = requestedIdx !== undefined && requestedIdx !== null && requestedIdx !== '' ? Number(requestedIdx) : endIdx;
+                            if (!Number.isInteger(insertIdx) || insertIdx < startIdx || insertIdx > endIdx) throw new Error('ADD_SEQUENCE insertion index must be within the target act.');
+                            currentStory = reindexStoryForSequenceInsert(currentStory, insertIdx, {
+                                title: action.details.title || 'New Sequence', parent_act: parentAct,
+                                sequence_function: action.details.sequence_function || '', dramatic_question: action.details.dramatic_question || ''
+                            });
+                            rekeyResultScenes(key => key.replace(/^(\d+)-/, (_, seq) => `${Number(seq) >= insertIdx ? Number(seq) + 1 : Number(seq)}-`));
+                            resultMessage = `Added Sequence ${insertIdx + 1} in Act ${parentAct}.`;
+                            setStory(currentStory);
+                            logMessage(`[Action ${actionNum}/${totalActions}] Success: ${resultMessage}`, 'success');
+                        }
+                        else if (action.action_type === 'DELETE_SEQUENCE') {
+                            currentStory = reindexStoryForSequenceDelete(currentStory, seqIdx);
+                            rekeyResultScenes(key => Number(key.split('-')[0]) === seqIdx ? null : key.replace(/^(\d+)-/, (_, seq) => `${Number(seq) > seqIdx ? Number(seq) - 1 : Number(seq)}-`));
+                            resultMessage = `Deleted Sequence ${seqIdx + 1}.`;
+                            setStory(currentStory);
+                            logMessage(`[Action ${actionNum}/${totalActions}] Success: ${resultMessage}`, 'success');
                         }
 
                         // SCALE 3: SCENE LEVEL OPERATIONS
@@ -12283,6 +12545,10 @@ BEGIN RETROACTIVE STATE INJECTION`;
                                 beats: nextBeats,
                                 prose: nextProse
                             };
+                            rekeyResultScenes(key => {
+                                const [seq, scene] = key.split('-').map(Number);
+                                return seq === seqIdx && scene >= insertIdx ? `${seq}-${scene + 1}` : key;
+                            });
                             setStory(currentStory);
                             logMessage(`[Action ${actionNum}/${totalActions}] Success: Added new Scene "${newScene.title}" at index ${insertIdx}.`, 'success');
                         } else if (action.action_type === 'DELETE_SCENE') {
@@ -12328,11 +12594,48 @@ BEGIN RETROACTIVE STATE INJECTION`;
                                     beats: nextBeats,
                                     prose: nextProse
                                 };
+                                rekeyResultScenes(key => {
+                                    const [seq, scene] = key.split('-').map(Number);
+                                    return seq !== seqIdx ? key : scene === sceneIdx ? null : scene > sceneIdx ? `${seq}-${scene - 1}` : key;
+                                });
                                 setStory(currentStory);
                                 logMessage(`[Action ${actionNum}/${totalActions}] Success: Deleted Scene "${deletedSceneTitle}" at index ${sceneIdx}.`, 'success');
                             } else {
                                 throw new Error(`Scene at index ${sceneIdx} in Sequence ${seqIdx + 1} not found.`);
                             }
+                        }
+
+                        else if (action.action_type === 'MOVE_SCENE') {
+                            const destinations = [action.to_sequence_idx, action.details.to_sequence_idx, action.details.target_sequence_idx, action.details.target_seq_idx];
+                            if (destinations.some(idx => idx !== undefined && idx !== null && idx !== '' && Number(idx) !== seqIdx) ||
+                                !/^\d+$/.test(String(action.details.to_idx ?? ''))) {
+                                throw new Error('MOVE_SCENE only supports moves within a sequence');
+                            }
+                            const toIdx = Number(action.details.to_idx);
+                            const seqScenes = currentStory.scenes?.[sceneKey] || [];
+                            if (!seqScenes[sceneIdx] || toIdx >= seqScenes.length) throw new Error('MOVE_SCENE source and destination must be existing scenes in the sequence.');
+                            const order = seqScenes.map((_, idx) => idx);
+                            order.splice(toIdx, 0, order.splice(sceneIdx, 1)[0]);
+                            const nextBeats = { ...currentStory.beats };
+                            const nextProse = { ...currentStory.prose };
+                            const sequenceNum = currentStory.sequences?.[seqIdx]?.number || seqIdx + 1;
+                            const scenes = order.map((oldIdx, newIdx) => {
+                                const oldKey = `${seqIdx}-${oldIdx}`;
+                                const newKey = `${seqIdx}-${newIdx}`;
+                                delete nextBeats[newKey];
+                                delete nextProse[newKey];
+                                if (Object.prototype.hasOwnProperty.call(currentStory.beats || {}, oldKey)) nextBeats[newKey] = currentStory.beats[oldKey];
+                                if (Object.prototype.hasOwnProperty.call(currentStory.prose || {}, oldKey)) nextProse[newKey] = currentStory.prose[oldKey];
+                                return { ...seqScenes[oldIdx], id: `${sequenceNum}.${newIdx + 1}`, number: `${sequenceNum}.${newIdx + 1}` };
+                            });
+                            currentStory = { ...currentStory, scenes: { ...currentStory.scenes, [sceneKey]: scenes }, beats: nextBeats, prose: nextProse };
+                            rekeyResultScenes(key => {
+                                const [seq, scene] = key.split('-').map(Number);
+                                return seq === seqIdx ? `${seq}-${order.indexOf(scene)}` : key;
+                            });
+                            resultMessage = `Moved Scene ${sceneIdx + 1} to position ${toIdx + 1} in Sequence ${seqIdx + 1}.`;
+                            setStory(currentStory);
+                            logMessage(`[Action ${actionNum}/${totalActions}] Success: ${resultMessage}`, 'success');
                         }
 
                         // SCALE 4: BEAT LEVEL SURGICAL CHOREOGRAPHY OPERATIONS
@@ -12350,6 +12653,8 @@ BEGIN RETROACTIVE STATE INJECTION`;
                                 if (action.details.character_intent) beat.character_intent = action.details.character_intent;
                                 if (action.details.beat_type) beat.beat_type = action.details.beat_type;
 
+                                const changedFields = Object.keys(beat).filter(field => beat[field] !== seqBeats[beatIdx][field]);
+                                cascadeInstructions = `Modify Beat ${beatIdx + 1}. Reflect only these changed fields in the prose:\n${JSON.stringify(changedFields.map(field => ({ field, before: seqBeats[beatIdx][field] ?? '', after: beat[field] })), null, 2)}`;
                                 seqBeats[beatIdx] = beat;
                                 currentStory = {
                                     ...currentStory,
@@ -12379,6 +12684,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             };
 
                             seqBeats.splice(insertIdx, 0, newBeat);
+                            cascadeInstructions = `Insert Beat ${insertIdx + 1} into the scene's prose in the same narrative order:\n${JSON.stringify(newBeat, null, 2)}`;
 
                             // Re-index beats
                             seqBeats.forEach((b, bIdx) => {
@@ -12397,6 +12703,8 @@ BEGIN RETROACTIVE STATE INJECTION`;
                             const seqBeats = [...(currentStory.beats[sId] || [])];
 
                             if (seqBeats[beatIdx]) {
+                                const removedBeat = seqBeats[beatIdx];
+                                cascadeInstructions = `Remove Beat ${beatIdx + 1} from the prose while preserving continuity around it:\n${JSON.stringify({ description: removedBeat.description || '', action: removedBeat.action || '', reaction: removedBeat.reaction || '' }, null, 2)}`;
                                 seqBeats.splice(beatIdx, 1);
                                 const sceneNum = `${seqIdx + 1}.${sceneIdx + 1}`;
                                 seqBeats.forEach((b, bIdx) => {
@@ -12437,67 +12745,43 @@ BEGIN RETROACTIVE STATE INJECTION`;
                                 sceneIdx,
                                 currentStory,
                                 true, // Autopilot
-                                action.details.instructions
+                                action.details.instructions,
+                                true // Preserve prose for the directive cascade, including when cascade is disabled.
                             );
+                            cascadeInstructions = `Reconcile the prose with this full regenerated beat list, preserving all unaffected text:\n${JSON.stringify(currentStory.beats[sId] || [], null, 2)}`;
                             logMessage(`[Action ${actionNum}/${totalActions}] Success: Regenerated beats for Scene ${sceneIdx + 1}.`, 'success');
                         }
 
                         // SCALE 5: WRITTEN PROSE SURGICAL PATCHING & LINE EDITING
                         else if (action.action_type === 'SURGICAL_PATCH_PROSE') {
-                            const proseObj = currentStory.prose[sId];
-                            const currentProse = proseObj?.final || "";
-
-                            if (!currentProse.trim()) {
-                                throw new Error(`Scene ${sceneIdx + 1} has no written prose yet. Generate prose first or use Write Prose.`);
-                            }
-
                             logMessage(`[Action ${actionNum}/${totalActions}] Applying surgical prose patch to Scene ${sceneIdx + 1}...`, 'running');
-                            let surgicalReport;
-                            const isDirectPatch = action.details.find_text && !action.details.instructions;
-                            // If direct replacement provided without AI need:
-                            if (isDirectPatch) {
-                                surgicalReport = applyParsedEdits(currentProse, [{
-                                    index: 0, type: 'search_replace', search: action.details.find_text, replace: action.details.replace_text || ""
+                            if (action.details.find_text && !action.details.instructions) {
+                                const proseObj = currentStory.prose[sId];
+                                const currentProse = proseObj?.final || '';
+                                if (!currentProse.trim()) throw new Error(`Scene ${sceneIdx + 1} has no written prose yet. Generate prose first or use Write Prose.`);
+                                const report = applyParsedEdits(currentProse, [{
+                                    index: 0, type: 'search_replace', search: action.details.find_text, replace: action.details.replace_text || ''
                                 }]);
-                                if (!surgicalReport.applied.length) {
-                                    throw new Error(`find_text not found in Scene ${sceneIdx + 1} prose: "${action.details.find_text.slice(0, 60)}"`);
+                                if (!report.applied.length) throw new Error(`find_text not found in Scene ${sceneIdx + 1} prose: "${action.details.find_text.slice(0, 60)}"`);
+                                const changeRatio = computeChangeRatio(currentProse, report.text);
+                                if (changeRatio > SURGICAL_MAX_CHANGE_RATIO && action.allow_large_change !== true) {
+                                    throw new Error(`Edit rejected: would change ${Math.round(changeRatio * 100)}% of the scene (limit 60%)`);
                                 }
+                                const prose = { ...proseObj, final: report.text };
+                                delete prose.stale;
+                                currentStory = { ...currentStory, prose: { ...currentStory.prose, [sId]: prose } };
+                                appliedEditsForAction = report.applied;
+                                resultMessage = report.summary || `Applied direct patch to Scene ${sceneIdx + 1} prose.`;
                             } else {
-                                // ============================================================================
-                                // TIER 6.2: SURGICAL PROSE EDITOR
-                                // Associated Prompt: PROMPTS.surgicalProseEditor
-                                // ============================================================================
-                                const instructions = action.details.instructions || action.description || "Apply surgical edits seamlessly.";
-                                const patchPrompt = `<original_text>
-${currentProse}
-</original_text>
-
-<surgical_instructions>
-${instructions}
-</surgical_instructions>
-
-BEGIN SURGICAL PROSE EDIT`;
-                                const patchOutput = await callAI(patchPrompt, PROMPTS.surgicalProseEditor, false, "Surgical Prose Editor", "large");
-                                surgicalReport = await applySurgicalEditsWithRetry({
-                                    originalText: currentProse, blocksText: patchOutput, systemPrompt: PROMPTS.surgicalProseEditor,
-                                    logName: "Surgical Prose Editor", modelSize: "large"
+                                const patched = await applySurgicalProsePatch({
+                                    story: currentStory, seqIdx, sceneIdx,
+                                    instructions: action.details.instructions || action.description || 'Apply surgical edits seamlessly.',
+                                    allowLargeChange: action.allow_large_change, logName: 'Surgical Prose Editor'
                                 });
-                                if (!surgicalReport.applied.length) throw new Error("no surgical edits could be applied");
+                                currentStory = patched.story;
+                                appliedEditsForAction = patched.appliedEdits;
+                                resultMessage = patched.message;
                             }
-
-                            const changeRatio = computeChangeRatio(currentProse, surgicalReport.text);
-                            if (changeRatio > SURGICAL_MAX_CHANGE_RATIO && action.allow_large_change !== true) {
-                                throw new Error(`Edit rejected: would change ${Math.round(changeRatio * 100)}% of the scene (limit 60%)`);
-                            }
-                            currentStory = {
-                                ...currentStory,
-                                prose: {
-                                    ...currentStory.prose,
-                                    [sId]: { ...proseObj, final: surgicalReport.text }
-                                }
-                            };
-                            appliedEditsForAction = surgicalReport.applied;
-                            resultMessage = surgicalReport.summary || `Applied direct patch to Scene ${sceneIdx + 1} prose.`;
                             setStory(currentStory);
                             logMessage(`[Action ${actionNum}/${totalActions}] Success: ${resultMessage}`, 'success');
                         } else if (action.action_type === 'LINE_EDIT_PROSE') {
@@ -12570,9 +12854,45 @@ BEGIN SURGICAL PROSE EDIT`;
                             throw new Error(`Unsupported directive action: ${action.action_type}`);
                         }
 
+                        if (['SURGICAL_PATCH_PROSE', 'LINE_EDIT_PROSE', 'REWRITE_PROSE'].includes(action.action_type) && currentStory.prose?.[sId]?.stale) {
+                            const prose = { ...currentStory.prose[sId] };
+                            delete prose.stale;
+                            currentStory = { ...currentStory, prose: { ...currentStory.prose, [sId]: prose } };
+                            setStory(currentStory);
+                        }
+                        if (cascadeInstructions && currentStory.prose?.[sId]?.final) {
+                            const cascadeLabel = `[Action ${actionNum}/${totalActions} · cascade]`;
+                            if (cascadeBeatChanges) {
+                                logMessage(`${cascadeLabel} Applying beat changes to written prose...`, 'running');
+                                try {
+                                    const patched = await applySurgicalProsePatch({
+                                        story: currentStory, seqIdx, sceneIdx,
+                                        instructions: `The scene's beats have changed. Apply the following change to the written prose with minimal edits.\n${cascadeInstructions}`,
+                                        allowLargeChange: action.allow_large_change, logName: 'Surgical Prose Editor (Beat Cascade)'
+                                    });
+                                    currentStory = patched.story;
+                                    cascadeResult = { status: 'applied', message: patched.message, appliedEdits: patched.appliedEdits };
+                                    logMessage(`${cascadeLabel} Success: ${patched.message}`, 'success');
+                                } catch (err) {
+                                    const message = err?.message || String(err);
+                                    cascadeResult = { status: 'failed', message, appliedEdits: [] };
+                                    logMessage(`${cascadeLabel} Failed: ${message}`, 'error');
+                                }
+                            } else {
+                                cascadeResult = { status: 'skipped', message: 'Beat changes applied; prose cascade is disabled.', appliedEdits: [] };
+                                logMessage(`${cascadeLabel} Skipped: ${cascadeResult.message}`, 'pending');
+                            }
+                            if (cascadeResult.status !== 'applied') {
+                                currentStory = { ...currentStory, prose: { ...currentStory.prose, [sId]: {
+                                    ...currentStory.prose[sId], stale: { reason: cascadeResult.status === 'failed' ? 'Beat-to-prose cascade failed.' : 'Beats changed with prose cascade disabled.', at: Date.now() }
+                                } } };
+                            }
+                            setStory(currentStory);
+                        }
                         results[i] = {
                             status: 'applied', message: resultMessage || action.description || action.action_type,
-                            ...(appliedEditsForAction ? { appliedEdits: appliedEditsForAction, proseSceneId: sId } : {})
+                            ...(appliedEditsForAction ? { appliedEdits: appliedEditsForAction, proseSceneId: sId } : {}),
+                            ...(cascadeResult ? { cascade: cascadeResult, proseSceneId: sId } : {})
                         };
                     } catch (err) {
                         const message = err?.message || String(err);
@@ -12650,6 +12970,10 @@ BEGIN SURGICAL PROSE EDIT`;
                         themes: story.themes,
                         style: story.style,
                         cast: (story.cast || []).map(c => ({ id: c.id, name: c.name, role: c.role, core_flaw: c.core_flaw, core_desire: c.core_desire, vocal_cadence: c.vocal_cadence })),
+                        relationships: story.relationships || {},
+                        lore: (story.lore || []).map(l => ({ topic: l.topic, detail: String(l.detail || "").slice(0, 200) })),
+                        continuity_ledger: story.continuity_ledger || [],
+                        cascade_beat_changes: cascadeBeatChanges,
                         acts: (story.acts || []).map((act, actIdx) => ({
                             index: actIdx,
                             number: act.number,
@@ -12773,6 +13097,13 @@ Output Schema:
           <edit><find>Another exact passage.</find><replace>Its replacement.</replace></edit>
         </line_edits>
         <!-- Use the appropriate XML tags inside details corresponding to the specific properties you are modifying -->
+        <!-- MODIFY_RELATIONSHIP: <relationship_key>A-&gt;B</relationship_key> or <from_name>A</from_name><to_name>B</to_name>; <current>Allies</current><hidden_tension>Distrust</hidden_tension><trust_level>6</trust_level> -->
+        <!-- ADD_LORE: <topic>City gates</topic><detail>The gates close at dusk.</detail> -->
+        <!-- MODIFY_LORE: <topic>City gates</topic><detail>The gates now stay open.</detail> -->
+        <!-- ADD_CONTINUITY_FACT: <key>Gate key</key><value>A carries it.</value><category>Inventory</category><entity_name>A</entity_name> -->
+        <!-- ADD_SEQUENCE: <title>Aftermath</title><sequence_function>Consequences</sequence_function><dramatic_question>Who returns?</dramatic_question><insert_at_idx>2</insert_at_idx><parent_act>1</parent_act> -->
+        <!-- DELETE_SEQUENCE: no detail fields; use target_sequence_idx to choose the sequence. -->
+        <!-- MOVE_SCENE: <to_idx>1</to_idx> within the target sequence only. -->
       </details>
     </action>
     <!-- Add more <action> blocks as needed -->
@@ -12834,35 +13165,43 @@ BEGIN DEVELOPING SURGICAL DIRECTIVES
                 });
             };
 
-            const handleUpdateAppliedEdit = (actionIdx, editIdx, updates) => {
+            const handleUpdateAppliedEdit = (actionIdx, editIdx, updates, isCascade = false) => {
                 setDirectivePlan(prev => prev ? {
                     ...prev,
                     actions: prev.actions.map((action, index) => index === actionIdx && action.result ? {
                         ...action,
                         result: {
                             ...action.result,
-                            appliedEdits: action.result.appliedEdits.map((edit, index) => index === editIdx ? { ...edit, ...updates } : edit)
+                            ...(isCascade ? {
+                                cascade: { ...action.result.cascade, appliedEdits: action.result.cascade.appliedEdits.map((edit, index) => index === editIdx ? { ...edit, ...updates } : edit) }
+                            } : {
+                                appliedEdits: action.result.appliedEdits.map((edit, index) => index === editIdx ? { ...edit, ...updates } : edit)
+                            })
                         }
                     } : action)
                 } : prev);
             };
 
-            const handleUndoSurgicalEdit = (actionIdx, editIdx) => {
+            const handleUndoSurgicalEdit = (actionIdx, editIdx, isCascade = false) => {
                 if (isExecutingDirective) return;
                 const result = directivePlan?.actions[actionIdx]?.result;
-                const edit = result?.appliedEdits?.[editIdx];
+                const edit = (isCascade ? result?.cascade : result)?.appliedEdits?.[editIdx];
                 if (!edit || edit.undone) return;
                 // Keep the scene used at execution, even if the action's target controls were later edited.
                 const sId = result.proseSceneId;
+                if (!sId) return;
                 const currentProse = story.prose?.[sId]?.final || '';
                 const match = locateNeedle(currentProse, edit.after);
                 if (!match) return;
                 const restored = currentProse.slice(0, match.start) + edit.before + currentProse.slice(match.end);
                 setStory(prev => ({
                     ...prev,
-                    prose: { ...prev.prose, [sId]: { ...prev.prose[sId], final: restored } }
+                    prose: { ...prev.prose, [sId]: {
+                        ...prev.prose[sId], final: restored,
+                        ...(isCascade ? { stale: { reason: 'A beat-to-prose cascade edit was undone.', at: Date.now() } } : {})
+                    } }
                 }));
-                handleUpdateAppliedEdit(actionIdx, editIdx, { undone: true });
+                handleUpdateAppliedEdit(actionIdx, editIdx, { undone: true }, isCascade);
             };
 
             const retryFailedSurgicalEdits = async ({ currentText, failed, systemPrompt, logName, modelSize }) => {
@@ -18096,7 +18435,7 @@ ${currentCritique ? `\n<critique_analysis>\n${currentCritique}\n</critique_analy
             // TIER 5.1: BEAT PLANNER & TIER 5.2: BEAT REVIEWER
             // Associated Prompts: PROMPTS.beatAgent, PROMPTS.beatReview
             // ============================================================================
-            const generateBeats = async (seqIdx, sceneIdx, currentStory = story, isAutopilot = false, directiveInstruction = "") => {
+            const generateBeats = async (seqIdx, sceneIdx, currentStory = story, isAutopilot = false, directiveInstruction = "", preserveProse = false) => {
                 let seq = seqIdx;
                 let scene = sceneIdx;
                 let cStory = currentStory;
@@ -18448,10 +18787,12 @@ BEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`,
                     const mergedProse = {
                         ...(storyToUse.prose || {})
                     };
-                    // When regenerating beats for a scene, clear only that scene's prose
-                    delete mergedProse[sId];
-                    delete mergedProse[`${sId}-0`];
-                    delete mergedProse[`${seq}-0-${scene}`];
+                    // Directive cascades need the existing prose; other callers retain the reset behavior.
+                    if (!preserveProse) {
+                        delete mergedProse[sId];
+                        delete mergedProse[`${sId}-0`];
+                        delete mergedProse[`${seq}-0-${scene}`];
+                    }
 
                     const nextStory = {
                         ...storyToUse,
@@ -18465,9 +18806,11 @@ BEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`,
                     setStory(prev => {
                         const prevBeats = { ...(prev.beats || {}), [sId]: accumulatedBeats };
                         const prevProse = { ...(prev.prose || {}) };
-                        delete prevProse[sId];
-                        delete prevProse[`${sId}-0`];
-                        delete prevProse[`${seq}-0-${scene}`];
+                        if (!preserveProse) {
+                            delete prevProse[sId];
+                            delete prevProse[`${sId}-0`];
+                            delete prevProse[`${seq}-0-${scene}`];
+                        }
                         const merged = {
                             ...prev,
                             beats: prevBeats,
@@ -21293,7 +21636,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                             disabled={isPlanningDirective || isExecutingDirective}
                                         />
 
-                                        <div className="flex items-center gap-2 mt-1 mb-2">
+                                        <div className="flex flex-wrap items-center gap-2 mt-1 mb-2">
                                             <input
                                                 type="checkbox"
                                                 id="protectWrittenProse"
@@ -21304,6 +21647,16 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                             />
                                             <label htmlFor="protectWrittenProse" className="text-xs text-stone-600 font-medium cursor-pointer">
                                                 Protect Written Prose (Block structural changes to written regions; allow prose patches and line edits)
+                                            </label>
+                                            <label className="flex items-center gap-2 text-xs text-ink-600 font-medium cursor-pointer sm:ml-4">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={cascadeBeatChanges}
+                                                    onChange={(e) => setCascadeBeatChanges(e.target.checked)}
+                                                    className="rounded border-stone-300 text-[#8C6B32] focus:ring-[#8C6B32]"
+                                                    disabled={isPlanningDirective || isExecutingDirective}
+                                                />
+                                                Cascade beat changes into written prose
                                             </label>
                                         </div>
 
@@ -21377,10 +21730,10 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                     {directivePlan.actions.map((act, actIdx) => {
                                                         let typeColor = 'bg-mist-100 text-ink-700 border-edge-strong';
                                                         if (act.action_type === 'MODIFY_ACT') typeColor = 'bg-azure-tint text-azure-800 border-azure-edge';
-                                                        if (act.action_type === 'MODIFY_SEQUENCE') typeColor = 'bg-iris-tint text-iris-800 border-iris-edge';
-                                                        if (act.action_type === 'MODIFY_SCENE') typeColor = 'bg-gold-tint text-gold-ink border-gold-edge';
+                                                        if (['MODIFY_SEQUENCE', 'ADD_SEQUENCE'].includes(act.action_type)) typeColor = 'bg-iris-tint text-iris-800 border-iris-edge';
+                                                        if (['MODIFY_SCENE', 'MOVE_SCENE'].includes(act.action_type)) typeColor = 'bg-gold-tint text-gold-ink border-gold-edge';
                                                         if (act.action_type === 'ADD_SCENE') typeColor = 'bg-sage-tint text-sage-800 border-sage-edge';
-                                                        if (act.action_type === 'DELETE_SCENE') typeColor = 'bg-blush-tint text-blush-800 border-blush-edge';
+                                                        if (['DELETE_SCENE', 'DELETE_SEQUENCE'].includes(act.action_type)) typeColor = 'bg-blush-tint text-blush-800 border-blush-edge';
                                                         if (act.action_type === 'MODIFY_BEAT') typeColor = 'bg-ember-tint text-ember-800 border-ember-edge';
                                                         if (act.action_type === 'INSERT_BEAT') typeColor = 'bg-sage-tint text-sage-800 border-sage-edge';
                                                         if (act.action_type === 'DELETE_BEAT') typeColor = 'bg-blush-tint text-blush-800 border-blush-edge';
@@ -21391,6 +21744,11 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                         if (['MODIFY_STORY_METADATA'].includes(act.action_type)) typeColor = 'bg-purple-tint text-purple-800 border-purple-edge';
                                                         if (['ADD_CHARACTER', 'MODIFY_CHARACTER', 'DELETE_CHARACTER'].includes(act.action_type)) typeColor = 'bg-teal-tint text-teal-800 border-teal-edge';
 
+                                                        if (act.action_type === 'MODIFY_RELATIONSHIP') typeColor = 'bg-teal-tint text-teal-800 border-teal-edge';
+                                                        if (['ADD_LORE', 'MODIFY_LORE'].includes(act.action_type)) typeColor = 'bg-purple-tint text-purple-800 border-purple-edge';
+                                                        if (act.action_type === 'ADD_CONTINUITY_FACT') typeColor = 'bg-azure-tint text-azure-800 border-azure-edge';
+                                                        const editResult = act.result?.cascade || act.result;
+                                                        const editsAreCascade = !!act.result?.cascade;
                                                         const blockedByProtection = isActionBlockedByProtection(act, story, protectWrittenProse);
                                                         const resultColor = act.result?.status === 'applied'
                                                             ? 'bg-sage-tint text-sage-800 border-sage-edge'
@@ -21400,8 +21758,8 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                         const isStoryLevel = act.action_type === 'MODIFY_STORY_METADATA';
                                                         const isCharacterLevel = ['ADD_CHARACTER', 'MODIFY_CHARACTER', 'DELETE_CHARACTER'].includes(act.action_type);
                                                         const isActLevel = act.action_type === 'MODIFY_ACT';
-                                                        const isSeqLevel = act.action_type === 'MODIFY_SEQUENCE';
-                                                        const isSceneLevel = act.action_type === 'MODIFY_SCENE' || act.action_type === 'ADD_SCENE' || act.action_type === 'DELETE_SCENE';
+                                                        const isSeqLevel = ['MODIFY_SEQUENCE', 'ADD_SEQUENCE', 'DELETE_SEQUENCE'].includes(act.action_type);
+                                                        const isSceneLevel = ['MODIFY_SCENE', 'ADD_SCENE', 'DELETE_SCENE', 'MOVE_SCENE'].includes(act.action_type);
                                                         const isBeatLevel = act.action_type === 'MODIFY_BEAT' || act.action_type === 'INSERT_BEAT' || act.action_type === 'DELETE_BEAT' || act.action_type === 'REGENERATE_BEATS';
                                                         const isProseLevel = act.action_type === 'SURGICAL_PATCH_PROSE' || act.action_type === 'LINE_EDIT_PROSE' || act.action_type === 'REWRITE_PROSE';
 
@@ -21420,16 +21778,29 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                                 className={`text-[10px] font-bold uppercase px-2.5 py-1 rounded-lg border outline-none cursor-pointer font-mono ${typeColor}`}
                                                                                 disabled={isExecutingDirective}
                                                                             >
+                                                                                <optgroup label="Scale 0: Story & Cast">
+                                                                                    <option value="MODIFY_STORY_METADATA">Modify Story Metadata</option>
+                                                                                    <option value="ADD_CHARACTER">Add Character</option>
+                                                                                    <option value="MODIFY_CHARACTER">Modify Character</option>
+                                                                                    <option value="DELETE_CHARACTER">Delete Character</option>
+                                                                                    <option value="MODIFY_RELATIONSHIP">Modify Relationship</option>
+                                                                                    <option value="ADD_LORE">Add Lore</option>
+                                                                                    <option value="MODIFY_LORE">Modify Lore</option>
+                                                                                    <option value="ADD_CONTINUITY_FACT">Add Continuity Fact</option>
+                                                                                </optgroup>
                                                                                 <optgroup label="Scale 1: Act Level">
                                                                                     <option value="MODIFY_ACT">Modify Act</option>
                                                                                 </optgroup>
                                                                                 <optgroup label="Scale 2: Sequence Level">
                                                                                     <option value="MODIFY_SEQUENCE">Modify Sequence</option>
+                                                                                    <option value="ADD_SEQUENCE">Add Sequence</option>
+                                                                                    <option value="DELETE_SEQUENCE">Delete Sequence</option>
                                                                                 </optgroup>
                                                                                 <optgroup label="Scale 3: Scene Level">
                                                                                     <option value="MODIFY_SCENE">Modify Scene</option>
                                                                                     <option value="ADD_SCENE">Add Scene</option>
                                                                                     <option value="DELETE_SCENE">Delete Scene</option>
+                                                                                    <option value="MOVE_SCENE">Move Scene</option>
                                                                                 </optgroup>
                                                                                 <optgroup label="Scale 4: Beat Choreography">
                                                                                     <option value="MODIFY_BEAT">Modify Beat (Surgical)</option>
@@ -21475,7 +21846,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                             Override protection for this action
                                                                         </label>
                                                                     )}
-                                                                    {act.action_type === 'SURGICAL_PATCH_PROSE' && (
+                                                                    {(act.action_type === 'SURGICAL_PATCH_PROSE' || (isBeatLevel && cascadeBeatChanges)) && (
                                                                         <label className="flex items-center gap-2 text-xs text-ink-700 cursor-pointer">
                                                                             <input
                                                                                 type="checkbox"
@@ -21487,7 +21858,15 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                             Allow large rewrite
                                                                         </label>
                                                                     )}
-                                                                    {act.result?.appliedEdits?.map((edit, editIdx) => {
+                                                                    {act.result?.cascade && (
+                                                                        <div className="space-y-1">
+                                                                            <span className={`inline-block text-[10px] font-bold px-2.5 py-1 rounded-lg border ${act.result.cascade.status === 'applied' ? 'bg-sage-tint text-sage-800 border-sage-edge' : act.result.cascade.status === 'failed' ? 'bg-blush-tint text-blush-800 border-blush-edge' : 'bg-tangerine-tint text-tangerine-800 border-tangerine-edge'}`}>
+                                                                                Prose cascade: {act.result.cascade.status === 'applied' ? 'Applied' : act.result.cascade.status === 'failed' ? 'Failed' : 'Skipped'}
+                                                                            </span>
+                                                                            <p className="text-xs text-ink-600 whitespace-pre-wrap break-words">{act.result.cascade.message}</p>
+                                                                        </div>
+                                                                    )}
+                                                                    {editResult?.appliedEdits?.map((edit, editIdx) => {
                                                                         const currentProse = story.prose?.[act.result.proseSceneId]?.final || '';
                                                                         const canUndo = !edit.undone && !!locateNeedle(currentProse, edit.after);
                                                                         const isLong = edit.before.length > 240 || edit.after.length > 240;
@@ -21503,7 +21882,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                                         <button
                                                                                             type="button"
                                                                                             className="text-ink-600 underline"
-                                                                                            onClick={() => handleUpdateAppliedEdit(actIdx, editIdx, { showFull: !edit.showFull })}
+                                                                                            onClick={() => handleUpdateAppliedEdit(actIdx, editIdx, { showFull: !edit.showFull }, editsAreCascade)}
                                                                                         >
                                                                                             {edit.showFull ? 'show less' : 'show full'}
                                                                                         </button>
@@ -21511,7 +21890,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                                     <button
                                                                                         type="button"
                                                                                         className="px-2.5 py-1 rounded-lg border border-edge-strong bg-surface text-ink-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                                                                                        onClick={() => handleUndoSurgicalEdit(actIdx, editIdx)}
+                                                                                        onClick={() => handleUndoSurgicalEdit(actIdx, editIdx, editsAreCascade)}
                                                                                         disabled={isExecutingDirective || !canUndo}
                                                                                         title={!edit.undone && !canUndo ? 'text has since changed' : undefined}
                                                                                     >
@@ -21561,12 +21940,12 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                                         disabled={isExecutingDirective}
                                                                                     >
                                                                                         {(story.sequences || []).map((seq, sIdx) => (
-                                                                                            seq.parent_act === (parseInt(act.target_act_idx) + 1) ? <option key={sIdx} value={sIdx}>Seq {seq.number}: {(seq.title || '').substring(0, 20)}</option> : null
+                                                                                            (seq.parent_act || actForSequence(sIdx + 1)) === (parseInt(act.target_act_idx) + 1) ? <option key={sIdx} value={sIdx}>Seq {seq.number}: {(seq.title || '').substring(0, 20)}</option> : null
                                                                                         )).filter(Boolean)}
                                                                                     </select>
                                                                                 </div>
                                                                             )}
-                                                                            {(isSceneLevel || isBeatLevel || isProseLevel) && (
+                                                                            {(isSceneLevel || isBeatLevel || isProseLevel || act.action_type === 'ADD_CONTINUITY_FACT') && (
                                                                                 <div className="space-y-1">
                                                                                     <label className="text-[10px] text-ink-400 font-bold uppercase font-mono">Scene</label>
                                                                                     <select
@@ -21605,6 +21984,42 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
 
                                                                     {/* Action Modification Details Box */}
                                                                     <div className="bg-inset p-4 rounded-xl border border-edge-strong space-y-3">
+                                                                        {act.action_type === 'MODIFY_RELATIONSHIP' && (
+                                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                                {[
+                                                                                    ['relationship_key', 'Relationship key (A->B; or use names below)'],
+                                                                                    ['from_name', 'From character'], ['to_name', 'To character'],
+                                                                                    ['current', 'Current relationship'], ['hidden_tension', 'Hidden tension'], ['trust_level', 'Trust level (1-10)']
+                                                                                ].map(([field, label]) => (
+                                                                                    <label key={field} className="space-y-1 block text-[9px] text-teal-800 font-bold uppercase font-mono">
+                                                                                        {label}
+                                                                                        <input type={field === 'trust_level' ? 'number' : 'text'} min={field === 'trust_level' ? 1 : undefined} max={field === 'trust_level' ? 10 : undefined} value={act.details[field] ?? ''} onChange={(e) => handleUpdateActionDetail(actIdx, field, e.target.value)} className="block bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-normal normal-case" disabled={isExecutingDirective} />
+                                                                                    </label>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                        {['ADD_LORE', 'MODIFY_LORE'].includes(act.action_type) && (
+                                                                            <div className="grid grid-cols-1 gap-3">
+                                                                                <label className="space-y-1 block text-[9px] text-purple-800 font-bold uppercase font-mono">
+                                                                                    Topic
+                                                                                    <input type="text" value={act.details.topic || ''} onChange={(e) => handleUpdateActionDetail(actIdx, 'topic', e.target.value)} className="block bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-normal normal-case" disabled={isExecutingDirective} />
+                                                                                </label>
+                                                                                <label className="space-y-1 block text-[9px] text-purple-800 font-bold uppercase font-mono">
+                                                                                    Detail
+                                                                                    <textarea value={act.details.detail ?? ''} onChange={(e) => handleUpdateActionDetail(actIdx, 'detail', e.target.value)} className="block bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full h-24 resize-none font-normal normal-case" disabled={isExecutingDirective} />
+                                                                                </label>
+                                                                            </div>
+                                                                        )}
+                                                                        {act.action_type === 'ADD_CONTINUITY_FACT' && (
+                                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                                {[['key', 'Fact key'], ['value', 'Fact value'], ['category', 'Category (default Directive)'], ['entity_name', 'Character name (optional)']].map(([field, label]) => (
+                                                                                    <label key={field} className="space-y-1 block text-[9px] text-azure-800 font-bold uppercase font-mono">
+                                                                                        {label}
+                                                                                        <input type="text" value={act.details[field] ?? ''} onChange={(e) => handleUpdateActionDetail(actIdx, field, e.target.value)} className="block bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-normal normal-case" disabled={isExecutingDirective} />
+                                                                                    </label>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
                                                                         {/* SCALE 0: STORY & METADATA DETAILS */}
                                                                         {act.action_type === 'MODIFY_STORY_METADATA' && (
                                                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -21687,7 +22102,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                         )}
 
                                                                         {/* SCALE 2: SEQUENCE DETAILS */}
-                                                                        {act.action_type === 'MODIFY_SEQUENCE' && (
+                                                                        {['MODIFY_SEQUENCE', 'ADD_SEQUENCE'].includes(act.action_type) && (
                                                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                                                                 <div className="space-y-1">
                                                                                     <label className="text-[9px] text-iris-800 font-bold uppercase font-mono">Sequence Title</label>
@@ -21711,6 +22126,33 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                             </div>
                                                                         )}
 
+                                                                        {['MODIFY_SEQUENCE', 'ADD_SEQUENCE'].includes(act.action_type) && (
+                                                                            <label className="space-y-1 block text-[9px] text-iris-800 font-bold uppercase font-mono">
+                                                                                Dramatic question
+                                                                                <textarea value={act.details.dramatic_question || ''} onChange={(e) => handleUpdateActionDetail(actIdx, 'dramatic_question', e.target.value)} className="block bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full h-16 resize-none font-normal normal-case" disabled={isExecutingDirective} />
+                                                                            </label>
+                                                                        )}
+                                                                        {act.action_type === 'ADD_SEQUENCE' && (
+                                                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                                                <label className="space-y-1 block text-[9px] text-iris-800 font-bold uppercase font-mono">
+                                                                                    Insert at index (0-based; blank = end of act)
+                                                                                    <input type="number" min="0" max={(story.sequences || []).length} value={act.details.insert_at_idx ?? ''} onChange={(e) => handleUpdateActionDetail(actIdx, 'insert_at_idx', e.target.value)} className="block bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-normal" disabled={isExecutingDirective} />
+                                                                                </label>
+                                                                                <label className="space-y-1 block text-[9px] text-iris-800 font-bold uppercase font-mono">
+                                                                                    Parent act (from target act)
+                                                                                    <input type="number" readOnly value={Number(act.target_act_idx ?? 0) + 1} className="block bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 text-xs w-full font-normal" />
+                                                                                </label>
+                                                                            </div>
+                                                                        )}
+                                                                        {act.action_type === 'DELETE_SEQUENCE' && (
+                                                                            <p className="text-xs text-blush-800">Delete the selected sequence and all its scenes, beats and prose. Later sequences will be renumbered.</p>
+                                                                        )}
+                                                                        {act.action_type === 'MOVE_SCENE' && (
+                                                                            <label className="space-y-1 block text-[9px] text-gold-ink font-bold uppercase font-mono">
+                                                                                Destination scene index (0-based, within this sequence)
+                                                                                <input type="number" min="0" max={Math.max(0, (story.scenes[String(act.target_sequence_idx ?? act.target_seq_idx ?? 0)] || []).length - 1)} value={act.details.to_idx ?? ''} onChange={(e) => handleUpdateActionDetail(actIdx, 'to_idx', e.target.value)} className="block bg-surface text-ink-900 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-normal" disabled={isExecutingDirective} />
+                                                                            </label>
+                                                                        )}
                                                                         {/* SCALE 3: SCENE DETAILS */}
                                                                         {act.action_type === 'MODIFY_SCENE' && (
                                                                             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -22360,6 +22802,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                                                     scene={s}
                                                                                     sceneIdx={si}
                                                                                     seqIdx={seqIdx}
+                                                                                    proseStale={story.prose?.[`${seqIdx}-${si}`]?.stale}
                                                                                     sequence={sequence}
                                                                                     getModeIcon={getModeIcon}
                                                                                     allNarrativeModes={allNarrativeModes}
@@ -22451,6 +22894,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                                                             scene={s}
                                                             sceneIdx={si}
                                                             seqIdx={selectedSequence}
+                                                            proseStale={story.prose?.[`${selectedSequence}-${si}`]?.stale}
                                                             sequence={sequence}
                                                             getModeIcon={getModeIcon}
                                                             setSelectedScene={setSelectedScene}
