@@ -25,3 +25,25 @@ because vectors from different providers are incompatible.
 `npm install` should report 0 vulnerabilities: `package.json` pins patched
 `protobufjs` and `sharp` underneath the embeddings package via `overrides`.
 Neither is used by the bridge's text path, but the pins keep the audit clean.
+
+## Local images with ComfyUI (Krea 2)
+
+Requires ComfyUI with a Krea 2 Turbo diffusion model, a Qwen3-VL-4B text
+encoder, and the Qwen image VAE installed. Use these three separate models;
+the all-in-one Krea 2 checkpoint does not include a text encoder.
+
+Start ComfyUI with `--enable-cors-header` so the app can reach its HTTP API
+from the browser. For example, add `--enable-cors-header` to the Python
+command in your **Start ComfyUI** script. Keeping `--listen 127.0.0.1` keeps
+ComfyUI local. To restrict CORS to the app's origin, use
+`--enable-cors-header http://localhost:8765` if that is where you serve the app.
+
+In Settings, select **ComfyUI (local, Krea 2)** as the **Image API Provider**.
+The default URL is `http://127.0.0.1:8188`. Press **Refresh**, then choose the
+**Diffusion model**, **Text encoder**, and **VAE**. No API key is needed.
+An optional LoRA and its strength can also be selected. Cover and beat images
+use these settings and the existing Story Art Style.
+
+The first image loads the models and takes about a minute; later images take
+seconds. The generation timeout defaults to 600 seconds and can be changed
+in Settings.
