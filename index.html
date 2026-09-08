@@ -1930,7 +1930,7 @@
             })();
     </script>
 
-    <script type="text/babel">
+    <script type="text/babel" data-presets="react">
         const { useState, useEffect, useLayoutEffect, useRef, useMemo } = React;
 
         // --- 1. API CONFIGURATION ---
@@ -10710,6 +10710,9 @@ INSTRUCTIONS:
                 }
             };
 
+            // Declared here because the library effect below reads it; with native const this is a TDZ otherwise.
+            const [view, setView] = useState(() => localStorage.getItem("ellipsisprose_view") || 'setup');
+
             // Fetch library when viewing library or activeStoryId changes
             useEffect(() => {
                 if (view === 'library') {
@@ -11413,7 +11416,6 @@ INSTRUCTIONS:
                 setArchetypeOptions(generateRandomArchetypes(20));
             }, []);
 
-            const [view, setView] = useState(() => localStorage.getItem("ellipsisprose_view") || 'setup');
             useEffect(() => {
                 const el = matrixScrollRef.current;
                 measureMatrixScroll();
