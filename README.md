@@ -7,9 +7,19 @@ Double-click **Start Backends.bat** in the project folder. On first run it
 installs the npm packages for the Codex bridge and local embeddings, then it
 opens the Codex bridge (port 5010) and ComfyUI (port 8188, started with
 `--enable-cors-header`) in two minimized windows. Either is skipped when its
-port is already in use. Set `COMFY_DIR` at the top of the script, or the
-`ELLIPSISPROSE_COMFY_DIR` environment variable, to your ComfyUI-Easy-Install
-folder; leave it blank to skip ComfyUI. Close the windows to stop the backends.
+port is already in use, so it is safe to run again or to use alongside the
+ComfyUI desktop app.
+
+ComfyUI is located automatically: a saved choice in `backends.local.cmd`
+(git-ignored), then the `ELLIPSISPROSE_COMFY_DIR` environment variable, then
+the usual install folders (a ComfyUI, ComfyUI-Easy-Install or
+ComfyUI_windows_portable folder next to the project, `~\comfy\ComfyUI`,
+`~\ComfyUI`, `~\Documents\ComfyUI`, `C:\ComfyUI`, `D:\ComfyUI` and the
+portable variants). If none match, a folder picker opens once and the choice
+is saved. Portable installs launch with their embedded Python, clones with
+their `venv` or `.venv`, otherwise `python` on PATH. Delete
+`backends.local.cmd` to choose again, or set the variable to `skip` to never
+start ComfyUI from here.
 
 ## Using your Codex CLI as the model (optional)
 
