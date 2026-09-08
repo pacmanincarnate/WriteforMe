@@ -128,8 +128,7 @@
     <!-- 4. Lucide Icons (Visuals) -->
     <script src="https://unpkg.com/lucide@1.33.0/dist/umd/lucide.min.js"></script>
 
-    <!-- 5. JSZip (EPUB Export) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- 5. JSZip (EPUB export/import, loaded on demand) -->
 
     <!-- 6. Marked (Markdown Parser) -->
     <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
@@ -1932,6 +1931,26 @@
 
     <script type="text/babel" data-presets="react">
         const { useState, useEffect, useLayoutEffect, useRef, useMemo } = React;
+
+        let jsZipPromise = null;
+        const ensureJSZip = () => {
+            if (window.JSZip) return Promise.resolve(window.JSZip);
+            if (!jsZipPromise) {
+                jsZipPromise = new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+                    script.onload = () => resolve(window.JSZip);
+                    script.onerror = () => {
+                        script.remove();
+                        jsZipPromise = null;
+                        reject(new Error('Could not load the EPUB library (JSZip). Check your internet connection and try again.'));
+                    };
+                    document.head.appendChild(script);
+                });
+            }
+            return jsZipPromise;
+        };
+        window.ensureJSZip = ensureJSZip;
 
         // --- 1. API CONFIGURATION ---
         // API Key is now managed via UI/LocalStorage in the component
@@ -7013,12 +7032,37 @@ INSTRUCTIONS:
             return dotProduct / (magnitudeA * magnitudeB);
         };
 
+        const computeLoreFingerprint = (storyId, lore, providerLabel) => {
+            let hash = 5381;
+            for (const item of lore) {
+                const text = `${item?.topic || ''}\u0000${item?.detail || ''}\u0000`;
+                for (let i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
+            }
+            return `${storyId}|${providerLabel}|${lore.length}|${hash.toString(36)}`;
+        };
+        window.computeLoreFingerprint = computeLoreFingerprint;
+
         class EmbeddingService {
             constructor(apiKey, provider = 'gemini', baseUrl = 'http://localhost:5001', codexUrl = 'http://localhost:5010') {
                 this.apiKey = apiKey;
                 this.provider = provider;
                 this.baseUrl = baseUrl;
                 this.codexUrl = codexUrl;
+            }
+
+            isConfigured() {
+                return this.provider === 'koboldcpp' || this.provider === 'codex' || Boolean(this.apiKey);
+            }
+
+            getProviderLabel() {
+                const models = {
+                    gemini: 'gemini-embedding-001',
+                    openrouter: 'qwen/qwen3-embedding-8b',
+                    nanogpt: 'text-embedding-3-small',
+                    koboldcpp: 'default',
+                    codex: 'local'
+                };
+                return `${this.provider}|${models[this.provider]}`;
             }
 
             async getEmbedding(text) {
@@ -10728,6 +10772,7 @@ INSTRUCTIONS:
             // Load active story from IndexedDB on startup and when activeStoryId changes
             useEffect(() => {
                 let isMounted = true;
+                let loreSyncTimer = null;
                 const loadActiveStory = async () => {
                     if (!activeStoryId) {
                         // In new story setup mode; keep fresh default template without loading old stories
@@ -10759,31 +10804,30 @@ INSTRUCTIONS:
                             });
                             console.log(`Loaded active story '${activeStoryId}' from IndexedDB.`);
 
-                            // Re-index RAG vector store for the loaded story's lore to avoid stale cross-story vector contamination
+                            // Defer lore indexing until hydration has returned and the story can render.
                             if (migrated && Array.isArray(migrated.lore) && vectorStore.current) {
-                                try {
-                                    await vectorStore.current.clear();
-                                    if (migrated.lore.length > 0 && embeddingService.current) {
-                                        for (const item of migrated.lore) {
-                                            if (item && item.topic && item.detail) {
-                                                const itemText = `${item.topic}: ${item.description || item.detail}`;
-                                                const emb = await embeddingService.current.getEmbedding(itemText);
-                                                if (emb) {
-                                                    const lid = `lore_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-                                                    await vectorStore.current.add(lid, itemText, emb, {
-                                                        topic: item.topic,
-                                                        valid_from_act: item.valid_from_act || 1,
-                                                        valid_from_scene: item.valid_from_scene || 1,
-                                                        category: item.category || 'General',
-                                                        detail: item.detail
-                                                    });
-                                                }
-                                            }
+                                loreSyncTimer = setTimeout(async () => {
+                                    if (!isMounted) return;
+                                    try {
+                                        const service = embeddingService.current;
+                                        const fingerprint = computeLoreFingerprint(activeStoryId, migrated.lore, service?.getProviderLabel());
+                                        if (fingerprint === localStorage.getItem('ellipsisprose_rag_fingerprint')) {
+                                            console.info(`[RAG] index up to date for story ${activeStoryId}`);
+                                        } else if (!service?.isConfigured()) {
+                                            console.info('[RAG] skipping lore index: no embedding credentials configured');
+                                        } else {
+                                            await ingestLoreBatch(migrated.lore, {
+                                                clearExisting: true,
+                                                storyId: activeStoryId,
+                                                isCurrent: () => isMounted,
+                                                status: 'indexing',
+                                                throwOnError: true
+                                            });
                                         }
+                                    } catch (loreSyncErr) {
+                                        console.warn('[RAG] lore sync stopped:', loreSyncErr);
                                     }
-                                } catch (loreSyncErr) {
-                                    console.warn("RAG lore sync on story switch encountered an error:", loreSyncErr);
-                                }
+                                }, 0);
                             }
 
                             if (view === 'library') {
@@ -10823,7 +10867,10 @@ INSTRUCTIONS:
                     }
                 };
                 loadActiveStory();
-                return () => { isMounted = false; };
+                return () => {
+                    isMounted = false;
+                    clearTimeout(loreSyncTimer);
+                };
             }, [activeStoryId]);
             const [imageProvider, setImageProvider] = useState(() => localStorage.getItem("ellipsisprose_image_provider") || 'gemini');
             const [imageModel, setImageModel] = useState(() => localStorage.getItem("ellipsisprose_image_model") || 'imagen-3.0-generate-002');
@@ -11968,6 +12015,7 @@ INSTRUCTIONS:
             const graphManager = useRef(null);
             if (!graphManager.current) graphManager.current = new GraphManager();
             const embeddingService = useRef(null);
+            const ragIndexRevision = useRef(0);
             const [ragStatus, setRagStatus] = useState("idle"); // idle, indexing, ready
             const [isRebuildingRag, setIsRebuildingRag] = useState(false);
 
@@ -12144,7 +12192,7 @@ INSTRUCTIONS:
                         // Re-index full list including new chunks
                         const currentLore = story.lore || [];
                         const combinedList = [...currentLore, ...chunks];
-                        const processedList = await ingestLoreBatch(combinedList, { clearExisting: true });
+                        const processedList = await ingestLoreBatch(combinedList, { clearExisting: true, fingerprintProcessed: true });
 
                         setStory(prev => ({
                             ...prev,
@@ -15046,7 +15094,7 @@ BEGIN STORY ARC CRITIQUE REVIEW
                     // ingestion returns as the story's lore so story.lore matches the vector
                     // store (mirrors handlePostGenLoreImport).
                     console.log("[initStory] Archiving baseline world lore in RAG...");
-                    const processedLore = await ingestLoreBatch(initialStoryState.lore, { clearExisting: true });
+                    const processedLore = await ingestLoreBatch(initialStoryState.lore, { clearExisting: true, storyId: newStoryId, fingerprintProcessed: true });
                     if (processedLore && processedLore.length > 0) {
                         initialStoryState.lore = processedLore;
                     }
@@ -15695,16 +15743,22 @@ BEGIN SEQUENCE CRITIQUE REVIEW
 
 
             // Single Item Ingest with Redundancy Check (3-Tier Lore Merger - A4)
-            const ingestLore = async (item) => {
+            const ingestLore = async (item, rebuild = null) => {
+                if (!rebuild) ragIndexRevision.current += 1;
+                safeLocalStorageSet('ellipsisprose_rag_fingerprint', '');
                 if (!item || !item.topic || !item.detail) return { ...item, is_merged: false };
 
                 try {
+                    const service = rebuild?.service || embeddingService.current;
                     // 1. Check for Semantic Redundancy
                     const itemText = `${item.topic}: ${item.description || item.detail}`;
-                    const tempEmbedding = await embeddingService.current.getEmbedding(itemText);
-                    if (!tempEmbedding) return { ...item, is_merged: false };
-
-                    const redundancy = await vectorStore.current.checkRedundancy(tempEmbedding, 0.85);
+                    const tempEmbedding = await service.getEmbedding(itemText);
+                    if (!tempEmbedding || tempEmbedding.length === 0) {
+                        if (rebuild) throw new Error('No embedding returned for lore item.');
+                        return { ...item, is_merged: false };
+                    }
+                    if (rebuild) rebuild.assertCurrent();
+                    const redundancy = rebuild?.clearPending ? null : await vectorStore.current.checkRedundancy(tempEmbedding, 0.85);
 
                     if (redundancy) {
                         const similarityScore = redundancy.score !== undefined ? redundancy.score : 0.85;
@@ -15733,7 +15787,8 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                                 false,
                                 "Lore Merger"
                             );
-                            const reEmbedding = await embeddingService.current.getEmbedding(`${item.topic}: ${chosenDetail}`);
+                            const reEmbedding = await service.getEmbedding(`${item.topic}: ${chosenDetail}`);
+                            if (rebuild && (!reEmbedding || reEmbedding.length === 0)) throw new Error('No embedding returned for merged lore item.');
                             if (reEmbedding) chosenEmbedding = reEmbedding;
                         }
 
@@ -15748,6 +15803,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         };
 
                         // Update Vector Store in-place
+                        if (rebuild) rebuild.assertCurrent();
                         await vectorStore.current.add(redundancy.id, `${item.topic}: ${chosenDetail}`, chosenEmbedding, mergedMetadata);
 
                         return {
@@ -15765,6 +15821,14 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                     } else {
                         // TIER 3: NEW LORE ENTRY (score < 0.85)
                         const id = `lore_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        if (rebuild) {
+                            rebuild.assertCurrent();
+                            // Clear only when the first replacement embedding is ready to be added.
+                            if (rebuild.clearPending) {
+                                await vectorStore.current.clear();
+                                rebuild.clearPending = false;
+                            }
+                        }
                         await vectorStore.current.add(id, `${item.topic}: ${item.detail}`, tempEmbedding, {
                             topic: item.topic,
                             detail: item.detail,
@@ -15775,40 +15839,71 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         return { ...item, is_merged: false };
                     }
                 } catch (err) {
+                    if (rebuild) throw err;
                     console.warn("[ingestLore] Lore embedding/indexing skipped due to error:", err);
                     return { ...item, is_merged: false };
+                } finally {
+                    if (!rebuild) {
+                        ragIndexRevision.current += 1;
+                        safeLocalStorageSet('ellipsisprose_rag_fingerprint', '');
+                    }
                 }
             };
 
             // Batch Ingest (for Init or Import)
-            const ingestLoreBatch = async (loreList, { clearExisting = false } = {}) => {
-                setRagStatus("indexing_batch");
-                // Full rebuilds (init, reindex, full-list imports) clear the store first;
-                // mid-story ingestions merge additively via ingestLore so accumulated lore vectors survive.
-                if (clearExisting) await vectorStore.current.clear();
-
-                let processedList = [];
-                for (const item of loreList) {
-                    // We run sequentially to allow deduplication against items just added in this batch
-                    const processed = await ingestLore(item);
-                    if (!processed.is_merged) {
-                        processedList.push(processed);
-                    } else {
-                        // A merge replaces the target row's topic with the new item's topic, so
-                        // match the list entry by the target's pre-merge topic as well as the new
-                        // topic (first list match wins). If the merge target came from outside
-                        // this batch (additive ingestion), keep the entry rather than drop it —
-                        // callers persist processedList as story.lore.
-                        const idx = processedList.findIndex(p => p.topic === processed.merged_from_topic || p.topic === processed.topic);
-                        if (idx !== -1) {
-                            processedList[idx] = processed;
-                        } else {
-                            processedList.push(processed);
+            const ingestLoreBatch = async (loreList, { clearExisting = false, storyId = story.id, fingerprintProcessed = false, isCurrent = () => true, status = 'indexing_batch', throwOnError = false } = {}) => {
+                const service = embeddingService.current;
+                const revision = clearExisting ? ++ragIndexRevision.current : ragIndexRevision.current;
+                const rebuild = clearExisting ? {
+                    service,
+                    clearPending: true,
+                    assertCurrent: () => {
+                        if (!isCurrent() || embeddingService.current !== service || ragIndexRevision.current !== revision) {
+                            throw new Error('Lore indexing cancelled because the story, lore, or embedding provider changed.');
                         }
                     }
+                } : null;
+                setRagStatus(status);
+                try {
+                    if (clearExisting && !service?.isConfigured()) throw new Error('No embedding credentials configured.');
+                    let processedList = [];
+                    for (const item of loreList) {
+                        if (rebuild) rebuild.assertCurrent();
+                        // We run sequentially to allow deduplication against items just added in this batch
+                        const processed = await ingestLore(item, rebuild);
+                        if (!processed.is_merged) {
+                            processedList.push(processed);
+                        } else {
+                            // A merge replaces the target row's topic with the new item's topic, so
+                            // match the list entry by the target's pre-merge topic as well as the new
+                            // topic (first list match wins). If the merge target came from outside
+                            // this batch (additive ingestion), keep the entry rather than drop it —
+                            // callers persist processedList as story.lore.
+                            const idx = processedList.findIndex(p => p.topic === processed.merged_from_topic || p.topic === processed.topic);
+                            if (idx !== -1) {
+                                processedList[idx] = processed;
+                            } else {
+                                processedList.push(processed);
+                            }
+                        }
+                    }
+                    if (rebuild) {
+                        rebuild.assertCurrent();
+                        // An empty/unindexable list leaves the old store intact and is not marked indexed.
+                        if (!rebuild.clearPending) {
+                            safeLocalStorageSet('ellipsisprose_rag_fingerprint', computeLoreFingerprint(
+                                storyId, fingerprintProcessed ? processedList : loreList, service.getProviderLabel()
+                            ));
+                        }
+                    }
+                    return processedList;
+                } catch (err) {
+                    if (throwOnError) throw err;
+                    console.warn('[RAG] lore ingest stopped:', err);
+                    return loreList;
+                } finally {
+                    setRagStatus("ready");
                 }
-                setRagStatus("ready");
-                return processedList;
             };
 
             const rebuildRagIndex = async () => {
@@ -15816,7 +15911,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 setIsRebuildingRag(true);
                 showToast(`Rebuilding RAG index for ${(story.lore || []).length} lore entries…`, "info");
                 try {
-                    await ingestLoreBatch(story.lore || [], { clearExisting: true });
+                    await ingestLoreBatch(story.lore || [], { clearExisting: true, throwOnError: true });
                     showToast("RAG index rebuilt", "success");
                 } catch (error) {
                     showToast(`RAG index rebuild failed: ${error.message}`, "error");
@@ -17040,10 +17135,11 @@ BEGIN GENERATING IMAGE PROMPT`;
             };
 
             const handleExportEpub = async () => {
-                if (!window.JSZip) {
-                    alert("JSZip library not loaded. Please restart the app or check your internet connection.");
-                    return;
-                }
+                const JSZip = await ensureJSZip().catch(err => {
+                    showToast(err.message, 'error');
+                    return null;
+                });
+                if (!JSZip) return;
 
                 try {
                     const zip = new JSZip();
@@ -17433,7 +17529,7 @@ ${chapterBody}
                 }
             };
 
-            const handleImport = (event) => {
+            const handleImport = async (event) => {
                 const file = event.target.files?.[0];
                 if (!file) return;
 
@@ -17519,10 +17615,11 @@ ${chapterBody}
                 };
 
                 if (file.name.endsWith('.epub')) {
-                    if (!window.JSZip) {
-                        alert("JSZip library not loaded. Please restart the app or check your internet connection.");
-                        return;
-                    }
+                    const JSZip = await ensureJSZip().catch(err => {
+                        showToast(err.message, 'error');
+                        return null;
+                    });
+                    if (!JSZip) return;
                     const zip = new JSZip();
                     zip.loadAsync(file).then(async (zipInstance) => {
                         const storyFile = zipInstance.file("META-INF/story.json");
@@ -25220,6 +25317,7 @@ ${finalProseText}
                                                 </button>
                                             </div>
                                             <p className="text-xs text-ink-400 mt-2">After switching providers, use "Rebuild RAG index" in World Lore.</p>
+                                            <p className="text-xs text-ink-400 mt-2">The lore index is rebuilt only when the story's lore or the embedding provider changes.</p>
                                         </div>
 
                                         {/* Gemini API Key */}
