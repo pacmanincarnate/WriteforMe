@@ -1844,6 +1844,48 @@
                 transform: translateX(0);
             }
         }
+        /* Relationship matrix: keep both axes readable within the scroll viewport. */
+        .rel-matrix { position: relative; isolation: isolate; }
+        .rel-matrix .rel-matrix-scroll { max-height: 70vh; overflow: auto; }
+        .rel-matrix table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        .rel-matrix th, .rel-matrix td { min-width: 140px; width: 160px; max-width: 180px; }
+        .rel-matrix thead { position: sticky; top: 0; z-index: 2; }
+        .rel-matrix thead th { background: var(--bg-inset); }
+        .rel-matrix tr > :first-child {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            min-width: 140px;
+            width: 140px;
+            max-width: 140px;
+            background: var(--bg-inset);
+            border-right: 1px solid var(--edge-strong);
+        }
+        .rel-matrix thead tr > :first-child { z-index: 3; }
+        .rel-matrix .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            white-space: normal;
+        }
+        .rel-matrix .rel-matrix-fade {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 28px;
+            z-index: 4;
+            pointer-events: none;
+        }
+        .rel-matrix .rel-matrix-fade-left {
+            left: 140px;
+            background: linear-gradient(to right, var(--bg-inset), transparent);
+        }
+        .rel-matrix .rel-matrix-fade-right {
+            right: 0;
+            background: linear-gradient(to left, var(--bg-inset), transparent);
+        }
     </style>
 </head>
 
@@ -8639,66 +8681,71 @@ INSTRUCTIONS:
             );
         };
 
-        const CharacterCard = ({ c, onEdit }) => {
+        const CharacterCard = ({ c, onEdit, portraitSrc, portraitLoading = false, onGeneratePortrait, onUploadPortrait, onRemovePortrait }) => {
             const [isExpanded, setIsExpanded] = useState(false);
+            const portraitInputRef = useRef(null);
             if (!c) return null;
 
             return (
                 <div className="bg-surface rounded-2xl border border-edge overflow-hidden shadow-sm hover:shadow-md transition-all">
-                    <div className="p-5 border-b border-edge bg-inset flex justify-between items-center">
-                        <div className="flex items-center gap-3.5">
-                            <div className="w-10 h-10 rounded-xl bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink font-bold font-serif text-lg shrink-0 shadow-sm">
-                                {c.name ? c.name.charAt(0).toUpperCase() : <User size={18} />}
+                    <div className="p-5 border-b border-edge bg-inset flex items-start gap-4">
+                        <div className="w-[72px] md:w-24 shrink-0 space-y-2">
+                            <div className="w-[72px] h-24 md:w-24 md:h-32 rounded-xl bg-gold-tint border border-gold-edge overflow-hidden flex items-center justify-center text-gold-ink font-bold font-serif text-2xl shadow-sm">
+                                {portraitSrc ? <img src={portraitSrc} alt={`Portrait of ${c.name || 'character'}`} className="w-full h-full object-cover" /> : (c.name ? c.name.charAt(0).toUpperCase() : <User size={24} />)}
                             </div>
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <h3 className="text-lg font-bold font-serif text-ink-900">{c.name}</h3>
-                                    {onEdit && <EditButton title="Name" value={c.name} onSave={() => onEdit('name', 'Name', c.name)} />}
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-[10px] text-ink-600 uppercase font-mono font-bold bg-mist-100 border border-edge-strong px-2 py-0.5 rounded-full">
-                                        {c.role}
-                                    </span>
-                                    {onEdit && <EditButton title="Role" value={c.role} onSave={() => onEdit('role', 'Role', c.role)} />}
-                                </div>
+                            <div className="flex flex-wrap items-center justify-center gap-2">
+                                {onGeneratePortrait && <button type="button" title="Generate" aria-label={`Generate portrait for ${c.name}`} disabled={portraitLoading} onClick={() => onGeneratePortrait?.(c)} className="p-1.5 shrink-0 rounded-lg bg-surface border border-edge text-gold-ink hover:bg-gold-tint disabled:opacity-50 disabled:cursor-not-allowed">{portraitLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}</button>}
+                                {onUploadPortrait && <button type="button" title="Upload" aria-label={`Upload portrait for ${c.name}`} disabled={portraitLoading} onClick={() => portraitInputRef.current?.click()} className="p-1.5 shrink-0 rounded-lg bg-surface border border-edge text-ink-600 hover:bg-gold-tint disabled:opacity-50 disabled:cursor-not-allowed"><Upload size={14} /></button>}
+                                {portraitSrc && onRemovePortrait && <button type="button" title="Remove" aria-label={`Remove portrait for ${c.name}`} disabled={portraitLoading} onClick={() => onRemovePortrait?.(c)} className="p-1.5 shrink-0 rounded-lg bg-surface border border-edge text-ink-600 hover:bg-gold-tint disabled:opacity-50 disabled:cursor-not-allowed"><Trash2 size={14} /></button>}
+                                {!onGeneratePortrait && !onUploadPortrait && !onRemovePortrait && <span className="p-1.5 rounded-lg bg-surface border border-edge text-ink-400"><User size={16} /></span>}
                             </div>
+                            {onUploadPortrait && <input ref={portraitInputRef} type="file" accept="image/*" className="hidden" disabled={portraitLoading} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file && !portraitLoading) onUploadPortrait?.(c, file); }} />}
                         </div>
-                        <div className="p-2 rounded-xl bg-surface border border-edge-strong text-ink-400 shadow-sm">
-                            <User size={16} />
+                        <div className="flex-1 min-w-0 space-y-3">
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-lg font-bold font-serif text-ink-900 break-words min-w-0">{c.name}</h3>
+                                {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Name" value={c.name} onSave={() => onEdit('name', 'Name', c.name)} />}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-[10px] text-ink-600 uppercase font-mono font-bold bg-inset border border-edge-strong px-2 py-0.5 rounded-full break-words min-w-0">
+                                    {c.role}
+                                </span>
+                                {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Role" value={c.role} onSave={() => onEdit('role', 'Role', c.role)} />}
+                            </div>
                         </div>
                     </div>
 
                     <div className="p-5 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                            <div className="bg-inset p-3.5 rounded-xl border border-edge-strong">
-                                <div className="flex justify-between items-center mb-1.5">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-inset p-5 rounded-xl border border-edge-strong">
+                                <div className="flex justify-between items-center gap-2 mb-1.5">
                                     <div className="text-[9px] text-ink-500 font-bold uppercase tracking-wider font-mono">Current Status & Arc</div>
-                                    {onEdit && <EditButton title="Status" value={c.details?.story_events} onSave={() => onEdit('details.story_events', 'Status', c.details?.story_events)} />}
+                                    {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Status" value={c.details?.story_events} onSave={() => onEdit('details.story_events', 'Status', c.details?.story_events)} />}
                                 </div>
                                 <div className="text-xs text-ink-800 leading-relaxed whitespace-pre-wrap">{c.details?.story_events || "Active in story world."}</div>
                             </div>
 
-                            <div className="bg-inset p-3.5 rounded-xl border border-edge-strong">
-                                <div className="flex justify-between items-center mb-1.5">
+                            <div className="bg-inset p-5 rounded-xl border border-edge-strong">
+                                <div className="flex justify-between items-center gap-2 mb-1.5">
                                     <div className="text-[9px] text-ink-500 font-bold uppercase tracking-wider font-mono">Core Motivation & Goal</div>
-                                    {onEdit && <EditButton title="Goal" value={c.details?.goals} onSave={() => onEdit('details.goals', 'Goal', c.details?.goals)} />}
+                                    {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Goal" value={c.details?.goals} onSave={() => onEdit('details.goals', 'Goal', c.details?.goals)} />}
                                 </div>
                                 <div className="text-xs text-ink-800 leading-relaxed">{c.details?.goals || "Goal undefined."}</div>
                             </div>
                         </div>
 
                         {c.details?.history && (
-                            <div className="bg-inset p-3.5 rounded-xl border border-edge-strong">
-                                <div className="flex justify-between items-center mb-1">
+                            <div className="bg-inset p-5 rounded-xl border border-edge-strong">
+                                <div className="flex justify-between items-center gap-2 mb-1">
                                     <div className="text-[9px] text-ink-500 font-bold uppercase tracking-wider font-mono">Backstory & Provenance</div>
-                                    {onEdit && <EditButton title="History" value={c.details?.history} onSave={() => onEdit('details.history', 'History', c.details?.history)} />}
+                                    {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="History" value={c.details?.history} onSave={() => onEdit('details.history', 'History', c.details?.history)} />}
                                 </div>
                                 <div className="text-xs text-ink-700 leading-relaxed prose max-w-none" dangerouslySetInnerHTML={{ __html: parseMarkdown(c.details?.history) }} />
                             </div>
                         )}
 
                         {c.voice_sample && (
-                            <div className="bg-ember-tint p-3.5 rounded-xl border border-ember-edge italic text-ember-950 text-xs font-serif leading-relaxed">
+                            <div className="bg-ember-tint p-5 rounded-xl border border-ember-edge italic text-ember-950 text-xs font-serif leading-relaxed">
                                 <span className="text-[9px] not-italic font-bold font-mono text-gold-ink uppercase mr-1.5 block mb-0.5">Voice Sample:</span>
                                 "{c.voice_sample}"
                             </div>
@@ -8713,10 +8760,10 @@ INSTRUCTIONS:
                                     {isExpanded ? <React.Fragment><Minus size={12} /> Hide Full Interview</React.Fragment> : <React.Fragment><MessageSquare size={12} /> Read Full Persona Interview</React.Fragment>}
                                 </button>
                                 {isExpanded && (
-                                    <div className="mt-3 p-4 bg-inset rounded-xl border border-edge-strong text-xs font-serif leading-loose h-80 overflow-y-auto custom-scrollbar animate-fade-in relative">
-                                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-edge-strong">
+                                    <div className="mt-3 p-5 bg-inset rounded-xl border border-edge-strong text-xs font-serif leading-loose h-80 overflow-y-auto custom-scrollbar animate-fade-in relative">
+                                        <div className="flex justify-between items-center gap-2 mb-2 pb-2 border-b border-edge-strong">
                                             <div className="text-[9px] text-ink-500 font-sans font-bold uppercase font-mono">Archival Persona Interview Transcript</div>
-                                            {onEdit && <EditButton title="Deep Profile" value={c.details?.deep_profile} onSave={() => onEdit('details.deep_profile', 'Deep Profile', c.details?.deep_profile)} />}
+                                            {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Deep Profile" value={c.details?.deep_profile} onSave={() => onEdit('details.deep_profile', 'Deep Profile', c.details?.deep_profile)} />}
                                         </div>
                                         <div className="prose max-w-none text-ink-800 text-xs font-serif leading-loose" dangerouslySetInnerHTML={{ __html: parseMarkdown(c.details.deep_profile) }} />
                                     </div>
@@ -10797,6 +10844,12 @@ INSTRUCTIONS:
                 return saved ? JSON.parse(saved) : [];
             });
             const [loadedImages, setLoadedImages] = useState({});
+            const [portraitLoading, setPortraitLoading] = useState({});
+            const [portraitReload, setPortraitReload] = useState(0);
+            const portraitOperations = useRef(new Set());
+            const portraitRevisions = useRef(new Map());
+            const portraitStoryId = useRef(story?.id);
+            portraitStoryId.current = story?.id;
             const [loadingCover, setLoadingCover] = useState(false);
             const [loadingImages, setLoadingImages] = useState({});
             const [newStyleName, setNewStyleName] = useState("");
@@ -11292,6 +11345,35 @@ INSTRUCTIONS:
 
             // Selected relationship for editing
             const [selectedRel, setSelectedRel] = useState(null);
+            const [matrixView, setMatrixView] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('ellipsisprose_matrix_view');
+                    if (saved === 'grid' || saved === 'list') return saved;
+                } catch { /* Use the viewport default when storage is unavailable. */ }
+                return window.matchMedia('(max-width: 767px)').matches ? 'list' : 'grid';
+            });
+            const [matrixScroll, setMatrixScroll] = useState({ left: false, right: false });
+            const matrixScrollRef = useRef(null);
+            const measureMatrixScroll = () => {
+                const el = matrixScrollRef.current;
+                const overflow = !!el && el.scrollWidth > el.clientWidth + 1;
+                const left = overflow && el.scrollLeft > 1;
+                const right = overflow && el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+                setMatrixScroll(prev => prev.left === left && prev.right === right ? prev : { left, right });
+            };
+            const selectMatrixRelationship = (fromChar, toChar) => {
+                const relKey = `${fromChar.name}->${toChar.name}`;
+                const rel = story.relationships?.[relKey];
+                setSelectedRel({
+                    from: fromChar.name,
+                    to: toChar.name,
+                    key: relKey,
+                    current: rel?.current || "",
+                    hidden_tension: rel?.hidden_tension || "",
+                    trust_level: parseInt(rel?.trust_level, 10) || 5,
+                    history: rel?.history || []
+                });
+            };
 
             // Directive Agent State
             const [directiveInput, setDirectiveInput] = useState("");
@@ -11332,6 +11414,19 @@ INSTRUCTIONS:
             }, []);
 
             const [view, setView] = useState(() => localStorage.getItem("ellipsisprose_view") || 'setup');
+            useEffect(() => {
+                const el = matrixScrollRef.current;
+                measureMatrixScroll();
+                if (!el || view !== 'relationships' || matrixView !== 'grid') return;
+                const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureMatrixScroll);
+                observer?.observe(el);
+                if (el.firstElementChild) observer?.observe(el.firstElementChild);
+                window.addEventListener('resize', measureMatrixScroll);
+                return () => {
+                    observer?.disconnect();
+                    window.removeEventListener('resize', measureMatrixScroll);
+                };
+            }, [view, matrixView, story?.id, story?.cast?.length]);
             const [theme, setTheme] = useState(() => localStorage.getItem("ellipsisprose_theme") || 'light');
 
             useEffect(() => {
@@ -15918,6 +16013,45 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 }
             }, [story?.id]);
 
+            // Clear portraits on story switches, then load the cast after story hydration.
+            useEffect(() => {
+                setLoadedImages(prev => ({ ...prev, portraits: {} }));
+                const pending = {};
+                (story?.cast || []).forEach(c => {
+                    if (portraitOperations.current.has(`portrait_${story.id}_${c.id}`)) pending[c.id] = true;
+                });
+                setPortraitLoading(pending);
+            }, [story?.id]);
+
+            const portraitCastIds = JSON.stringify((story?.cast || []).map(c => c.id).filter(id => id != null));
+            useEffect(() => {
+                if (!story?.id) return;
+                let cancelled = false;
+                const storyId = story.id;
+                const ids = JSON.parse(portraitCastIds);
+                Promise.all(ids.map(async id => {
+                    const key = `portrait_${storyId}_${id}`;
+                    const revision = portraitRevisions.current.get(key) || 0;
+                    const dataUrl = await imageStore.getImage(key);
+                    return { id, key, revision, dataUrl };
+                })).then(results => {
+                    if (cancelled || portraitStoryId.current !== storyId) return;
+                    setLoadedImages(prev => {
+                        if (cancelled || portraitStoryId.current !== storyId) return prev;
+                        const portraits = { ...prev.portraits };
+                        results.forEach(({ id, key, revision, dataUrl }) => {
+                            if (portraitOperations.current.has(key) || revision !== (portraitRevisions.current.get(key) || 0)) return;
+                            if (dataUrl) portraits[id] = dataUrl;
+                            else delete portraits[id];
+                        });
+                        return { ...prev, portraits };
+                    });
+                }).catch(err => {
+                    if (!cancelled) showToast('Failed to load character portraits: ' + err.message, 'error');
+                });
+                return () => { cancelled = true; };
+            }, [story?.id, portraitCastIds, portraitReload, imageStore]);
+
             // Load Beat Images for the active scene from IndexedDB
             const activeBeatsKey = `${selectedSequence !== null && selectedSequence !== undefined ? selectedSequence : 0}-${selectedScene !== null && selectedScene !== undefined ? selectedScene : 0}`;
             const activeBeatsLength = Array.isArray(story?.beats?.[activeBeatsKey]) ? story.beats[activeBeatsKey].length : 0;
@@ -15939,7 +16073,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                             }
                         });
                         setLoadedImages(prev => {
-                            const cleared = { cover: prev.cover };
+                            const cleared = { cover: prev.cover, portraits: prev.portraits };
                             Object.keys(newLoaded).forEach(key => {
                                 cleared[key] = newLoaded[key];
                             });
@@ -16667,6 +16801,87 @@ BEGIN GENERATING IMAGE PROMPT`;
                 }
             };
 
+            // Serialize portrait edits per story/character and keep late results in their own story.
+            const updateCharacterPortrait = async (c, createDataUrl, successMessage, errorPrefix) => {
+                if (!story?.id || !c?.id) {
+                    showToast('A saved story and character are required for portraits.', 'error');
+                    return;
+                }
+                const storyId = story.id;
+                const key = `portrait_${storyId}_${c.id}`;
+                if (portraitOperations.current.has(key)) return;
+                portraitOperations.current.add(key);
+                portraitRevisions.current.set(key, (portraitRevisions.current.get(key) || 0) + 1);
+                setPortraitLoading(prev => ({ ...prev, [c.id]: true }));
+                try {
+                    const dataUrl = await createDataUrl();
+                    if (dataUrl === null) await imageStore.deleteImage(key);
+                    else await imageStore.saveImage(key, dataUrl);
+                    if (portraitStoryId.current === storyId) {
+                        setLoadedImages(prev => {
+                            if (portraitStoryId.current !== storyId) return prev;
+                            const portraits = { ...prev.portraits };
+                            if (dataUrl === null) delete portraits[c.id];
+                            else portraits[c.id] = dataUrl;
+                            return { ...prev, portraits };
+                        });
+                        showToast(successMessage, 'success');
+                    }
+                } catch (err) {
+                    showToast(errorPrefix + err.message, 'error');
+                } finally {
+                    portraitOperations.current.delete(key);
+                    if (portraitStoryId.current === storyId) {
+                        setPortraitLoading(prev => {
+                            if (portraitStoryId.current !== storyId) return prev;
+                            const next = { ...prev };
+                            delete next[c.id];
+                            return next;
+                        });
+                    }
+                }
+            };
+
+            const generateCharacterPortrait = async (c) => {
+                return updateCharacterPortrait(c, async () => {
+                    const sysPrompt = `You are a character portrait artist. Write a detailed image generation prompt grounded in the supplied character's appearance, role and temperament.
+Describe a waist-up, three-quarter view portrait, an expression that fits the character's temperament, and a plain softly lit background. Preserve any supplied physical traits. No text, no watermark.
+Output only <response><image_prompt>...</image_prompt></response>.`;
+                    const characterInfo = ['name', 'role', 'description', 'appearance', 'history', 'core_flaw', 'core_desire', 'vocal_cadence', 'voice_sample']
+                        .map(field => `${field}: ${c[field] || c.details?.[field] || 'Not specified'}`).join('\n');
+                    const userPrompt = `CHARACTER INFORMATION:
+${characterInfo}
+STORY GENRE: ${story.style?.genre || 'Not specified'}
+STORY MOOD: ${story.style?.mood || 'Not specified'}
+Create a waist-up, three-quarter view portrait prompt with an expression that fits this character's temperament, a plain softly lit background, no text, and no watermark.`;
+                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Character Portrait Prompt Agent", "small");
+                    const selectedStyleId = story.imageStyle || 'none';
+                    const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
+                    const styleObj = combinedStyles.find(s => s.id === selectedStyleId);
+                    const styleDescription = styleObj ? styleObj.description : "";
+                    const finalPrompt = cleanImagePrompt(promptBase) + (styleDescription ? ", " + styleDescription : "");
+                    return callImageAPI(finalPrompt, "3:4");
+                }, `Portrait generated for ${c?.name || 'character'}.`, 'Character portrait generation failed: ');
+            };
+
+            const uploadCharacterPortrait = async (c, file) => {
+                if (!file) return;
+                if (!file.type.startsWith('image/')) {
+                    showToast('Please select an image file.', 'error');
+                    return;
+                }
+                return updateCharacterPortrait(c, () => new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(new Error('Failed to read the selected file.'));
+                    reader.onabort = () => reject(new Error('Image upload was cancelled.'));
+                    reader.readAsDataURL(file);
+                }), `Portrait uploaded for ${c?.name || 'character'}.`, 'Character portrait upload failed: ');
+            };
+
+            const removeCharacterPortrait = async (c) => updateCharacterPortrait(c, async () => null,
+                `Portrait removed for ${c?.name || 'character'}.`, 'Failed to remove character portrait: ');
+
             const deleteCoverImage = async () => {
                 if (!window.confirm("Are you sure you want to remove the cover image?")) return;
                 try {
@@ -17291,6 +17506,7 @@ ${chapterBody}
                     setActiveStoryId(newId);
                     setStory(mergedStory);
                     setLoadedImages({});
+                    setPortraitReload(value => value + 1);
                     setView('dashboard');
 
                     imageStore.getImage(`cover_${newId}`).then(dataUrl => {
@@ -21823,6 +22039,11 @@ ${finalProseText}
                                             <CharacterCard
                                                 key={i}
                                                 c={c}
+                                                portraitSrc={loadedImages.portraits?.[c.id]}
+                                                portraitLoading={!!portraitLoading[c.id]}
+                                                onGeneratePortrait={generateCharacterPortrait}
+                                                onUploadPortrait={uploadCharacterPortrait}
+                                                onRemovePortrait={removeCharacterPortrait}
                                                 onEdit={(field, title, val) => {
                                                     openEditModal(title, val, (newValue) => {
                                                         setStory(prev => {
@@ -22076,22 +22297,41 @@ ${finalProseText}
                                     ) : (
                                         <div className="grid lg:grid-cols-3 gap-6">
                                             {/* Matrix Grid Card (Left 2 cols) */}
-                                            <div className="lg:col-span-2 bg-surface border border-edge rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                                                <div className="p-5 border-b border-edge bg-inset">
+                                            <div className="lg:col-span-2 min-w-0 bg-surface border border-edge rounded-2xl overflow-hidden shadow-sm flex flex-col">
+                                                <div className="p-5 border-b border-edge bg-inset flex flex-wrap items-center justify-between gap-3">
                                                     <h3 className="font-bold text-ink-800 flex items-center gap-2 text-xs uppercase tracking-wider font-mono">
-                                                        <Layers size={15} className="text-gold-ink" /> Directional Grid
+                                                        <Layers size={15} className="text-gold-ink" /> Directional {matrixView === 'grid' ? 'Grid' : 'List'}
                                                     </h3>
+                                                    <div className="inline-flex gap-1 p-1 rounded-lg border border-edge-strong bg-surface" role="group" aria-label="Relationship view">
+                                                        {['grid', 'list'].map(mode => (
+                                                            <button key={mode} type="button" aria-pressed={matrixView === mode} onClick={() => {
+                                                                setMatrixView(mode);
+                                                                try { localStorage.setItem('ellipsisprose_matrix_view', mode); }
+                                                                catch { /* Keep the view toggle usable when storage is unavailable. */ }
+                                                            }} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${matrixView === mode ? 'bg-gold-tint text-gold-ink' : 'text-ink-500 hover:bg-inset'}`}>
+                                                                {mode === 'grid' ? 'Grid' : 'List'}
+                                                            </button>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                                <div className="p-6 overflow-x-auto">
-                                                    <table className="w-full border-collapse min-w-[500px]">
+                                                {matrixView === 'grid' ? (
+                                                <React.Fragment>
+                                                <div className="rel-matrix">
+                                                <div ref={matrixScrollRef} onScroll={measureMatrixScroll} className="rel-matrix-scroll custom-scrollbar" tabIndex={0} role="region" aria-label="Character relationship grid" aria-describedby={matrixScroll.left || matrixScroll.right ? 'matrix-scroll-hint' : undefined}>
+                                                    <table>
                                                         <thead>
                                                             <tr>
-                                                                <th className="p-3 text-[10px] font-bold text-ink-400 uppercase border-b border-edge-strong text-left bg-inset w-32 font-mono">
+                                                                <th scope="col" className="p-3 text-[10px] font-bold text-ink-400 uppercase border-b border-edge-strong text-left bg-inset font-mono">
                                                                     Source ➔ Target
                                                                 </th>
                                                                 {story.cast.map(c => (
-                                                                    <th key={c.name} className="p-3 text-[11px] font-bold text-ink-700 uppercase border-b border-edge-strong text-center bg-inset max-w-[120px] truncate font-serif">
-                                                                        {c.name}
+                                                                    <th key={c.name} scope="col" className="p-3 text-[11px] font-bold text-ink-700 uppercase border-b border-edge-strong text-center bg-inset font-serif">
+                                                                        <div className="flex flex-col items-center gap-2">
+                                                                            <span className="w-8 h-8 rounded-lg overflow-hidden bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink shrink-0">
+                                                                                {loadedImages.portraits?.[c.id] ? <img src={loadedImages.portraits[c.id]} alt="" className="w-full h-full object-cover" /> : c.name?.charAt(0).toUpperCase()}
+                                                                            </span>
+                                                                            <span className="line-clamp-2" title={c.name}>{c.name}</span>
+                                                                        </div>
                                                                     </th>
                                                                 ))}
                                                             </tr>
@@ -22099,9 +22339,9 @@ ${finalProseText}
                                                         <tbody>
                                                             {story.cast.map(fromChar => (
                                                                 <tr key={fromChar.name} className="border-b border-edge-soft hover:bg-inset/60 transition-colors">
-                                                                    <td className="p-3 font-bold text-xs text-ink-900 bg-inset border-r border-edge-strong truncate max-w-[120px] font-serif">
-                                                                        {fromChar.name}
-                                                                    </td>
+                                                                    <th scope="row" className="p-3 font-bold text-left text-xs text-ink-900 bg-inset border-b border-edge-strong font-serif">
+                                                                        <span className="line-clamp-2" title={fromChar.name}>{fromChar.name}</span>
+                                                                    </th>
                                                                     {story.cast.map(toChar => {
                                                                         const isSelf = fromChar.name === toChar.name;
                                                                         const relKey = `${fromChar.name}->${toChar.name}`;
@@ -22109,7 +22349,7 @@ ${finalProseText}
 
                                                                         if (isSelf) {
                                                                             return (
-                                                                                <td key={toChar.name} className="p-3 text-center bg-mist-50 text-[10px] text-ink-400 font-mono italic select-none">
+                                                                                <td key={toChar.name} className="p-3 text-center bg-inset border-b border-edge text-[10px] text-ink-400 font-mono italic select-none">
                                                                                     Self
                                                                                 </td>
                                                                             );
@@ -22118,27 +22358,19 @@ ${finalProseText}
                                                                         return (
                                                                             <td
                                                                                 key={toChar.name}
-                                                                                onClick={() => {
-                                                                                    setSelectedRel({
-                                                                                        from: fromChar.name,
-                                                                                        to: toChar.name,
-                                                                                        key: relKey,
-                                                                                        current: rel?.current || "",
-                                                                                        hidden_tension: rel?.hidden_tension || "",
-                                                                                        trust_level: parseInt(rel?.trust_level, 10) || 5,
-                                                                                        history: rel?.history || []
-                                                                                    });
-                                                                                }}
-                                                                                className={`p-3 text-center text-xs cursor-pointer transition-all hover:bg-inset active:scale-95 ${rel?.current ? 'text-ink-900 bg-gold/5 font-medium' : 'text-ink-400 hover:text-ink-700 italic'}`}
-                                                                                style={{ minWidth: '120px', maxWidth: '180px' }}
+                                                                                onClick={() => selectMatrixRelationship(fromChar, toChar)}
+                                                                                onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectMatrixRelationship(fromChar, toChar); } }}
+                                                                                tabIndex={rel?.current ? 0 : undefined}
+                                                                                title={rel?.current || `Set arc: ${fromChar.name} to ${toChar.name}`}
+                                                                                className={`p-3 text-center text-xs cursor-pointer border-b border-edge transition-colors hover:bg-inset ${rel?.current ? 'text-ink-900 bg-gold-tint font-medium' : 'text-ink-400 hover:text-ink-700 italic'}`}
                                                                             >
                                                                                 {rel?.current ? (
                                                                                     <div className="flex flex-col items-center gap-1 group/cell">
-                                                                                        <span className="truncate max-w-[140px] text-[11px] font-medium block text-ink-800">{rel.current}</span>
-                                                                                        <Heart size={10} className="text-rose-500 fill-rose-500/20 opacity-40 group-hover/cell:opacity-100 transition-opacity" />
+                                                                                        <span className="line-clamp-2 text-[11px] font-medium text-ink-800" title={rel.current}>{rel.current}</span>
+                                                                                        <Heart size={10} className="text-gold-ink opacity-40 group-hover/cell:opacity-100 transition-opacity" />
                                                                                     </div>
                                                                                 ) : (
-                                                                                    <span className="text-[10px] opacity-40">+ Set Arc</span>
+                                                                                    <button type="button" className="p-1.5 rounded text-[10px] text-ink-500 hover:text-gold-ink" onClick={event => { event.stopPropagation(); selectMatrixRelationship(fromChar, toChar); }}>+ Set arc</button>
                                                                                 )}
                                                                             </td>
                                                                         );
@@ -22148,6 +22380,45 @@ ${finalProseText}
                                                         </tbody>
                                                     </table>
                                                 </div>
+                                                <div aria-hidden="true" className="rel-matrix-fade rel-matrix-fade-left" hidden={!matrixScroll.left} />
+                                                <div aria-hidden="true" className="rel-matrix-fade rel-matrix-fade-right" hidden={!matrixScroll.right} />
+                                                </div>
+                                                {(matrixScroll.left || matrixScroll.right) && <p id="matrix-scroll-hint" className="px-5 py-2 text-xs text-ink-400">Scroll sideways to see more characters</p>}
+                                                </React.Fragment>
+                                                ) : (
+                                                    <div className="p-5 space-y-5">
+                                                        {story.cast.map(fromChar => (
+                                                            <section key={fromChar.name} className="space-y-2">
+                                                                <h4 className="text-sm font-bold font-serif text-ink-900 break-words">{fromChar.name} <span className="text-ink-400">➔</span></h4>
+                                                                <div className="border border-edge rounded-xl overflow-hidden divide-y divide-edge">
+                                                                    {story.cast.filter(toChar => toChar.name !== fromChar.name).map(toChar => {
+                                                                        const rel = story.relationships?.[`${fromChar.name}->${toChar.name}`];
+                                                                        const trust = Math.min(10, Math.max(1, parseInt(rel?.trust_level, 10) || 5));
+                                                                        return (
+                                                                            <div key={toChar.name} role="button" tabIndex={0}
+                                                                                onClick={() => selectMatrixRelationship(fromChar, toChar)}
+                                                                                onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectMatrixRelationship(fromChar, toChar); } }}
+                                                                                aria-label={`${fromChar.name} to ${toChar.name}: ${rel?.current || 'Set arc'}`}
+                                                                                className="flex flex-wrap items-center gap-3 p-3 cursor-pointer hover:bg-inset focus-visible:bg-inset text-left">
+                                                                                <span className="w-10 h-10 rounded-xl bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink font-serif font-bold overflow-hidden shrink-0">
+                                                                                    {loadedImages.portraits?.[toChar.id] ? <img src={loadedImages.portraits[toChar.id]} alt="" className="w-full h-full object-cover" /> : toChar.name?.charAt(0).toUpperCase()}
+                                                                                </span>
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <div className="text-xs font-bold text-ink-900 break-words">{toChar.name}</div>
+                                                                                    <p className="text-xs text-ink-600 break-words" title={rel?.current || ''}>{rel?.current || 'No current dynamic defined.'}</p>
+                                                                                </div>
+                                                                                <span role="meter" aria-label="Trust level" aria-valuemin={0} aria-valuemax={10} aria-valuenow={rel?.current ? trust : 0} aria-valuetext={rel?.current ? `${trust} out of 10` : 'Not defined'} title={rel?.current ? `Trust: ${trust}/10` : 'Trust not defined'} className="flex items-center gap-1 shrink-0">
+                                                                                    {[1, 2, 3, 4, 5].map(dot => <span key={dot} aria-hidden="true" className={`w-2 h-2 rounded-full border ${rel?.current && dot <= Math.ceil(trust / 2) ? 'bg-gold-tint border-gold-edge' : 'bg-surface border-edge-strong'}`} />)}
+                                                                                </span>
+                                                                                {!rel?.current && <button type="button" onClick={event => { event.stopPropagation(); selectMatrixRelationship(fromChar, toChar); }} className="px-2 py-1.5 rounded-lg border border-gold-edge bg-gold-tint text-gold-ink text-xs font-semibold shrink-0">Set arc</button>}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </section>
+                                                        ))}
+                                                    </div>
+                                                )}
                                                 <div className="p-4 border-t border-edge-strong bg-inset flex gap-4 text-[10px] text-ink-500 font-mono">
                                                     <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-gold-tint border border-gold-edge inline-block"></span> Established</div>
                                                     <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-surface border border-edge-strong inline-block"></span> Not Defined</div>
