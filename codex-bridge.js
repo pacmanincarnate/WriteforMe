@@ -153,6 +153,7 @@ async function complete(job) {
         if (job.effort) args.push('-c', `model_reasoning_effort="${job.effort}"`);
         args.push('-');
         const child = await spawnCodex(args, dir, c => { job.child = c; });
+        console.log(`codex exec started pid=${child.pid} model=${JSON.stringify(job.model)} effort=${job.effort || 'config'} (queued ${Date.now() - job.started}ms)`);
         let stdout = '';
         let stderr = '';
         child.stdout.setEncoding('utf8').on('data', chunk => { stdout += chunk; });
@@ -238,7 +239,8 @@ const server = http.createServer(async (req, res) => {
         let prompt = `${preamble}\n\n<system_instructions>\n${textFor('system')}\n</system_instructions>\n\n<user_request>\n${textFor('user')}\n</user_request>`;
         if (body.response_format?.type === 'json_object') prompt += '\n\nRespond with a single valid JSON object and nothing else.';
         if (stopping) { send(res, 503, { error: { message: 'Bridge is stopping' } }); return; }
-        const job = { res, model, effort, prompt, child: null, cancelled: false };
+        const job = { res, model, effort, prompt, child: null, cancelled: false, started };
+        console.log(`POST "/v1/chat/completions" model=${JSON.stringify(model)} effort=${effort || 'config'} queued (active ${active.size}, waiting ${waiting.length}, prompt ${prompt.length} chars)`);
         // The deadline includes FIFO queue time; timed-out jobs never start later.
         job.timer = setTimeout(() => {
             job.cancelled = true;

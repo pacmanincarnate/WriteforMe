@@ -6760,6 +6760,9 @@ INSTRUCTIONS:
 
                 if (!isThinkingEnabled) {
                     payload.reasoning_effort = "none";
+                } else if (opts.provider === 'codex' && ['low', 'medium', 'high'].includes(opts.thinking?.effort)) {
+                    // The Codex bridge maps this onto codex exec's reasoning effort; otherwise the CLI config decides.
+                    payload.reasoning_effort = opts.thinking.effort;
                 }
 
                 let response;
