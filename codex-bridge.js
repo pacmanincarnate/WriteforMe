@@ -1,11 +1,14 @@
 /*
- * Local Codex CLI text-generation bridge for EllipsisProse.
+ * Local Codex CLI text-generation and embedding bridge for EllipsisProse.
  * Requires Node 18+ and an installed, logged-in Codex CLI on PATH.
  * Run: node codex-bridge.js
  * Options: --port 5010 --concurrency 2 --timeout 600 --bind 127.0.0.1
  * Environment: CODEX_BRIDGE_PORT, CONCURRENCY, TIMEOUT, BIND (same prefix).
  * CODEX_HOME overrides the default ~/.codex configuration directory.
- * Exposes /health, /v1/models, and non-streaming /v1/chat/completions.
+ * Optional @xenova/transformers enables local embeddings; run npm install once.
+ * Models are cached in ~/.ellipsisprose/models, outside node_modules.
+ * Override the embedding model with --embedding-model / CODEX_BRIDGE_EMBEDDING_MODEL.
+ * Exposes /health, /v1/models, /v1/embeddings, and non-streaming /v1/chat/completions.
  * Each completion runs in an empty temporary directory, removed afterwards.
  */
 'use strict';
@@ -21,12 +24,13 @@ const settings = {
     port: process.env.CODEX_BRIDGE_PORT || 5010,
     concurrency: process.env.CODEX_BRIDGE_CONCURRENCY || 2,
     timeout: process.env.CODEX_BRIDGE_TIMEOUT || 600,
-    bind: process.env.CODEX_BRIDGE_BIND || '127.0.0.1'
+    bind: process.env.CODEX_BRIDGE_BIND || '127.0.0.1',
+    'embedding-model': process.env.CODEX_BRIDGE_EMBEDDING_MODEL || 'Xenova/bge-small-en-v1.5'
 };
 for (let i = 2; i < process.argv.length; i += 2) {
     const key = process.argv[i].replace(/^--/, '');
     if (!process.argv[i].startsWith('--') || !Object.hasOwn(settings, key) || !process.argv[i + 1]) {
-        throw new Error('Usage: node codex-bridge.js [--port 5010] [--concurrency 2] [--timeout 600] [--bind 127.0.0.1]');
+        throw new Error('Usage: node codex-bridge.js [--port 5010] [--concurrency 2] [--timeout 600] [--bind 127.0.0.1] [--embedding-model Xenova/bge-small-en-v1.5]');
     }
     settings[key] = process.argv[i + 1];
 }
@@ -44,6 +48,64 @@ const effortMap = { none: 'low', minimal: 'low', low: 'low', medium: 'medium', h
 const waiting = [];
 const active = new Set();
 let stopping = false;
+
+const EMBEDDING_MODEL = settings['embedding-model'];
+let embeddingModelPromise;
+let embeddingModelLoaded = false;
+let embeddingQueue = Promise.resolve();
+
+function embeddingPackage() {
+    try {
+        return require('@xenova/transformers');
+    } catch (error) {
+        if (error.code === 'MODULE_NOT_FOUND') {
+            throw Object.assign(new Error('Local embeddings need the optional package: run "npm install" in the project folder (installs @xenova/transformers).'), { status: 501 });
+        }
+        throw error;
+    }
+}
+
+function embeddingHealth() {
+    let available = false;
+    try { embeddingPackage(); available = true; } catch (_) { /* No download or startup failure. */ }
+    return { available, model: EMBEDDING_MODEL, loaded: embeddingModelLoaded };
+}
+
+function loadEmbeddingModel() {
+    if (!embeddingModelPromise) {
+        embeddingModelPromise = Promise.resolve().then(async () => {
+            const { pipeline, env } = embeddingPackage();
+            env.allowLocalModels = false;
+            env.cacheDir = path.join(os.homedir(), '.ellipsisprose', 'models');
+            fs.mkdirSync(env.cacheDir, { recursive: true });
+            const started = Date.now();
+            console.log(`Local embeddings loading model=${JSON.stringify(EMBEDDING_MODEL)}`);
+            const extractor = await pipeline('feature-extraction', EMBEDDING_MODEL, { quantized: true });
+            embeddingModelLoaded = true;
+            console.log(`Local embeddings ready model=${JSON.stringify(EMBEDDING_MODEL)} duration=${Date.now() - started}ms`);
+            return extractor;
+        }).catch(error => {
+            embeddingModelPromise = undefined; // Permit a retry after an install or failed download.
+            throw error;
+        });
+    }
+    return embeddingModelPromise;
+}
+
+async function embedInputs(inputs) {
+    const extractor = await loadEmbeddingModel(); // Parallel first requests share one model load.
+    const result = embeddingQueue.then(async () => {
+        const data = [];
+        for (const [index, text] of inputs.entries()) {
+            const output = await extractor(text, { pooling: 'cls', normalize: true });
+            data.push({ object: 'embedding', index, embedding: Array.from(output.data) });
+        }
+        return { object: 'list', data, model: EMBEDDING_MODEL, usage: { prompt_tokens: 0, total_tokens: 0 } };
+    });
+    // Serialize all ORT calls across requests, and keep the queue usable after failures.
+    embeddingQueue = result.catch(() => {});
+    return result;
+}
 
 function defaultModel() {
     try {
@@ -205,23 +267,40 @@ const server = http.createServer(async (req, res) => {
     const started = Date.now();
     let model = defaultModel();
     let effort;
+    let embeddingInputs = 0;
+    let embeddingDims = 0;
     const route = req.url.split('?')[0];
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
-    res.once('finish', () => console.log(`${req.method} ${JSON.stringify(route)} model=${JSON.stringify(model)} effort=${effort || 'config'} duration=${Date.now() - started}ms status=${res.statusCode}`));
+    res.once('finish', () => console.log(route === '/v1/embeddings'
+        ? `${req.method} ${JSON.stringify(route)} inputs=${embeddingInputs} dims=${embeddingDims} duration=${Date.now() - started}ms status=${res.statusCode}`
+        : `${req.method} ${JSON.stringify(route)} model=${JSON.stringify(model)} effort=${effort || 'config'} duration=${Date.now() - started}ms status=${res.statusCode}`));
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
     if (req.method === 'GET' && route === '/v1/models') { send(res, 200, models()); return; }
     if (req.method === 'GET' && route === '/health') {
-        send(res, 200, { ok: true, codex: await codexVersion, default_model: model, queue: { active: active.size, waiting: waiting.length } });
+        send(res, 200, { ok: true, codex: await codexVersion, default_model: model, queue: { active: active.size, waiting: waiting.length }, embeddings: embeddingHealth() });
         return;
     }
-    if (req.method !== 'POST' || route !== '/v1/chat/completions') { send(res, 404, { error: { message: 'Not found' } }); return; }
+    if (req.method !== 'POST' || !['/v1/chat/completions', '/v1/embeddings'].includes(route)) { send(res, 404, { error: { message: 'Not found' } }); return; }
     try {
         let raw = '';
         req.setEncoding('utf8');
         for await (const chunk of req) raw += chunk;
         const body = JSON.parse(raw);
+        if (route === '/v1/embeddings') {
+            const input = body && !Array.isArray(body) ? body.input : undefined;
+            if (typeof input !== 'string' && !(Array.isArray(input) && input.every(text => typeof text === 'string'))) {
+                send(res, 400, { error: { message: 'input must be a string or an array of strings' } }); return;
+            }
+            const inputs = typeof input === 'string' ? [input] : input;
+            embeddingInputs = inputs.length;
+            if (stopping) { send(res, 503, { error: { message: 'Bridge is stopping' } }); return; }
+            const result = await embedInputs(inputs);
+            embeddingDims = result.data[0]?.embedding.length || 0;
+            send(res, 200, result);
+            return;
+        }
         if (!body || !Array.isArray(body.messages) || body.messages.some(m => !m || typeof m.role !== 'string' || typeof m.content !== 'string')) {
             send(res, 400, { error: { message: 'messages must be an array of { role, content } text messages' } }); return;
         }
@@ -252,7 +331,7 @@ const server = http.createServer(async (req, res) => {
         waiting.push(job);
         drain();
     } catch (error) {
-        send(res, error instanceof SyntaxError ? 400 : 500, { error: { message: error.message } });
+        send(res, error.status || (error instanceof SyntaxError ? 400 : 500), { error: { message: error.message } });
     }
 });
 server.timeout = 0;

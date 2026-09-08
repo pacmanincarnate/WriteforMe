@@ -6908,10 +6908,11 @@ INSTRUCTIONS:
         };
 
         class EmbeddingService {
-            constructor(apiKey, provider = 'gemini', baseUrl = 'http://localhost:5001') {
+            constructor(apiKey, provider = 'gemini', baseUrl = 'http://localhost:5001', codexUrl = 'http://localhost:5010') {
                 this.apiKey = apiKey;
                 this.provider = provider;
                 this.baseUrl = baseUrl;
+                this.codexUrl = codexUrl;
             }
 
             async getEmbedding(text) {
@@ -6922,6 +6923,8 @@ INSTRUCTIONS:
                     return await this.getNanoGPTEmbedding(text);
                 } else if (this.provider === 'koboldcpp') {
                     return await this.getKoboldCPPEmbedding(text);
+                } else if (this.provider === 'codex') {
+                    return await this.getCodexEmbedding(text);
                 } else {
                     return await this.getOpenRouterEmbedding(text);
                 }
@@ -6999,6 +7002,23 @@ INSTRUCTIONS:
                     throw new Error(`nano-GPT Embedding Failed: ${response.status} - ${err}`);
                 }
 
+                const data = await response.json();
+                return data.data?.[0]?.embedding;
+            }
+
+            async getCodexEmbedding(text) {
+                const cleanUrl = (this.codexUrl && String(this.codexUrl).trim())
+                    ? String(this.codexUrl).trim().replace(/\/+$/, '')
+                    : 'http://localhost:5010';
+                const response = await fetchWithTimeout(`${cleanUrl}/v1/embeddings`, {
+                    method: 'POST',
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: "default", input: text })
+                }, 0); // The first request may need to download the local model.
+                if (!response.ok) {
+                    const err = await response.text();
+                    throw new Error(`Codex Bridge Embedding Failed: ${response.status} - ${err}. Run "npm run codex-bridge" (with "npm install" done once for local embeddings).`);
+                }
                 const data = await response.json();
                 return data.data?.[0]?.embedding;
             }
@@ -10981,9 +11001,10 @@ INSTRUCTIONS:
             const [koboldUrl, setKoboldUrl] = useState(() => localStorage.getItem("ellipsisprose_kobold_url") || "http://localhost:5001");
             const [koboldModel, setKoboldModel] = useState(() => localStorage.getItem("ellipsisprose_kobold_model") || "koboldcpp");
             const [codexUrl, setCodexUrl] = useState(() => localStorage.getItem("ellipsisprose_codex_url") || "http://localhost:5010");
-            const [codexModel, setCodexModel] = useState(() => localStorage.getItem("ellipsisprose_codex_model") || "");
+            const [codexModel, setCodexModel] = useState(() => localStorage.getItem("ellipsisprose_codex_model") ?? "gpt-5.6-luna");
             const [codexModelsList, setCodexModelsList] = useState([]);
             const [codexStatus, setCodexStatus] = useState({ online: false, model: null, error: null });
+            const [codexEmbeddingStatus, setCodexEmbeddingStatus] = useState(null);
             const codexRefreshId = useRef(0);
             const [savedModels, setSavedModels] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_saved_models");
@@ -11750,6 +11771,7 @@ INSTRUCTIONS:
             if (!graphManager.current) graphManager.current = new GraphManager();
             const embeddingService = useRef(null);
             const [ragStatus, setRagStatus] = useState("idle"); // idle, indexing, ready
+            const [isRebuildingRag, setIsRebuildingRag] = useState(false);
 
             // RAG Inspector State
             const [ragTestQuery, setRagTestQuery] = useState("");
@@ -15591,6 +15613,21 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 return processedList;
             };
 
+            const rebuildRagIndex = async () => {
+                if (isRebuildingRag || ragStatus === 'indexing' || ragStatus === 'indexing_batch') return;
+                setIsRebuildingRag(true);
+                showToast(`Rebuilding RAG index for ${(story.lore || []).length} lore entries…`, "info");
+                try {
+                    await ingestLoreBatch(story.lore || [], { clearExisting: true });
+                    showToast("RAG index rebuilt", "success");
+                } catch (error) {
+                    showToast(`RAG index rebuild failed: ${error.message}`, "error");
+                } finally {
+                    setRagStatus("ready");
+                    setIsRebuildingRag(false);
+                }
+            };
+
             // Build Graph on Load/Change
             useEffect(() => {
                 if (story.lore) {
@@ -15709,10 +15746,10 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 if (embeddingProvider === 'gemini') key = apiKey;
                 else if (embeddingProvider === 'openrouter') key = openRouterKey;
                 else if (embeddingProvider === 'nanogpt') key = nanoGptKey;
-                else if (embeddingProvider === 'koboldcpp') key = "";
+                else if (embeddingProvider === 'koboldcpp' || embeddingProvider === 'codex') key = "";
 
-                embeddingService.current = new EmbeddingService(key, embeddingProvider, koboldUrl);
-            }, [apiKey, openRouterKey, nanoGptKey, koboldUrl, embeddingProvider]);
+                embeddingService.current = new EmbeddingService(key, embeddingProvider, koboldUrl, codexUrl);
+            }, [apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl, embeddingProvider]);
 
             useEffect(() => {
                 safeLocalStorageSet("ellipsisprose_view", view);
@@ -20216,12 +20253,17 @@ ${finalProseText}
                 const refreshId = ++codexRefreshId.current;
                 const baseUrl = (codexUrl.trim() || 'http://localhost:5010').replace(/\/+$/, '');
                 setCodexStatus({ online: false, model: null, error: null });
+                setCodexEmbeddingStatus(null);
                 setCodexModelsList([]);
                 try {
-                    const [status, response] = await Promise.all([
+                    const [status, response, health] = await Promise.all([
                         checkKoboldCPPStatus(baseUrl),
-                        fetchWithTimeout(`${baseUrl}/v1/models`, { headers: { Accept: 'application/json' } }, 3000)
+                        fetchWithTimeout(`${baseUrl}/v1/models`, { headers: { Accept: 'application/json' } }, 3000),
+                        fetchWithTimeout(`${baseUrl}/health`, { headers: { Accept: 'application/json' } }, 6000)
+                            .then(response => response.ok ? response.json() : null).catch(() => null)
                     ]);
+                    if (refreshId !== codexRefreshId.current) return;
+                    setCodexEmbeddingStatus(health?.embeddings || null);
                     if (!status.online) throw new Error(status.error || 'Bridge offline');
                     if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     const catalog = await response.json();
@@ -20258,14 +20300,13 @@ ${finalProseText}
                         refreshOpenRouterModels();
                     } else if (apiProvider === 'nanogpt' && nanoGptModelsList.length === 0) {
                         refreshNanoGptModels();
-                    } else if (apiProvider === 'codex') {
-                        refreshCodexModels();
                     } else if (apiProvider === 'koboldcpp') {
                         checkKoboldStatus();
                     }
+                    if (apiProvider === 'codex' || embeddingProvider === 'codex') refreshCodexModels();
                 }
                 return () => { codexRefreshId.current++; };
-            }, [view, apiProvider, apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl]);
+            }, [view, apiProvider, embeddingProvider, apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl]);
 
             return (
                 <div className={`flex h-screen overflow-hidden font-sans ${theme === 'dark' ? 'dark bg-[#141416] text-[#F5F0E8]' : 'bg-void text-ink-900'}`} data-theme={theme}>
@@ -21561,12 +21602,12 @@ ${finalProseText}
                                                 <Plus size={14} /> Add Fact
                                             </button>
                                             <button
-                                                onClick={() => ingestLoreBatch(story.lore, { clearExisting: true })}
-                                                disabled={ragStatus === 'indexing' || (!apiKey && !openRouterKey)}
+                                                onClick={rebuildRagIndex}
+                                                disabled={isRebuildingRag || ragStatus === 'indexing' || ragStatus === 'indexing_batch'}
                                                 className="text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50"
                                                 title="Re-embed all lore items into vector database"
                                             >
-                                                <RefreshCw size={12} className={ragStatus === 'indexing' ? 'animate-spin text-gold-ink' : ''} /> Re-Index RAG
+                                                <RefreshCw size={12} className={isRebuildingRag ? 'animate-spin text-gold-ink' : ''} /> Rebuild RAG index
                                             </button>
                                         </div>
                                     </div>
@@ -24565,7 +24606,7 @@ ${finalProseText}
                                         {/* Embedding Provider Toggle */}
                                         <div>
                                             <label className="block text-[10px] font-bold text-ink-400 uppercase tracking-wider mb-2 font-mono">Embedding Provider (RAG)</label>
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                                                 <button
                                                     type="button"
                                                     onClick={() => setEmbeddingProvider('gemini')}
@@ -24594,7 +24635,15 @@ ${finalProseText}
                                                 >
                                                     KoboldCPP
                                                 </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEmbeddingProvider('codex')}
+                                                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all ${embeddingProvider === 'codex' ? 'bg-btn text-btn-ink shadow-2xs' : 'text-ink-600 hover:text-ink-900'}`}
+                                                >
+                                                    Codex Bridge (local)
+                                                </button>
                                             </div>
+                                            <p className="text-xs text-ink-400 mt-2">After switching providers, use "Rebuild RAG index" in World Lore.</p>
                                         </div>
 
                                         {/* Gemini API Key */}
@@ -24666,7 +24715,7 @@ ${finalProseText}
                                         )}
 
                                         {/* Codex CLI Bridge */}
-                                        {apiProvider === 'codex' && (
+                                        {(apiProvider === 'codex' || embeddingProvider === 'codex') && (
                                             <div className="animate-fade-in space-y-2">
                                                 <label htmlFor="codex-url" className="block text-xs font-bold uppercase tracking-wider text-ink-500 font-mono">Codex Bridge URL</label>
                                                 <input
@@ -24681,8 +24730,16 @@ ${finalProseText}
                                                     <p className="text-xs text-ink-500" role="status">
                                                         {codexStatus.online ? `Online. Default model: ${codexStatus.model}` : (codexStatus.error || 'Checking bridge...')}
                                                     </p>
-                                                    <button type="button" onClick={handleCatalogRefresh} className="text-xs text-gold-ink hover:text-ink-900 font-medium flex items-center gap-1 transition-colors">Refresh</button>
+                                                    <button type="button" onClick={refreshCodexModels} className="text-xs text-gold-ink hover:text-ink-900 font-medium flex items-center gap-1 transition-colors">Refresh</button>
                                                 </div>
+                                                <p className="text-xs text-ink-500" role="status">
+                                                    {codexEmbeddingStatus?.available === true
+                                                        ? `Local embeddings: ready (${(codexEmbeddingStatus.model || 'Xenova/bge-small-en-v1.5').split('/').pop()})`
+                                                        : codexEmbeddingStatus?.available === false
+                                                            ? 'Local embeddings: package not installed — run npm install'
+                                                            : 'Local embeddings: unknown'}
+                                                </p>
+                                                {apiProvider === 'codex' && <React.Fragment>
                                                 <label htmlFor="codex-model" className="block text-xs font-bold uppercase tracking-wider text-ink-500 font-mono">Structure / Primary Model</label>
                                                 <select id="codex-model" value={codexModel} onChange={(e) => setCodexModel(e.target.value)} className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono">
                                                     <option value="">Bridge default</option>
@@ -24700,6 +24757,7 @@ ${finalProseText}
                                                     </React.Fragment>
                                                 )}
                                                 <p className="text-xs text-ink-400">Run "npm run codex-bridge" in the project folder first. Uses your local Codex CLI login.</p>
+                                                </React.Fragment>}
                                             </div>
                                         )}
 

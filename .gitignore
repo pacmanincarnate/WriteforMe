@@ -8,3 +8,5 @@ pipeline_field_reference.md
 server.js
 .agents/skills/webapp-testing/SKILL.md
 narrative_lens_prompts.md
+node_modules/
+package-lock.json
