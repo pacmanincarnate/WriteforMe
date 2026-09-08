@@ -805,6 +805,36 @@
             box-shadow: var(--nav-active-shadow);
         }
 
+        /* Desktop icon rail; mobile keeps the full-width, labelled drawer. */
+        @media (min-width: 768px) {
+            .studio-sidebar.collapsed .sidebar-header {
+                flex-direction: column;
+                justify-content: center;
+                gap: 0.5rem;
+                padding: 0.75rem 0;
+            }
+            .studio-sidebar.collapsed .sidebar-brand { justify-content: center; }
+            .studio-sidebar.collapsed .nav-label,
+            .studio-sidebar.collapsed .sidebar-section-label,
+            .studio-sidebar.collapsed .sidebar-tree { display: none; }
+            .studio-sidebar.collapsed .sidebar-nav { padding: 0.75rem 0.5rem; }
+            .studio-sidebar.collapsed .nav-btn {
+                justify-content: center;
+                padding: 0.625rem 0;
+                gap: 0;
+            }
+            .studio-sidebar.collapsed .sidebar-autopilot,
+            .studio-sidebar.collapsed .sidebar-storage > button {
+                flex: none;
+                width: 2.5rem;
+                height: 2.5rem;
+                padding: 0;
+                gap: 0;
+                margin-inline: auto;
+            }
+            .studio-sidebar.collapsed .sidebar-storage { flex-direction: column; }
+        }
+
         /* Spring Entrance Animations */
         @keyframes springFadeIn {
             from {
@@ -4221,6 +4251,30 @@ BEGIN SURGICAL BEAT REPAIR`;
         };
         const readingMinutes = (words) => Math.max(1, Math.round(words / 225));
 
+        // Use complete words from the first sentence when an extracted fact has no title.
+        function deriveLoreTitle(text, max = 60) {
+            let title = String(text || '').trim().replace(/\s+/g, ' ').split(/[.!?](?:\s|$)/)[0];
+            if (title.length > max) {
+                const clipped = title.slice(0, max);
+                title = /\s/.test(title[max]) ? clipped : clipped.slice(0, Math.max(0, clipped.lastIndexOf(' ')));
+            }
+            return title.replace(/[\p{P}\s]+$/gu, '').trim() || 'Fact';
+        }
+        window.deriveLoreTitle = deriveLoreTitle;
+
+        function migrateLoreTitles(lore) {
+            if (!Array.isArray(lore)) return lore;
+            let count = 0;
+            const migrated = lore.map(entry => {
+                if (!entry || typeof entry.topic !== 'string' || !entry.topic.endsWith('...')) return entry;
+                const prefix = entry.topic.match(/^([^:]+:)\s*/);
+                count++;
+                return { ...entry, topic: `${prefix ? prefix[1] + ' ' : ''}${deriveLoreTitle(entry.detail)}` };
+            });
+            if (count > 0) console.info(`Repaired ${count} truncated lore title(s).`);
+            return count > 0 ? migrated : lore;
+        }
+
         // Split an imported lore document into 2000-char RAG-ingestible entries.
         // Shared by the setup-screen and post-generation lore importers.
         const chunkLoreText = (text, topicForPart, relatedTo, description) => {
@@ -6134,7 +6188,17 @@ INSTRUCTIONS:
 1. **Filter for Permanence:** Ignore plot events, character emotions, or temporary physical states (e.g., "The building is on fire"). Extract ONLY permanent, systemic additions to the universe (e.g., histories, magical mechanics, sociopolitical rules, geographical layouts, cultural traditions).
 2. **Deduplication:** Check the current_status_quo and existing lore topics. If the fact is already known, ignore it.
 3. **Formatting:** Synthesize the extracted lore into concise, objective, encyclopedic entries.
-4. **Output Tag:** Return ONLY valid XML tags. If absolutely no new permanent lore was generated, output <extracted_lore>NONE</extracted_lore>.`,
+4. **Output Tag:** Return ONLY valid XML tags. If absolutely no new permanent lore was generated, output <extracted_lore>NONE</extracted_lore>.
+
+## Output Schema
+<extracted_lore>
+  <lore_entry>
+    <category>Category (e.g., Cultural Tradition, Architecture, Magic System)</category>
+    <title>A specific 2-6 word noun phrase naming the fact, no trailing punctuation</title>
+    <new_fact>Objective, encyclopedic description of the newly established lore.</new_fact>
+  </lore_entry>
+  <!-- Repeat as necessary -->
+</extracted_lore>`,
 
             // Lore Distiller (SMALL)
             // Associated Payload: distillLore() -> primer prompt assembly (see ~line 11328)
@@ -9629,6 +9693,7 @@ INSTRUCTIONS:
 
             // Ensure continuity_ledger
             story.continuity_ledger = Array.isArray(story.continuity_ledger) ? story.continuity_ledger : [];
+            if (Array.isArray(story.lore)) story.lore = migrateLoreTitles(story.lore);
 
             // If story has legacy chapters (object of arrays e.g. { "0": [...], "1": [...] } or flat array)
             const oldChapters = story.chapters;
@@ -11291,6 +11356,28 @@ INSTRUCTIONS:
             const [loading, setLoading] = useState(false);
             const [loadingStep, setLoadingStep] = useState("");
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+            const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+                try { return localStorage.getItem('ellipsisprose_sidebar_collapsed') === 'true'; }
+                catch { return false; }
+            });
+
+            useEffect(() => {
+                try { localStorage.setItem('ellipsisprose_sidebar_collapsed', String(isSidebarCollapsed)); }
+                catch { /* Keep the toggle usable when storage is unavailable. */ }
+            }, [isSidebarCollapsed]);
+
+            useEffect(() => {
+                const handleSidebarShortcut = (event) => {
+                    const focused = document.activeElement;
+                    if (!(event.ctrlKey || event.metaKey) || event.key !== '\\' || event.repeat) return;
+                    if (!window.matchMedia('(min-width: 768px)').matches) return;
+                    if (focused?.matches('input, textarea') || focused?.isContentEditable) return;
+                    event.preventDefault();
+                    setIsSidebarCollapsed(prev => !prev);
+                };
+                window.addEventListener('keydown', handleSidebarShortcut);
+                return () => window.removeEventListener('keydown', handleSidebarShortcut);
+            }, []);
 
             const [continuousAutopilot, setContinuousAutopilot] = useState(false);
             const [activeActTab, setActiveActTab] = useState(0);
@@ -15938,6 +16025,7 @@ Output Schema:
 <extracted_lore>
   <lore_entry>
     <category>Category (e.g., Cultural Tradition, Architecture, Magic System)</category>
+    <title>A specific 2-6 word noun phrase naming the fact, no trailing punctuation</title>
     <new_fact>Objective, encyclopedic description of the newly established lore.</new_fact>
   </lore_entry>
   <!-- Repeat as necessary -->
@@ -15953,8 +16041,9 @@ BEGIN EXTRACTING WORLD LORE
                             const loreUpdates = entries.map(entry => {
                                 const cat = extractTag(entry, 'category');
                                 const fact = extractTag(entry, 'new_fact');
-                                const prefix = fact ? (fact.split(/[.!?]/)[0].trim().substring(0, 40) + "...") : "Fact";
-                                return { topic: `${cat}: ${prefix}`, detail: fact };
+                                const title = extractTag(entry, 'title').trim();
+                                const topic = title ? `${cat}: ${title}` : `${cat}: ${deriveLoreTitle(fact)}`;
+                                return { topic, detail: fact };
                             }).filter(up => up.topic && up.detail);
 
                             if (loreUpdates.length > 0) {
@@ -20514,34 +20603,44 @@ ${finalProseText}
             return (
                 <div className={`flex h-screen overflow-hidden font-sans ${theme === 'dark' ? 'dark bg-[#141416] text-[#F5F0E8]' : 'bg-void text-ink-900'}`} data-theme={theme}>
                     {/* FIXED SIDEBAR NAVIGATION (Light Scandinavian Parchment / Dark Atelier Nuit) */}
-                    <div className={`studio-sidebar fixed inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-edge flex flex-col transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${view === 'reader' ? 'hidden md:hidden' : ''} shadow-sm`}>
+                    <div className={`studio-sidebar ${isSidebarCollapsed ? 'collapsed md:w-16' : ''} fixed inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-edge flex flex-col transform transition-all duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${view === 'reader' ? 'hidden md:hidden' : ''} shadow-sm`}>
                         {/* Studio Logo Header */}
-                        <div className="p-4 flex justify-between items-center border-b border-edge bg-surface/70 backdrop-blur-sm">
-                            <div className="flex items-center gap-2.5">
-                                <div className="w-9 h-9 rounded-xl overflow-hidden border border-gold-edge shadow-sm flex-shrink-0 bg-stone-900 flex items-center justify-center">
+                        <div className="sidebar-header p-4 flex justify-between items-center border-b border-edge bg-surface/70 backdrop-blur-sm">
+                            <div className="sidebar-brand flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl overflow-hidden border border-gold-edge shadow-sm flex-shrink-0 bg-btn flex items-center justify-center">
                                     <img src="ELPIcon2.jpg" alt="EllipsisProse Icon" className="w-full h-full object-cover" />
                                 </div>
-                                <div>
+                                <div className="nav-label">
                                     <h2 className="font-bold text-sm text-ink-900 tracking-tight flex items-center gap-1.5 font-display">
                                         EllipsisProse <span className="text-[10px] font-mono font-bold bg-mist-200/80 text-ink-700 px-1.5 py-0.2 rounded-full">1.7</span>
                                     </h2>
                                     <p className="text-[10px] text-ink-500 font-medium">AI Story Architect & Studio</p>
                                 </div>
                             </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsSidebarCollapsed(prev => !prev)}
+                                className="hidden md:flex shrink-0 items-center justify-center text-ink-400 hover:text-ink-800 p-1.5 rounded-lg hover:bg-wash transition-colors"
+                                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                                aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                                aria-expanded={!isSidebarCollapsed}
+                            >
+                                {isSidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                            </button>
                             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-ink-400 hover:text-ink-800 p-1.5 rounded-lg hover:bg-wash transition-colors">
                                 <X size={18} />
                             </button>
                         </div>
 
                         {/* Semantic Grouped Navigation */}
-                        <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                        <div className="sidebar-nav flex-1 overflow-y-auto p-3 space-y-4">
                             {/* SECTION 1: STUDIO WORKSPACE */}
                             <div className="space-y-0.5">
-                                <div className="px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
+                                <div className="sidebar-section-label px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
                                     Studio
                                 </div>
-                                <button onClick={() => { setView('library'); refreshLibrary(); }} className={`nav-btn ${view === 'library' ? 'active' : ''}`}>
-                                    <Library size={15} /> Story Library
+                                <button onClick={() => { setView('library'); refreshLibrary(); }} className={`nav-btn ${view === 'library' ? 'active' : ''}`} title="Story Library">
+                                    <Library size={15} /> <span className="nav-label">Story Library</span>
                                 </button>
                                 <button onClick={() => {
                                     setActiveStoryId("");
@@ -20552,53 +20651,53 @@ ${finalProseText}
                                     setImportedLoreText("");
                                     setWorldPrimer(null);
                                     setView('setup');
-                                }} className={`nav-btn ${view === 'setup' ? 'active' : ''}`}>
-                                    <Sparkles size={15} /> New Story Setup
+                                }} className={`nav-btn ${view === 'setup' ? 'active' : ''}`} title="New Story Setup">
+                                    <Sparkles size={15} /> <span className="nav-label">New Story Setup</span>
                                 </button>
-                                <button onClick={() => setView('dashboard')} className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`}>
-                                    <Activity size={15} /> Overview & Canvas
+                                <button onClick={() => setView('dashboard')} className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`} title="Overview & Canvas">
+                                    <Activity size={15} /> <span className="nav-label">Overview & Canvas</span>
                                 </button>
-                                <button onClick={() => enterReaderMode()} className={`nav-btn ${view === 'reader' ? 'active' : ''}`}>
-                                    <BookOpen size={15} /> Reading Mode
+                                <button onClick={() => enterReaderMode()} className={`nav-btn ${view === 'reader' ? 'active' : ''}`} title="Reading Mode">
+                                    <BookOpen size={15} /> <span className="nav-label">Reading Mode</span>
                                 </button>
                             </div>
 
                             {/* SECTION 2: ARCHITECTURE & DIRECTIVES */}
                             <div className="space-y-0.5">
-                                <div className="px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
+                                <div className="sidebar-section-label px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
                                     Architecture
                                 </div>
-                                <button onClick={() => setView('structure')} className={`nav-btn ${view === 'structure' ? 'active' : ''}`}>
-                                    <Layers size={15} /> Act & Sequence Planner
+                                <button onClick={() => setView('structure')} className={`nav-btn ${view === 'structure' ? 'active' : ''}`} title="Act & Sequence Planner">
+                                    <Layers size={15} /> <span className="nav-label">Act & Sequence Planner</span>
                                 </button>
-                                <button onClick={() => setView('directive')} className={`nav-btn ${view === 'directive' ? 'active' : ''}`}>
-                                    <Wand2 size={15} /> Directive Agent
+                                <button onClick={() => setView('directive')} className={`nav-btn ${view === 'directive' ? 'active' : ''}`} title="Directive Agent">
+                                    <Wand2 size={15} /> <span className="nav-label">Directive Agent</span>
                                 </button>
                             </div>
 
                             {/* SECTION 3: STORY BIBLE & WORLD */}
                             <div className="space-y-0.5">
-                                <div className="px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
+                                <div className="sidebar-section-label px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
                                     Story Bible
                                 </div>
-                                <button onClick={() => setView('cast')} className={`nav-btn ${view === 'cast' ? 'active' : ''}`}>
-                                    <Users size={15} /> Cast & Roster
+                                <button onClick={() => setView('cast')} className={`nav-btn ${view === 'cast' ? 'active' : ''}`} title="Cast & Roster">
+                                    <Users size={15} /> <span className="nav-label">Cast & Roster</span>
                                 </button>
-                                <button onClick={() => setView('relationships')} className={`nav-btn ${view === 'relationships' ? 'active' : ''}`}>
-                                    <Heart size={15} /> Dynamic Relationships
+                                <button onClick={() => setView('relationships')} className={`nav-btn ${view === 'relationships' ? 'active' : ''}`} title="Dynamic Relationships">
+                                    <Heart size={15} /> <span className="nav-label">Dynamic Relationships</span>
                                 </button>
-                                <button onClick={() => setView('lore')} className={`nav-btn ${view === 'lore' ? 'active' : ''}`}>
-                                    <Globe size={15} /> World Lore
+                                <button onClick={() => setView('lore')} className={`nav-btn ${view === 'lore' ? 'active' : ''}`} title="World Lore">
+                                    <Globe size={15} /> <span className="nav-label">World Lore</span>
                                 </button>
-                                <button onClick={() => setView('inspector')} className={`nav-btn ${view === 'inspector' ? 'active' : ''}`}>
-                                    <Search size={15} /> RAG & Continuity Inspector
+                                <button onClick={() => setView('inspector')} className={`nav-btn ${view === 'inspector' ? 'active' : ''}`} title="RAG & Continuity Inspector">
+                                    <Search size={15} /> <span className="nav-label">RAG & Continuity Inspector</span>
                                 </button>
                             </div>
 
                             {/* SECTION 4: STORY HIERARCHY TREE */}
                             {story.acts && story.acts.length > 0 && (
-                                <div className="space-y-1 pt-2 border-t border-edge">
-                                    <div className="px-2 pb-1 text-[10px] font-bold text-gold-ink uppercase tracking-wider font-mono flex items-center justify-between">
+                                <div className="sidebar-tree space-y-1 pt-2 border-t border-edge">
+                                    <div className="sidebar-section-label px-2 pb-1 text-[10px] font-bold text-gold-ink uppercase tracking-wider font-mono flex items-center justify-between">
                                         <span>Manuscript Tree</span>
                                         <span className="text-[9px] text-ink-400">{story.acts.length} Acts</span>
                                     </div>
@@ -20686,17 +20785,17 @@ ${finalProseText}
 
                             {/* SECTION 5: TELEMETRY & SYSTEM */}
                             <div className="space-y-0.5 pt-2 border-t border-edge">
-                                <div className="px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
+                                <div className="sidebar-section-label px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
                                     System
                                 </div>
-                                <button onClick={() => setView('pipeline')} className={`nav-btn ${view === 'pipeline' ? 'active' : ''}`}>
-                                    <Workflow size={15} /> Visual Pipeline
+                                <button onClick={() => setView('pipeline')} className={`nav-btn ${view === 'pipeline' ? 'active' : ''}`} title="Visual Pipeline">
+                                    <Workflow size={15} /> <span className="nav-label">Visual Pipeline</span>
                                 </button>
-                                <button onClick={() => setView('logs')} className={`nav-btn ${view === 'logs' ? 'active' : ''}`}>
-                                    <History size={15} /> Prompt & LLM Logs
+                                <button onClick={() => setView('logs')} className={`nav-btn ${view === 'logs' ? 'active' : ''}`} title="Prompt & LLM Logs">
+                                    <History size={15} /> <span className="nav-label">Prompt & LLM Logs</span>
                                 </button>
-                                <button onClick={() => setView('settings')} className={`nav-btn ${view === 'settings' ? 'active' : ''}`}>
-                                    <Settings size={15} /> Studio Settings
+                                <button onClick={() => setView('settings')} className={`nav-btn ${view === 'settings' ? 'active' : ''}`} title="Studio Settings">
+                                    <Settings size={15} /> <span className="nav-label">Studio Settings</span>
                                 </button>
                             </div>
                         </div>
@@ -20706,7 +20805,8 @@ ${finalProseText}
                             <div className="px-3 py-2.5 border-t border-edge bg-surface/50">
                                 <button
                                     onClick={() => setContinuousAutopilot(!continuousAutopilot)}
-                                    className={`w-full py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 border ${continuousAutopilot
+                                    title={continuousAutopilot ? 'Stop Autopilot' : 'Continuous Autopilot'}
+                                    className={`sidebar-autopilot w-full py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 border ${continuousAutopilot
                                         ? 'bg-blush-tint border-blush-edge text-blush-800 hover:bg-blush-tint-strong'
                                         : 'bg-btn hover:bg-btn-hover border-transparent text-btn-ink'
                                         }`}
@@ -20714,12 +20814,12 @@ ${finalProseText}
                                     {continuousAutopilot ? (
                                         <>
                                             <Loader2 className="animate-spin text-blush-600" size={14} />
-                                            Stop Autopilot
+                                            <span className="nav-label">Stop Autopilot</span>
                                         </>
                                     ) : (
                                         <>
                                             <Zap size={14} className="fill-current text-amber-300" />
-                                            Continuous Autopilot
+                                            <span className="nav-label">Continuous Autopilot</span>
                                         </>
                                     )}
                                 </button>
@@ -20727,22 +20827,22 @@ ${finalProseText}
                         )}
 
                         {/* Bottom Quick Storage Controls */}
-                        <div className="p-3 border-t border-edge bg-surface/70 flex gap-1.5">
+                        <div className="sidebar-storage p-3 border-t border-edge bg-surface/70 flex gap-1.5">
                             <button onClick={handleExport} className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Export JSON Database">
-                                <Download size={13} /> JSON
+                                <Download size={13} /> <span className="nav-label">JSON</span>
                             </button>
                             <button onClick={handleExportEpub} className="flex-1 bg-gold-tint hover:bg-gold-tint border border-gold-edge text-gold-ink hover:text-gold-ink-deep py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Export Formatted EPUB Novel">
-                                <Book size={13} /> EPUB
+                                <Book size={13} /> <span className="nav-label">EPUB</span>
                             </button>
                             <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Load .json or .epub">
-                                <Upload size={13} /> Load
+                                <Upload size={13} /> <span className="nav-label">Load</span>
                             </button>
                             <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".json,.epub" />
                         </div>
                     </div>
 
                     {/* MAIN CONTENT WORKSPACE */}
-                    <div className={`studio-main-workspace flex-1 flex flex-col h-full relative w-full ${view === 'reader' ? 'md:ml-0' : 'md:ml-72'} bg-void`}>
+                    <div className={`studio-main-workspace flex-1 flex flex-col h-full relative w-full transition-all duration-300 ${view === 'reader' ? 'md:ml-0' : isSidebarCollapsed ? 'md:ml-16' : 'md:ml-72'} bg-void`}>
                         {/* STUDIO APP HEADER (iOS Safe Region & Mobile Momentum Scrollable) */}
                         {view !== 'reader' && (
                             <header className="studio-top-header border-b border-edge backdrop-blur-md z-30 sticky top-0 shadow-2xs flex flex-col justify-center transition-all">
@@ -21838,8 +21938,8 @@ ${finalProseText}
                                             {story.lore.map((l, i) => (
                                                 <div key={i} className="bg-surface rounded-2xl border border-edge p-6 transition-all hover:border-gold-edge shadow-sm space-y-3">
                                                     <div className="flex flex-col md:flex-row justify-between items-start gap-3">
-                                                        <h3 className="font-bold text-base font-serif text-ink-900 flex items-center gap-2">
-                                                            {l.topic}
+                                                        <h3 className="font-bold text-base font-serif text-ink-900 flex items-start gap-2 min-w-0 max-w-full">
+                                                            <span className="min-w-0 whitespace-normal break-words">{l.topic}</span>
                                                             <EditButton title={`Lore: ${l.topic}`} value={l.topic} onSave={() => openEditModal(`Lore: ${l.topic}`, l.topic, (val) => { setStory(prev => { const newLore = [...prev.lore]; newLore[i] = { ...newLore[i], topic: val }; return { ...prev, lore: newLore }; }); })} />
                                                         </h3>
                                                         <div className="flex items-start gap-2 self-start md:self-auto">
@@ -25387,34 +25487,34 @@ ${finalProseText}
                                                                 <div
                                                                     key={mode.id}
                                                                     className={`p-3.5 rounded-xl border transition-all flex justify-between items-start gap-4 animate-fade-in shadow-2xs ${isCurrentlyEditing
-                                                                        ? 'bg-[#FAF8F5] border-[#B8935A] ring-1 ring-[#B8935A]/40'
-                                                                        : 'bg-[#FAF8F5] border-stone-200 hover:border-stone-300'
+                                                                        ? 'bg-inset border-gold-edge ring-1 ring-gold/40'
+                                                                        : 'bg-inset border-edge-strong hover:border-gold-edge'
                                                                         }`}
                                                                 >
                                                                     <div className="min-w-0 flex-1">
                                                                         <div className="flex items-center gap-2 mb-1">
-                                                                            <Icon name={mode.icon || "tag"} className="w-3.5 h-3.5 text-[#8C6B32] shrink-0" />
-                                                                            <span className="text-xs font-bold text-[#8C6B32] font-mono">{mode.id}</span>
+                                                                            <Icon name={mode.icon || "tag"} className="w-3.5 h-3.5 text-gold-ink shrink-0" />
+                                                                            <span className="text-xs font-bold text-gold-ink font-mono">{mode.id}</span>
                                                                             {isCurrentlyEditing && (
-                                                                                <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-[#8C6B32]/10 text-[#8C6B32] font-bold">
+                                                                                <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-gold-tint text-gold-ink font-bold">
                                                                                     Editing
                                                                                 </span>
                                                                             )}
                                                                         </div>
-                                                                        <p className="text-xs text-stone-800 font-semibold mb-1 font-serif">{mode.context}</p>
-                                                                        <p className="text-[10px] text-stone-500 line-clamp-2 italic font-mono">{mode.prompt}</p>
+                                                                        <p className="text-xs text-ink-800 font-semibold mb-1 font-serif">{mode.context}</p>
+                                                                        <p className="text-[10px] text-ink-500 line-clamp-2 italic font-mono">{mode.prompt}</p>
                                                                     </div>
                                                                     <div className="flex items-center gap-1 shrink-0">
                                                                         <button
                                                                             onClick={() => handleStartEditCustomMode(mode)}
-                                                                            className={`transition-colors p-1 rounded hover:bg-stone-200/50 ${isCurrentlyEditing ? 'text-[#8C6B32]' : 'text-stone-400 hover:text-[#8C6B32]'}`}
+                                                                            className={`transition-colors p-1 rounded hover:bg-wash ${isCurrentlyEditing ? 'text-gold-ink' : 'text-ink-400 hover:text-gold-ink'}`}
                                                                             title="Edit Narrative Mode"
                                                                         >
                                                                             <Edit3 size={14} />
                                                                         </button>
                                                                         <button
                                                                             onClick={() => handleDeleteCustomMode(mode.id)}
-                                                                            className="text-stone-400 hover:text-rose-600 transition-colors p-1 rounded hover:bg-rose-50"
+                                                                            className="text-ink-400 hover:text-blush-600 transition-colors p-1 rounded hover:bg-blush-tint"
                                                                             title="Delete Narrative Mode"
                                                                         >
                                                                             <Trash2 size={14} />
@@ -25446,32 +25546,29 @@ ${finalProseText}
                                                 </div>
                                             )}
 
-                                            {/* Create new mode form */}
-                                            <div className="bg-inset p-4 sm:p-5 rounded-2xl border border-edge-strong space-y-3.5">
-                                                <h4 className="text-xs font-bold text-ink-800 font-mono uppercase">Create Custom Mode</h4>
-                                                {/* Create / Edit mode form */}
-                                                <div className={`p-4 sm:p-5 rounded-2xl border space-y-3.5 transition-all ${editingModeId ? 'bg-[#FAF8F5] border-[#B8935A] shadow-xs' : 'bg-[#FAF8F5] border-stone-200'}`}>
+                                            {/* Create / Edit mode form */}
+                                            <div className={`bg-inset p-4 sm:p-5 rounded-2xl border space-y-3.5 transition-all ${editingModeId ? 'border-gold-edge shadow-xs' : 'border-edge-strong'}`}>
                                                     {editingModeId ? (
                                                         <div className="flex justify-between items-center">
                                                             <div className="flex items-center gap-2">
-                                                                <span className="w-2 h-2 rounded-full bg-[#8C6B32] animate-pulse"></span>
-                                                                <h4 className="text-xs font-bold text-[#8C6B32] font-mono uppercase">Edit Custom Mode: {editingModeId}</h4>
+                                                                <span className="w-2 h-2 rounded-full bg-gold animate-pulse"></span>
+                                                                <h4 className="text-xs font-bold text-gold-ink font-mono uppercase">Edit Custom Mode: {editingModeId}</h4>
                                                             </div>
                                                             <button
                                                                 type="button"
                                                                 onClick={handleCancelEditCustomMode}
-                                                                className="text-[11px] font-semibold text-stone-500 hover:text-stone-800 transition-colors flex items-center gap-1"
+                                                                className="text-[11px] font-semibold text-ink-500 hover:text-ink-800 transition-colors flex items-center gap-1"
                                                             >
                                                                 <X size={12} /> Cancel
                                                             </button>
                                                         </div>
                                                     ) : (
-                                                        <h4 className="text-xs font-bold text-stone-800 font-mono uppercase">Create Custom Mode</h4>
+                                                        <h4 className="text-xs font-bold text-ink-800 font-mono uppercase">Create Custom Mode</h4>
                                                     )}
                                                     <div>
                                                         <label className="block text-[10px] font-bold text-ink-500 uppercase font-mono mb-1">
                                                             Mode ID (alphanumeric + underscore)
-                                                            {editingModeId && <span className="normal-case font-normal text-stone-400 ml-1.5">(renaming updates active scene assignments)</span>}
+                                                            {editingModeId && <span className="normal-case font-normal text-ink-400 ml-1.5">(renaming updates active scene assignments)</span>}
                                                         </label>
                                                         <input
                                                             type="text"
@@ -25523,14 +25620,14 @@ ${finalProseText}
                                                         <div className="flex items-center gap-2">
                                                             <button
                                                                 onClick={handleSaveCustomMode}
-                                                                className="flex-1 bg-[#1C1917] hover:bg-[#292524] text-white font-bold py-2 rounded-xl text-xs transition-all shadow-sm flex justify-center items-center gap-1.5 active:scale-95 cursor-pointer"
+                                                                className="flex-1 bg-btn hover:bg-btn-hover text-btn-ink font-bold py-2 rounded-xl text-xs transition-all shadow-sm flex justify-center items-center gap-1.5 active:scale-95 cursor-pointer"
                                                             >
                                                                 <Check size={14} /> Update Narrative Mode
                                                             </button>
                                                             <button
                                                                 type="button"
                                                                 onClick={handleCancelEditCustomMode}
-                                                                className="px-4 bg-white hover:bg-stone-100 border border-stone-200 text-stone-700 font-semibold py-2 rounded-xl text-xs transition-all shadow-2xs flex justify-center items-center gap-1 cursor-pointer"
+                                                                className="px-4 bg-surface hover:bg-wash border border-edge-strong text-ink-700 font-semibold py-2 rounded-xl text-xs transition-all shadow-2xs flex justify-center items-center gap-1 cursor-pointer"
                                                             >
                                                                 <X size={14} /> Cancel
                                                             </button>
@@ -25543,7 +25640,6 @@ ${finalProseText}
                                                             <Plus size={14} /> Add Narrative Mode
                                                         </button>
                                                     )}
-                                                </div>
                                             </div>
 
                                             {/* Banned Words & Phrases Section */}
