@@ -1,6 +1,16 @@
 # EllipsisProse
 AI-powered novel writer
 
+## One-click local backends (Windows)
+
+Double-click **Start Backends.bat** in the project folder. On first run it
+installs the npm packages for the Codex bridge and local embeddings, then it
+opens the Codex bridge (port 5010) and ComfyUI (port 8188, started with
+`--enable-cors-header`) in two minimized windows. Either is skipped when its
+port is already in use. Set `COMFY_DIR` at the top of the script, or the
+`ELLIPSISPROSE_COMFY_DIR` environment variable, to your ComfyUI-Easy-Install
+folder; leave it blank to skip ComfyUI. Close the windows to stop the backends.
+
 ## Using your Codex CLI as the model (optional)
 
 Requires Node 18+ and the Codex CLI installed on PATH and logged in. Run
