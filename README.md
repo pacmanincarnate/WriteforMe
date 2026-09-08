@@ -21,3 +21,7 @@ Codex CLI itself does not embed. First use downloads about 33 MB to
 the model with `--embedding-model` or `CODEX_BRIDGE_EMBEDDING_MODEL` if needed.
 Switching embedding providers requires **Rebuild RAG index** in World Lore,
 because vectors from different providers are incompatible.
+
+`npm install` should report 0 vulnerabilities: `package.json` pins patched
+`protobufjs` and `sharp` underneath the embeddings package via `overrides`.
+Neither is used by the bridge's text path, but the pins keep the audit clean.
