@@ -128,8 +128,7 @@
     <!-- 4. Lucide Icons (Visuals) -->
     <script src="https://unpkg.com/lucide@1.33.0/dist/umd/lucide.min.js"></script>
 
-    <!-- 5. JSZip (EPUB Export) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- 5. JSZip (EPUB export/import, loaded on demand) -->
 
     <!-- 6. Marked (Markdown Parser) -->
     <script src="https://cdn.jsdelivr.net/npm/marked@15.0.12/marked.min.js"></script>
@@ -803,6 +802,36 @@
             border-color: var(--nav-active-edge);
             font-weight: 600;
             box-shadow: var(--nav-active-shadow);
+        }
+
+        /* Desktop icon rail; mobile keeps the full-width, labelled drawer. */
+        @media (min-width: 768px) {
+            .studio-sidebar.collapsed .sidebar-header {
+                flex-direction: column;
+                justify-content: center;
+                gap: 0.5rem;
+                padding: 0.75rem 0;
+            }
+            .studio-sidebar.collapsed .sidebar-brand { justify-content: center; }
+            .studio-sidebar.collapsed .nav-label,
+            .studio-sidebar.collapsed .sidebar-section-label,
+            .studio-sidebar.collapsed .sidebar-tree { display: none; }
+            .studio-sidebar.collapsed .sidebar-nav { padding: 0.75rem 0.5rem; }
+            .studio-sidebar.collapsed .nav-btn {
+                justify-content: center;
+                padding: 0.625rem 0;
+                gap: 0;
+            }
+            .studio-sidebar.collapsed .sidebar-autopilot,
+            .studio-sidebar.collapsed .sidebar-storage > button {
+                flex: none;
+                width: 2.5rem;
+                height: 2.5rem;
+                padding: 0;
+                gap: 0;
+                margin-inline: auto;
+            }
+            .studio-sidebar.collapsed .sidebar-storage { flex-direction: column; }
         }
 
         /* Spring Entrance Animations */
@@ -1814,6 +1843,48 @@
                 transform: translateX(0);
             }
         }
+        /* Relationship matrix: keep both axes readable within the scroll viewport. */
+        .rel-matrix { position: relative; isolation: isolate; }
+        .rel-matrix .rel-matrix-scroll { max-height: 70vh; overflow: auto; }
+        .rel-matrix table { width: 100%; border-collapse: separate; border-spacing: 0; }
+        .rel-matrix th, .rel-matrix td { min-width: 140px; width: 160px; max-width: 180px; }
+        .rel-matrix thead { position: sticky; top: 0; z-index: 2; }
+        .rel-matrix thead th { background: var(--bg-inset); }
+        .rel-matrix tr > :first-child {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            min-width: 140px;
+            width: 140px;
+            max-width: 140px;
+            background: var(--bg-inset);
+            border-right: 1px solid var(--edge-strong);
+        }
+        .rel-matrix thead tr > :first-child { z-index: 3; }
+        .rel-matrix .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            white-space: normal;
+        }
+        .rel-matrix .rel-matrix-fade {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 28px;
+            z-index: 4;
+            pointer-events: none;
+        }
+        .rel-matrix .rel-matrix-fade-left {
+            left: 140px;
+            background: linear-gradient(to right, var(--bg-inset), transparent);
+        }
+        .rel-matrix .rel-matrix-fade-right {
+            right: 0;
+            background: linear-gradient(to left, var(--bg-inset), transparent);
+        }
     </style>
 </head>
 
@@ -1858,8 +1929,28 @@
             })();
     </script>
 
-    <script type="text/babel">
+    <script type="text/babel" data-presets="react">
         const { useState, useEffect, useLayoutEffect, useRef, useMemo } = React;
+
+        let jsZipPromise = null;
+        const ensureJSZip = () => {
+            if (window.JSZip) return Promise.resolve(window.JSZip);
+            if (!jsZipPromise) {
+                jsZipPromise = new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+                    script.onload = () => resolve(window.JSZip);
+                    script.onerror = () => {
+                        script.remove();
+                        jsZipPromise = null;
+                        reject(new Error('Could not load the EPUB library (JSZip). Check your internet connection and try again.'));
+                    };
+                    document.head.appendChild(script);
+                });
+            }
+            return jsZipPromise;
+        };
+        window.ensureJSZip = ensureJSZip;
 
         // --- 1. API CONFIGURATION ---
         // API Key is now managed via UI/LocalStorage in the component
@@ -4221,6 +4312,30 @@ BEGIN SURGICAL BEAT REPAIR`;
         };
         const readingMinutes = (words) => Math.max(1, Math.round(words / 225));
 
+        // Use complete words from the first sentence when an extracted fact has no title.
+        function deriveLoreTitle(text, max = 60) {
+            let title = String(text || '').trim().replace(/\s+/g, ' ').split(/[.!?](?:\s|$)/)[0];
+            if (title.length > max) {
+                const clipped = title.slice(0, max);
+                title = /\s/.test(title[max]) ? clipped : clipped.slice(0, Math.max(0, clipped.lastIndexOf(' ')));
+            }
+            return title.replace(/[\p{P}\s]+$/gu, '').trim() || 'Fact';
+        }
+        window.deriveLoreTitle = deriveLoreTitle;
+
+        function migrateLoreTitles(lore) {
+            if (!Array.isArray(lore)) return lore;
+            let count = 0;
+            const migrated = lore.map(entry => {
+                if (!entry || typeof entry.topic !== 'string' || !entry.topic.endsWith('...')) return entry;
+                const prefix = entry.topic.match(/^([^:]+:)\s*/);
+                count++;
+                return { ...entry, topic: `${prefix ? prefix[1] + ' ' : ''}${deriveLoreTitle(entry.detail)}` };
+            });
+            if (count > 0) console.info(`Repaired ${count} truncated lore title(s).`);
+            return count > 0 ? migrated : lore;
+        }
+
         // Split an imported lore document into 2000-char RAG-ingestible entries.
         // Shared by the setup-screen and post-generation lore importers.
         const chunkLoreText = (text, topicForPart, relatedTo, description) => {
@@ -6134,7 +6249,17 @@ INSTRUCTIONS:
 1. **Filter for Permanence:** Ignore plot events, character emotions, or temporary physical states (e.g., "The building is on fire"). Extract ONLY permanent, systemic additions to the universe (e.g., histories, magical mechanics, sociopolitical rules, geographical layouts, cultural traditions).
 2. **Deduplication:** Check the current_status_quo and existing lore topics. If the fact is already known, ignore it.
 3. **Formatting:** Synthesize the extracted lore into concise, objective, encyclopedic entries.
-4. **Output Tag:** Return ONLY valid XML tags. If absolutely no new permanent lore was generated, output <extracted_lore>NONE</extracted_lore>.`,
+4. **Output Tag:** Return ONLY valid XML tags. If absolutely no new permanent lore was generated, output <extracted_lore>NONE</extracted_lore>.
+
+## Output Schema
+<extracted_lore>
+  <lore_entry>
+    <category>Category (e.g., Cultural Tradition, Architecture, Magic System)</category>
+    <title>A specific 2-6 word noun phrase naming the fact, no trailing punctuation</title>
+    <new_fact>Objective, encyclopedic description of the newly established lore.</new_fact>
+  </lore_entry>
+  <!-- Repeat as necessary -->
+</extracted_lore>`,
 
             // Lore Distiller (SMALL)
             // Associated Payload: distillLore() -> primer prompt assembly (see ~line 11328)
@@ -6760,6 +6885,9 @@ INSTRUCTIONS:
 
                 if (!isThinkingEnabled) {
                     payload.reasoning_effort = "none";
+                } else if (opts.provider === 'codex' && ['low', 'medium', 'high'].includes(opts.thinking?.effort)) {
+                    // The Codex bridge maps this onto codex exec's reasoning effort; otherwise the CLI config decides.
+                    payload.reasoning_effort = opts.thinking.effort;
                 }
 
                 let response;
@@ -6904,11 +7032,37 @@ INSTRUCTIONS:
             return dotProduct / (magnitudeA * magnitudeB);
         };
 
+        const computeLoreFingerprint = (storyId, lore, providerLabel) => {
+            let hash = 5381;
+            for (const item of lore) {
+                const text = `${item?.topic || ''}\u0000${item?.detail || ''}\u0000`;
+                for (let i = 0; i < text.length; i++) hash = ((hash * 33) ^ text.charCodeAt(i)) >>> 0;
+            }
+            return `${storyId}|${providerLabel}|${lore.length}|${hash.toString(36)}`;
+        };
+        window.computeLoreFingerprint = computeLoreFingerprint;
+
         class EmbeddingService {
-            constructor(apiKey, provider = 'gemini', baseUrl = 'http://localhost:5001') {
+            constructor(apiKey, provider = 'gemini', baseUrl = 'http://localhost:5001', codexUrl = 'http://localhost:5010') {
                 this.apiKey = apiKey;
                 this.provider = provider;
                 this.baseUrl = baseUrl;
+                this.codexUrl = codexUrl;
+            }
+
+            isConfigured() {
+                return this.provider === 'koboldcpp' || this.provider === 'codex' || Boolean(this.apiKey);
+            }
+
+            getProviderLabel() {
+                const models = {
+                    gemini: 'gemini-embedding-001',
+                    openrouter: 'qwen/qwen3-embedding-8b',
+                    nanogpt: 'text-embedding-3-small',
+                    koboldcpp: 'default',
+                    codex: 'local'
+                };
+                return `${this.provider}|${models[this.provider]}`;
             }
 
             async getEmbedding(text) {
@@ -6919,6 +7073,8 @@ INSTRUCTIONS:
                     return await this.getNanoGPTEmbedding(text);
                 } else if (this.provider === 'koboldcpp') {
                     return await this.getKoboldCPPEmbedding(text);
+                } else if (this.provider === 'codex') {
+                    return await this.getCodexEmbedding(text);
                 } else {
                     return await this.getOpenRouterEmbedding(text);
                 }
@@ -6996,6 +7152,23 @@ INSTRUCTIONS:
                     throw new Error(`nano-GPT Embedding Failed: ${response.status} - ${err}`);
                 }
 
+                const data = await response.json();
+                return data.data?.[0]?.embedding;
+            }
+
+            async getCodexEmbedding(text) {
+                const cleanUrl = (this.codexUrl && String(this.codexUrl).trim())
+                    ? String(this.codexUrl).trim().replace(/\/+$/, '')
+                    : 'http://localhost:5010';
+                const response = await fetchWithTimeout(`${cleanUrl}/v1/embeddings`, {
+                    method: 'POST',
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ model: "default", input: text })
+                }, 0); // The first request may need to download the local model.
+                if (!response.ok) {
+                    const err = await response.text();
+                    throw new Error(`Codex Bridge Embedding Failed: ${response.status} - ${err}. Run "npm run codex-bridge" (with "npm install" done once for local embeddings).`);
+                }
                 const data = await response.json();
                 return data.data?.[0]?.embedding;
             }
@@ -8552,66 +8725,71 @@ INSTRUCTIONS:
             );
         };
 
-        const CharacterCard = ({ c, onEdit }) => {
+        const CharacterCard = ({ c, onEdit, portraitSrc, portraitLoading = false, onGeneratePortrait, onUploadPortrait, onRemovePortrait }) => {
             const [isExpanded, setIsExpanded] = useState(false);
+            const portraitInputRef = useRef(null);
             if (!c) return null;
 
             return (
                 <div className="bg-surface rounded-2xl border border-edge overflow-hidden shadow-sm hover:shadow-md transition-all">
-                    <div className="p-5 border-b border-edge bg-inset flex justify-between items-center">
-                        <div className="flex items-center gap-3.5">
-                            <div className="w-10 h-10 rounded-xl bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink font-bold font-serif text-lg shrink-0 shadow-sm">
-                                {c.name ? c.name.charAt(0).toUpperCase() : <User size={18} />}
+                    <div className="p-5 border-b border-edge bg-inset flex items-start gap-4">
+                        <div className="w-[72px] md:w-24 shrink-0 space-y-2">
+                            <div className="w-[72px] h-24 md:w-24 md:h-32 rounded-xl bg-gold-tint border border-gold-edge overflow-hidden flex items-center justify-center text-gold-ink font-bold font-serif text-2xl shadow-sm">
+                                {portraitSrc ? <img src={portraitSrc} alt={`Portrait of ${c.name || 'character'}`} className="w-full h-full object-cover" /> : (c.name ? c.name.charAt(0).toUpperCase() : <User size={24} />)}
                             </div>
-                            <div>
-                                <div className="flex items-center gap-2">
-                                    <h3 className="text-lg font-bold font-serif text-ink-900">{c.name}</h3>
-                                    {onEdit && <EditButton title="Name" value={c.name} onSave={() => onEdit('name', 'Name', c.name)} />}
-                                </div>
-                                <div className="flex items-center gap-2 mt-0.5">
-                                    <span className="text-[10px] text-ink-600 uppercase font-mono font-bold bg-mist-100 border border-edge-strong px-2 py-0.5 rounded-full">
-                                        {c.role}
-                                    </span>
-                                    {onEdit && <EditButton title="Role" value={c.role} onSave={() => onEdit('role', 'Role', c.role)} />}
-                                </div>
+                            <div className="flex flex-wrap items-center justify-center gap-2">
+                                {onGeneratePortrait && <button type="button" title="Generate" aria-label={`Generate portrait for ${c.name}`} disabled={portraitLoading} onClick={() => onGeneratePortrait?.(c)} className="p-1.5 shrink-0 rounded-lg bg-surface border border-edge text-gold-ink hover:bg-gold-tint disabled:opacity-50 disabled:cursor-not-allowed">{portraitLoading ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}</button>}
+                                {onUploadPortrait && <button type="button" title="Upload" aria-label={`Upload portrait for ${c.name}`} disabled={portraitLoading} onClick={() => portraitInputRef.current?.click()} className="p-1.5 shrink-0 rounded-lg bg-surface border border-edge text-ink-600 hover:bg-gold-tint disabled:opacity-50 disabled:cursor-not-allowed"><Upload size={14} /></button>}
+                                {portraitSrc && onRemovePortrait && <button type="button" title="Remove" aria-label={`Remove portrait for ${c.name}`} disabled={portraitLoading} onClick={() => onRemovePortrait?.(c)} className="p-1.5 shrink-0 rounded-lg bg-surface border border-edge text-ink-600 hover:bg-gold-tint disabled:opacity-50 disabled:cursor-not-allowed"><Trash2 size={14} /></button>}
+                                {!onGeneratePortrait && !onUploadPortrait && !onRemovePortrait && <span className="p-1.5 rounded-lg bg-surface border border-edge text-ink-400"><User size={16} /></span>}
                             </div>
+                            {onUploadPortrait && <input ref={portraitInputRef} type="file" accept="image/*" className="hidden" disabled={portraitLoading} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; if (file && !portraitLoading) onUploadPortrait?.(c, file); }} />}
                         </div>
-                        <div className="p-2 rounded-xl bg-surface border border-edge-strong text-ink-400 shadow-sm">
-                            <User size={16} />
+                        <div className="flex-1 min-w-0 space-y-3">
+                            <div className="flex items-center gap-3">
+                                <h3 className="text-lg font-bold font-serif text-ink-900 break-words min-w-0">{c.name}</h3>
+                                {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Name" value={c.name} onSave={() => onEdit('name', 'Name', c.name)} />}
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <span className="text-[10px] text-ink-600 uppercase font-mono font-bold bg-inset border border-edge-strong px-2 py-0.5 rounded-full break-words min-w-0">
+                                    {c.role}
+                                </span>
+                                {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Role" value={c.role} onSave={() => onEdit('role', 'Role', c.role)} />}
+                            </div>
                         </div>
                     </div>
 
                     <div className="p-5 space-y-4">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                            <div className="bg-inset p-3.5 rounded-xl border border-edge-strong">
-                                <div className="flex justify-between items-center mb-1.5">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="bg-inset p-5 rounded-xl border border-edge-strong">
+                                <div className="flex justify-between items-center gap-2 mb-1.5">
                                     <div className="text-[9px] text-ink-500 font-bold uppercase tracking-wider font-mono">Current Status & Arc</div>
-                                    {onEdit && <EditButton title="Status" value={c.details?.story_events} onSave={() => onEdit('details.story_events', 'Status', c.details?.story_events)} />}
+                                    {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Status" value={c.details?.story_events} onSave={() => onEdit('details.story_events', 'Status', c.details?.story_events)} />}
                                 </div>
                                 <div className="text-xs text-ink-800 leading-relaxed whitespace-pre-wrap">{c.details?.story_events || "Active in story world."}</div>
                             </div>
 
-                            <div className="bg-inset p-3.5 rounded-xl border border-edge-strong">
-                                <div className="flex justify-between items-center mb-1.5">
+                            <div className="bg-inset p-5 rounded-xl border border-edge-strong">
+                                <div className="flex justify-between items-center gap-2 mb-1.5">
                                     <div className="text-[9px] text-ink-500 font-bold uppercase tracking-wider font-mono">Core Motivation & Goal</div>
-                                    {onEdit && <EditButton title="Goal" value={c.details?.goals} onSave={() => onEdit('details.goals', 'Goal', c.details?.goals)} />}
+                                    {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Goal" value={c.details?.goals} onSave={() => onEdit('details.goals', 'Goal', c.details?.goals)} />}
                                 </div>
                                 <div className="text-xs text-ink-800 leading-relaxed">{c.details?.goals || "Goal undefined."}</div>
                             </div>
                         </div>
 
                         {c.details?.history && (
-                            <div className="bg-inset p-3.5 rounded-xl border border-edge-strong">
-                                <div className="flex justify-between items-center mb-1">
+                            <div className="bg-inset p-5 rounded-xl border border-edge-strong">
+                                <div className="flex justify-between items-center gap-2 mb-1">
                                     <div className="text-[9px] text-ink-500 font-bold uppercase tracking-wider font-mono">Backstory & Provenance</div>
-                                    {onEdit && <EditButton title="History" value={c.details?.history} onSave={() => onEdit('details.history', 'History', c.details?.history)} />}
+                                    {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="History" value={c.details?.history} onSave={() => onEdit('details.history', 'History', c.details?.history)} />}
                                 </div>
                                 <div className="text-xs text-ink-700 leading-relaxed prose max-w-none" dangerouslySetInnerHTML={{ __html: parseMarkdown(c.details?.history) }} />
                             </div>
                         )}
 
                         {c.voice_sample && (
-                            <div className="bg-ember-tint p-3.5 rounded-xl border border-ember-edge italic text-ember-950 text-xs font-serif leading-relaxed">
+                            <div className="bg-ember-tint p-5 rounded-xl border border-ember-edge italic text-ember-950 text-xs font-serif leading-relaxed">
                                 <span className="text-[9px] not-italic font-bold font-mono text-gold-ink uppercase mr-1.5 block mb-0.5">Voice Sample:</span>
                                 "{c.voice_sample}"
                             </div>
@@ -8626,10 +8804,10 @@ INSTRUCTIONS:
                                     {isExpanded ? <React.Fragment><Minus size={12} /> Hide Full Interview</React.Fragment> : <React.Fragment><MessageSquare size={12} /> Read Full Persona Interview</React.Fragment>}
                                 </button>
                                 {isExpanded && (
-                                    <div className="mt-3 p-4 bg-inset rounded-xl border border-edge-strong text-xs font-serif leading-loose h-80 overflow-y-auto custom-scrollbar animate-fade-in relative">
-                                        <div className="flex justify-between items-center mb-2 pb-2 border-b border-edge-strong">
+                                    <div className="mt-3 p-5 bg-inset rounded-xl border border-edge-strong text-xs font-serif leading-loose h-80 overflow-y-auto custom-scrollbar animate-fade-in relative">
+                                        <div className="flex justify-between items-center gap-2 mb-2 pb-2 border-b border-edge-strong">
                                             <div className="text-[9px] text-ink-500 font-sans font-bold uppercase font-mono">Archival Persona Interview Transcript</div>
-                                            {onEdit && <EditButton title="Deep Profile" value={c.details?.deep_profile} onSave={() => onEdit('details.deep_profile', 'Deep Profile', c.details?.deep_profile)} />}
+                                            {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Deep Profile" value={c.details?.deep_profile} onSave={() => onEdit('details.deep_profile', 'Deep Profile', c.details?.deep_profile)} />}
                                         </div>
                                         <div className="prose max-w-none text-ink-800 text-xs font-serif leading-loose" dangerouslySetInnerHTML={{ __html: parseMarkdown(c.details.deep_profile) }} />
                                     </div>
@@ -9606,6 +9784,7 @@ INSTRUCTIONS:
 
             // Ensure continuity_ledger
             story.continuity_ledger = Array.isArray(story.continuity_ledger) ? story.continuity_ledger : [];
+            if (Array.isArray(story.lore)) story.lore = migrateLoreTitles(story.lore);
 
             // If story has legacy chapters (object of arrays e.g. { "0": [...], "1": [...] } or flat array)
             const oldChapters = story.chapters;
@@ -10575,6 +10754,9 @@ INSTRUCTIONS:
                 }
             };
 
+            // Declared here because the library effect below reads it; with native const this is a TDZ otherwise.
+            const [view, setView] = useState(() => localStorage.getItem("ellipsisprose_view") || 'setup');
+
             // Fetch library when viewing library or activeStoryId changes
             useEffect(() => {
                 if (view === 'library') {
@@ -10590,6 +10772,7 @@ INSTRUCTIONS:
             // Load active story from IndexedDB on startup and when activeStoryId changes
             useEffect(() => {
                 let isMounted = true;
+                let loreSyncTimer = null;
                 const loadActiveStory = async () => {
                     if (!activeStoryId) {
                         // In new story setup mode; keep fresh default template without loading old stories
@@ -10621,31 +10804,30 @@ INSTRUCTIONS:
                             });
                             console.log(`Loaded active story '${activeStoryId}' from IndexedDB.`);
 
-                            // Re-index RAG vector store for the loaded story's lore to avoid stale cross-story vector contamination
+                            // Defer lore indexing until hydration has returned and the story can render.
                             if (migrated && Array.isArray(migrated.lore) && vectorStore.current) {
-                                try {
-                                    await vectorStore.current.clear();
-                                    if (migrated.lore.length > 0 && embeddingService.current) {
-                                        for (const item of migrated.lore) {
-                                            if (item && item.topic && item.detail) {
-                                                const itemText = `${item.topic}: ${item.description || item.detail}`;
-                                                const emb = await embeddingService.current.getEmbedding(itemText);
-                                                if (emb) {
-                                                    const lid = `lore_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
-                                                    await vectorStore.current.add(lid, itemText, emb, {
-                                                        topic: item.topic,
-                                                        valid_from_act: item.valid_from_act || 1,
-                                                        valid_from_scene: item.valid_from_scene || 1,
-                                                        category: item.category || 'General',
-                                                        detail: item.detail
-                                                    });
-                                                }
-                                            }
+                                loreSyncTimer = setTimeout(async () => {
+                                    if (!isMounted) return;
+                                    try {
+                                        const service = embeddingService.current;
+                                        const fingerprint = computeLoreFingerprint(activeStoryId, migrated.lore, service?.getProviderLabel());
+                                        if (fingerprint === localStorage.getItem('ellipsisprose_rag_fingerprint')) {
+                                            console.info(`[RAG] index up to date for story ${activeStoryId}`);
+                                        } else if (!service?.isConfigured()) {
+                                            console.info('[RAG] skipping lore index: no embedding credentials configured');
+                                        } else {
+                                            await ingestLoreBatch(migrated.lore, {
+                                                clearExisting: true,
+                                                storyId: activeStoryId,
+                                                isCurrent: () => isMounted,
+                                                status: 'indexing',
+                                                throwOnError: true
+                                            });
                                         }
+                                    } catch (loreSyncErr) {
+                                        console.warn('[RAG] lore sync stopped:', loreSyncErr);
                                     }
-                                } catch (loreSyncErr) {
-                                    console.warn("RAG lore sync on story switch encountered an error:", loreSyncErr);
-                                }
+                                }, 0);
                             }
 
                             if (view === 'library') {
@@ -10685,16 +10867,39 @@ INSTRUCTIONS:
                     }
                 };
                 loadActiveStory();
-                return () => { isMounted = false; };
+                return () => {
+                    isMounted = false;
+                    clearTimeout(loreSyncTimer);
+                };
             }, [activeStoryId]);
             const [imageProvider, setImageProvider] = useState(() => localStorage.getItem("ellipsisprose_image_provider") || 'gemini');
             const [imageModel, setImageModel] = useState(() => localStorage.getItem("ellipsisprose_image_model") || 'imagen-3.0-generate-002');
             const [imageApiKey, setImageApiKey] = useState(() => localStorage.getItem("ellipsisprose_image_api_key") || '');
+            const [comfyUrl, setComfyUrl] = useState(() => localStorage.getItem("ellipsisprose_comfy_url") || 'http://127.0.0.1:8188');
+            const [comfyUnet, setComfyUnet] = useState(() => localStorage.getItem("ellipsisprose_comfy_unet") || '');
+            const [comfyClip, setComfyClip] = useState(() => localStorage.getItem("ellipsisprose_comfy_clip") || '');
+            const [comfyVae, setComfyVae] = useState(() => localStorage.getItem("ellipsisprose_comfy_vae") || '');
+            const [comfyLora, setComfyLora] = useState(() => localStorage.getItem("ellipsisprose_comfy_lora") || '');
+            const [comfyLoraStrength, setComfyLoraStrength] = useState(() => Number(localStorage.getItem("ellipsisprose_comfy_lora_strength") ?? 0.8));
+            const [comfySteps, setComfySteps] = useState(() => Number(localStorage.getItem("ellipsisprose_comfy_steps") ?? 8));
+            const [comfyCfg, setComfyCfg] = useState(() => Number(localStorage.getItem("ellipsisprose_comfy_cfg") ?? 1));
+            const [comfySampler, setComfySampler] = useState(() => localStorage.getItem("ellipsisprose_comfy_sampler") || 'euler');
+            const [comfyScheduler, setComfyScheduler] = useState(() => localStorage.getItem("ellipsisprose_comfy_scheduler") || 'simple');
+            const [comfyTimeoutSec, setComfyTimeoutSec] = useState(() => Number(localStorage.getItem("ellipsisprose_comfy_timeout_sec") ?? 600));
+            const [comfyStatus, setComfyStatus] = useState({ online: false, version: '', device: '', error: '' });
+            const [comfyOptions, setComfyOptions] = useState({ unet: [], clip: [], vae: [], lora: [], sampler: [], scheduler: [] });
+            const comfyRefreshId = useRef(0);
             const [customImageStyles, setCustomImageStyles] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_custom_image_styles");
                 return saved ? JSON.parse(saved) : [];
             });
             const [loadedImages, setLoadedImages] = useState({});
+            const [portraitLoading, setPortraitLoading] = useState({});
+            const [portraitReload, setPortraitReload] = useState(0);
+            const portraitOperations = useRef(new Set());
+            const portraitRevisions = useRef(new Map());
+            const portraitStoryId = useRef(story?.id);
+            portraitStoryId.current = story?.id;
             const [loadingCover, setLoadingCover] = useState(false);
             const [loadingImages, setLoadingImages] = useState({});
             const [newStyleName, setNewStyleName] = useState("");
@@ -10978,9 +11183,10 @@ INSTRUCTIONS:
             const [koboldUrl, setKoboldUrl] = useState(() => localStorage.getItem("ellipsisprose_kobold_url") || "http://localhost:5001");
             const [koboldModel, setKoboldModel] = useState(() => localStorage.getItem("ellipsisprose_kobold_model") || "koboldcpp");
             const [codexUrl, setCodexUrl] = useState(() => localStorage.getItem("ellipsisprose_codex_url") || "http://localhost:5010");
-            const [codexModel, setCodexModel] = useState(() => localStorage.getItem("ellipsisprose_codex_model") || "");
+            const [codexModel, setCodexModel] = useState(() => localStorage.getItem("ellipsisprose_codex_model") ?? "gpt-5.6-luna");
             const [codexModelsList, setCodexModelsList] = useState([]);
             const [codexStatus, setCodexStatus] = useState({ online: false, model: null, error: null });
+            const [codexEmbeddingStatus, setCodexEmbeddingStatus] = useState(null);
             const codexRefreshId = useRef(0);
             const [savedModels, setSavedModels] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_saved_models");
@@ -11189,6 +11395,35 @@ INSTRUCTIONS:
 
             // Selected relationship for editing
             const [selectedRel, setSelectedRel] = useState(null);
+            const [matrixView, setMatrixView] = useState(() => {
+                try {
+                    const saved = localStorage.getItem('ellipsisprose_matrix_view');
+                    if (saved === 'grid' || saved === 'list') return saved;
+                } catch { /* Use the viewport default when storage is unavailable. */ }
+                return window.matchMedia('(max-width: 767px)').matches ? 'list' : 'grid';
+            });
+            const [matrixScroll, setMatrixScroll] = useState({ left: false, right: false });
+            const matrixScrollRef = useRef(null);
+            const measureMatrixScroll = () => {
+                const el = matrixScrollRef.current;
+                const overflow = !!el && el.scrollWidth > el.clientWidth + 1;
+                const left = overflow && el.scrollLeft > 1;
+                const right = overflow && el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+                setMatrixScroll(prev => prev.left === left && prev.right === right ? prev : { left, right });
+            };
+            const selectMatrixRelationship = (fromChar, toChar) => {
+                const relKey = `${fromChar.name}->${toChar.name}`;
+                const rel = story.relationships?.[relKey];
+                setSelectedRel({
+                    from: fromChar.name,
+                    to: toChar.name,
+                    key: relKey,
+                    current: rel?.current || "",
+                    hidden_tension: rel?.hidden_tension || "",
+                    trust_level: parseInt(rel?.trust_level, 10) || 5,
+                    history: rel?.history || []
+                });
+            };
 
             // Directive Agent State
             const [directiveInput, setDirectiveInput] = useState("");
@@ -11228,7 +11463,19 @@ INSTRUCTIONS:
                 setArchetypeOptions(generateRandomArchetypes(20));
             }, []);
 
-            const [view, setView] = useState(() => localStorage.getItem("ellipsisprose_view") || 'setup');
+            useEffect(() => {
+                const el = matrixScrollRef.current;
+                measureMatrixScroll();
+                if (!el || view !== 'relationships' || matrixView !== 'grid') return;
+                const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureMatrixScroll);
+                observer?.observe(el);
+                if (el.firstElementChild) observer?.observe(el.firstElementChild);
+                window.addEventListener('resize', measureMatrixScroll);
+                return () => {
+                    observer?.disconnect();
+                    window.removeEventListener('resize', measureMatrixScroll);
+                };
+            }, [view, matrixView, story?.id, story?.cast?.length]);
             const [theme, setTheme] = useState(() => localStorage.getItem("ellipsisprose_theme") || 'light');
 
             useEffect(() => {
@@ -11253,6 +11500,28 @@ INSTRUCTIONS:
             const [loading, setLoading] = useState(false);
             const [loadingStep, setLoadingStep] = useState("");
             const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+            const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+                try { return localStorage.getItem('ellipsisprose_sidebar_collapsed') === 'true'; }
+                catch { return false; }
+            });
+
+            useEffect(() => {
+                try { localStorage.setItem('ellipsisprose_sidebar_collapsed', String(isSidebarCollapsed)); }
+                catch { /* Keep the toggle usable when storage is unavailable. */ }
+            }, [isSidebarCollapsed]);
+
+            useEffect(() => {
+                const handleSidebarShortcut = (event) => {
+                    const focused = document.activeElement;
+                    if (!(event.ctrlKey || event.metaKey) || event.key !== '\\' || event.repeat) return;
+                    if (!window.matchMedia('(min-width: 768px)').matches) return;
+                    if (focused?.matches('input, textarea') || focused?.isContentEditable) return;
+                    event.preventDefault();
+                    setIsSidebarCollapsed(prev => !prev);
+                };
+                window.addEventListener('keydown', handleSidebarShortcut);
+                return () => window.removeEventListener('keydown', handleSidebarShortcut);
+            }, []);
 
             const [continuousAutopilot, setContinuousAutopilot] = useState(false);
             const [activeActTab, setActiveActTab] = useState(0);
@@ -11746,7 +12015,9 @@ INSTRUCTIONS:
             const graphManager = useRef(null);
             if (!graphManager.current) graphManager.current = new GraphManager();
             const embeddingService = useRef(null);
+            const ragIndexRevision = useRef(0);
             const [ragStatus, setRagStatus] = useState("idle"); // idle, indexing, ready
+            const [isRebuildingRag, setIsRebuildingRag] = useState(false);
 
             // RAG Inspector State
             const [ragTestQuery, setRagTestQuery] = useState("");
@@ -11921,7 +12192,7 @@ INSTRUCTIONS:
                         // Re-index full list including new chunks
                         const currentLore = story.lore || [];
                         const combinedList = [...currentLore, ...chunks];
-                        const processedList = await ingestLoreBatch(combinedList, { clearExisting: true });
+                        const processedList = await ingestLoreBatch(combinedList, { clearExisting: true, fingerprintProcessed: true });
 
                         setStory(prev => ({
                             ...prev,
@@ -14823,7 +15094,7 @@ BEGIN STORY ARC CRITIQUE REVIEW
                     // ingestion returns as the story's lore so story.lore matches the vector
                     // store (mirrors handlePostGenLoreImport).
                     console.log("[initStory] Archiving baseline world lore in RAG...");
-                    const processedLore = await ingestLoreBatch(initialStoryState.lore, { clearExisting: true });
+                    const processedLore = await ingestLoreBatch(initialStoryState.lore, { clearExisting: true, storyId: newStoryId, fingerprintProcessed: true });
                     if (processedLore && processedLore.length > 0) {
                         initialStoryState.lore = processedLore;
                     }
@@ -15472,16 +15743,22 @@ BEGIN SEQUENCE CRITIQUE REVIEW
 
 
             // Single Item Ingest with Redundancy Check (3-Tier Lore Merger - A4)
-            const ingestLore = async (item) => {
+            const ingestLore = async (item, rebuild = null) => {
+                if (!rebuild) ragIndexRevision.current += 1;
+                safeLocalStorageSet('ellipsisprose_rag_fingerprint', '');
                 if (!item || !item.topic || !item.detail) return { ...item, is_merged: false };
 
                 try {
+                    const service = rebuild?.service || embeddingService.current;
                     // 1. Check for Semantic Redundancy
                     const itemText = `${item.topic}: ${item.description || item.detail}`;
-                    const tempEmbedding = await embeddingService.current.getEmbedding(itemText);
-                    if (!tempEmbedding) return { ...item, is_merged: false };
-
-                    const redundancy = await vectorStore.current.checkRedundancy(tempEmbedding, 0.85);
+                    const tempEmbedding = await service.getEmbedding(itemText);
+                    if (!tempEmbedding || tempEmbedding.length === 0) {
+                        if (rebuild) throw new Error('No embedding returned for lore item.');
+                        return { ...item, is_merged: false };
+                    }
+                    if (rebuild) rebuild.assertCurrent();
+                    const redundancy = rebuild?.clearPending ? null : await vectorStore.current.checkRedundancy(tempEmbedding, 0.85);
 
                     if (redundancy) {
                         const similarityScore = redundancy.score !== undefined ? redundancy.score : 0.85;
@@ -15510,7 +15787,8 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                                 false,
                                 "Lore Merger"
                             );
-                            const reEmbedding = await embeddingService.current.getEmbedding(`${item.topic}: ${chosenDetail}`);
+                            const reEmbedding = await service.getEmbedding(`${item.topic}: ${chosenDetail}`);
+                            if (rebuild && (!reEmbedding || reEmbedding.length === 0)) throw new Error('No embedding returned for merged lore item.');
                             if (reEmbedding) chosenEmbedding = reEmbedding;
                         }
 
@@ -15525,6 +15803,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         };
 
                         // Update Vector Store in-place
+                        if (rebuild) rebuild.assertCurrent();
                         await vectorStore.current.add(redundancy.id, `${item.topic}: ${chosenDetail}`, chosenEmbedding, mergedMetadata);
 
                         return {
@@ -15542,6 +15821,14 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                     } else {
                         // TIER 3: NEW LORE ENTRY (score < 0.85)
                         const id = `lore_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                        if (rebuild) {
+                            rebuild.assertCurrent();
+                            // Clear only when the first replacement embedding is ready to be added.
+                            if (rebuild.clearPending) {
+                                await vectorStore.current.clear();
+                                rebuild.clearPending = false;
+                            }
+                        }
                         await vectorStore.current.add(id, `${item.topic}: ${item.detail}`, tempEmbedding, {
                             topic: item.topic,
                             detail: item.detail,
@@ -15552,40 +15839,86 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                         return { ...item, is_merged: false };
                     }
                 } catch (err) {
+                    if (rebuild) throw err;
                     console.warn("[ingestLore] Lore embedding/indexing skipped due to error:", err);
                     return { ...item, is_merged: false };
+                } finally {
+                    if (!rebuild) {
+                        ragIndexRevision.current += 1;
+                        safeLocalStorageSet('ellipsisprose_rag_fingerprint', '');
+                    }
                 }
             };
 
             // Batch Ingest (for Init or Import)
-            const ingestLoreBatch = async (loreList, { clearExisting = false } = {}) => {
-                setRagStatus("indexing_batch");
-                // Full rebuilds (init, reindex, full-list imports) clear the store first;
-                // mid-story ingestions merge additively via ingestLore so accumulated lore vectors survive.
-                if (clearExisting) await vectorStore.current.clear();
-
-                let processedList = [];
-                for (const item of loreList) {
-                    // We run sequentially to allow deduplication against items just added in this batch
-                    const processed = await ingestLore(item);
-                    if (!processed.is_merged) {
-                        processedList.push(processed);
-                    } else {
-                        // A merge replaces the target row's topic with the new item's topic, so
-                        // match the list entry by the target's pre-merge topic as well as the new
-                        // topic (first list match wins). If the merge target came from outside
-                        // this batch (additive ingestion), keep the entry rather than drop it —
-                        // callers persist processedList as story.lore.
-                        const idx = processedList.findIndex(p => p.topic === processed.merged_from_topic || p.topic === processed.topic);
-                        if (idx !== -1) {
-                            processedList[idx] = processed;
-                        } else {
-                            processedList.push(processed);
+            const ingestLoreBatch = async (loreList, { clearExisting = false, storyId = story.id, fingerprintProcessed = false, isCurrent = () => true, status = 'indexing_batch', throwOnError = false } = {}) => {
+                const service = embeddingService.current;
+                const revision = clearExisting ? ++ragIndexRevision.current : ragIndexRevision.current;
+                const rebuild = clearExisting ? {
+                    service,
+                    clearPending: true,
+                    assertCurrent: () => {
+                        if (!isCurrent() || embeddingService.current !== service || ragIndexRevision.current !== revision) {
+                            throw new Error('Lore indexing cancelled because the story, lore, or embedding provider changed.');
                         }
                     }
+                } : null;
+                setRagStatus(status);
+                try {
+                    if (clearExisting && !service?.isConfigured()) throw new Error('No embedding credentials configured.');
+                    let processedList = [];
+                    for (const item of loreList) {
+                        if (rebuild) rebuild.assertCurrent();
+                        // We run sequentially to allow deduplication against items just added in this batch
+                        const processed = await ingestLore(item, rebuild);
+                        if (!processed.is_merged) {
+                            processedList.push(processed);
+                        } else {
+                            // A merge replaces the target row's topic with the new item's topic, so
+                            // match the list entry by the target's pre-merge topic as well as the new
+                            // topic (first list match wins). If the merge target came from outside
+                            // this batch (additive ingestion), keep the entry rather than drop it —
+                            // callers persist processedList as story.lore.
+                            const idx = processedList.findIndex(p => p.topic === processed.merged_from_topic || p.topic === processed.topic);
+                            if (idx !== -1) {
+                                processedList[idx] = processed;
+                            } else {
+                                processedList.push(processed);
+                            }
+                        }
+                    }
+                    if (rebuild) {
+                        rebuild.assertCurrent();
+                        // An empty/unindexable list leaves the old store intact and is not marked indexed.
+                        if (!rebuild.clearPending) {
+                            safeLocalStorageSet('ellipsisprose_rag_fingerprint', computeLoreFingerprint(
+                                storyId, fingerprintProcessed ? processedList : loreList, service.getProviderLabel()
+                            ));
+                        }
+                    }
+                    return processedList;
+                } catch (err) {
+                    if (throwOnError) throw err;
+                    console.warn('[RAG] lore ingest stopped:', err);
+                    return loreList;
+                } finally {
+                    setRagStatus("ready");
                 }
-                setRagStatus("ready");
-                return processedList;
+            };
+
+            const rebuildRagIndex = async () => {
+                if (isRebuildingRag || ragStatus === 'indexing' || ragStatus === 'indexing_batch') return;
+                setIsRebuildingRag(true);
+                showToast(`Rebuilding RAG index for ${(story.lore || []).length} lore entries…`, "info");
+                try {
+                    await ingestLoreBatch(story.lore || [], { clearExisting: true, throwOnError: true });
+                    showToast("RAG index rebuilt", "success");
+                } catch (error) {
+                    showToast(`RAG index rebuild failed: ${error.message}`, "error");
+                } finally {
+                    setRagStatus("ready");
+                    setIsRebuildingRag(false);
+                }
             };
 
             // Build Graph on Load/Change
@@ -15706,10 +16039,10 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 if (embeddingProvider === 'gemini') key = apiKey;
                 else if (embeddingProvider === 'openrouter') key = openRouterKey;
                 else if (embeddingProvider === 'nanogpt') key = nanoGptKey;
-                else if (embeddingProvider === 'koboldcpp') key = "";
+                else if (embeddingProvider === 'koboldcpp' || embeddingProvider === 'codex') key = "";
 
-                embeddingService.current = new EmbeddingService(key, embeddingProvider, koboldUrl);
-            }, [apiKey, openRouterKey, nanoGptKey, koboldUrl, embeddingProvider]);
+                embeddingService.current = new EmbeddingService(key, embeddingProvider, koboldUrl, codexUrl);
+            }, [apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl, embeddingProvider]);
 
             useEffect(() => {
                 safeLocalStorageSet("ellipsisprose_view", view);
@@ -15734,6 +16067,17 @@ BEGIN SEQUENCE CRITIQUE REVIEW
             useEffect(() => { safeLocalStorageSet("ellipsisprose_image_provider", imageProvider); }, [imageProvider]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_image_model", imageModel); }, [imageModel]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_image_api_key", imageApiKey); }, [imageApiKey]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_url", comfyUrl); }, [comfyUrl]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_unet", comfyUnet); }, [comfyUnet]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_clip", comfyClip); }, [comfyClip]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_vae", comfyVae); }, [comfyVae]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_lora", comfyLora); }, [comfyLora]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_lora_strength", comfyLoraStrength); }, [comfyLoraStrength]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_steps", comfySteps); }, [comfySteps]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_cfg", comfyCfg); }, [comfyCfg]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_sampler", comfySampler); }, [comfySampler]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_scheduler", comfyScheduler); }, [comfyScheduler]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_timeout_sec", comfyTimeoutSec); }, [comfyTimeoutSec]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_custom_image_styles", customImageStyles); }, [customImageStyles]);
 
             // Ensure story has a unique ID and sync activeStoryId
@@ -15766,6 +16110,45 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 }
             }, [story?.id]);
 
+            // Clear portraits on story switches, then load the cast after story hydration.
+            useEffect(() => {
+                setLoadedImages(prev => ({ ...prev, portraits: {} }));
+                const pending = {};
+                (story?.cast || []).forEach(c => {
+                    if (portraitOperations.current.has(`portrait_${story.id}_${c.id}`)) pending[c.id] = true;
+                });
+                setPortraitLoading(pending);
+            }, [story?.id]);
+
+            const portraitCastIds = JSON.stringify((story?.cast || []).map(c => c.id).filter(id => id != null));
+            useEffect(() => {
+                if (!story?.id) return;
+                let cancelled = false;
+                const storyId = story.id;
+                const ids = JSON.parse(portraitCastIds);
+                Promise.all(ids.map(async id => {
+                    const key = `portrait_${storyId}_${id}`;
+                    const revision = portraitRevisions.current.get(key) || 0;
+                    const dataUrl = await imageStore.getImage(key);
+                    return { id, key, revision, dataUrl };
+                })).then(results => {
+                    if (cancelled || portraitStoryId.current !== storyId) return;
+                    setLoadedImages(prev => {
+                        if (cancelled || portraitStoryId.current !== storyId) return prev;
+                        const portraits = { ...prev.portraits };
+                        results.forEach(({ id, key, revision, dataUrl }) => {
+                            if (portraitOperations.current.has(key) || revision !== (portraitRevisions.current.get(key) || 0)) return;
+                            if (dataUrl) portraits[id] = dataUrl;
+                            else delete portraits[id];
+                        });
+                        return { ...prev, portraits };
+                    });
+                }).catch(err => {
+                    if (!cancelled) showToast('Failed to load character portraits: ' + err.message, 'error');
+                });
+                return () => { cancelled = true; };
+            }, [story?.id, portraitCastIds, portraitReload, imageStore]);
+
             // Load Beat Images for the active scene from IndexedDB
             const activeBeatsKey = `${selectedSequence !== null && selectedSequence !== undefined ? selectedSequence : 0}-${selectedScene !== null && selectedScene !== undefined ? selectedScene : 0}`;
             const activeBeatsLength = Array.isArray(story?.beats?.[activeBeatsKey]) ? story.beats[activeBeatsKey].length : 0;
@@ -15787,7 +16170,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                             }
                         });
                         setLoadedImages(prev => {
-                            const cleared = { cover: prev.cover };
+                            const cleared = { cover: prev.cover, portraits: prev.portraits };
                             Object.keys(newLoaded).forEach(key => {
                                 cleared[key] = newLoaded[key];
                             });
@@ -15873,6 +16256,7 @@ Output Schema:
 <extracted_lore>
   <lore_entry>
     <category>Category (e.g., Cultural Tradition, Architecture, Magic System)</category>
+    <title>A specific 2-6 word noun phrase naming the fact, no trailing punctuation</title>
     <new_fact>Objective, encyclopedic description of the newly established lore.</new_fact>
   </lore_entry>
   <!-- Repeat as necessary -->
@@ -15888,8 +16272,9 @@ BEGIN EXTRACTING WORLD LORE
                             const loreUpdates = entries.map(entry => {
                                 const cat = extractTag(entry, 'category');
                                 const fact = extractTag(entry, 'new_fact');
-                                const prefix = fact ? (fact.split(/[.!?]/)[0].trim().substring(0, 40) + "...") : "Fact";
-                                return { topic: `${cat}: ${prefix}`, detail: fact };
+                                const title = extractTag(entry, 'title').trim();
+                                const topic = title ? `${cat}: ${title}` : `${cat}: ${deriveLoreTitle(fact)}`;
+                                return { topic, detail: fact };
                             }).filter(up => up.topic && up.detail);
 
                             if (loreUpdates.length > 0) {
@@ -16232,10 +16617,146 @@ BEGIN EXTRACTING WORLD LORE
                 showToast(`Custom mode ${modeId} deleted.`, 'info');
             };
 
+            // Image prompt agents are asked for <response><image_prompt>…</image_prompt></response>; the envelope
+            // must never reach the image model. Fall back to stripping any stray tags.
+            const cleanImagePrompt = (raw) => {
+                const text = String(raw || '');
+                const tagged = extractTag(text, 'image_prompt');
+                return (tagged || stripXmlTags(text)).trim();
+            };
+
+            const comfyAspectToSize = (aspectRatio) => {
+                const sizes = {
+                    '1:1': [1024, 1024], '3:4': [896, 1152], '4:3': [1152, 896],
+                    '16:9': [1344, 768], '9:16': [768, 1344]
+                };
+                const [width, height] = Object.prototype.hasOwnProperty.call(sizes, aspectRatio) ? sizes[aspectRatio] : sizes['1:1'];
+                return { width, height };
+            };
+
+            const buildComfyKrea2Workflow = ({ prompt, width, height, seed, unet, clip, vae, lora, loraStrength, steps, cfg, sampler, scheduler }) => {
+                const graph = {
+                    '10': { class_type: 'UNETLoader', inputs: { unet_name: unet, weight_dtype: 'default' } },
+                    '11': { class_type: 'CLIPLoader', inputs: { clip_name: clip, type: 'krea2', device: 'default' } },
+                    '12': { class_type: 'VAELoader', inputs: { vae_name: vae } },
+                    '2': { class_type: 'CLIPTextEncode', inputs: { clip: ['11', 0], text: prompt } },
+                    '3': { class_type: 'ConditioningZeroOut', inputs: { conditioning: ['2', 0] } },
+                    '4': { class_type: 'EmptyLatentImage', inputs: { width, height, batch_size: 1 } },
+                    '5': { class_type: 'KSampler', inputs: { model: ['10', 0], positive: ['2', 0], negative: ['3', 0], latent_image: ['4', 0], seed, steps, cfg, sampler_name: sampler, scheduler, denoise: 1 } },
+                    '6': { class_type: 'VAEDecode', inputs: { samples: ['5', 0], vae: ['12', 0] } },
+                    '7': { class_type: 'SaveImage', inputs: { images: ['6', 0], filename_prefix: 'EllipsisProse/ellipsisprose' } }
+                };
+                if (typeof lora === 'string' && lora.trim()) {
+                    graph['15'] = { class_type: 'LoraLoaderModelOnly', inputs: { model: ['10', 0], lora_name: lora, strength_model: loraStrength } };
+                    graph['5'].inputs.model = ['15', 0];
+                }
+                return graph;
+            };
+
+            const pickComfyDefault = (options, patterns) => {
+                for (const pattern of patterns) {
+                    const match = options.find(option => new RegExp(pattern.source, pattern.flags).test(option));
+                    if (match !== undefined) return match;
+                }
+                return '';
+            };
+
             const callImageAPI = async (prompt, aspectRatio = "1:1") => {
                 const prov = imageProvider;
                 const model = imageModel;
                 const key = imageApiKey || (prov === 'gemini' ? apiKey : openRouterKey);
+
+                if (prov === 'comfyui') {
+                    if (!comfyUnet.trim() || !comfyClip.trim() || !comfyVae.trim()) {
+                        throw new Error('ComfyUI: choose the Krea 2 diffusion model, text encoder and VAE in Settings');
+                    }
+                    const baseUrl = (comfyUrl.trim() || 'http://127.0.0.1:8188').replace(/\/+$/, '');
+                    const timeoutSec = Number.isFinite(comfyTimeoutSec) && comfyTimeoutSec > 0 ? comfyTimeoutSec : 600;
+                    const started = Date.now();
+                    const controller = new AbortController();
+                    const seedParts = crypto.getRandomValues(new Uint32Array(2));
+                    const seed = (seedParts[0] & 0x1fffff) * 0x100000000 + seedParts[1];
+                    const workflow = buildComfyKrea2Workflow({
+                        prompt, ...comfyAspectToSize(aspectRatio), seed,
+                        unet: comfyUnet, clip: comfyClip, vae: comfyVae, lora: comfyLora,
+                        loraStrength: comfyLoraStrength, steps: comfySteps, cfg: comfyCfg,
+                        sampler: comfySampler, scheduler: comfyScheduler
+                    });
+                    let deadlineTimer;
+                    let pollTimer;
+                    let timedOut = false;
+                    const timeoutError = () => new Error(`ComfyUI generation timed out after ${timeoutSec} s`);
+                    const deadline = new Promise((_, reject) => {
+                        deadlineTimer = setTimeout(() => {
+                            timedOut = true;
+                            controller.abort();
+                            reject(timeoutError());
+                        }, timeoutSec * 1000);
+                    });
+                    const generate = async () => {
+                        let response;
+                        try {
+                            response = await fetchWithTimeout(`${baseUrl}/prompt`, {
+                                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ prompt: workflow, client_id: 'ellipsisprose' }),
+                                signal: controller.signal
+                            }, 0);
+                        } catch (error) {
+                            if (error instanceof TypeError || /failed to fetch/i.test(error.message || '')) {
+                                throw new Error(`Cannot reach ComfyUI at ${baseUrl}. Is it running, and was it started with --enable-cors-header? See README.`);
+                            }
+                            throw error;
+                        }
+                        const queued = await response.json();
+                        if (!response.ok) {
+                            const nodeError = Object.values(queued.node_errors || {}).flatMap(node => node.errors || [])[0];
+                            const details = [queued.error?.message, nodeError?.message, nodeError?.details].filter(Boolean).join('; ');
+                            throw new Error(`ComfyUI: ${details || `HTTP ${response.status}`}`);
+                        }
+                        const id = queued.prompt_id;
+                        if (!id) throw new Error('ComfyUI: no prompt_id returned');
+                        console.log(`[ComfyUI] queued ${id}`);
+                        while (!controller.signal.aborted) {
+                            await new Promise(resolve => { pollTimer = setTimeout(resolve, 1500); });
+                            if (controller.signal.aborted) throw timeoutError();
+                            const historyResponse = await fetchWithTimeout(`${baseUrl}/history/${encodeURIComponent(id)}`, { signal: controller.signal }, 0);
+                            const history = await historyResponse.json();
+                            if (!historyResponse.ok) throw new Error(`ComfyUI history failed: HTTP ${historyResponse.status}`);
+                            const entry = history[id];
+                            if (entry?.status?.status_str === 'error') {
+                                const executionError = entry.status.messages?.find(message => message[0] === 'execution_error')?.[1];
+                                throw new Error(`ComfyUI: ${executionError?.exception_message || executionError?.message || 'execution failed'}`);
+                            }
+                            const img = Object.values(entry?.outputs || {}).flatMap(output => output.images || []).find(item => item.filename);
+                            if (!img) continue;
+                            const query = new URLSearchParams({ filename: img.filename, subfolder: img.subfolder || '', type: img.type || 'output' });
+                            const imageResponse = await fetchWithTimeout(`${baseUrl}/view?${query}`, { signal: controller.signal }, 0);
+                            if (!imageResponse.ok) throw new Error(`ComfyUI image download failed: HTTP ${imageResponse.status}`);
+                            const blob = await imageResponse.blob();
+                            const dataUrl = await new Promise((resolve, reject) => {
+                                const reader = new FileReader();
+                                reader.onload = () => resolve(reader.result);
+                                reader.onerror = () => reject(reader.error || new Error('ComfyUI: failed to read image'));
+                                reader.onabort = () => reject(timeoutError());
+                                controller.signal.addEventListener('abort', () => reader.abort(), { once: true });
+                                reader.readAsDataURL(blob);
+                            });
+                            console.log(`[ComfyUI] done in ${((Date.now() - started) / 1000).toFixed(1)} s`);
+                            return dataUrl;
+                        }
+                        throw timeoutError();
+                    };
+                    try {
+                        return await Promise.race([generate(), deadline]);
+                    } catch (error) {
+                        if (timedOut) throw timeoutError();
+                        throw error;
+                    } finally {
+                        clearTimeout(deadlineTimer);
+                        clearTimeout(pollTimer);
+                        controller.abort();
+                    }
+                }
 
                 if (!key) {
                     throw new Error(`API key for provider "${prov}" is not configured. Please check your settings.`);
@@ -16363,7 +16884,7 @@ BEGIN GENERATING IMAGE PROMPT`;
                     const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
                     const styleObj = combinedStyles.find(s => s.id === selectedStyleId);
                     const styleDescription = styleObj ? styleObj.description : "";
-                    const finalPrompt = promptBase.trim() + (styleDescription ? ", " + styleDescription : "");
+                    const finalPrompt = cleanImagePrompt(promptBase) + (styleDescription ? ", " + styleDescription : "");
 
                     const dataUrl = await callImageAPI(finalPrompt, "3:4");
                     await imageStore.saveImage(`cover_${story.id}`, dataUrl);
@@ -16376,6 +16897,87 @@ BEGIN GENERATING IMAGE PROMPT`;
                     setLoadingCover(false);
                 }
             };
+
+            // Serialize portrait edits per story/character and keep late results in their own story.
+            const updateCharacterPortrait = async (c, createDataUrl, successMessage, errorPrefix) => {
+                if (!story?.id || !c?.id) {
+                    showToast('A saved story and character are required for portraits.', 'error');
+                    return;
+                }
+                const storyId = story.id;
+                const key = `portrait_${storyId}_${c.id}`;
+                if (portraitOperations.current.has(key)) return;
+                portraitOperations.current.add(key);
+                portraitRevisions.current.set(key, (portraitRevisions.current.get(key) || 0) + 1);
+                setPortraitLoading(prev => ({ ...prev, [c.id]: true }));
+                try {
+                    const dataUrl = await createDataUrl();
+                    if (dataUrl === null) await imageStore.deleteImage(key);
+                    else await imageStore.saveImage(key, dataUrl);
+                    if (portraitStoryId.current === storyId) {
+                        setLoadedImages(prev => {
+                            if (portraitStoryId.current !== storyId) return prev;
+                            const portraits = { ...prev.portraits };
+                            if (dataUrl === null) delete portraits[c.id];
+                            else portraits[c.id] = dataUrl;
+                            return { ...prev, portraits };
+                        });
+                        showToast(successMessage, 'success');
+                    }
+                } catch (err) {
+                    showToast(errorPrefix + err.message, 'error');
+                } finally {
+                    portraitOperations.current.delete(key);
+                    if (portraitStoryId.current === storyId) {
+                        setPortraitLoading(prev => {
+                            if (portraitStoryId.current !== storyId) return prev;
+                            const next = { ...prev };
+                            delete next[c.id];
+                            return next;
+                        });
+                    }
+                }
+            };
+
+            const generateCharacterPortrait = async (c) => {
+                return updateCharacterPortrait(c, async () => {
+                    const sysPrompt = `You are a character portrait artist. Write a detailed image generation prompt grounded in the supplied character's appearance, role and temperament.
+Describe a waist-up, three-quarter view portrait, an expression that fits the character's temperament, and a plain softly lit background. Preserve any supplied physical traits. No text, no watermark.
+Output only <response><image_prompt>...</image_prompt></response>.`;
+                    const characterInfo = ['name', 'role', 'description', 'appearance', 'history', 'core_flaw', 'core_desire', 'vocal_cadence', 'voice_sample']
+                        .map(field => `${field}: ${c[field] || c.details?.[field] || 'Not specified'}`).join('\n');
+                    const userPrompt = `CHARACTER INFORMATION:
+${characterInfo}
+STORY GENRE: ${story.style?.genre || 'Not specified'}
+STORY MOOD: ${story.style?.mood || 'Not specified'}
+Create a waist-up, three-quarter view portrait prompt with an expression that fits this character's temperament, a plain softly lit background, no text, and no watermark.`;
+                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Character Portrait Prompt Agent", "small");
+                    const selectedStyleId = story.imageStyle || 'none';
+                    const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
+                    const styleObj = combinedStyles.find(s => s.id === selectedStyleId);
+                    const styleDescription = styleObj ? styleObj.description : "";
+                    const finalPrompt = cleanImagePrompt(promptBase) + (styleDescription ? ", " + styleDescription : "");
+                    return callImageAPI(finalPrompt, "3:4");
+                }, `Portrait generated for ${c?.name || 'character'}.`, 'Character portrait generation failed: ');
+            };
+
+            const uploadCharacterPortrait = async (c, file) => {
+                if (!file) return;
+                if (!file.type.startsWith('image/')) {
+                    showToast('Please select an image file.', 'error');
+                    return;
+                }
+                return updateCharacterPortrait(c, () => new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve(reader.result);
+                    reader.onerror = () => reject(new Error('Failed to read the selected file.'));
+                    reader.onabort = () => reject(new Error('Image upload was cancelled.'));
+                    reader.readAsDataURL(file);
+                }), `Portrait uploaded for ${c?.name || 'character'}.`, 'Character portrait upload failed: ');
+            };
+
+            const removeCharacterPortrait = async (c) => updateCharacterPortrait(c, async () => null,
+                `Portrait removed for ${c?.name || 'character'}.`, 'Failed to remove character portrait: ');
 
             const deleteCoverImage = async () => {
                 if (!window.confirm("Are you sure you want to remove the cover image?")) return;
@@ -16477,7 +17079,7 @@ BEGIN GENERATING IMAGE PROMPT`;
                     const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
                     const styleObj = combinedStyles.find(s => s.id === selectedStyleId);
                     const styleDescription = styleObj ? styleObj.description : "";
-                    const finalPrompt = promptBase.trim() + (styleDescription ? ", " + styleDescription : "");
+                    const finalPrompt = cleanImagePrompt(promptBase) + (styleDescription ? ", " + styleDescription : "");
 
                     const dataUrl = await callImageAPI(finalPrompt, "1:1");
                     await imageStore.saveImage(`beat_${story.id}_${sId}_${b}`, dataUrl);
@@ -16533,10 +17135,11 @@ BEGIN GENERATING IMAGE PROMPT`;
             };
 
             const handleExportEpub = async () => {
-                if (!window.JSZip) {
-                    alert("JSZip library not loaded. Please restart the app or check your internet connection.");
-                    return;
-                }
+                const JSZip = await ensureJSZip().catch(err => {
+                    showToast(err.message, 'error');
+                    return null;
+                });
+                if (!JSZip) return;
 
                 try {
                     const zip = new JSZip();
@@ -16926,7 +17529,7 @@ ${chapterBody}
                 }
             };
 
-            const handleImport = (event) => {
+            const handleImport = async (event) => {
                 const file = event.target.files?.[0];
                 if (!file) return;
 
@@ -17001,6 +17604,7 @@ ${chapterBody}
                     setActiveStoryId(newId);
                     setStory(mergedStory);
                     setLoadedImages({});
+                    setPortraitReload(value => value + 1);
                     setView('dashboard');
 
                     imageStore.getImage(`cover_${newId}`).then(dataUrl => {
@@ -17011,10 +17615,11 @@ ${chapterBody}
                 };
 
                 if (file.name.endsWith('.epub')) {
-                    if (!window.JSZip) {
-                        alert("JSZip library not loaded. Please restart the app or check your internet connection.");
-                        return;
-                    }
+                    const JSZip = await ensureJSZip().catch(err => {
+                        showToast(err.message, 'error');
+                        return null;
+                    });
+                    if (!JSZip) return;
                     const zip = new JSZip();
                     zip.loadAsync(file).then(async (zipInstance) => {
                         const storyFile = zipInstance.file("META-INF/story.json");
@@ -20213,12 +20818,17 @@ ${finalProseText}
                 const refreshId = ++codexRefreshId.current;
                 const baseUrl = (codexUrl.trim() || 'http://localhost:5010').replace(/\/+$/, '');
                 setCodexStatus({ online: false, model: null, error: null });
+                setCodexEmbeddingStatus(null);
                 setCodexModelsList([]);
                 try {
-                    const [status, response] = await Promise.all([
+                    const [status, response, health] = await Promise.all([
                         checkKoboldCPPStatus(baseUrl),
-                        fetchWithTimeout(`${baseUrl}/v1/models`, { headers: { Accept: 'application/json' } }, 3000)
+                        fetchWithTimeout(`${baseUrl}/v1/models`, { headers: { Accept: 'application/json' } }, 3000),
+                        fetchWithTimeout(`${baseUrl}/health`, { headers: { Accept: 'application/json' } }, 6000)
+                            .then(response => response.ok ? response.json() : null).catch(() => null)
                     ]);
+                    if (refreshId !== codexRefreshId.current) return;
+                    setCodexEmbeddingStatus(health?.embeddings || null);
                     if (!status.online) throw new Error(status.error || 'Bridge offline');
                     if (!response.ok) throw new Error(`HTTP ${response.status}`);
                     const catalog = await response.json();
@@ -20229,6 +20839,47 @@ ${finalProseText}
                 } catch (error) {
                     if (refreshId !== codexRefreshId.current) return;
                     setCodexStatus({ online: false, model: null, error: error.message || 'Bridge offline' });
+                }
+            };
+
+            const refreshComfyInfo = async () => {
+                const refreshId = ++comfyRefreshId.current;
+                const baseUrl = (comfyUrl.trim() || 'http://127.0.0.1:8188').replace(/\/+$/, '');
+                setComfyStatus({ online: false, version: '', device: '', error: 'Checking ComfyUI...' });
+                setComfyOptions({ unet: [], clip: [], vae: [], lora: [], sampler: [], scheduler: [] });
+                try {
+                    const paths = ['system_stats', 'object_info/UNETLoader', 'object_info/CLIPLoader', 'object_info/VAELoader', 'object_info/LoraLoaderModelOnly', 'object_info/KSampler'];
+                    const [stats, unetInfo, clipInfo, vaeInfo, loraInfo, samplerInfo] = await Promise.all(paths.map(async path => {
+                        const response = await fetchWithTimeout(`${baseUrl}/${path}`, {}, 6000);
+                        if (!response.ok) throw new Error(`ComfyUI ${path}: HTTP ${response.status}`);
+                        return await response.json();
+                    }));
+                    if (refreshId !== comfyRefreshId.current) return;
+                    const optionsFor = (info, nodeClass, name) => {
+                        const options = info?.[nodeClass]?.input?.required?.[name]?.[0];
+                        if (!Array.isArray(options)) throw new Error(`ComfyUI: missing ${nodeClass} ${name} options`);
+                        return options.filter(option => typeof option === 'string').sort((a, b) =>
+                            Number(/krea|qwen/i.test(b)) - Number(/krea|qwen/i.test(a)) || a.localeCompare(b));
+                    };
+                    const options = {
+                        unet: optionsFor(unetInfo, 'UNETLoader', 'unet_name'),
+                        clip: optionsFor(clipInfo, 'CLIPLoader', 'clip_name'),
+                        vae: optionsFor(vaeInfo, 'VAELoader', 'vae_name'),
+                        lora: optionsFor(loraInfo, 'LoraLoaderModelOnly', 'lora_name'),
+                        sampler: optionsFor(samplerInfo, 'KSampler', 'sampler_name'),
+                        scheduler: optionsFor(samplerInfo, 'KSampler', 'scheduler')
+                    };
+                    setComfyOptions(options);
+                    setComfyUnet(value => value || pickComfyDefault(options.unet, [/krea.?2.*turbo/i, /krea.?2/i]));
+                    setComfyClip(value => value || pickComfyDefault(options.clip, [/qwen3.?vl.*4b/i, /qwen.?3/i, /qwen/i]));
+                    setComfyVae(value => value || pickComfyDefault(options.vae, [/qwen.*vae|qwen_vae/i, /qwen/i]));
+                    setComfyStatus({ online: true, version: stats.system?.comfyui_version || 'unknown', device: stats.devices?.[0]?.name || 'unknown device', error: '' });
+                } catch (error) {
+                    if (refreshId !== comfyRefreshId.current) return;
+                    const message = error instanceof TypeError || /failed to fetch/i.test(error.message || '')
+                        ? `Cannot reach ComfyUI at ${baseUrl}. Is it running, and was it started with --enable-cors-header? See README.`
+                        : error.message || 'ComfyUI offline';
+                    setComfyStatus({ online: false, version: '', device: '', error: message });
                 }
             };
 
@@ -20255,46 +20906,56 @@ ${finalProseText}
                         refreshOpenRouterModels();
                     } else if (apiProvider === 'nanogpt' && nanoGptModelsList.length === 0) {
                         refreshNanoGptModels();
-                    } else if (apiProvider === 'codex') {
-                        refreshCodexModels();
                     } else if (apiProvider === 'koboldcpp') {
                         checkKoboldStatus();
                     }
+                    if (apiProvider === 'codex' || embeddingProvider === 'codex') refreshCodexModels();
+                    if (imageProvider === 'comfyui') refreshComfyInfo();
                 }
-                return () => { codexRefreshId.current++; };
-            }, [view, apiProvider, apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl]);
+                return () => { codexRefreshId.current++; comfyRefreshId.current++; };
+            }, [view, apiProvider, embeddingProvider, apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl, imageProvider, comfyUrl]);
 
             return (
                 <div className={`flex h-screen overflow-hidden font-sans ${theme === 'dark' ? 'dark bg-[#141416] text-[#F5F0E8]' : 'bg-void text-ink-900'}`} data-theme={theme}>
                     {/* FIXED SIDEBAR NAVIGATION (Light Scandinavian Parchment / Dark Atelier Nuit) */}
-                    <div className={`studio-sidebar fixed inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-edge flex flex-col transform transition-transform duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${view === 'reader' ? 'hidden md:hidden' : ''} shadow-sm`}>
+                    <div className={`studio-sidebar ${isSidebarCollapsed ? 'collapsed md:w-16' : ''} fixed inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-edge flex flex-col transform transition-all duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${view === 'reader' ? 'hidden md:hidden' : ''} shadow-sm`}>
                         {/* Studio Logo Header */}
-                        <div className="p-4 flex justify-between items-center border-b border-edge bg-surface/70 backdrop-blur-sm">
-                            <div className="flex items-center gap-2.5">
-                                <div className="w-9 h-9 rounded-xl overflow-hidden border border-gold-edge shadow-sm flex-shrink-0 bg-stone-900 flex items-center justify-center">
+                        <div className="sidebar-header p-4 flex justify-between items-center border-b border-edge bg-surface/70 backdrop-blur-sm">
+                            <div className="sidebar-brand flex items-center gap-2.5">
+                                <div className="w-9 h-9 rounded-xl overflow-hidden border border-gold-edge shadow-sm flex-shrink-0 bg-btn flex items-center justify-center">
                                     <img src="ELPIcon2.jpg" alt="EllipsisProse Icon" className="w-full h-full object-cover" />
                                 </div>
-                                <div>
+                                <div className="nav-label">
                                     <h2 className="font-bold text-sm text-ink-900 tracking-tight flex items-center gap-1.5 font-display">
                                         EllipsisProse <span className="text-[10px] font-mono font-bold bg-mist-200/80 text-ink-700 px-1.5 py-0.2 rounded-full">1.7</span>
                                     </h2>
                                     <p className="text-[10px] text-ink-500 font-medium">AI Story Architect & Studio</p>
                                 </div>
                             </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsSidebarCollapsed(prev => !prev)}
+                                className="hidden md:flex shrink-0 items-center justify-center text-ink-400 hover:text-ink-800 p-1.5 rounded-lg hover:bg-wash transition-colors"
+                                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                                aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                                aria-expanded={!isSidebarCollapsed}
+                            >
+                                {isSidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                            </button>
                             <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-ink-400 hover:text-ink-800 p-1.5 rounded-lg hover:bg-wash transition-colors">
                                 <X size={18} />
                             </button>
                         </div>
 
                         {/* Semantic Grouped Navigation */}
-                        <div className="flex-1 overflow-y-auto p-3 space-y-4">
+                        <div className="sidebar-nav flex-1 overflow-y-auto p-3 space-y-4">
                             {/* SECTION 1: STUDIO WORKSPACE */}
                             <div className="space-y-0.5">
-                                <div className="px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
+                                <div className="sidebar-section-label px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
                                     Studio
                                 </div>
-                                <button onClick={() => { setView('library'); refreshLibrary(); }} className={`nav-btn ${view === 'library' ? 'active' : ''}`}>
-                                    <Library size={15} /> Story Library
+                                <button onClick={() => { setView('library'); refreshLibrary(); }} className={`nav-btn ${view === 'library' ? 'active' : ''}`} title="Story Library">
+                                    <Library size={15} /> <span className="nav-label">Story Library</span>
                                 </button>
                                 <button onClick={() => {
                                     setActiveStoryId("");
@@ -20305,53 +20966,53 @@ ${finalProseText}
                                     setImportedLoreText("");
                                     setWorldPrimer(null);
                                     setView('setup');
-                                }} className={`nav-btn ${view === 'setup' ? 'active' : ''}`}>
-                                    <Sparkles size={15} /> New Story Setup
+                                }} className={`nav-btn ${view === 'setup' ? 'active' : ''}`} title="New Story Setup">
+                                    <Sparkles size={15} /> <span className="nav-label">New Story Setup</span>
                                 </button>
-                                <button onClick={() => setView('dashboard')} className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`}>
-                                    <Activity size={15} /> Overview & Canvas
+                                <button onClick={() => setView('dashboard')} className={`nav-btn ${view === 'dashboard' ? 'active' : ''}`} title="Overview & Canvas">
+                                    <Activity size={15} /> <span className="nav-label">Overview & Canvas</span>
                                 </button>
-                                <button onClick={() => enterReaderMode()} className={`nav-btn ${view === 'reader' ? 'active' : ''}`}>
-                                    <BookOpen size={15} /> Reading Mode
+                                <button onClick={() => enterReaderMode()} className={`nav-btn ${view === 'reader' ? 'active' : ''}`} title="Reading Mode">
+                                    <BookOpen size={15} /> <span className="nav-label">Reading Mode</span>
                                 </button>
                             </div>
 
                             {/* SECTION 2: ARCHITECTURE & DIRECTIVES */}
                             <div className="space-y-0.5">
-                                <div className="px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
+                                <div className="sidebar-section-label px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
                                     Architecture
                                 </div>
-                                <button onClick={() => setView('structure')} className={`nav-btn ${view === 'structure' ? 'active' : ''}`}>
-                                    <Layers size={15} /> Act & Sequence Planner
+                                <button onClick={() => setView('structure')} className={`nav-btn ${view === 'structure' ? 'active' : ''}`} title="Act & Sequence Planner">
+                                    <Layers size={15} /> <span className="nav-label">Act & Sequence Planner</span>
                                 </button>
-                                <button onClick={() => setView('directive')} className={`nav-btn ${view === 'directive' ? 'active' : ''}`}>
-                                    <Wand2 size={15} /> Directive Agent
+                                <button onClick={() => setView('directive')} className={`nav-btn ${view === 'directive' ? 'active' : ''}`} title="Directive Agent">
+                                    <Wand2 size={15} /> <span className="nav-label">Directive Agent</span>
                                 </button>
                             </div>
 
                             {/* SECTION 3: STORY BIBLE & WORLD */}
                             <div className="space-y-0.5">
-                                <div className="px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
+                                <div className="sidebar-section-label px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
                                     Story Bible
                                 </div>
-                                <button onClick={() => setView('cast')} className={`nav-btn ${view === 'cast' ? 'active' : ''}`}>
-                                    <Users size={15} /> Cast & Roster
+                                <button onClick={() => setView('cast')} className={`nav-btn ${view === 'cast' ? 'active' : ''}`} title="Cast & Roster">
+                                    <Users size={15} /> <span className="nav-label">Cast & Roster</span>
                                 </button>
-                                <button onClick={() => setView('relationships')} className={`nav-btn ${view === 'relationships' ? 'active' : ''}`}>
-                                    <Heart size={15} /> Dynamic Relationships
+                                <button onClick={() => setView('relationships')} className={`nav-btn ${view === 'relationships' ? 'active' : ''}`} title="Dynamic Relationships">
+                                    <Heart size={15} /> <span className="nav-label">Dynamic Relationships</span>
                                 </button>
-                                <button onClick={() => setView('lore')} className={`nav-btn ${view === 'lore' ? 'active' : ''}`}>
-                                    <Globe size={15} /> World Lore
+                                <button onClick={() => setView('lore')} className={`nav-btn ${view === 'lore' ? 'active' : ''}`} title="World Lore">
+                                    <Globe size={15} /> <span className="nav-label">World Lore</span>
                                 </button>
-                                <button onClick={() => setView('inspector')} className={`nav-btn ${view === 'inspector' ? 'active' : ''}`}>
-                                    <Search size={15} /> RAG & Continuity Inspector
+                                <button onClick={() => setView('inspector')} className={`nav-btn ${view === 'inspector' ? 'active' : ''}`} title="RAG & Continuity Inspector">
+                                    <Search size={15} /> <span className="nav-label">RAG & Continuity Inspector</span>
                                 </button>
                             </div>
 
                             {/* SECTION 4: STORY HIERARCHY TREE */}
                             {story.acts && story.acts.length > 0 && (
-                                <div className="space-y-1 pt-2 border-t border-edge">
-                                    <div className="px-2 pb-1 text-[10px] font-bold text-gold-ink uppercase tracking-wider font-mono flex items-center justify-between">
+                                <div className="sidebar-tree space-y-1 pt-2 border-t border-edge">
+                                    <div className="sidebar-section-label px-2 pb-1 text-[10px] font-bold text-gold-ink uppercase tracking-wider font-mono flex items-center justify-between">
                                         <span>Manuscript Tree</span>
                                         <span className="text-[9px] text-ink-400">{story.acts.length} Acts</span>
                                     </div>
@@ -20439,17 +21100,17 @@ ${finalProseText}
 
                             {/* SECTION 5: TELEMETRY & SYSTEM */}
                             <div className="space-y-0.5 pt-2 border-t border-edge">
-                                <div className="px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
+                                <div className="sidebar-section-label px-2 pb-1 text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">
                                     System
                                 </div>
-                                <button onClick={() => setView('pipeline')} className={`nav-btn ${view === 'pipeline' ? 'active' : ''}`}>
-                                    <Workflow size={15} /> Visual Pipeline
+                                <button onClick={() => setView('pipeline')} className={`nav-btn ${view === 'pipeline' ? 'active' : ''}`} title="Visual Pipeline">
+                                    <Workflow size={15} /> <span className="nav-label">Visual Pipeline</span>
                                 </button>
-                                <button onClick={() => setView('logs')} className={`nav-btn ${view === 'logs' ? 'active' : ''}`}>
-                                    <History size={15} /> Prompt & LLM Logs
+                                <button onClick={() => setView('logs')} className={`nav-btn ${view === 'logs' ? 'active' : ''}`} title="Prompt & LLM Logs">
+                                    <History size={15} /> <span className="nav-label">Prompt & LLM Logs</span>
                                 </button>
-                                <button onClick={() => setView('settings')} className={`nav-btn ${view === 'settings' ? 'active' : ''}`}>
-                                    <Settings size={15} /> Studio Settings
+                                <button onClick={() => setView('settings')} className={`nav-btn ${view === 'settings' ? 'active' : ''}`} title="Studio Settings">
+                                    <Settings size={15} /> <span className="nav-label">Studio Settings</span>
                                 </button>
                             </div>
                         </div>
@@ -20459,7 +21120,8 @@ ${finalProseText}
                             <div className="px-3 py-2.5 border-t border-edge bg-surface/50">
                                 <button
                                     onClick={() => setContinuousAutopilot(!continuousAutopilot)}
-                                    className={`w-full py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 border ${continuousAutopilot
+                                    title={continuousAutopilot ? 'Stop Autopilot' : 'Continuous Autopilot'}
+                                    className={`sidebar-autopilot w-full py-2 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all active:scale-95 border ${continuousAutopilot
                                         ? 'bg-blush-tint border-blush-edge text-blush-800 hover:bg-blush-tint-strong'
                                         : 'bg-btn hover:bg-btn-hover border-transparent text-btn-ink'
                                         }`}
@@ -20467,12 +21129,12 @@ ${finalProseText}
                                     {continuousAutopilot ? (
                                         <>
                                             <Loader2 className="animate-spin text-blush-600" size={14} />
-                                            Stop Autopilot
+                                            <span className="nav-label">Stop Autopilot</span>
                                         </>
                                     ) : (
                                         <>
                                             <Zap size={14} className="fill-current text-amber-300" />
-                                            Continuous Autopilot
+                                            <span className="nav-label">Continuous Autopilot</span>
                                         </>
                                     )}
                                 </button>
@@ -20480,22 +21142,22 @@ ${finalProseText}
                         )}
 
                         {/* Bottom Quick Storage Controls */}
-                        <div className="p-3 border-t border-edge bg-surface/70 flex gap-1.5">
+                        <div className="sidebar-storage p-3 border-t border-edge bg-surface/70 flex gap-1.5">
                             <button onClick={handleExport} className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Export JSON Database">
-                                <Download size={13} /> JSON
+                                <Download size={13} /> <span className="nav-label">JSON</span>
                             </button>
                             <button onClick={handleExportEpub} className="flex-1 bg-gold-tint hover:bg-gold-tint border border-gold-edge text-gold-ink hover:text-gold-ink-deep py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Export Formatted EPUB Novel">
-                                <Book size={13} /> EPUB
+                                <Book size={13} /> <span className="nav-label">EPUB</span>
                             </button>
                             <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Load .json or .epub">
-                                <Upload size={13} /> Load
+                                <Upload size={13} /> <span className="nav-label">Load</span>
                             </button>
                             <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".json,.epub" />
                         </div>
                     </div>
 
                     {/* MAIN CONTENT WORKSPACE */}
-                    <div className={`studio-main-workspace flex-1 flex flex-col h-full relative w-full ${view === 'reader' ? 'md:ml-0' : 'md:ml-72'} bg-void`}>
+                    <div className={`studio-main-workspace flex-1 flex flex-col h-full relative w-full transition-all duration-300 ${view === 'reader' ? 'md:ml-0' : isSidebarCollapsed ? 'md:ml-16' : 'md:ml-72'} bg-void`}>
                         {/* STUDIO APP HEADER (iOS Safe Region & Mobile Momentum Scrollable) */}
                         {view !== 'reader' && (
                             <header className="studio-top-header border-b border-edge backdrop-blur-md z-30 sticky top-0 shadow-2xs flex flex-col justify-center transition-all">
@@ -21476,6 +22138,11 @@ ${finalProseText}
                                             <CharacterCard
                                                 key={i}
                                                 c={c}
+                                                portraitSrc={loadedImages.portraits?.[c.id]}
+                                                portraitLoading={!!portraitLoading[c.id]}
+                                                onGeneratePortrait={generateCharacterPortrait}
+                                                onUploadPortrait={uploadCharacterPortrait}
+                                                onRemovePortrait={removeCharacterPortrait}
                                                 onEdit={(field, title, val) => {
                                                     openEditModal(title, val, (newValue) => {
                                                         setStory(prev => {
@@ -21558,12 +22225,12 @@ ${finalProseText}
                                                 <Plus size={14} /> Add Fact
                                             </button>
                                             <button
-                                                onClick={() => ingestLoreBatch(story.lore, { clearExisting: true })}
-                                                disabled={ragStatus === 'indexing' || (!apiKey && !openRouterKey)}
+                                                onClick={rebuildRagIndex}
+                                                disabled={isRebuildingRag || ragStatus === 'indexing' || ragStatus === 'indexing_batch'}
                                                 className="text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50"
                                                 title="Re-embed all lore items into vector database"
                                             >
-                                                <RefreshCw size={12} className={ragStatus === 'indexing' ? 'animate-spin text-gold-ink' : ''} /> Re-Index RAG
+                                                <RefreshCw size={12} className={isRebuildingRag ? 'animate-spin text-gold-ink' : ''} /> Rebuild RAG index
                                             </button>
                                         </div>
                                     </div>
@@ -21591,8 +22258,8 @@ ${finalProseText}
                                             {story.lore.map((l, i) => (
                                                 <div key={i} className="bg-surface rounded-2xl border border-edge p-6 transition-all hover:border-gold-edge shadow-sm space-y-3">
                                                     <div className="flex flex-col md:flex-row justify-between items-start gap-3">
-                                                        <h3 className="font-bold text-base font-serif text-ink-900 flex items-center gap-2">
-                                                            {l.topic}
+                                                        <h3 className="font-bold text-base font-serif text-ink-900 flex items-start gap-2 min-w-0 max-w-full">
+                                                            <span className="min-w-0 whitespace-normal break-words">{l.topic}</span>
                                                             <EditButton title={`Lore: ${l.topic}`} value={l.topic} onSave={() => openEditModal(`Lore: ${l.topic}`, l.topic, (val) => { setStory(prev => { const newLore = [...prev.lore]; newLore[i] = { ...newLore[i], topic: val }; return { ...prev, lore: newLore }; }); })} />
                                                         </h3>
                                                         <div className="flex items-start gap-2 self-start md:self-auto">
@@ -21729,22 +22396,41 @@ ${finalProseText}
                                     ) : (
                                         <div className="grid lg:grid-cols-3 gap-6">
                                             {/* Matrix Grid Card (Left 2 cols) */}
-                                            <div className="lg:col-span-2 bg-surface border border-edge rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                                                <div className="p-5 border-b border-edge bg-inset">
+                                            <div className="lg:col-span-2 min-w-0 bg-surface border border-edge rounded-2xl overflow-hidden shadow-sm flex flex-col">
+                                                <div className="p-5 border-b border-edge bg-inset flex flex-wrap items-center justify-between gap-3">
                                                     <h3 className="font-bold text-ink-800 flex items-center gap-2 text-xs uppercase tracking-wider font-mono">
-                                                        <Layers size={15} className="text-gold-ink" /> Directional Grid
+                                                        <Layers size={15} className="text-gold-ink" /> Directional {matrixView === 'grid' ? 'Grid' : 'List'}
                                                     </h3>
+                                                    <div className="inline-flex gap-1 p-1 rounded-lg border border-edge-strong bg-surface" role="group" aria-label="Relationship view">
+                                                        {['grid', 'list'].map(mode => (
+                                                            <button key={mode} type="button" aria-pressed={matrixView === mode} onClick={() => {
+                                                                setMatrixView(mode);
+                                                                try { localStorage.setItem('ellipsisprose_matrix_view', mode); }
+                                                                catch { /* Keep the view toggle usable when storage is unavailable. */ }
+                                                            }} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${matrixView === mode ? 'bg-gold-tint text-gold-ink' : 'text-ink-500 hover:bg-inset'}`}>
+                                                                {mode === 'grid' ? 'Grid' : 'List'}
+                                                            </button>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                                <div className="p-6 overflow-x-auto">
-                                                    <table className="w-full border-collapse min-w-[500px]">
+                                                {matrixView === 'grid' ? (
+                                                <React.Fragment>
+                                                <div className="rel-matrix">
+                                                <div ref={matrixScrollRef} onScroll={measureMatrixScroll} className="rel-matrix-scroll custom-scrollbar" tabIndex={0} role="region" aria-label="Character relationship grid" aria-describedby={matrixScroll.left || matrixScroll.right ? 'matrix-scroll-hint' : undefined}>
+                                                    <table>
                                                         <thead>
                                                             <tr>
-                                                                <th className="p-3 text-[10px] font-bold text-ink-400 uppercase border-b border-edge-strong text-left bg-inset w-32 font-mono">
+                                                                <th scope="col" className="p-3 text-[10px] font-bold text-ink-400 uppercase border-b border-edge-strong text-left bg-inset font-mono">
                                                                     Source ➔ Target
                                                                 </th>
                                                                 {story.cast.map(c => (
-                                                                    <th key={c.name} className="p-3 text-[11px] font-bold text-ink-700 uppercase border-b border-edge-strong text-center bg-inset max-w-[120px] truncate font-serif">
-                                                                        {c.name}
+                                                                    <th key={c.name} scope="col" className="p-3 text-[11px] font-bold text-ink-700 uppercase border-b border-edge-strong text-center bg-inset font-serif">
+                                                                        <div className="flex flex-col items-center gap-2">
+                                                                            <span className="w-8 h-8 rounded-lg overflow-hidden bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink shrink-0">
+                                                                                {loadedImages.portraits?.[c.id] ? <img src={loadedImages.portraits[c.id]} alt="" className="w-full h-full object-cover" /> : c.name?.charAt(0).toUpperCase()}
+                                                                            </span>
+                                                                            <span className="line-clamp-2" title={c.name}>{c.name}</span>
+                                                                        </div>
                                                                     </th>
                                                                 ))}
                                                             </tr>
@@ -21752,9 +22438,9 @@ ${finalProseText}
                                                         <tbody>
                                                             {story.cast.map(fromChar => (
                                                                 <tr key={fromChar.name} className="border-b border-edge-soft hover:bg-inset/60 transition-colors">
-                                                                    <td className="p-3 font-bold text-xs text-ink-900 bg-inset border-r border-edge-strong truncate max-w-[120px] font-serif">
-                                                                        {fromChar.name}
-                                                                    </td>
+                                                                    <th scope="row" className="p-3 font-bold text-left text-xs text-ink-900 bg-inset border-b border-edge-strong font-serif">
+                                                                        <span className="line-clamp-2" title={fromChar.name}>{fromChar.name}</span>
+                                                                    </th>
                                                                     {story.cast.map(toChar => {
                                                                         const isSelf = fromChar.name === toChar.name;
                                                                         const relKey = `${fromChar.name}->${toChar.name}`;
@@ -21762,7 +22448,7 @@ ${finalProseText}
 
                                                                         if (isSelf) {
                                                                             return (
-                                                                                <td key={toChar.name} className="p-3 text-center bg-mist-50 text-[10px] text-ink-400 font-mono italic select-none">
+                                                                                <td key={toChar.name} className="p-3 text-center bg-inset border-b border-edge text-[10px] text-ink-400 font-mono italic select-none">
                                                                                     Self
                                                                                 </td>
                                                                             );
@@ -21771,27 +22457,19 @@ ${finalProseText}
                                                                         return (
                                                                             <td
                                                                                 key={toChar.name}
-                                                                                onClick={() => {
-                                                                                    setSelectedRel({
-                                                                                        from: fromChar.name,
-                                                                                        to: toChar.name,
-                                                                                        key: relKey,
-                                                                                        current: rel?.current || "",
-                                                                                        hidden_tension: rel?.hidden_tension || "",
-                                                                                        trust_level: parseInt(rel?.trust_level, 10) || 5,
-                                                                                        history: rel?.history || []
-                                                                                    });
-                                                                                }}
-                                                                                className={`p-3 text-center text-xs cursor-pointer transition-all hover:bg-inset active:scale-95 ${rel?.current ? 'text-ink-900 bg-gold/5 font-medium' : 'text-ink-400 hover:text-ink-700 italic'}`}
-                                                                                style={{ minWidth: '120px', maxWidth: '180px' }}
+                                                                                onClick={() => selectMatrixRelationship(fromChar, toChar)}
+                                                                                onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectMatrixRelationship(fromChar, toChar); } }}
+                                                                                tabIndex={rel?.current ? 0 : undefined}
+                                                                                title={rel?.current || `Set arc: ${fromChar.name} to ${toChar.name}`}
+                                                                                className={`p-3 text-center text-xs cursor-pointer border-b border-edge transition-colors hover:bg-inset ${rel?.current ? 'text-ink-900 bg-gold-tint font-medium' : 'text-ink-400 hover:text-ink-700 italic'}`}
                                                                             >
                                                                                 {rel?.current ? (
                                                                                     <div className="flex flex-col items-center gap-1 group/cell">
-                                                                                        <span className="truncate max-w-[140px] text-[11px] font-medium block text-ink-800">{rel.current}</span>
-                                                                                        <Heart size={10} className="text-rose-500 fill-rose-500/20 opacity-40 group-hover/cell:opacity-100 transition-opacity" />
+                                                                                        <span className="line-clamp-2 text-[11px] font-medium text-ink-800" title={rel.current}>{rel.current}</span>
+                                                                                        <Heart size={10} className="text-gold-ink opacity-40 group-hover/cell:opacity-100 transition-opacity" />
                                                                                     </div>
                                                                                 ) : (
-                                                                                    <span className="text-[10px] opacity-40">+ Set Arc</span>
+                                                                                    <button type="button" className="p-1.5 rounded text-[10px] text-ink-500 hover:text-gold-ink" onClick={event => { event.stopPropagation(); selectMatrixRelationship(fromChar, toChar); }}>+ Set arc</button>
                                                                                 )}
                                                                             </td>
                                                                         );
@@ -21801,6 +22479,45 @@ ${finalProseText}
                                                         </tbody>
                                                     </table>
                                                 </div>
+                                                <div aria-hidden="true" className="rel-matrix-fade rel-matrix-fade-left" hidden={!matrixScroll.left} />
+                                                <div aria-hidden="true" className="rel-matrix-fade rel-matrix-fade-right" hidden={!matrixScroll.right} />
+                                                </div>
+                                                {(matrixScroll.left || matrixScroll.right) && <p id="matrix-scroll-hint" className="px-5 py-2 text-xs text-ink-400">Scroll sideways to see more characters</p>}
+                                                </React.Fragment>
+                                                ) : (
+                                                    <div className="p-5 space-y-5">
+                                                        {story.cast.map(fromChar => (
+                                                            <section key={fromChar.name} className="space-y-2">
+                                                                <h4 className="text-sm font-bold font-serif text-ink-900 break-words">{fromChar.name} <span className="text-ink-400">➔</span></h4>
+                                                                <div className="border border-edge rounded-xl overflow-hidden divide-y divide-edge">
+                                                                    {story.cast.filter(toChar => toChar.name !== fromChar.name).map(toChar => {
+                                                                        const rel = story.relationships?.[`${fromChar.name}->${toChar.name}`];
+                                                                        const trust = Math.min(10, Math.max(1, parseInt(rel?.trust_level, 10) || 5));
+                                                                        return (
+                                                                            <div key={toChar.name} role="button" tabIndex={0}
+                                                                                onClick={() => selectMatrixRelationship(fromChar, toChar)}
+                                                                                onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectMatrixRelationship(fromChar, toChar); } }}
+                                                                                aria-label={`${fromChar.name} to ${toChar.name}: ${rel?.current || 'Set arc'}`}
+                                                                                className="flex flex-wrap items-center gap-3 p-3 cursor-pointer hover:bg-inset focus-visible:bg-inset text-left">
+                                                                                <span className="w-10 h-10 rounded-xl bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink font-serif font-bold overflow-hidden shrink-0">
+                                                                                    {loadedImages.portraits?.[toChar.id] ? <img src={loadedImages.portraits[toChar.id]} alt="" className="w-full h-full object-cover" /> : toChar.name?.charAt(0).toUpperCase()}
+                                                                                </span>
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <div className="text-xs font-bold text-ink-900 break-words">{toChar.name}</div>
+                                                                                    <p className="text-xs text-ink-600 break-words" title={rel?.current || ''}>{rel?.current || 'No current dynamic defined.'}</p>
+                                                                                </div>
+                                                                                <span role="meter" aria-label="Trust level" aria-valuemin={0} aria-valuemax={10} aria-valuenow={rel?.current ? trust : 0} aria-valuetext={rel?.current ? `${trust} out of 10` : 'Not defined'} title={rel?.current ? `Trust: ${trust}/10` : 'Trust not defined'} className="flex items-center gap-1 shrink-0">
+                                                                                    {[1, 2, 3, 4, 5].map(dot => <span key={dot} aria-hidden="true" className={`w-2 h-2 rounded-full border ${rel?.current && dot <= Math.ceil(trust / 2) ? 'bg-gold-tint border-gold-edge' : 'bg-surface border-edge-strong'}`} />)}
+                                                                                </span>
+                                                                                {!rel?.current && <button type="button" onClick={event => { event.stopPropagation(); selectMatrixRelationship(fromChar, toChar); }} className="px-2 py-1.5 rounded-lg border border-gold-edge bg-gold-tint text-gold-ink text-xs font-semibold shrink-0">Set arc</button>}
+                                                                            </div>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </section>
+                                                        ))}
+                                                    </div>
+                                                )}
                                                 <div className="p-4 border-t border-edge-strong bg-inset flex gap-4 text-[10px] text-ink-500 font-mono">
                                                     <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-gold-tint border border-gold-edge inline-block"></span> Established</div>
                                                     <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-surface border border-edge-strong inline-block"></span> Not Defined</div>
@@ -24562,7 +25279,7 @@ ${finalProseText}
                                         {/* Embedding Provider Toggle */}
                                         <div>
                                             <label className="block text-[10px] font-bold text-ink-400 uppercase tracking-wider mb-2 font-mono">Embedding Provider (RAG)</label>
-                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                                                 <button
                                                     type="button"
                                                     onClick={() => setEmbeddingProvider('gemini')}
@@ -24591,7 +25308,16 @@ ${finalProseText}
                                                 >
                                                     KoboldCPP
                                                 </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEmbeddingProvider('codex')}
+                                                    className={`py-2 px-2 rounded-lg text-xs font-bold transition-all ${embeddingProvider === 'codex' ? 'bg-btn text-btn-ink shadow-2xs' : 'text-ink-600 hover:text-ink-900'}`}
+                                                >
+                                                    Codex Bridge (local)
+                                                </button>
                                             </div>
+                                            <p className="text-xs text-ink-400 mt-2">After switching providers, use "Rebuild RAG index" in World Lore.</p>
+                                            <p className="text-xs text-ink-400 mt-2">The lore index is rebuilt only when the story's lore or the embedding provider changes.</p>
                                         </div>
 
                                         {/* Gemini API Key */}
@@ -24663,7 +25389,7 @@ ${finalProseText}
                                         )}
 
                                         {/* Codex CLI Bridge */}
-                                        {apiProvider === 'codex' && (
+                                        {(apiProvider === 'codex' || embeddingProvider === 'codex') && (
                                             <div className="animate-fade-in space-y-2">
                                                 <label htmlFor="codex-url" className="block text-xs font-bold uppercase tracking-wider text-ink-500 font-mono">Codex Bridge URL</label>
                                                 <input
@@ -24678,8 +25404,16 @@ ${finalProseText}
                                                     <p className="text-xs text-ink-500" role="status">
                                                         {codexStatus.online ? `Online. Default model: ${codexStatus.model}` : (codexStatus.error || 'Checking bridge...')}
                                                     </p>
-                                                    <button type="button" onClick={handleCatalogRefresh} className="text-xs text-gold-ink hover:text-ink-900 font-medium flex items-center gap-1 transition-colors">Refresh</button>
+                                                    <button type="button" onClick={refreshCodexModels} className="text-xs text-gold-ink hover:text-ink-900 font-medium flex items-center gap-1 transition-colors">Refresh</button>
                                                 </div>
+                                                <p className="text-xs text-ink-500" role="status">
+                                                    {codexEmbeddingStatus?.available === true
+                                                        ? `Local embeddings: ready (${(codexEmbeddingStatus.model || 'Xenova/bge-small-en-v1.5').split('/').pop()})`
+                                                        : codexEmbeddingStatus?.available === false
+                                                            ? 'Local embeddings: package not installed — run npm install'
+                                                            : 'Local embeddings: unknown'}
+                                                </p>
+                                                {apiProvider === 'codex' && <React.Fragment>
                                                 <label htmlFor="codex-model" className="block text-xs font-bold uppercase tracking-wider text-ink-500 font-mono">Structure / Primary Model</label>
                                                 <select id="codex-model" value={codexModel} onChange={(e) => setCodexModel(e.target.value)} className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono">
                                                     <option value="">Bridge default</option>
@@ -24697,6 +25431,7 @@ ${finalProseText}
                                                     </React.Fragment>
                                                 )}
                                                 <p className="text-xs text-ink-400">Run "npm run codex-bridge" in the project folder first. Uses your local Codex CLI login.</p>
+                                                </React.Fragment>}
                                             </div>
                                         )}
 
@@ -24921,7 +25656,7 @@ ${finalProseText}
                                                                 setImageProvider(prov);
                                                                 if (prov === 'gemini') {
                                                                     setImageModel('imagen-3.0-generate-002');
-                                                                } else {
+                                                                } else if (prov === 'openrouter') {
                                                                     setImageModel('stabilityai/stable-diffusion-xl');
                                                                 }
                                                             }}
@@ -24929,12 +25664,13 @@ ${finalProseText}
                                                         >
                                                             <option value="gemini">Gemini (Imagen 3)</option>
                                                             <option value="openrouter">OpenRouter (SDXL/Flux/etc.)</option>
+                                                            <option value="comfyui">ComfyUI (local, Krea 2)</option>
                                                         </select>
                                                         <ChevronDown className="absolute right-3 top-2.5 text-ink-400 pointer-events-none" size={14} />
                                                     </div>
                                                 </div>
 
-                                                <div>
+                                                {imageProvider !== 'comfyui' && <div>
                                                     <label className="block text-xs font-bold text-ink-700 mb-1 font-mono">Image Model</label>
                                                     <input
                                                         type="text"
@@ -24943,10 +25679,10 @@ ${finalProseText}
                                                         className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
                                                         placeholder={imageProvider === 'gemini' ? "imagen-3.0-generate-002" : "stabilityai/stable-diffusion-xl"}
                                                     />
-                                                </div>
+                                                </div>}
                                             </div>
 
-                                            <div>
+                                            {imageProvider !== 'comfyui' && <div>
                                                 <label className="block text-xs font-bold text-ink-700 mb-1 font-mono">Dedicated Image API Key (Optional)</label>
                                                 <input
                                                     type="password"
@@ -24955,7 +25691,57 @@ ${finalProseText}
                                                     className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors"
                                                     placeholder="If blank, uses text provider key (Gemini/OpenRouter)"
                                                 />
-                                            </div>
+                                            </div>}
+
+                                            {imageProvider === 'comfyui' && (
+                                                <div className="p-4 bg-inset border border-edge-strong rounded-xl space-y-4">
+                                                    <div>
+                                                        <label htmlFor="comfy-url" className="block text-xs font-bold text-ink-700 mb-1 font-mono">ComfyUI URL</label>
+                                                        <input id="comfy-url" type="text" value={comfyUrl} onChange={(e) => {
+                                                            comfyRefreshId.current++;
+                                                            setComfyUrl(e.target.value);
+                                                        }} className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono" placeholder="http://127.0.0.1:8188" />
+                                                    </div>
+                                                    <div className="flex justify-between items-center gap-4">
+                                                        <p role="status" className="text-xs text-ink-500 break-words">{comfyStatus.online ? `Online. ComfyUI ${comfyStatus.version} on ${comfyStatus.device}` : comfyStatus.error || 'Press Refresh to connect to ComfyUI.'}</p>
+                                                        <button type="button" onClick={refreshComfyInfo} className="text-xs text-gold-ink hover:text-ink-900 font-medium flex items-center gap-1 transition-colors">Refresh</button>
+                                                    </div>
+                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                        {[
+                                                            { id: 'unet', label: 'Diffusion model', value: comfyUnet, set: setComfyUnet },
+                                                            { id: 'clip', label: 'Text encoder', value: comfyClip, set: setComfyClip },
+                                                            { id: 'vae', label: 'VAE', value: comfyVae, set: setComfyVae },
+                                                            { id: 'lora', label: 'LoRA', value: comfyLora, set: setComfyLora },
+                                                            { id: 'sampler', label: 'Sampler', value: comfySampler, set: setComfySampler },
+                                                            { id: 'scheduler', label: 'Scheduler', value: comfyScheduler, set: setComfyScheduler }
+                                                        ].map(field => (
+                                                            <div key={field.id}>
+                                                                <label htmlFor={`comfy-${field.id}`} className="block text-xs font-bold text-ink-700 mb-1 font-mono">{field.label}</label>
+                                                                <div className="relative">
+                                                                    <select id={`comfy-${field.id}`} value={field.value} onChange={(e) => field.set(e.target.value)} className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none appearance-none transition-colors cursor-pointer">
+                                                                        <option value="">{field.id === 'lora' ? 'None' : 'Choose...'}</option>
+                                                                        {field.value && !comfyOptions[field.id].includes(field.value) && <option value={field.value}>{field.value} (saved)</option>}
+                                                                        {comfyOptions[field.id].map(option => <option key={option} value={option}>{option}</option>)}
+                                                                    </select>
+                                                                    <ChevronDown className="absolute right-3 top-2.5 text-ink-400 pointer-events-none" size={14} />
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                        {[
+                                                            { id: 'lora-strength', label: 'LoRA strength', value: comfyLoraStrength, set: setComfyLoraStrength, step: 0.1 },
+                                                            { id: 'steps', label: 'Steps', value: comfySteps, set: setComfySteps, min: 1, step: 1 },
+                                                            { id: 'cfg', label: 'CFG', value: comfyCfg, set: setComfyCfg, min: 0, step: 0.1 },
+                                                            { id: 'timeout', label: 'Timeout (seconds)', value: comfyTimeoutSec, set: setComfyTimeoutSec, min: 1, step: 1 }
+                                                        ].map(field => (
+                                                            <div key={field.id}>
+                                                                <label htmlFor={`comfy-${field.id}`} className="block text-xs font-bold text-ink-700 mb-1 font-mono">{field.label}</label>
+                                                                <input id={`comfy-${field.id}`} type="number" value={field.value} min={field.min} step={field.step} onChange={(e) => field.set(Number(e.target.value))} className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono" />
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <p className="text-xs text-ink-500">Start ComfyUI with --enable-cors-header (loopback listen is fine). Uses Krea 2 Turbo: diffusion model + Qwen3-VL text encoder + Qwen VAE.</p>
+                                                </div>
+                                            )}
 
                                             {/* Story Style Dropdown */}
                                             <div className="pt-2">
@@ -25072,34 +25858,34 @@ ${finalProseText}
                                                                 <div
                                                                     key={mode.id}
                                                                     className={`p-3.5 rounded-xl border transition-all flex justify-between items-start gap-4 animate-fade-in shadow-2xs ${isCurrentlyEditing
-                                                                        ? 'bg-[#FAF8F5] border-[#B8935A] ring-1 ring-[#B8935A]/40'
-                                                                        : 'bg-[#FAF8F5] border-stone-200 hover:border-stone-300'
+                                                                        ? 'bg-inset border-gold-edge ring-1 ring-gold/40'
+                                                                        : 'bg-inset border-edge-strong hover:border-gold-edge'
                                                                         }`}
                                                                 >
                                                                     <div className="min-w-0 flex-1">
                                                                         <div className="flex items-center gap-2 mb-1">
-                                                                            <Icon name={mode.icon || "tag"} className="w-3.5 h-3.5 text-[#8C6B32] shrink-0" />
-                                                                            <span className="text-xs font-bold text-[#8C6B32] font-mono">{mode.id}</span>
+                                                                            <Icon name={mode.icon || "tag"} className="w-3.5 h-3.5 text-gold-ink shrink-0" />
+                                                                            <span className="text-xs font-bold text-gold-ink font-mono">{mode.id}</span>
                                                                             {isCurrentlyEditing && (
-                                                                                <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-[#8C6B32]/10 text-[#8C6B32] font-bold">
+                                                                                <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-gold-tint text-gold-ink font-bold">
                                                                                     Editing
                                                                                 </span>
                                                                             )}
                                                                         </div>
-                                                                        <p className="text-xs text-stone-800 font-semibold mb-1 font-serif">{mode.context}</p>
-                                                                        <p className="text-[10px] text-stone-500 line-clamp-2 italic font-mono">{mode.prompt}</p>
+                                                                        <p className="text-xs text-ink-800 font-semibold mb-1 font-serif">{mode.context}</p>
+                                                                        <p className="text-[10px] text-ink-500 line-clamp-2 italic font-mono">{mode.prompt}</p>
                                                                     </div>
                                                                     <div className="flex items-center gap-1 shrink-0">
                                                                         <button
                                                                             onClick={() => handleStartEditCustomMode(mode)}
-                                                                            className={`transition-colors p-1 rounded hover:bg-stone-200/50 ${isCurrentlyEditing ? 'text-[#8C6B32]' : 'text-stone-400 hover:text-[#8C6B32]'}`}
+                                                                            className={`transition-colors p-1 rounded hover:bg-wash ${isCurrentlyEditing ? 'text-gold-ink' : 'text-ink-400 hover:text-gold-ink'}`}
                                                                             title="Edit Narrative Mode"
                                                                         >
                                                                             <Edit3 size={14} />
                                                                         </button>
                                                                         <button
                                                                             onClick={() => handleDeleteCustomMode(mode.id)}
-                                                                            className="text-stone-400 hover:text-rose-600 transition-colors p-1 rounded hover:bg-rose-50"
+                                                                            className="text-ink-400 hover:text-blush-600 transition-colors p-1 rounded hover:bg-blush-tint"
                                                                             title="Delete Narrative Mode"
                                                                         >
                                                                             <Trash2 size={14} />
@@ -25131,32 +25917,29 @@ ${finalProseText}
                                                 </div>
                                             )}
 
-                                            {/* Create new mode form */}
-                                            <div className="bg-inset p-4 sm:p-5 rounded-2xl border border-edge-strong space-y-3.5">
-                                                <h4 className="text-xs font-bold text-ink-800 font-mono uppercase">Create Custom Mode</h4>
-                                                {/* Create / Edit mode form */}
-                                                <div className={`p-4 sm:p-5 rounded-2xl border space-y-3.5 transition-all ${editingModeId ? 'bg-[#FAF8F5] border-[#B8935A] shadow-xs' : 'bg-[#FAF8F5] border-stone-200'}`}>
+                                            {/* Create / Edit mode form */}
+                                            <div className={`bg-inset p-4 sm:p-5 rounded-2xl border space-y-3.5 transition-all ${editingModeId ? 'border-gold-edge shadow-xs' : 'border-edge-strong'}`}>
                                                     {editingModeId ? (
                                                         <div className="flex justify-between items-center">
                                                             <div className="flex items-center gap-2">
-                                                                <span className="w-2 h-2 rounded-full bg-[#8C6B32] animate-pulse"></span>
-                                                                <h4 className="text-xs font-bold text-[#8C6B32] font-mono uppercase">Edit Custom Mode: {editingModeId}</h4>
+                                                                <span className="w-2 h-2 rounded-full bg-gold animate-pulse"></span>
+                                                                <h4 className="text-xs font-bold text-gold-ink font-mono uppercase">Edit Custom Mode: {editingModeId}</h4>
                                                             </div>
                                                             <button
                                                                 type="button"
                                                                 onClick={handleCancelEditCustomMode}
-                                                                className="text-[11px] font-semibold text-stone-500 hover:text-stone-800 transition-colors flex items-center gap-1"
+                                                                className="text-[11px] font-semibold text-ink-500 hover:text-ink-800 transition-colors flex items-center gap-1"
                                                             >
                                                                 <X size={12} /> Cancel
                                                             </button>
                                                         </div>
                                                     ) : (
-                                                        <h4 className="text-xs font-bold text-stone-800 font-mono uppercase">Create Custom Mode</h4>
+                                                        <h4 className="text-xs font-bold text-ink-800 font-mono uppercase">Create Custom Mode</h4>
                                                     )}
                                                     <div>
                                                         <label className="block text-[10px] font-bold text-ink-500 uppercase font-mono mb-1">
                                                             Mode ID (alphanumeric + underscore)
-                                                            {editingModeId && <span className="normal-case font-normal text-stone-400 ml-1.5">(renaming updates active scene assignments)</span>}
+                                                            {editingModeId && <span className="normal-case font-normal text-ink-400 ml-1.5">(renaming updates active scene assignments)</span>}
                                                         </label>
                                                         <input
                                                             type="text"
@@ -25208,14 +25991,14 @@ ${finalProseText}
                                                         <div className="flex items-center gap-2">
                                                             <button
                                                                 onClick={handleSaveCustomMode}
-                                                                className="flex-1 bg-[#1C1917] hover:bg-[#292524] text-white font-bold py-2 rounded-xl text-xs transition-all shadow-sm flex justify-center items-center gap-1.5 active:scale-95 cursor-pointer"
+                                                                className="flex-1 bg-btn hover:bg-btn-hover text-btn-ink font-bold py-2 rounded-xl text-xs transition-all shadow-sm flex justify-center items-center gap-1.5 active:scale-95 cursor-pointer"
                                                             >
                                                                 <Check size={14} /> Update Narrative Mode
                                                             </button>
                                                             <button
                                                                 type="button"
                                                                 onClick={handleCancelEditCustomMode}
-                                                                className="px-4 bg-white hover:bg-stone-100 border border-stone-200 text-stone-700 font-semibold py-2 rounded-xl text-xs transition-all shadow-2xs flex justify-center items-center gap-1 cursor-pointer"
+                                                                className="px-4 bg-surface hover:bg-wash border border-edge-strong text-ink-700 font-semibold py-2 rounded-xl text-xs transition-all shadow-2xs flex justify-center items-center gap-1 cursor-pointer"
                                                             >
                                                                 <X size={14} /> Cancel
                                                             </button>
@@ -25228,7 +26011,6 @@ ${finalProseText}
                                                             <Plus size={14} /> Add Narrative Mode
                                                         </button>
                                                     )}
-                                                </div>
                                             </div>
 
                                             {/* Banned Words & Phrases Section */}
