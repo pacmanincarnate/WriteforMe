@@ -1847,19 +1847,21 @@
         /* ── Reader TTS Floating Mini-Player & Telemetry ── */
         .reader-tts-floating-bar {
             position: fixed;
-            left: 50%;
-            transform: translateX(-50%);
+            left: 0;
+            right: 0;
+            margin-left: auto;
+            margin-right: auto;
             bottom: calc(env(safe-area-inset-bottom, 0px) + 3.85rem);
             z-index: 35;
             transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-            max-width: calc(100vw - 1.5rem);
+            max-width: calc(100% - 1.5rem);
             width: 32rem;
             box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
         }
 
         @media (max-width: 640px) {
             .reader-tts-floating-bar {
-                width: calc(100vw - 1.5rem);
+                width: calc(100% - 1.5rem);
                 bottom: calc(env(safe-area-inset-bottom, 0px) + 3.5rem);
             }
         }
@@ -2399,12 +2401,19 @@
             txt = txt.replace(/_([^_]+)_/g, '$1');
             txt = txt.replace(/`([^`]+)`/g, '$1');
             txt = txt.replace(/<[^>]+>/g, '');
+            // Literary prose punctuation normalization for Kokoro / eSpeak-NG
+            txt = txt.replace(/[—–]/g, ' , '); // Convert em/en-dashes to comma pauses
+            txt = txt.replace(/--+/g, ' , ');   // Convert double-hyphens to comma pauses
+            txt = txt.replace(/…/g, '... ');    // Normalize ellipsis
+            txt = txt.replace(/[“”]/g, '"');    // Normalize curly double quotes
+            txt = txt.replace(/[‘’]/g, "'");    // Normalize curly single quotes / apostrophes
+            txt = txt.replace(/([a-zA-Z])'([a-zA-Z])/g, "$1'$2"); // Keep contractions clean
             txt = txt.replace(/\r\n/g, '\n');
             txt = txt.replace(/[ \t]+/g, ' ');
             return txt.trim();
         };
 
-        const chunkProseForTts = (proseText, minChars = 120, maxChars = 340) => {
+        const chunkProseForTts = (proseText, minChars = 120, maxChars = 320) => {
             const plain = stripProseToPlainText(proseText);
             if (!plain) return [];
 
@@ -2417,7 +2426,7 @@
                 const p = para.trim();
                 if (!p) return;
 
-                const regex = /([^.?!…]+(?:[.?!…]+["'”’]?|$))/g;
+                const regex = /([^.?!…]+(?:[.?!…]+["']?|$))/g;
                 let match;
                 let lastSentence = "";
 
@@ -2426,7 +2435,7 @@
                     if (!rawSent) continue;
 
                     const words = rawSent.split(/\s+/);
-                    const lastWord = words[words.length - 1].replace(/[.?!…"'”’]/g, '').toLowerCase();
+                    const lastWord = words[words.length - 1].replace(/[.?!…"']/g, '').toLowerCase();
 
                     if (ABBREVS.has(lastWord) && regex.lastIndex < p.length) {
                         lastSentence += (lastSentence ? " " : "") + rawSent;
@@ -2472,11 +2481,19 @@
                 chunks.push(currentChunk);
             }
 
-            return chunks.map((text, idx) => ({
-                index: idx,
-                text,
-                wordCount: countWords(text)
-            }));
+            // Ensure every chunk ends with terminal punctuation so Kokoro's acoustic model
+            // never ends on an abrupt rise or trailing hallucination
+            return chunks.map((rawText, idx) => {
+                let text = rawText.trim();
+                if (text && !/[.?!:;"']$/.test(text)) {
+                    text += ".";
+                }
+                return {
+                    index: idx,
+                    text,
+                    wordCount: countWords(text)
+                };
+            });
         };
 
         const SILENT_WAV_DATA_URI = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
@@ -2499,7 +2516,9 @@
                 "            const { modelId, dtype, device } = payload || {};",
                 "            const targetModel = modelId || 'onnx-community/Kokoro-82M-v1.0-ONNX';",
                 "            const targetDtype = dtype || 'q8';",
-                "            const targetDevice = device || 'auto';",
+                "            // Enforce WASM by default. WebGPU with q8 produces known tensor dequantization corruption in Chromium/Opera.",
+                "            const requestedDevice = (device === 'auto' || !device) ? 'wasm' : device;",
+                "            const targetDevice = requestedDevice;",
                 "",
                 "            if (tts && currentConfig && currentConfig.modelId === targetModel && currentConfig.dtype === targetDtype && currentConfig.device === targetDevice) {",
                 "                self.postMessage({ type: 'ready', id, device: currentConfig.resolvedDevice, message: 'Model ready from cache' });",
@@ -2565,15 +2584,7 @@
                 "                    }, 500);",
                 "                }",
                 "",
-                "                // WebKit / Safari mobile hangs inside WebGPU worker pipelines; force WASM on Safari/iOS",
-                "                const isSafariOrIOS = typeof navigator !== 'undefined' && (",
-                "                    /iPhone|iPad|iPod/i.test(navigator.userAgent || '') ||",
-                "                    (navigator.maxTouchPoints > 1 && /Macintosh|Mac/i.test(navigator.userAgent || '')) ||",
-                "                    (/^((?!chrome|android).)*safari/i.test(navigator.userAgent || ''))",
-                "                );",
-                "",
                 "                let resolvedDevice = 'wasm';",
-                "",
                 "                try {",
                 "                    if (targetDevice === 'webnn-npu') {",
                 "                        try {",
@@ -2584,24 +2595,9 @@
                 "                            });",
                 "                            resolvedDevice = 'webnn-npu';",
                 "                        } catch (errNpu) {",
-                "                            console.warn('WebNN NPU not available, falling back:', errNpu);",
+                "                            console.warn('WebNN NPU not available, falling back to WASM:', errNpu);",
                 "                        }",
-                "                    }",
-                "",
-                "                    // Check if WebGPU adapter is genuinely available before attempting initialization",
-                "                    let canUseWebGpu = false;",
-                "                    if (!isSafariOrIOS && (targetDevice === 'webgpu' || targetDevice === 'auto')) {",
-                "                        try {",
-                "                            if (typeof navigator !== 'undefined' && navigator.gpu && typeof navigator.gpu.requestAdapter === 'function') {",
-                "                                const adapter = await navigator.gpu.requestAdapter();",
-                "                                if (adapter) canUseWebGpu = true;",
-                "                            }",
-                "                        } catch (checkErr) {",
-                "                            canUseWebGpu = false;",
-                "                        }",
-                "                    }",
-                "",
-                "                    if (!tts && canUseWebGpu) {",
+                "                    } else if (targetDevice === 'webgpu') {",
                 "                        try {",
                 "                            const gpuLoad = KokoroTTS.from_pretrained(targetModel, {",
                 "                                dtype: targetDtype,",
@@ -2609,12 +2605,12 @@
                 "                                progress_callback: progressCallback",
                 "                            });",
                 "                            const timeoutPromise = new Promise((_, reject) =>",
-                "                                setTimeout(() => reject(new Error('WebGPU initialization timeout')), 6000)",
+                "                                setTimeout(() => reject(new Error('WebGPU initialization timeout')), 8000)",
                 "                            );",
                 "                            tts = await Promise.race([gpuLoad, timeoutPromise]);",
                 "                            resolvedDevice = 'webgpu';",
                 "                        } catch (errGpu) {",
-                "                            console.warn('WebGPU acceleration failed or timed out, falling back to WebAssembly:', errGpu);",
+                "                            console.warn('WebGPU init failed, falling back to WebAssembly:', errGpu);",
                 "                        }",
                 "                    }",
                 "",
@@ -2663,18 +2659,34 @@
                 "                let wavBuffer = null;",
                 "                const sampleRate = (raw && raw.sampling_rate) || 24000;",
                 "",
-                "                if (raw && typeof raw.toWav === 'function') {",
-                "                    wavBuffer = raw.toWav();",
-                "                } else if (raw && typeof raw.toBlob === 'function') {",
-                "                    const blob = raw.toBlob();",
-                "                    wavBuffer = await blob.arrayBuffer();",
-                "                } else if (raw && raw.audio) {",
-                "                    const f32 = raw.audio;",
-                "                    const pcm16 = new Int16Array(f32.length);",
+                "                // Extract raw audio samples as Float32Array directly, bypassing raw.toWav().",
+                "                // raw.toWav() produces a non-standard 32-bit float WAV lacking 'fact' chunks which",
+                "                // causes Chromium/Opera/Windows decoders to misparse it as signed 16-bit PCM (white noise).",
+                "                let f32 = null;",
+                "                if (raw && raw.audio instanceof Float32Array) {",
+                "                    f32 = raw.audio;",
+                "                } else if (raw && raw.audio && raw.audio.data instanceof Float32Array) {",
+                "                    f32 = raw.audio.data;",
+                "                } else if (raw && raw.audio && ArrayBuffer.isView(raw.audio)) {",
+                "                    f32 = new Float32Array(raw.audio.buffer, raw.audio.byteOffset, raw.audio.length);",
+                "                }",
+                "",
+                "                if (f32 && f32.length > 0) {",
+                "                    // Peak normalization with safety headroom (0.98) to prevent digital clipping",
+                "                    let maxAmp = 0;",
                 "                    for (let i = 0; i < f32.length; i++) {",
-                "                        const s = Math.max(-1, Math.min(1, f32[i]));",
-                "                        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;",
+                "                        const abs = Math.abs(f32[i]);",
+                "                        if (abs > maxAmp) maxAmp = abs;",
                 "                    }",
+                "                    const scale = maxAmp > 0.98 ? 0.98 / maxAmp : 1.0;",
+                "                    const numSamples = f32.length;",
+                "                    const pcm16 = new Int16Array(numSamples);",
+                "                    for (let i = 0; i < numSamples; i++) {",
+                "                        const s = Math.max(-1, Math.min(1, f32[i] * scale));",
+                "                        pcm16[i] = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7FFF);",
+                "                    }",
+                "",
+                "                    // Standard RIFF WAVE Format 1 (PCM 16-bit mono)",
                 "                    const buf = new ArrayBuffer(44 + pcm16.byteLength);",
                 "                    const v = new DataView(buf);",
                 "                    const w = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };",
@@ -2682,17 +2694,22 @@
                 "                    v.setUint32(4, 36 + pcm16.byteLength, true);",
                 "                    w(8, 'WAVE');",
                 "                    w(12, 'fmt ');",
-                "                    v.setUint32(16, 16, true);",
-                "                    v.setUint16(20, 1, true);",
-                "                    v.setUint16(22, 1, true);",
-                "                    v.setUint32(24, sampleRate, true);",
-                "                    v.setUint32(28, sampleRate * 2, true);",
-                "                    v.setUint16(32, 2, true);",
-                "                    v.setUint16(34, 16, true);",
+                "                    v.setUint32(16, 16, true);          // 16 for PCM",
+                "                    v.setUint16(20, 1, true);           // Format 1 = PCM",
+                "                    v.setUint16(22, 1, true);           // Mono (1 channel)",
+                "                    v.setUint32(24, sampleRate, true);  // 24000 Hz",
+                "                    v.setUint32(28, sampleRate * 2, true); // ByteRate = sampleRate * channels * 2",
+                "                    v.setUint16(32, 2, true);           // BlockAlign = channels * 2",
+                "                    v.setUint16(34, 16, true);          // BitsPerSample = 16",
                 "                    w(36, 'data');",
                 "                    v.setUint32(40, pcm16.byteLength, true);",
-                "                    new Uint8Array(buf, 44).set(new Uint8Array(pcm16.buffer));",
+                "                    new Uint8Array(buf, 44).set(new Uint8Array(pcm16.buffer, pcm16.byteOffset, pcm16.byteLength));",
                 "                    wavBuffer = buf;",
+                "                } else if (raw && typeof raw.toBlob === 'function') {",
+                "                    const blob = raw.toBlob();",
+                "                    wavBuffer = await blob.arrayBuffer();",
+                "                } else if (raw && typeof raw.toWav === 'function') {",
+                "                    wavBuffer = raw.toWav();",
                 "                }",
                 "",
                 "                const elapsedMs = Date.now() - t0;",
@@ -9208,7 +9225,7 @@ INSTRUCTIONS:
                                                 <Cpu size={10} /> Accelerator
                                             </label>
                                             <select
-                                                value={readerSettings.ttsDevice || 'auto'}
+                                                value={readerSettings.ttsDevice || 'wasm'}
                                                 onChange={e => {
                                                     const newDev = e.target.value;
                                                     updateReaderSetting('ttsDevice', newDev);
@@ -9218,9 +9235,9 @@ INSTRUCTIONS:
                                                 }}
                                                 className="w-full bg-wash p-1.5 rounded-xl text-[11px] font-semibold appearance-none cursor-pointer outline-none border reader-ui-border text-ink-800 dark:text-stone-100"
                                             >
-                                                <option value="auto">Auto (GPU/WASM)</option>
-                                                <option value="webgpu">WebGPU</option>
-                                                <option value="wasm">WebAssembly</option>
+                                                <option value="wasm">WebAssembly (Recommended)</option>
+                                                <option value="auto">Auto (WASM Default)</option>
+                                                <option value="webgpu">WebGPU (Experimental)</option>
                                                 <option value="webnn-npu">WebNN (NPU)</option>
                                             </select>
                                         </div>
@@ -11412,7 +11429,7 @@ INSTRUCTIONS:
             readingMode: "paginated",
             ttsVoice: "af_heart",
             ttsSpeed: 1.0,
-            ttsDevice: "auto",
+            ttsDevice: "wasm",
             ttsDtype: "q8"
         };
 
@@ -12376,7 +12393,15 @@ INSTRUCTIONS:
             const [readerSettings, setReaderSettings] = useState(() => {
                 try {
                     const saved = localStorage.getItem("ellipsisprose_reader_settings");
-                    return saved ? { ...DEFAULT_READER_SETTINGS, ...JSON.parse(saved) } : DEFAULT_READER_SETTINGS;
+                    if (saved) {
+                        const parsed = JSON.parse(saved);
+                        // Migrate legacy 'auto' setting to 'wasm' so existing desktop sessions (Opera/Chrome) don't stay corrupted on WebGPU
+                        if (parsed.ttsDevice === 'auto') {
+                            parsed.ttsDevice = 'wasm';
+                        }
+                        return { ...DEFAULT_READER_SETTINGS, ...parsed };
+                    }
+                    return DEFAULT_READER_SETTINGS;
                 } catch (e) {
                     return DEFAULT_READER_SETTINGS;
                 }
@@ -12883,7 +12908,7 @@ INSTRUCTIONS:
             };
 
             const initTtsEngine = async (forceDevice = null) => {
-                const targetDevice = forceDevice || readerSettings.ttsDevice || 'auto';
+                const targetDevice = forceDevice || readerSettings.ttsDevice || 'wasm';
                 const targetDtype = readerSettings.ttsDtype || 'q8';
                 setTtsError(null);
                 setTtsStatusAndRef('loading-library');
@@ -12976,7 +13001,8 @@ INSTRUCTIONS:
                 }
 
                 audio.loop = false;
-                audio.playbackRate = readerSettings.ttsSpeed || 1.0;
+                // Single-source speed: Kokoro synthesizes with neural duration speed. Keep browser playbackRate at 1.0 to prevent double-speed distortion.
+                audio.playbackRate = 1.0;
                 audio.src = urlToPlay;
 
                 audio.ontimeupdate = () => {
