@@ -2479,6 +2479,8 @@
             }));
         };
 
+        const SILENT_WAV_DATA_URI = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+
         const createKokoroWorker = () => {
             const workerCode = [
                 "let tts = null;",
@@ -2663,11 +2665,11 @@
             const url = URL.createObjectURL(blob);
             let worker;
             try {
-                // Instantiate as classic worker: fully supported across file://, http://, https://, avoiding top-level module redirect restrictions
-                worker = new Worker(url);
-            } catch (classicErr) {
-                // Fallback to module worker if classic creation fails in specific environments
+                // Try module worker first: standard-compliant and required for dynamic import() in Safari (15+), Firefox (114+), and modern Chromium (Chrome, Edge, Vivaldi, Opera)
                 worker = new Worker(url, { type: 'module' });
+            } catch (moduleErr) {
+                console.warn("Module worker instantiation failed, falling back to classic worker:", moduleErr);
+                worker = new Worker(url);
             }
             worker._blobUrl = url;
             return worker;
@@ -12697,9 +12699,34 @@ INSTRUCTIONS:
             const ttsPendingRequestsRef = useRef(new Set());
             const ttsAutoPlayNextRef = useRef(false);
 
+            // Eagerly sync refs on every render AND inside setters to avoid stale-ref bugs.
+            // React batches state updates, so useEffect-only syncing can lag behind
+            // synchronous code that reads these refs immediately after calling a setter.
             useEffect(() => { ttsQueueRef.current = ttsQueue; }, [ttsQueue]);
             useEffect(() => { ttsCurrentChunkIndexRef.current = ttsCurrentChunkIndex; }, [ttsCurrentChunkIndex]);
             useEffect(() => { ttsStatusRef.current = ttsStatus; }, [ttsStatus]);
+
+            // Helper: set state AND eagerly update ref in the same tick
+            const setTtsQueueAndRef = (valOrFn) => {
+                if (typeof valOrFn === 'function') {
+                    setTtsQueue(prev => {
+                        const next = valOrFn(prev);
+                        ttsQueueRef.current = next;
+                        return next;
+                    });
+                } else {
+                    ttsQueueRef.current = valOrFn;
+                    setTtsQueue(valOrFn);
+                }
+            };
+            const setTtsCurrentChunkIndexAndRef = (val) => {
+                ttsCurrentChunkIndexRef.current = val;
+                setTtsCurrentChunkIndex(val);
+            };
+            const setTtsStatusAndRef = (val) => {
+                ttsStatusRef.current = val;
+                setTtsStatus(val);
+            };
 
             useEffect(() => {
                 return () => {
@@ -12727,7 +12754,7 @@ INSTRUCTIONS:
                     worker.onmessage = (e) => {
                         const { type, payload, error, status, progress, message, device } = e.data || {};
                         if (type === 'status') {
-                            setTtsStatus(status);
+                            setTtsStatusAndRef(status);
                             if (typeof progress === 'number') setTtsProgress(progress);
                             if (message) setTtsStatusMessage(message);
                         } else if (type === 'progress') {
@@ -12739,9 +12766,9 @@ INSTRUCTIONS:
                             setTtsStatusMessage(message || `Kokoro TTS ready (${(device || 'wasm').toUpperCase()})`);
                             setTtsError(null);
                             if (ttsAutoPlayNextRef.current) {
-                                setTtsStatus('generating');
+                                setTtsStatusAndRef('generating');
                             } else {
-                                setTtsStatus('ready');
+                                setTtsStatusAndRef('ready');
                             }
                         } else if (type === 'chunk_audio') {
                             const { chunkIndex, wavBuffer } = payload || {};
@@ -12749,7 +12776,7 @@ INSTRUCTIONS:
                             const blob = new Blob([wavBuffer], { type: 'audio/wav' });
                             const audioUrl = URL.createObjectURL(blob);
 
-                            setTtsQueue(prev => {
+                            setTtsQueueAndRef(prev => {
                                 const nextQ = [...prev];
                                 if (nextQ[chunkIndex]) {
                                     nextQ[chunkIndex] = {
@@ -12770,21 +12797,21 @@ INSTRUCTIONS:
                         } else if (type === 'error') {
                             console.error("Kokoro TTS Worker error:", error);
                             setTtsError(error || "Kokoro TTS inference error");
-                            setTtsStatus('error');
+                            setTtsStatusAndRef('error');
                         }
                     };
                     worker.onerror = (wErr) => {
                         console.error("Worker lifecycle error:", wErr);
                         const msg = (wErr && wErr.message) ? wErr.message : "TTS Worker error. If running directly from file://, consider using a local server (e.g. node server.js or Live Server).";
                         setTtsError(msg);
-                        setTtsStatus('error');
+                        setTtsStatusAndRef('error');
                     };
                     ttsWorkerRef.current = worker;
                     return worker;
                 } catch (err) {
                     console.error("Failed to create Kokoro Worker:", err);
                     setTtsError(err.message || "Worker initialization failed");
-                    setTtsStatus('error');
+                    setTtsStatusAndRef('error');
                     return null;
                 }
             };
@@ -12793,7 +12820,7 @@ INSTRUCTIONS:
                 const targetDevice = forceDevice || readerSettings.ttsDevice || 'auto';
                 const targetDtype = readerSettings.ttsDtype || 'q8';
                 setTtsError(null);
-                setTtsStatus('loading-library');
+                setTtsStatusAndRef('loading-library');
                 setTtsProgress(5);
                 setTtsStatusMessage("Initializing Kokoro ML environment...");
 
@@ -12811,8 +12838,8 @@ INSTRUCTIONS:
                 return true;
             };
 
-            const requestChunkAudio = (chunkIdx) => {
-                const q = ttsQueueRef.current;
+            const requestChunkAudio = (chunkIdx, directQueue = null) => {
+                const q = directQueue || ttsQueueRef.current;
                 if (!q || !q[chunkIdx]) return;
                 if (q[chunkIdx].audioUrl || q[chunkIdx].status === 'ready' || q[chunkIdx].status === 'loading') return;
                 if (ttsPendingRequestsRef.current.has(chunkIdx)) return;
@@ -12821,7 +12848,7 @@ INSTRUCTIONS:
                 if (!worker) return;
 
                 ttsPendingRequestsRef.current.add(chunkIdx);
-                setTtsQueue(prev => {
+                setTtsQueueAndRef(prev => {
                     const nextQ = [...prev];
                     if (nextQ[chunkIdx]) nextQ[chunkIdx] = { ...nextQ[chunkIdx], status: 'loading' };
                     return nextQ;
@@ -12838,9 +12865,9 @@ INSTRUCTIONS:
                 });
             };
 
-            const primeLookaheadBuffer = (centerIdx) => {
-                requestChunkAudio(centerIdx + 1);
-                requestChunkAudio(centerIdx + 2);
+            const primeLookaheadBuffer = (centerIdx, directQueue = null) => {
+                requestChunkAudio(centerIdx + 1, directQueue);
+                requestChunkAudio(centerIdx + 2, directQueue);
             };
 
             const playAudioChunk = (chunkIdx, directUrl = null) => {
@@ -12849,21 +12876,25 @@ INSTRUCTIONS:
                 const urlToPlay = directUrl || (chunk && chunk.audioUrl);
 
                 if (!urlToPlay) {
-                    setTtsStatus('generating');
+                    setTtsStatusAndRef('generating');
                     ttsAutoPlayNextRef.current = true;
                     requestChunkAudio(chunkIdx);
                     primeLookaheadBuffer(chunkIdx);
                     return;
                 }
 
-                if (ttsAudioRef.current) {
-                    ttsAudioRef.current.pause();
-                    ttsAudioRef.current = null;
+                // Reuse persistent audio element to preserve iOS Safari / mobile autoplay permission grant
+                let audio = ttsAudioRef.current;
+                if (!audio) {
+                    audio = new Audio();
+                    audio.preload = 'auto';
+                    ttsAudioRef.current = audio;
+                } else {
+                    audio.pause();
                 }
 
-                const audio = new Audio(urlToPlay);
                 audio.playbackRate = readerSettings.ttsSpeed || 1.0;
-                ttsAudioRef.current = audio;
+                audio.src = urlToPlay;
 
                 audio.ontimeupdate = () => {
                     setTtsCurrentTime(audio.currentTime);
@@ -12887,14 +12918,14 @@ INSTRUCTIONS:
 
                     const nextIdx = chunkIdx + 1;
                     if (nextIdx < ttsQueueRef.current.length) {
-                        setTtsCurrentChunkIndex(nextIdx);
+                        setTtsCurrentChunkIndexAndRef(nextIdx);
                         playAudioChunk(nextIdx);
                         primeLookaheadBuffer(nextIdx);
                     } else {
                         if (currentFlatSceneIndex < flatStoryScenes.length - 1) {
                             goToNextReaderScene();
                         } else {
-                            setTtsStatus('ready');
+                            setTtsStatusAndRef('ready');
                             setTtsStatusMessage("Finished manuscript playback");
                             setTtsCurrentTime(0);
                         }
@@ -12903,17 +12934,17 @@ INSTRUCTIONS:
 
                 audio.onerror = (e) => {
                     console.error("Audio playback error:", e);
-                    setTtsStatus('error');
+                    setTtsStatusAndRef('error');
                     setTtsError("Playback stream error on chunk " + (chunkIdx + 1));
                 };
 
                 audio.play().then(() => {
-                    setTtsStatus('playing');
+                    setTtsStatusAndRef('playing');
                     setTtsError(null);
                     primeLookaheadBuffer(chunkIdx);
                 }).catch(playErr => {
                     console.warn("audio.play() paused/interrupted:", playErr);
-                    setTtsStatus('paused');
+                    setTtsStatusAndRef('paused');
                 });
             };
 
@@ -12927,9 +12958,21 @@ INSTRUCTIONS:
                 const chunks = chunkProseForTts(textToUse);
                 if (!chunks || chunks.length === 0) return;
 
+                // Mobile device detection and advisory toast
+                try {
+                    const isMobile = typeof navigator !== 'undefined' && (
+                        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '') ||
+                        (navigator.maxTouchPoints > 1 && /Macintosh|Mac/i.test(navigator.userAgent || ''))
+                    );
+                    if (isMobile && !window._ellipsisTtsMobileWarned) {
+                        window._ellipsisTtsMobileWarned = true;
+                        showToast("Kokoro TTS downloads an ~85MB neural model. Fast Wi-Fi recommended on mobile.", "info");
+                    }
+                } catch (e) {}
+
                 if (ttsAudioRef.current) {
                     ttsAudioRef.current.pause();
-                    ttsAudioRef.current = null;
+                    // Keep the gesture-unlocked audio instance rather than nullifying it
                 }
                 if (ttsWorkerRef.current) {
                     try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
@@ -12939,25 +12982,30 @@ INSTRUCTIONS:
                 });
                 ttsPendingRequestsRef.current.clear();
 
-                setTtsQueue(chunks);
-                setTtsCurrentChunkIndex(startChunkIdx);
+                // Eagerly update refs so requestChunkAudio can read the fresh queue
+                // in the same synchronous tick (React batches setTtsQueue, so the ref
+                // would still hold the old value without this).
+                setTtsQueueAndRef(chunks);
+                setTtsCurrentChunkIndexAndRef(startChunkIdx);
                 setTtsIsMiniPlayerVisible(true);
 
-                if (ttsStatus !== 'ready' && ttsStatus !== 'playing' && ttsStatus !== 'paused') {
+                if (ttsStatusRef.current !== 'ready' && ttsStatusRef.current !== 'playing' && ttsStatusRef.current !== 'paused') {
                     ttsAutoPlayNextRef.current = true;
                     initTtsEngine();
-                    requestChunkAudio(startChunkIdx);
-                    primeLookaheadBuffer(startChunkIdx);
+                    // Pass chunks directly — the ref is eagerly set above, but the
+                    // directQueue parameter provides an additional safety net.
+                    requestChunkAudio(startChunkIdx, chunks);
+                    primeLookaheadBuffer(startChunkIdx, chunks);
                 } else {
-                    setTtsStatus('generating');
+                    setTtsStatusAndRef('generating');
                     ttsAutoPlayNextRef.current = true;
-                    requestChunkAudio(startChunkIdx);
-                    primeLookaheadBuffer(startChunkIdx);
+                    requestChunkAudio(startChunkIdx, chunks);
+                    primeLookaheadBuffer(startChunkIdx, chunks);
                 }
             };
 
             const toggleTtsPlayPause = (proseOverride = null) => {
-                // Ensure audio context is unlocked during user gesture
+                // Ensure audio context and HTMLAudioElement playback permission are unlocked during user gesture
                 try {
                     if (window.AudioContext || window.webkitAudioContext) {
                         if (!window._ellipsisAudioCtx) {
@@ -12968,13 +13016,32 @@ INSTRUCTIONS:
                         }
                     }
                 } catch (e) {}
+
+                // Crucial for iOS Safari / Mobile: Prime and unlock the persistent HTMLAudioElement during user gesture
+                try {
+                    if (!ttsAudioRef.current) {
+                        const primedAudio = new Audio();
+                        primedAudio.preload = 'auto';
+                        ttsAudioRef.current = primedAudio;
+                    }
+                    if (!window._ellipsisAudioUnlocked) {
+                        ttsAudioRef.current.src = SILENT_WAV_DATA_URI;
+                        const p = ttsAudioRef.current.play();
+                        if (p && typeof p.then === 'function') {
+                            p.then(() => {
+                                window._ellipsisAudioUnlocked = true;
+                            }).catch(() => {});
+                        }
+                    }
+                } catch (unlockErr) {}
+
                 if (ttsStatus === 'playing') {
                     if (ttsAudioRef.current) ttsAudioRef.current.pause();
-                    setTtsStatus('paused');
+                    setTtsStatusAndRef('paused');
                 } else if (ttsStatus === 'paused') {
-                    if (ttsAudioRef.current) {
+                    if (ttsAudioRef.current && ttsAudioRef.current.src && ttsAudioRef.current.src !== SILENT_WAV_DATA_URI) {
                         ttsAudioRef.current.play().then(() => {
-                            setTtsStatus('playing');
+                            setTtsStatusAndRef('playing');
                         }).catch(() => {
                             playAudioChunk(ttsCurrentChunkIndexRef.current);
                         });
@@ -13007,7 +13074,10 @@ INSTRUCTIONS:
             const stopTtsPlayback = () => {
                 if (ttsAudioRef.current) {
                     ttsAudioRef.current.pause();
-                    ttsAudioRef.current = null;
+                    try {
+                        ttsAudioRef.current.removeAttribute('src');
+                        ttsAudioRef.current.load();
+                    } catch (e) {}
                 }
                 if (ttsWorkerRef.current) {
                     try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
@@ -13016,13 +13086,14 @@ INSTRUCTIONS:
                     if (c.audioUrl) try { URL.revokeObjectURL(c.audioUrl); } catch (e) {}
                 });
                 ttsPendingRequestsRef.current.clear();
-                setTtsQueue([]);
-                setTtsCurrentChunkIndex(0);
+                ttsAutoPlayNextRef.current = false;
+                setTtsQueueAndRef([]);
+                setTtsCurrentChunkIndexAndRef(0);
                 setTtsCurrentTime(0);
                 setTtsDuration(0);
                 setTtsIsMiniPlayerVisible(false);
-                if (ttsStatus === 'playing' || ttsStatus === 'paused' || ttsStatus === 'generating') {
-                    setTtsStatus('ready');
+                if (ttsStatusRef.current === 'playing' || ttsStatusRef.current === 'paused' || ttsStatusRef.current === 'generating') {
+                    setTtsStatusAndRef('ready');
                 }
             };
 
@@ -13031,9 +13102,8 @@ INSTRUCTIONS:
                 if (targetIdx >= 0 && targetIdx < ttsQueueRef.current.length) {
                     if (ttsAudioRef.current) {
                         ttsAudioRef.current.pause();
-                        ttsAudioRef.current = null;
                     }
-                    setTtsCurrentChunkIndex(targetIdx);
+                    setTtsCurrentChunkIndexAndRef(targetIdx);
                     setTtsCurrentTime(0);
                     playAudioChunk(targetIdx);
                 }
@@ -13050,7 +13120,7 @@ INSTRUCTIONS:
                 ttsPendingRequestsRef.current.clear();
 
                 // Invalidate pre-buffered lookahead chunks so subsequent chunks use the newly selected voice
-                setTtsQueue(prev => {
+                setTtsQueueAndRef(prev => {
                     if (!prev || prev.length === 0) return prev;
                     return prev.map((chunk, idx) => {
                         // Preserve the active playing chunk to prevent cutting off mid-word
