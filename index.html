@@ -1843,6 +1843,54 @@
                 transform: translateX(0);
             }
         }
+
+        /* ── Reader TTS Floating Mini-Player & Telemetry ── */
+        .reader-tts-floating-bar {
+            position: fixed;
+            left: 50%;
+            transform: translateX(-50%);
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 3.85rem);
+            z-index: 35;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            max-width: calc(100vw - 1.5rem);
+            width: 32rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.2), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+
+        @media (max-width: 640px) {
+            .reader-tts-floating-bar {
+                width: calc(100vw - 1.5rem);
+                bottom: calc(env(safe-area-inset-bottom, 0px) + 3.5rem);
+            }
+        }
+
+        .reader-tts-pulse {
+            animation: readerTtsPulse 1.8s ease-in-out infinite;
+        }
+
+        @keyframes readerTtsPulse {
+            0%, 100% { opacity: 0.9; transform: scale(1); }
+            50% { opacity: 0.55; transform: scale(0.96); }
+        }
+
+        .reader-tts-wave-bar {
+            display: inline-block;
+            width: 2.5px;
+            background-color: currentColor;
+            border-radius: 9999px;
+            animation: readerTtsWave 1s ease-in-out infinite alternate;
+        }
+
+        .reader-tts-wave-bar:nth-child(1) { height: 6px; animation-delay: 0.1s; }
+        .reader-tts-wave-bar:nth-child(2) { height: 14px; animation-delay: 0.35s; }
+        .reader-tts-wave-bar:nth-child(3) { height: 9px; animation-delay: 0.2s; }
+        .reader-tts-wave-bar:nth-child(4) { height: 12px; animation-delay: 0.45s; }
+
+        @keyframes readerTtsWave {
+            0% { transform: scaleY(0.4); }
+            100% { transform: scaleY(1.2); }
+        }
+
         /* Relationship matrix: keep both axes readable within the scroll viewport. */
         .rel-matrix { position: relative; isolation: isolate; }
         .rel-matrix .rel-matrix-scroll { max-height: 70vh; overflow: auto; }
@@ -2007,7 +2055,15 @@
         const Activity = (p) => <Icon name="activity" {...p} />;
         const History = (p) => <Icon name="history" {...p} />;
         const Play = (p) => <Icon name="play" {...p} />;
+        const Pause = (p) => <Icon name="pause" {...p} />;
         const Volume2 = (p) => <Icon name="volume-2" {...p} />;
+        const Volume1 = (p) => <Icon name="volume-1" {...p} />;
+        const VolumeX = (p) => <Icon name="volume-x" {...p} />;
+        const Headphones = (p) => <Icon name="headphones" {...p} />;
+        const Mic = (p) => <Icon name="mic" {...p} />;
+        const SkipBack = (p) => <Icon name="skip-back" {...p} />;
+        const SkipForward = (p) => <Icon name="skip-forward" {...p} />;
+        const Cpu = (p) => <Icon name="cpu" {...p} />;
         const Loader2 = (p) => <Icon name="loader-2" {...p} />;
         const Square = (p) => <Icon name="square" {...p} />;
         const Copy = (p) => <Icon name="copy" {...p} />;
@@ -2272,6 +2328,369 @@
                 console.warn("formatReaderProse dialogue highlighting error:", e);
             }
             return html;
+        };
+
+        /* ----------------------------------------------------------------------
+          KOKORO TTS ENGINE & PROSE CHUNKER FOR READER VIEW
+          ----------------------------------------------------------------------
+        */
+
+        const KOKORO_VOICES = [
+            // American Female
+            { id: 'af_heart', name: 'Heart (Default)', shortName: 'Heart', group: 'American Female', lang: 'en-US', gender: 'F', isDefault: true },
+            { id: 'af_bella', name: 'Bella', shortName: 'Bella', group: 'American Female', lang: 'en-US', gender: 'F' },
+            { id: 'af_nicole', name: 'Nicole (Whisper)', shortName: 'Nicole', group: 'American Female', lang: 'en-US', gender: 'F' },
+            { id: 'af_aoede', name: 'Aoede', shortName: 'Aoede', group: 'American Female', lang: 'en-US', gender: 'F' },
+            { id: 'af_kore', name: 'Kore', shortName: 'Kore', group: 'American Female', lang: 'en-US', gender: 'F' },
+            { id: 'af_sarah', name: 'Sarah', shortName: 'Sarah', group: 'American Female', lang: 'en-US', gender: 'F' },
+            { id: 'af_nova', name: 'Nova', shortName: 'Nova', group: 'American Female', lang: 'en-US', gender: 'F' },
+            { id: 'af_sky', name: 'Sky', shortName: 'Sky', group: 'American Female', lang: 'en-US', gender: 'F' },
+            { id: 'af_alloy', name: 'Alloy', shortName: 'Alloy', group: 'American Female', lang: 'en-US', gender: 'F' },
+            { id: 'af_jessica', name: 'Jessica', shortName: 'Jessica', group: 'American Female', lang: 'en-US', gender: 'F' },
+            { id: 'af_river', name: 'River', shortName: 'River', group: 'American Female', lang: 'en-US', gender: 'F' },
+            // American Male
+            { id: 'am_adam', name: 'Adam', shortName: 'Adam', group: 'American Male', lang: 'en-US', gender: 'M' },
+            { id: 'am_echo', name: 'Echo', shortName: 'Echo', group: 'American Male', lang: 'en-US', gender: 'M' },
+            { id: 'am_eric', name: 'Eric', shortName: 'Eric', group: 'American Male', lang: 'en-US', gender: 'M' },
+            { id: 'am_fenrir', name: 'Fenrir', shortName: 'Fenrir', group: 'American Male', lang: 'en-US', gender: 'M' },
+            { id: 'am_liam', name: 'Liam', shortName: 'Liam', group: 'American Male', lang: 'en-US', gender: 'M' },
+            { id: 'am_michael', name: 'Michael', shortName: 'Michael', group: 'American Male', lang: 'en-US', gender: 'M' },
+            { id: 'am_onyx', name: 'Onyx', shortName: 'Onyx', group: 'American Male', lang: 'en-US', gender: 'M' },
+            { id: 'am_puck', name: 'Puck', shortName: 'Puck', group: 'American Male', lang: 'en-US', gender: 'M' },
+            { id: 'am_santa', name: 'Santa', shortName: 'Santa', group: 'American Male', lang: 'en-US', gender: 'M' },
+            // British Female
+            { id: 'bf_alice', name: 'Alice', shortName: 'Alice', group: 'British Female', lang: 'en-GB', gender: 'F' },
+            { id: 'bf_emma', name: 'Emma', shortName: 'Emma', group: 'British Female', lang: 'en-GB', gender: 'F' },
+            { id: 'bf_isabella', name: 'Isabella', shortName: 'Isabella', group: 'British Female', lang: 'en-GB', gender: 'F' },
+            { id: 'bf_lily', name: 'Lily', shortName: 'Lily', group: 'British Female', lang: 'en-GB', gender: 'F' },
+            // British Male
+            { id: 'bm_daniel', name: 'Daniel', shortName: 'Daniel', group: 'British Male', lang: 'en-GB', gender: 'M' },
+            { id: 'bm_fable', name: 'Fable', shortName: 'Fable', group: 'British Male', lang: 'en-GB', gender: 'M' },
+            { id: 'bm_george', name: 'George', shortName: 'George', group: 'British Male', lang: 'en-GB', gender: 'M' },
+            { id: 'bm_lewis', name: 'Lewis', shortName: 'Lewis', group: 'British Male', lang: 'en-GB', gender: 'M' }
+        ];
+
+        const KOKORO_VOICE_GROUPS = [
+            { label: "American Female", voices: KOKORO_VOICES.filter(v => v.group === 'American Female') },
+            { label: "American Male", voices: KOKORO_VOICES.filter(v => v.group === 'American Male') },
+            { label: "British Female", voices: KOKORO_VOICES.filter(v => v.group === 'British Female') },
+            { label: "British Male", voices: KOKORO_VOICES.filter(v => v.group === 'British Male') }
+        ];
+
+        const stripProseToPlainText = (prose) => {
+            if (!prose) return "";
+            let txt = prose;
+            if (typeof txt === 'object') {
+                if (typeof txt.final === 'string') txt = txt.final;
+                else if (typeof txt.draft === 'string') txt = txt.draft;
+                else if (typeof txt.text === 'string') txt = txt.text;
+                else if (typeof txt.content === 'string') txt = txt.content;
+                else return "";
+            }
+            if (typeof txt !== 'string') txt = String(txt || "");
+            if (!txt.trim()) return "";
+            txt = txt.replace(/^#+\s+/gm, '');
+            txt = txt.replace(/^\s*[-*_]{3,}\s*$/gm, '');
+            txt = txt.replace(/!\[.*?\]\(.*?\)/g, '');
+            txt = txt.replace(/\[(.*?)\]\(.*?\)/g, '$1');
+            txt = txt.replace(/\*\*([^*]+)\*\*/g, '$1');
+            txt = txt.replace(/\*([^*]+)\*/g, '$1');
+            txt = txt.replace(/__([^_]+)__/g, '$1');
+            txt = txt.replace(/_([^_]+)_/g, '$1');
+            txt = txt.replace(/`([^`]+)`/g, '$1');
+            txt = txt.replace(/<[^>]+>/g, '');
+            txt = txt.replace(/\r\n/g, '\n');
+            txt = txt.replace(/[ \t]+/g, ' ');
+            return txt.trim();
+        };
+
+        const chunkProseForTts = (proseText, minChars = 120, maxChars = 340) => {
+            const plain = stripProseToPlainText(proseText);
+            if (!plain) return [];
+
+            const ABBREVS = new Set(['mr', 'mrs', 'ms', 'dr', 'prof', 'sr', 'jr', 'gen', 'col', 'maj', 'capt', 'lt', 'sgt', 'cpl', 'pvt', 'st', 'ave', 'rd', 'blvd', 'dept', 'univ', 'co', 'inc', 'ltd', 'corp', 'vs', 'etc', 'e.g', 'i.e', 'approx', 'est']);
+
+            const rawParagraphs = plain.split(/\n\s*\n+/);
+            const sentences = [];
+
+            rawParagraphs.forEach(para => {
+                const p = para.trim();
+                if (!p) return;
+
+                const regex = /([^.?!…]+(?:[.?!…]+["'”’]?|$))/g;
+                let match;
+                let lastSentence = "";
+
+                while ((match = regex.exec(p)) !== null) {
+                    const rawSent = match[0].trim();
+                    if (!rawSent) continue;
+
+                    const words = rawSent.split(/\s+/);
+                    const lastWord = words[words.length - 1].replace(/[.?!…"'”’]/g, '').toLowerCase();
+
+                    if (ABBREVS.has(lastWord) && regex.lastIndex < p.length) {
+                        lastSentence += (lastSentence ? " " : "") + rawSent;
+                        continue;
+                    }
+
+                    const completeSent = (lastSentence ? lastSentence + " " : "") + rawSent;
+                    lastSentence = "";
+                    sentences.push(completeSent);
+                }
+
+                if (lastSentence) {
+                    sentences.push(lastSentence);
+                }
+            });
+
+            const chunks = [];
+            let currentChunk = "";
+
+            sentences.forEach(sent => {
+                const trimmed = sent.trim();
+                if (!trimmed) return;
+
+                if (!currentChunk) {
+                    currentChunk = trimmed;
+                } else if ((currentChunk.length + trimmed.length + 1) <= maxChars) {
+                    currentChunk += " " + trimmed;
+                } else {
+                    if (currentChunk.length >= minChars) {
+                        chunks.push(currentChunk);
+                        currentChunk = trimmed;
+                    } else {
+                        currentChunk += " " + trimmed;
+                        if (currentChunk.length >= maxChars) {
+                            chunks.push(currentChunk);
+                            currentChunk = "";
+                        }
+                    }
+                }
+            });
+
+            if (currentChunk) {
+                chunks.push(currentChunk);
+            }
+
+            return chunks.map((text, idx) => ({
+                index: idx,
+                text,
+                wordCount: countWords(text)
+            }));
+        };
+
+        const createKokoroWorker = () => {
+            const workerCode = [
+                "let tts = null;",
+                "let currentConfig = null;",
+                "let initPromise = null;",
+                "let generationQueue = Promise.resolve();",
+                "let currentGenerationSessionId = 0;",
+                "",
+                "self.onmessage = async (e) => {",
+                "    const { type, id, payload } = e.data || {};",
+                "    try {",
+                "        if (type === 'clear') {",
+                "            currentGenerationSessionId++;",
+                "            return;",
+                "        } else if (type === 'init') {",
+                "            const { modelId, dtype, device } = payload || {};",
+                "            const targetModel = modelId || 'onnx-community/Kokoro-82M-v1.0-ONNX';",
+                "            const targetDtype = dtype || 'q8';",
+                "            const targetDevice = device || 'auto';",
+                "",
+                "            if (tts && currentConfig && currentConfig.modelId === targetModel && currentConfig.dtype === targetDtype && currentConfig.device === targetDevice) {",
+                "                self.postMessage({ type: 'ready', id, device: currentConfig.resolvedDevice, message: 'Model ready from cache' });",
+                "                return;",
+                "            }",
+                "",
+                "            initPromise = (async () => {",
+                "                self.postMessage({ type: 'status', id, status: 'loading-library', progress: 5, message: 'Loading kokoro-js ML library...' });",
+                "                const { KokoroTTS } = await import('https://esm.sh/kokoro-js@1.2.0');",
+                "",
+                "                self.postMessage({ type: 'status', id, status: 'loading-model', progress: 15, message: 'Fetching Kokoro-82M ONNX model weights...' });",
+                "",
+                "                let currentProgress = 15;",
+                "                const progressCallback = (p) => {",
+                "                    let pct = null;",
+                "                    if (p && typeof p.progress === 'number' && !isNaN(p.progress)) {",
+                "                        pct = Math.round(p.progress);",
+                "                    } else if (p && typeof p.loaded === 'number' && p.loaded > 0) {",
+                "                        const total = (typeof p.total === 'number' && p.total > 0) ? p.total : 85000000;",
+                "                        pct = Math.round((p.loaded / total) * 100);",
+                "                    }",
+                "                    if (typeof pct === 'number' && !isNaN(pct)) {",
+                "                        const clamped = Math.min(95, Math.max(15, pct));",
+                "                        if (clamped > currentProgress) {",
+                "                            currentProgress = clamped;",
+                "                            const fileName = p.file ? (' (' + p.file.split('/').pop() + ')') : '';",
+                "                            self.postMessage({ type: 'progress', id, progress: clamped, message: 'Downloading ONNX model' + fileName + '...' });",
+                "                        }",
+                "                    }",
+                "                };",
+                "",
+                "                const ticker = setInterval(() => {",
+                "                    if (currentProgress < 92) {",
+                "                        currentProgress += 1;",
+                "                        self.postMessage({ type: 'progress', id, progress: currentProgress, message: 'Downloading Kokoro-82M weights (' + currentProgress + '%)...' });",
+                "                    }",
+                "                }, 400);",
+                "",
+                "                let resolvedDevice = 'wasm';",
+                "",
+                "                try {",
+                "                    if (targetDevice === 'webnn-npu') {",
+                "                        try {",
+                "                            tts = await KokoroTTS.from_pretrained(targetModel, {",
+                "                                dtype: targetDtype,",
+                "                                device: 'webnn-npu',",
+                "                                progress_callback: progressCallback",
+                "                            });",
+                "                            resolvedDevice = 'webnn-npu';",
+                "                        } catch (errNpu) {",
+                "                            console.warn('WebNN NPU not available, falling back:', errNpu);",
+                "                        }",
+                "                    }",
+                "",
+                "                    if (!tts && (targetDevice === 'webgpu' || targetDevice === 'auto')) {",
+                "                        try {",
+                "                            tts = await KokoroTTS.from_pretrained(targetModel, {",
+                "                                dtype: targetDtype,",
+                "                                device: 'webgpu',",
+                "                                progress_callback: progressCallback",
+                "                            });",
+                "                            resolvedDevice = 'webgpu';",
+                "                        } catch (errGpu) {",
+                "                            console.warn('WebGPU acceleration not available or failed, falling back to WebAssembly:', errGpu);",
+                "                        }",
+                "                    }",
+                "",
+                "                    if (!tts) {",
+                "                        tts = await KokoroTTS.from_pretrained(targetModel, {",
+                "                            dtype: targetDtype,",
+                "                            device: 'wasm',",
+                "                            progress_callback: progressCallback",
+                "                        });",
+                "                        resolvedDevice = 'wasm';",
+                "                    }",
+                "                } finally {",
+                "                    clearInterval(ticker);",
+                "                }",
+                "",
+                "                currentConfig = { modelId: targetModel, dtype: targetDtype, device: targetDevice, resolvedDevice };",
+                "                self.postMessage({ type: 'ready', id, device: resolvedDevice, message: 'Kokoro TTS ready (' + resolvedDevice.toUpperCase() + ')' });",
+                "            })();",
+                "",
+                "            await initPromise;",
+                "",
+                "        } else if (type === 'generate') {",
+                "            const activeSessionId = currentGenerationSessionId;",
+                "            generationQueue = generationQueue.then(async () => {",
+                "                if (activeSessionId !== currentGenerationSessionId) return;",
+                "                if (!tts && initPromise) {",
+                "                    await initPromise;",
+                "                }",
+                "                if (!tts) {",
+                "                    throw new Error('Kokoro TTS model is not loaded yet.');",
+                "                }",
+                "                const { chunkIndex, text, voice, speed } = payload || {};",
+                "                if (!text || !text.trim()) return;",
+                "                const t0 = Date.now();",
+                "                const raw = await tts.generate(text, {",
+                "                    voice: voice || 'af_heart',",
+                "                    speed: typeof speed === 'number' ? speed : 1.0",
+                "                });",
+                "                if (activeSessionId !== currentGenerationSessionId) return;",
+                "",
+                "                let wavBuffer = null;",
+                "                const sampleRate = (raw && raw.sampling_rate) || 24000;",
+                "",
+                "                if (raw && typeof raw.toWav === 'function') {",
+                "                    wavBuffer = raw.toWav();",
+                "                } else if (raw && typeof raw.toBlob === 'function') {",
+                "                    const blob = raw.toBlob();",
+                "                    wavBuffer = await blob.arrayBuffer();",
+                "                } else if (raw && raw.audio) {",
+                "                    const f32 = raw.audio;",
+                "                    const pcm16 = new Int16Array(f32.length);",
+                "                    for (let i = 0; i < f32.length; i++) {",
+                "                        const s = Math.max(-1, Math.min(1, f32[i]));",
+                "                        pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;",
+                "                    }",
+                "                    const buf = new ArrayBuffer(44 + pcm16.byteLength);",
+                "                    const v = new DataView(buf);",
+                "                    const w = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };",
+                "                    w(0, 'RIFF');",
+                "                    v.setUint32(4, 36 + pcm16.byteLength, true);",
+                "                    w(8, 'WAVE');",
+                "                    w(12, 'fmt ');",
+                "                    v.setUint32(16, 16, true);",
+                "                    v.setUint16(20, 1, true);",
+                "                    v.setUint16(22, 1, true);",
+                "                    v.setUint32(24, sampleRate, true);",
+                "                    v.setUint32(28, sampleRate * 2, true);",
+                "                    v.setUint16(32, 2, true);",
+                "                    v.setUint16(34, 16, true);",
+                "                    w(36, 'data');",
+                "                    v.setUint32(40, pcm16.byteLength, true);",
+                "                    new Uint8Array(buf, 44).set(new Uint8Array(pcm16.buffer));",
+                "                    wavBuffer = buf;",
+                "                }",
+                "",
+                "                const elapsedMs = Date.now() - t0;",
+                "                if (wavBuffer) {",
+                "                    self.postMessage({",
+                "                        type: 'chunk_audio',",
+                "                        id,",
+                "                        payload: { chunkIndex, wavBuffer, sampleRate, elapsedMs }",
+                "                    }, [wavBuffer]);",
+                "                } else {",
+                "                    throw new Error('Failed to extract audio buffer from Kokoro output.');",
+                "                }",
+                "            }).catch(err => {",
+                "                console.error('Kokoro Worker generation error:', err);",
+                "                self.postMessage({ type: 'error', id, error: err.message || String(err) });",
+                "            });",
+                "        }",
+                "    } catch (err) {",
+                "        console.error('Kokoro Worker error:', err);",
+                "        self.postMessage({ type: 'error', id, error: err.message || String(err) });",
+                "    }",
+                "};"
+            ].join('\n');
+
+            const blob = new Blob([workerCode], { type: 'application/javascript' });
+            const url = URL.createObjectURL(blob);
+            let worker;
+            try {
+                // Instantiate as classic worker: fully supported across file://, http://, https://, avoiding top-level module redirect restrictions
+                worker = new Worker(url);
+            } catch (classicErr) {
+                // Fallback to module worker if classic creation fails in specific environments
+                worker = new Worker(url, { type: 'module' });
+            }
+            worker._blobUrl = url;
+            return worker;
+        };
+
+        const clearKokoroModelCache = async () => {
+            try {
+                if (typeof window !== 'undefined' && 'caches' in window) {
+                    const cacheNames = await caches.keys();
+                    let deleted = 0;
+                    for (const name of cacheNames) {
+                        if (name.includes('transformers') || name.includes('onnx') || name.includes('huggingface') || name.includes('kokoro')) {
+                            await caches.delete(name);
+                            deleted++;
+                        }
+                    }
+                    return deleted;
+                }
+                return 0;
+            } catch (e) {
+                console.warn("clearKokoroModelCache error:", e);
+                return 0;
+            }
         };
 
         /* ----------------------------------------------------------------------
@@ -7867,7 +8286,8 @@ INSTRUCTIONS:
            enterReaderMode and the pagination/HUD handlers are shared with other views —
            and this component is the pure view over that state cluster, received via props. */
         const ReaderView = ({
-            story, selectedSequence, selectedScene, currentReaderSceneItem, flatStoryScenes, currentFlatSceneIndex, readerSettings, updateReaderSetting, readerPageIndex, readerTotalPages, readerContainerWidth, readingProgress, saveReadingProgress, isReaderHudVisible, toggleReaderHud, resetReaderHudTimer, isTocOpen, setIsTocOpen, isAppearanceOpen, setIsAppearanceOpen, tocSearchQuery, setTocSearchQuery, isFullscreen, toggleFullscreen, pageSlideDirection, isSceneTransitioning, readerColumnsContainerRef, readerScrollContainerRef, handleReaderTouchStart, handleReaderTouchEnd, turnReaderPage, jumpToReaderScene, goToNextReaderScene, setView
+            story, selectedSequence, selectedScene, currentReaderSceneItem, flatStoryScenes, currentFlatSceneIndex, readerSettings, updateReaderSetting, readerPageIndex, readerTotalPages, readerContainerWidth, readingProgress, saveReadingProgress, isReaderHudVisible, toggleReaderHud, resetReaderHudTimer, isTocOpen, setIsTocOpen, isAppearanceOpen, setIsAppearanceOpen, tocSearchQuery, setTocSearchQuery, isFullscreen, toggleFullscreen, pageSlideDirection, isSceneTransitioning, readerColumnsContainerRef, readerScrollContainerRef, handleReaderTouchStart, handleReaderTouchEnd, turnReaderPage, jumpToReaderScene, goToNextReaderScene, setView,
+            ttsStatus, ttsProgress, ttsStatusMessage, ttsActiveDevice, ttsError, ttsIsMiniPlayerVisible, setTtsIsMiniPlayerVisible, ttsQueue, ttsCurrentChunkIndex, ttsCurrentTime, ttsDuration, toggleTtsPlayPause, stopTtsPlayback, skipTtsChunk, initTtsEngine, showToast, changeTtsVoice
         }) => {
             const activeItem = currentReaderSceneItem || flatStoryScenes[0] || null;
             const currentSeqIndex = activeItem ? activeItem.seqIdx : 0;
@@ -7968,8 +8388,25 @@ INSTRUCTIONS:
                                 </span>
                             </div>
 
-                            {/* Right Actions: Appearance, Theme Toggle, Fullscreen */}
+                            {/* Right Actions: TTS, Appearance, Theme Toggle, Fullscreen */}
                             <div className="flex items-center gap-1.5">
+                                {/* Kokoro Audio Button */}
+                                <button
+                                    onClick={() => toggleTtsPlayPause(proseContent)}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl reader-ui-card text-xs font-bold hover:opacity-80 active:scale-95 transition-all shadow-2xs cursor-pointer border ${ttsStatus === 'playing' ? 'ring-2 ring-gold' : (ttsStatus === 'loading-library' || ttsStatus === 'loading-model' || ttsStatus === 'generating') ? 'border-gold' : ''}`}
+                                    title={ttsStatus === 'playing' ? "Pause Kokoro Audio" : (ttsStatus === 'loading-library' || ttsStatus === 'loading-model') ? `Downloading Kokoro-82M (${ttsProgress}%)` : ttsStatus === 'generating' ? "Synthesizing Audio..." : "Listen to Scene (Kokoro TTS)"}
+                                >
+                                    {(ttsStatus === 'loading-library' || ttsStatus === 'loading-model' || ttsStatus === 'generating') ? (
+                                        <Loader2 size={14} className="animate-spin text-gold" />
+                                    ) : (
+                                        <Headphones size={14} className={ttsStatus === 'playing' ? 'text-gold' : ''} />
+                                    )}
+                                    <span className="hidden sm:inline text-[11px] font-mono font-bold">Audio</span>
+                                    {(ttsStatus === 'loading-library' || ttsStatus === 'loading-model') && (
+                                        <span className="text-[10px] font-mono text-gold-ink">{ttsProgress}%</span>
+                                    )}
+                                </button>
+
                                 {/* Appearance / Typography Menu Toggle */}
                                 <button
                                     onClick={() => {
@@ -8137,6 +8574,141 @@ INSTRUCTIONS:
                             </div>
                         )}
                     </div>
+
+                    {/* FLOATING TTS AUDIOBOOK MINI-PLAYER */}
+                    {ttsIsMiniPlayerVisible && (
+                        <div className={`reader-tts-floating-bar rounded-2xl p-2.5 sm:p-3 reader-ui-card backdrop-blur-md border reader-ui-border shadow-xl space-y-2 animate-fade-in ${!isReaderHudVisible ? 'opacity-90 hover:opacity-100' : ''}`}>
+                            {/* Transport Controls & Status */}
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5">
+                                    {/* Prev Chunk */}
+                                    <button
+                                        onClick={() => skipTtsChunk(-1)}
+                                        disabled={ttsCurrentChunkIndex === 0}
+                                        className="p-1.5 rounded-lg hover:bg-wash active:scale-95 disabled:opacity-30 transition-all cursor-pointer"
+                                        title="Previous sentence chunk"
+                                    >
+                                        <SkipBack size={14} />
+                                    </button>
+
+                                    {/* Play / Pause Toggle */}
+                                    <button
+                                        onClick={() => toggleTtsPlayPause()}
+                                        className="w-8 h-8 rounded-xl bg-gold text-white flex items-center justify-center shadow-sm hover:opacity-90 active:scale-95 transition-all cursor-pointer"
+                                        title={ttsStatus === 'playing' ? 'Pause' : 'Play'}
+                                    >
+                                        {(ttsStatus === 'loading-library' || ttsStatus === 'loading-model' || ttsStatus === 'generating') ? (
+                                            <Loader2 size={15} className="animate-spin" />
+                                        ) : ttsStatus === 'playing' ? (
+                                            <Pause size={15} />
+                                        ) : (
+                                            <Play size={15} className="ml-0.5" />
+                                        )}
+                                    </button>
+
+                                    {/* Next Chunk */}
+                                    <button
+                                        onClick={() => skipTtsChunk(1)}
+                                        disabled={ttsQueue.length === 0 || ttsCurrentChunkIndex >= ttsQueue.length - 1}
+                                        className="p-1.5 rounded-lg hover:bg-wash active:scale-95 disabled:opacity-30 transition-all cursor-pointer"
+                                        title="Next sentence chunk"
+                                    >
+                                        <SkipForward size={14} />
+                                    </button>
+
+                                    {/* Playing Wave Indicator */}
+                                    {ttsStatus === 'playing' && (
+                                        <div className="flex items-center gap-0.5 px-1.5 text-gold-ink">
+                                            <span className="reader-tts-wave-bar" />
+                                            <span className="reader-tts-wave-bar" />
+                                            <span className="reader-tts-wave-bar" />
+                                            <span className="reader-tts-wave-bar" />
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Middle telemetry: Chunk info / snippet */}
+                                <div className="flex-1 min-w-0 px-2 text-center">
+                                    <div className="text-[11px] font-mono font-bold truncate opacity-90">
+                                        {(ttsStatus === 'loading-library' || ttsStatus === 'loading-model') ? (
+                                            <span className="text-gold-ink font-semibold">Downloading Kokoro-82M... {ttsProgress}%</span>
+                                        ) : ttsStatus === 'generating' ? (
+                                            <span className="opacity-70">Synthesizing audio...</span>
+                                        ) : ttsQueue.length > 0 ? (
+                                            <span>
+                                                Chunk {ttsCurrentChunkIndex + 1} of {ttsQueue.length}
+                                                {ttsDuration > 0 && ` (${Math.floor(ttsCurrentTime)}s / ${Math.floor(ttsDuration)}s)`}
+                                            </span>
+                                        ) : (
+                                            <span>Kokoro Audio Ready</span>
+                                        )}
+                                    </div>
+                                    {ttsActiveDevice && (
+                                        <div className="text-[9px] font-mono opacity-50 flex items-center justify-center gap-1">
+                                            <Cpu size={10} />
+                                            <span className="uppercase">{ttsActiveDevice} Acceleration</span>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Right: Voice selector & Close/Stop */}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                    {/* Quick Voice Selector Pill */}
+                                    <div className="relative" title="Select Kokoro Voice (Default: Heart)">
+                                        <div className="flex items-center gap-1 px-2 py-1 rounded-xl bg-wash hover:bg-wash-strong border reader-ui-border text-[11px] font-mono font-bold text-ink-800 dark:text-stone-100 transition-colors shadow-2xs cursor-pointer">
+                                            <Mic size={11} className="text-gold shrink-0" />
+                                            <span className="truncate max-w-[60px] sm:max-w-[85px]">
+                                                {(KOKORO_VOICES.find(v => v.id === (readerSettings.ttsVoice || 'af_heart')) || KOKORO_VOICES[0]).shortName}
+                                            </span>
+                                            <ChevronDown size={10} className="opacity-50 shrink-0" />
+                                        </div>
+                                        <select
+                                            value={readerSettings.ttsVoice || 'af_heart'}
+                                            onChange={e => changeTtsVoice ? changeTtsVoice(e.target.value) : updateReaderSetting('ttsVoice', e.target.value)}
+                                            className="absolute inset-0 opacity-0 cursor-pointer w-full h-full text-base sm:text-xs"
+                                            aria-label="Select Kokoro Voice"
+                                        >
+                                            {KOKORO_VOICE_GROUPS.map(grp => (
+                                                <optgroup key={grp.label} label={grp.label}>
+                                                    {grp.voices.map(v => (
+                                                        <option key={v.id} value={v.id}>
+                                                            {v.name}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Close button */}
+                                    <button
+                                        onClick={stopTtsPlayback}
+                                        className="p-1.5 rounded-lg hover:bg-wash text-ink-400 hover:text-ink-800 transition-colors cursor-pointer"
+                                        title="Stop & Close Audio"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Current Chunk Audio Scrub/Progress Bar */}
+                            {ttsDuration > 0 && (
+                                <div className="w-full bg-wash h-1 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gold transition-all duration-150"
+                                        style={{ width: `${Math.min(100, (ttsCurrentTime / ttsDuration) * 100)}%` }}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Error notification if any */}
+                            {ttsError && (
+                                <div className="text-[10px] text-blush-600 font-mono bg-blush-tint p-1.5 rounded-lg text-center truncate">
+                                    {ttsError}
+                                </div>
+                            )}
+                        </div>
+                    )}
 
                     {/* BOTTOM FLOATING HUD & PROGRESS BAR (Auto-Hides) */}
                     <div className={`fixed bottom-0 inset-x-0 z-30 transition-all duration-300 ${isReaderHudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-full pointer-events-none'}`}>
@@ -8493,6 +9065,159 @@ INSTRUCTIONS:
                                             </button>
                                         </div>
                                     </div>
+                                </div>
+
+                                {/* ── TEXT-TO-SPEECH (KOKORO-82M ONNX) ── */}
+                                <div className="pt-3 border-t reader-ui-border space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-1.5">
+                                            <Headphones size={13} className="text-gold" />
+                                            <label className="text-[10px] font-bold font-mono uppercase tracking-wider opacity-80">
+                                                Kokoro Audiobook (TTS)
+                                            </label>
+                                        </div>
+                                        <span className={`text-[9px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                                            ttsStatus === 'playing' ? 'bg-gold-tint text-gold border-gold-edge' :
+                                            ttsStatus === 'ready' ? 'bg-sage-tint text-sage-800 border-sage-edge' :
+                                            (ttsStatus === 'loading-library' || ttsStatus === 'loading-model' || ttsStatus === 'generating') ? 'bg-azure-tint text-azure-800 border-azure-edge' :
+                                            'bg-mist-200 text-ink-500 border-edge-300'
+                                        }`}>
+                                            {ttsStatus === 'playing' ? 'PLAYING' :
+                                             ttsStatus === 'ready' ? (ttsActiveDevice ? `READY (${ttsActiveDevice.toUpperCase()})` : 'READY') :
+                                             (ttsStatus === 'loading-library' || ttsStatus === 'loading-model') ? `${ttsProgress}%` :
+                                             ttsStatus === 'generating' ? 'GENERATING' :
+                                             'OFF'}
+                                        </span>
+                                    </div>
+
+                                    {/* Voice Selector */}
+                                    <div className="space-y-1">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[10px] font-bold font-mono uppercase opacity-60">Voice Cast (Kokoro Presets)</label>
+                                            <span className="text-[9px] font-mono text-gold-ink font-semibold">Default: Heart</span>
+                                        </div>
+                                        <div className="relative">
+                                            <select
+                                                value={readerSettings.ttsVoice || 'af_heart'}
+                                                onChange={e => changeTtsVoice ? changeTtsVoice(e.target.value) : updateReaderSetting('ttsVoice', e.target.value)}
+                                                className="w-full bg-wash p-2 rounded-xl text-xs font-semibold appearance-none cursor-pointer outline-none border reader-ui-border pr-8 text-ink-800 dark:text-stone-100"
+                                            >
+                                                {KOKORO_VOICE_GROUPS.map(grp => (
+                                                    <optgroup key={grp.label} label={grp.label}>
+                                                        {grp.voices.map(v => (
+                                                            <option key={v.id} value={v.id}>
+                                                                {v.name}
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                ))}
+                                            </select>
+                                            <div className="absolute right-2.5 top-2.5 pointer-events-none opacity-50">
+                                                <ChevronDown size={13} />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Speed Selector */}
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-bold font-mono uppercase opacity-60">Pace / Speed</label>
+                                        <div className="flex items-center gap-1 bg-wash p-1 rounded-xl">
+                                            {[0.8, 1.0, 1.2, 1.5].map(sp => (
+                                                <button
+                                                    key={sp}
+                                                    onClick={() => updateReaderSetting('ttsSpeed', sp)}
+                                                    className={`flex-1 py-1 rounded-lg text-xs font-semibold cursor-pointer ${
+                                                        (readerSettings.ttsSpeed || 1.0) === sp ? 'bg-surface shadow-2xs font-bold text-gold-ink' : 'opacity-70'
+                                                    }`}
+                                                >
+                                                    {sp}x
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Hardware Engine / Execution Provider */}
+                                    <div className="grid grid-cols-2 gap-3 pt-1">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold font-mono uppercase opacity-60 flex items-center gap-1">
+                                                <Cpu size={10} /> Accelerator
+                                            </label>
+                                            <select
+                                                value={readerSettings.ttsDevice || 'auto'}
+                                                onChange={e => {
+                                                    const newDev = e.target.value;
+                                                    updateReaderSetting('ttsDevice', newDev);
+                                                    if (ttsStatus === 'ready' || ttsStatus === 'playing') {
+                                                        initTtsEngine(newDev);
+                                                    }
+                                                }}
+                                                className="w-full bg-wash p-1.5 rounded-xl text-[11px] font-semibold appearance-none cursor-pointer outline-none border reader-ui-border text-ink-800 dark:text-stone-100"
+                                            >
+                                                <option value="auto">Auto (GPU/WASM)</option>
+                                                <option value="webgpu">WebGPU</option>
+                                                <option value="wasm">WebAssembly</option>
+                                                <option value="webnn-npu">WebNN (NPU)</option>
+                                            </select>
+                                        </div>
+
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold font-mono uppercase opacity-60">Quantization</label>
+                                            <select
+                                                value={readerSettings.ttsDtype || 'q8'}
+                                                onChange={e => updateReaderSetting('ttsDtype', e.target.value)}
+                                                className="w-full bg-wash p-1.5 rounded-xl text-[11px] font-semibold appearance-none cursor-pointer outline-none border reader-ui-border text-ink-800 dark:text-stone-100"
+                                            >
+                                                <option value="q8">q8 (~86 MB)</option>
+                                                <option value="q4">q4 (~45 MB)</option>
+                                                <option value="fp32">fp32 (~320 MB)</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    {/* Model Management Action Buttons */}
+                                    <div className="flex items-center gap-2 pt-1">
+                                        <button
+                                            onClick={() => initTtsEngine()}
+                                            disabled={ttsStatus === 'loading-library' || ttsStatus === 'loading-model'}
+                                            className="flex-1 py-1.5 px-3 rounded-xl bg-gold text-white text-xs font-bold shadow-2xs hover:opacity-90 active:scale-95 disabled:opacity-50 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                                        >
+                                            {(ttsStatus === 'loading-library' || ttsStatus === 'loading-model') ? (
+                                                <>
+                                                    <Loader2 size={12} className="animate-spin" />
+                                                    <span>Loading {ttsProgress}%</span>
+                                                </>
+                                            ) : ttsStatus === 'ready' ? (
+                                                <>
+                                                    <CheckCircle size={12} />
+                                                    <span>Model Ready</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Download size={12} />
+                                                    <span>Preload Model</span>
+                                                </>
+                                            )}
+                                        </button>
+
+                                        <button
+                                            onClick={async () => {
+                                                if (window.confirm("Clear downloaded Kokoro ONNX model files from device cache?")) {
+                                                    const count = await clearKokoroModelCache();
+                                                    showToast(`Cleared ${count} cached model cache store(s).`, "info");
+                                                }
+                                            }}
+                                            className="py-1.5 px-2.5 rounded-xl reader-ui-card text-ink-500 hover:text-blush-600 border reader-ui-border text-xs font-semibold hover:bg-wash transition-colors cursor-pointer"
+                                            title="Delete cached ONNX weights to free disk storage"
+                                        >
+                                            <Trash2 size={13} />
+                                        </button>
+                                    </div>
+
+                                    {ttsStatusMessage && (
+                                        <div className="text-[10px] font-mono opacity-60 text-center truncate">
+                                            {ttsStatusMessage}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
@@ -10619,7 +11344,11 @@ INSTRUCTIONS:
             contentWidth: "standard",
             textAlign: "left",
             paragraphStyle: "indented",
-            readingMode: "paginated"
+            readingMode: "paginated",
+            ttsVoice: "af_heart",
+            ttsSpeed: 1.0,
+            ttsDevice: "auto",
+            ttsDtype: "q8"
         };
 
         // The 20-step pipeline flowchart cards and the inspector spec live side by side so a
@@ -11947,6 +12676,417 @@ INSTRUCTIONS:
                 touchStartXRef.current = null;
                 touchStartYRef.current = null;
             };
+
+            // --- KOKORO TTS ENGINE CONTROLLER & STREAMING AUDIO QUEUE ---
+            const [ttsStatus, setTtsStatus] = useState('idle'); // 'idle' | 'loading-library' | 'loading-model' | 'initializing-hardware' | 'ready' | 'generating' | 'playing' | 'paused' | 'error'
+            const [ttsProgress, setTtsProgress] = useState(0);
+            const [ttsStatusMessage, setTtsStatusMessage] = useState("");
+            const [ttsActiveDevice, setTtsActiveDevice] = useState(null); // 'wasm' | 'webgpu' | 'webnn-npu'
+            const [ttsError, setTtsError] = useState(null);
+            const [ttsIsMiniPlayerVisible, setTtsIsMiniPlayerVisible] = useState(false);
+            const [ttsQueue, setTtsQueue] = useState([]);
+            const [ttsCurrentChunkIndex, setTtsCurrentChunkIndex] = useState(0);
+            const [ttsCurrentTime, setTtsCurrentTime] = useState(0);
+            const [ttsDuration, setTtsDuration] = useState(0);
+
+            const ttsWorkerRef = useRef(null);
+            const ttsAudioRef = useRef(null);
+            const ttsQueueRef = useRef([]);
+            const ttsCurrentChunkIndexRef = useRef(0);
+            const ttsStatusRef = useRef('idle');
+            const ttsPendingRequestsRef = useRef(new Set());
+            const ttsAutoPlayNextRef = useRef(false);
+
+            useEffect(() => { ttsQueueRef.current = ttsQueue; }, [ttsQueue]);
+            useEffect(() => { ttsCurrentChunkIndexRef.current = ttsCurrentChunkIndex; }, [ttsCurrentChunkIndex]);
+            useEffect(() => { ttsStatusRef.current = ttsStatus; }, [ttsStatus]);
+
+            useEffect(() => {
+                return () => {
+                    if (ttsAudioRef.current) {
+                        ttsAudioRef.current.pause();
+                        ttsAudioRef.current = null;
+                    }
+                    if (ttsQueueRef.current) {
+                        ttsQueueRef.current.forEach(c => {
+                            if (c.audioUrl) try { URL.revokeObjectURL(c.audioUrl); } catch (e) {}
+                        });
+                    }
+                    if (ttsWorkerRef.current) {
+                        if (ttsWorkerRef.current._blobUrl) try { URL.revokeObjectURL(ttsWorkerRef.current._blobUrl); } catch (e) {}
+                        ttsWorkerRef.current.terminate();
+                        ttsWorkerRef.current = null;
+                    }
+                };
+            }, []);
+
+            const getOrCreateTtsWorker = () => {
+                if (ttsWorkerRef.current) return ttsWorkerRef.current;
+                try {
+                    const worker = createKokoroWorker();
+                    worker.onmessage = (e) => {
+                        const { type, payload, error, status, progress, message, device } = e.data || {};
+                        if (type === 'status') {
+                            setTtsStatus(status);
+                            if (typeof progress === 'number') setTtsProgress(progress);
+                            if (message) setTtsStatusMessage(message);
+                        } else if (type === 'progress') {
+                            if (typeof progress === 'number') setTtsProgress(progress);
+                            if (message) setTtsStatusMessage(message);
+                        } else if (type === 'ready') {
+                            setTtsProgress(100);
+                            setTtsActiveDevice(device || 'wasm');
+                            setTtsStatusMessage(message || `Kokoro TTS ready (${(device || 'wasm').toUpperCase()})`);
+                            setTtsError(null);
+                            if (ttsAutoPlayNextRef.current) {
+                                setTtsStatus('generating');
+                            } else {
+                                setTtsStatus('ready');
+                            }
+                        } else if (type === 'chunk_audio') {
+                            const { chunkIndex, wavBuffer } = payload || {};
+                            ttsPendingRequestsRef.current.delete(chunkIndex);
+                            const blob = new Blob([wavBuffer], { type: 'audio/wav' });
+                            const audioUrl = URL.createObjectURL(blob);
+
+                            setTtsQueue(prev => {
+                                const nextQ = [...prev];
+                                if (nextQ[chunkIndex]) {
+                                    nextQ[chunkIndex] = {
+                                        ...nextQ[chunkIndex],
+                                        audioUrl,
+                                        blob,
+                                        status: 'ready'
+                                    };
+                                }
+                                return nextQ;
+                            });
+
+                            if (chunkIndex === ttsCurrentChunkIndexRef.current && 
+                                (ttsStatusRef.current === 'generating' || ttsAutoPlayNextRef.current)) {
+                                ttsAutoPlayNextRef.current = false;
+                                playAudioChunk(chunkIndex, audioUrl);
+                            }
+                        } else if (type === 'error') {
+                            console.error("Kokoro TTS Worker error:", error);
+                            setTtsError(error || "Kokoro TTS inference error");
+                            setTtsStatus('error');
+                        }
+                    };
+                    worker.onerror = (wErr) => {
+                        console.error("Worker lifecycle error:", wErr);
+                        const msg = (wErr && wErr.message) ? wErr.message : "TTS Worker error. If running directly from file://, consider using a local server (e.g. node server.js or Live Server).";
+                        setTtsError(msg);
+                        setTtsStatus('error');
+                    };
+                    ttsWorkerRef.current = worker;
+                    return worker;
+                } catch (err) {
+                    console.error("Failed to create Kokoro Worker:", err);
+                    setTtsError(err.message || "Worker initialization failed");
+                    setTtsStatus('error');
+                    return null;
+                }
+            };
+
+            const initTtsEngine = async (forceDevice = null) => {
+                const targetDevice = forceDevice || readerSettings.ttsDevice || 'auto';
+                const targetDtype = readerSettings.ttsDtype || 'q8';
+                setTtsError(null);
+                setTtsStatus('loading-library');
+                setTtsProgress(5);
+                setTtsStatusMessage("Initializing Kokoro ML environment...");
+
+                const worker = getOrCreateTtsWorker();
+                if (!worker) return false;
+
+                worker.postMessage({
+                    type: 'init',
+                    payload: {
+                        modelId: "onnx-community/Kokoro-82M-v1.0-ONNX",
+                        dtype: targetDtype,
+                        device: targetDevice
+                    }
+                });
+                return true;
+            };
+
+            const requestChunkAudio = (chunkIdx) => {
+                const q = ttsQueueRef.current;
+                if (!q || !q[chunkIdx]) return;
+                if (q[chunkIdx].audioUrl || q[chunkIdx].status === 'ready' || q[chunkIdx].status === 'loading') return;
+                if (ttsPendingRequestsRef.current.has(chunkIdx)) return;
+
+                const worker = getOrCreateTtsWorker();
+                if (!worker) return;
+
+                ttsPendingRequestsRef.current.add(chunkIdx);
+                setTtsQueue(prev => {
+                    const nextQ = [...prev];
+                    if (nextQ[chunkIdx]) nextQ[chunkIdx] = { ...nextQ[chunkIdx], status: 'loading' };
+                    return nextQ;
+                });
+
+                worker.postMessage({
+                    type: 'generate',
+                    payload: {
+                        chunkIndex: chunkIdx,
+                        text: q[chunkIdx].text,
+                        voice: readerSettings.ttsVoice || 'af_heart',
+                        speed: readerSettings.ttsSpeed || 1.0
+                    }
+                });
+            };
+
+            const primeLookaheadBuffer = (centerIdx) => {
+                requestChunkAudio(centerIdx + 1);
+                requestChunkAudio(centerIdx + 2);
+            };
+
+            const playAudioChunk = (chunkIdx, directUrl = null) => {
+                const q = ttsQueueRef.current;
+                const chunk = q[chunkIdx];
+                const urlToPlay = directUrl || (chunk && chunk.audioUrl);
+
+                if (!urlToPlay) {
+                    setTtsStatus('generating');
+                    ttsAutoPlayNextRef.current = true;
+                    requestChunkAudio(chunkIdx);
+                    primeLookaheadBuffer(chunkIdx);
+                    return;
+                }
+
+                if (ttsAudioRef.current) {
+                    ttsAudioRef.current.pause();
+                    ttsAudioRef.current = null;
+                }
+
+                const audio = new Audio(urlToPlay);
+                audio.playbackRate = readerSettings.ttsSpeed || 1.0;
+                ttsAudioRef.current = audio;
+
+                audio.ontimeupdate = () => {
+                    setTtsCurrentTime(audio.currentTime);
+                    if (audio.duration && !isNaN(audio.duration)) {
+                        setTtsDuration(audio.duration);
+                    }
+                };
+
+                audio.onloadedmetadata = () => {
+                    if (audio.duration && !isNaN(audio.duration)) {
+                        setTtsDuration(audio.duration);
+                    }
+                };
+
+                audio.onended = () => {
+                    if (chunk && chunk.audioUrl) {
+                        try { URL.revokeObjectURL(chunk.audioUrl); } catch (e) {}
+                        chunk.audioUrl = null;
+                        chunk.status = 'played';
+                    }
+
+                    const nextIdx = chunkIdx + 1;
+                    if (nextIdx < ttsQueueRef.current.length) {
+                        setTtsCurrentChunkIndex(nextIdx);
+                        playAudioChunk(nextIdx);
+                        primeLookaheadBuffer(nextIdx);
+                    } else {
+                        if (currentFlatSceneIndex < flatStoryScenes.length - 1) {
+                            goToNextReaderScene();
+                        } else {
+                            setTtsStatus('ready');
+                            setTtsStatusMessage("Finished manuscript playback");
+                            setTtsCurrentTime(0);
+                        }
+                    }
+                };
+
+                audio.onerror = (e) => {
+                    console.error("Audio playback error:", e);
+                    setTtsStatus('error');
+                    setTtsError("Playback stream error on chunk " + (chunkIdx + 1));
+                };
+
+                audio.play().then(() => {
+                    setTtsStatus('playing');
+                    setTtsError(null);
+                    primeLookaheadBuffer(chunkIdx);
+                }).catch(playErr => {
+                    console.warn("audio.play() paused/interrupted:", playErr);
+                    setTtsStatus('paused');
+                });
+            };
+
+            const startTtsFromProse = (proseText, startChunkIdx = 0) => {
+                if (!proseText) return;
+                let textToUse = proseText;
+                if (typeof textToUse === 'object') {
+                    textToUse = textToUse.final || textToUse.draft || textToUse.text || textToUse.content || "";
+                }
+                if (typeof textToUse !== 'string' || !textToUse.trim()) return;
+                const chunks = chunkProseForTts(textToUse);
+                if (!chunks || chunks.length === 0) return;
+
+                if (ttsAudioRef.current) {
+                    ttsAudioRef.current.pause();
+                    ttsAudioRef.current = null;
+                }
+                if (ttsWorkerRef.current) {
+                    try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
+                }
+                ttsQueueRef.current.forEach(c => {
+                    if (c.audioUrl) try { URL.revokeObjectURL(c.audioUrl); } catch (e) {}
+                });
+                ttsPendingRequestsRef.current.clear();
+
+                setTtsQueue(chunks);
+                setTtsCurrentChunkIndex(startChunkIdx);
+                setTtsIsMiniPlayerVisible(true);
+
+                if (ttsStatus !== 'ready' && ttsStatus !== 'playing' && ttsStatus !== 'paused') {
+                    ttsAutoPlayNextRef.current = true;
+                    initTtsEngine();
+                    requestChunkAudio(startChunkIdx);
+                    primeLookaheadBuffer(startChunkIdx);
+                } else {
+                    setTtsStatus('generating');
+                    ttsAutoPlayNextRef.current = true;
+                    requestChunkAudio(startChunkIdx);
+                    primeLookaheadBuffer(startChunkIdx);
+                }
+            };
+
+            const toggleTtsPlayPause = (proseOverride = null) => {
+                // Ensure audio context is unlocked during user gesture
+                try {
+                    if (window.AudioContext || window.webkitAudioContext) {
+                        if (!window._ellipsisAudioCtx) {
+                            window._ellipsisAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        }
+                        if (window._ellipsisAudioCtx.state === 'suspended') {
+                            window._ellipsisAudioCtx.resume().catch(() => {});
+                        }
+                    }
+                } catch (e) {}
+                if (ttsStatus === 'playing') {
+                    if (ttsAudioRef.current) ttsAudioRef.current.pause();
+                    setTtsStatus('paused');
+                } else if (ttsStatus === 'paused') {
+                    if (ttsAudioRef.current) {
+                        ttsAudioRef.current.play().then(() => {
+                            setTtsStatus('playing');
+                        }).catch(() => {
+                            playAudioChunk(ttsCurrentChunkIndexRef.current);
+                        });
+                    } else {
+                        playAudioChunk(ttsCurrentChunkIndexRef.current);
+                    }
+                } else if (ttsStatus === 'loading-library' || ttsStatus === 'loading-model' || ttsStatus === 'generating') {
+                    stopTtsPlayback();
+                    showToast("Playback canceled");
+                } else {
+                    let overrideStr = null;
+                    if (typeof proseOverride === 'string' && proseOverride.trim()) {
+                        overrideStr = proseOverride;
+                    } else if (proseOverride && typeof proseOverride === 'object' && !proseOverride.nativeEvent && !proseOverride._reactName) {
+                        overrideStr = proseOverride.final || proseOverride.draft || proseOverride.text || proseOverride.content || null;
+                    }
+                    const activeItem = currentReaderSceneItem || flatStoryScenes[0] || null;
+                    let currentProse = overrideStr || activeItem?.proseText || "";
+                    if (typeof currentProse === 'object' && currentProse) {
+                        currentProse = currentProse.final || currentProse.draft || currentProse.text || currentProse.content || "";
+                    }
+                    if (typeof currentProse === 'string' && currentProse.trim()) {
+                        startTtsFromProse(currentProse, 0);
+                    } else {
+                        showToast("No prose drafted for this scene to read.", "warning");
+                    }
+                }
+            };
+
+            const stopTtsPlayback = () => {
+                if (ttsAudioRef.current) {
+                    ttsAudioRef.current.pause();
+                    ttsAudioRef.current = null;
+                }
+                if (ttsWorkerRef.current) {
+                    try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
+                }
+                ttsQueueRef.current.forEach(c => {
+                    if (c.audioUrl) try { URL.revokeObjectURL(c.audioUrl); } catch (e) {}
+                });
+                ttsPendingRequestsRef.current.clear();
+                setTtsQueue([]);
+                setTtsCurrentChunkIndex(0);
+                setTtsCurrentTime(0);
+                setTtsDuration(0);
+                setTtsIsMiniPlayerVisible(false);
+                if (ttsStatus === 'playing' || ttsStatus === 'paused' || ttsStatus === 'generating') {
+                    setTtsStatus('ready');
+                }
+            };
+
+            const skipTtsChunk = (delta) => {
+                const targetIdx = ttsCurrentChunkIndexRef.current + delta;
+                if (targetIdx >= 0 && targetIdx < ttsQueueRef.current.length) {
+                    if (ttsAudioRef.current) {
+                        ttsAudioRef.current.pause();
+                        ttsAudioRef.current = null;
+                    }
+                    setTtsCurrentChunkIndex(targetIdx);
+                    setTtsCurrentTime(0);
+                    playAudioChunk(targetIdx);
+                }
+            };
+
+            const changeTtsVoice = (newVoiceId) => {
+                updateReaderSetting('ttsVoice', newVoiceId);
+                const voiceObj = KOKORO_VOICES.find(v => v.id === newVoiceId) || KOKORO_VOICES[0];
+                showToast(`Voice set to ${voiceObj.shortName || voiceObj.name}`);
+
+                if (ttsWorkerRef.current) {
+                    try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
+                }
+                ttsPendingRequestsRef.current.clear();
+
+                // Invalidate pre-buffered lookahead chunks so subsequent chunks use the newly selected voice
+                setTtsQueue(prev => {
+                    if (!prev || prev.length === 0) return prev;
+                    return prev.map((chunk, idx) => {
+                        // Preserve the active playing chunk to prevent cutting off mid-word
+                        if (idx === ttsCurrentChunkIndexRef.current && ttsStatusRef.current === 'playing') {
+                            return chunk;
+                        }
+                        if (chunk.audioUrl) {
+                            try { URL.revokeObjectURL(chunk.audioUrl); } catch (e) {}
+                        }
+                        return {
+                            ...chunk,
+                            status: 'idle',
+                            audioUrl: null,
+                            duration: 0
+                        };
+                    });
+                });
+
+                // Re-prime lookahead buffer with new voice if queue is populated
+                setTimeout(() => {
+                    if (ttsQueueRef.current && ttsQueueRef.current.length > 0) {
+                        primeLookaheadBuffer(ttsCurrentChunkIndexRef.current);
+                    }
+                }, 50);
+            };
+
+            useEffect(() => {
+                if (ttsStatusRef.current === 'playing' || ttsStatusRef.current === 'generating') {
+                    const newProse = currentReaderSceneItem?.proseText || "";
+                    if (newProse) {
+                        startTtsFromProse(newProse, 0);
+                    } else {
+                        stopTtsPlayback();
+                    }
+                }
+            }, [selectedSequence, selectedScene]);
 
             const [expandedSequences, setExpandedSequences] = useState({});
 
@@ -21303,6 +22443,23 @@ ${finalProseText}
                                     jumpToReaderScene={jumpToReaderScene}
                                     goToNextReaderScene={goToNextReaderScene}
                                     setView={setView}
+                                    ttsStatus={ttsStatus}
+                                    ttsProgress={ttsProgress}
+                                    ttsStatusMessage={ttsStatusMessage}
+                                    ttsActiveDevice={ttsActiveDevice}
+                                    ttsError={ttsError}
+                                    ttsIsMiniPlayerVisible={ttsIsMiniPlayerVisible}
+                                    setTtsIsMiniPlayerVisible={setTtsIsMiniPlayerVisible}
+                                    ttsQueue={ttsQueue}
+                                    ttsCurrentChunkIndex={ttsCurrentChunkIndex}
+                                    ttsCurrentTime={ttsCurrentTime}
+                                    ttsDuration={ttsDuration}
+                                    toggleTtsPlayPause={toggleTtsPlayPause}
+                                    stopTtsPlayback={stopTtsPlayback}
+                                    skipTtsChunk={skipTtsChunk}
+                                    initTtsEngine={initTtsEngine}
+                                    showToast={showToast}
+                                    changeTtsVoice={changeTtsVoice}
                                 />
                             )}
 
