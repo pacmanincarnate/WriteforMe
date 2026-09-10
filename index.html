@@ -2507,41 +2507,42 @@
                 "            }",
                 "",
                 "            initPromise = (async () => {",
-                "                self.postMessage({ type: 'status', id, status: 'loading-library', progress: 5, message: 'Loading kokoro-js ML library...' });",
                 "                try {",
-                "                    const { env } = await import('https://esm.sh/@huggingface/transformers@3.3.3');",
-                "                    env.backends.onnx.wasm.numThreads = 1;",
-                "                    env.backends.onnx.wasm.simd = true;",
-                "                    env.backends.onnx.wasm.proxy = false;",
-                "                    env.backends.onnx.wasm.wasmPaths = 'https://esm.sh/@huggingface/transformers@3.3.3/dist/';",
-                "                } catch(e) {",
-                "                    console.warn('Could not pre-configure transformers.js env', e);",
-                "                }",
-                "                const { KokoroTTS } = await import('https://esm.sh/kokoro-js@1.2.0');",
-                "",
-                "                // Check if model weights are already cached in browser CacheStorage",
-                "                let isModelCached = false;",
-                "                try {",
-                "                    if (typeof caches !== 'undefined') {",
-                "                        const cache = await caches.open('transformers-cache');",
-                "                        const match = await cache.match('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx');",
-                "                        if (match) isModelCached = true;",
+                "                    self.postMessage({ type: 'status', id, status: 'loading-library', progress: 5, message: 'Loading kokoro-js ML library...' });",
+                "                    try {",
+                "                        const { env } = await import('https://esm.sh/@huggingface/transformers@3.3.3');",
+                "                        env.backends.onnx.wasm.numThreads = 1;",
+                "                        env.backends.onnx.wasm.simd = true;",
+                "                        env.backends.onnx.wasm.proxy = false;",
+                "                        env.backends.onnx.wasm.wasmPaths = 'https://esm.sh/@huggingface/transformers@3.3.3/dist/';",
+                "                    } catch(e) {",
+                "                        console.warn('Could not pre-configure transformers.js env', e);",
                 "                    }",
-                "                } catch (cErr) {}",
+                "                    const { KokoroTTS } = await import('https://esm.sh/kokoro-js@1.2.0');",
                 "",
-                "                let currentProgress = isModelCached ? 80 : 15;",
-                "                if (isModelCached) {",
-                "                    self.postMessage({ type: 'status', id, status: 'loading-model', progress: 80, message: 'Loading Kokoro-82M neural model from cache...' });",
-                "                } else {",
-                "                    self.postMessage({ type: 'status', id, status: 'loading-model', progress: 15, message: 'Downloading Kokoro-82M weights (~85MB)...' });",
-                "                }",
+                "                    // Check if model weights are already cached in browser CacheStorage",
+                "                    let isModelCached = false;",
+                "                    try {",
+                "                        if (typeof caches !== 'undefined') {",
+                "                            const cache = await caches.open('transformers-cache');",
+                "                            const match = await cache.match('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx');",
+                "                            if (match) isModelCached = true;",
+                "                        }",
+                "                    } catch (cErr) {}",
                 "",
-                "                const progressCallback = (p) => {",
-                "                    let pct = null;",
-                "                    if (p && typeof p.progress === 'number' && !isNaN(p.progress)) {",
-                "                        pct = Math.round(p.progress);",
-                "                    } else if (p && typeof p.loaded === 'number' && p.loaded > 0) {",
-                "                        const total = (typeof p.total === 'number' && p.total > 0) ? p.total : 85000000;",
+                "                    let currentProgress = isModelCached ? 80 : 15;",
+                "                    if (isModelCached) {",
+                "                        self.postMessage({ type: 'status', id, status: 'loading-model', progress: 80, message: 'Loading Kokoro-82M neural model from cache...' });",
+                "                    } else {",
+                "                        self.postMessage({ type: 'status', id, status: 'loading-model', progress: 15, message: 'Downloading Kokoro-82M weights (~85MB)...' });",
+                "                    }",
+                "",
+                "                    const progressCallback = (p) => {",
+                "                        let pct = null;",
+                "                        if (p && typeof p.progress === 'number' && !isNaN(p.progress)) {",
+                "                            pct = Math.round(p.progress);",
+                "                        } else if (p && typeof p.loaded === 'number' && p.loaded > 0) {",
+                "                            const total = (typeof p.total === 'number' && p.total > 0) ? p.total : 85000000;",
                 "                        pct = Math.round((p.loaded / total) * 100);",
                 "                    }",
                 "                    if (typeof pct === 'number' && !isNaN(pct)) {",
@@ -2631,6 +2632,11 @@
                 "",
                 "                currentConfig = { modelId: targetModel, dtype: targetDtype, device: targetDevice, resolvedDevice };",
                 "                self.postMessage({ type: 'ready', id, device: resolvedDevice, message: 'Kokoro TTS ready (' + resolvedDevice.toUpperCase() + ')' });",
+                "                } catch (initErr) {",
+                "                    console.error('Kokoro ML initialization error:', initErr);",
+                "                    self.postMessage({ type: 'error', id, error: 'Failed to initialize ML models: ' + (initErr.message || String(initErr)) });",
+                "                    throw initErr;",
+                "                }",
                 "            })();",
                 "",
                 "            await initPromise;",
@@ -2714,9 +2720,16 @@
             const blob = new Blob([workerCode], { type: 'application/javascript' });
             const url = URL.createObjectURL(blob);
             let worker;
+            const isFileProtocol = typeof window !== 'undefined' && window.location.protocol === 'file:';
             try {
-                // Try module worker first: standard-compliant and required for dynamic import() in Safari (15+), Firefox (114+), and modern Chromium (Chrome, Edge, Vivaldi, Opera)
-                worker = new Worker(url, { type: 'module' });
+                // Chrome blocks module workers created via blob:// on file:// origins, throwing a SecurityError asynchronously
+                // Classic workers support dynamic import() in Chromium 117+ and bypass this file:// restriction.
+                // We will fall back immediately to classic worker if on file:// protocol.
+                if (isFileProtocol) {
+                    worker = new Worker(url);
+                } else {
+                    worker = new Worker(url, { type: 'module' });
+                }
             } catch (moduleErr) {
                 console.warn("Module worker instantiation failed, falling back to classic worker:", moduleErr);
                 worker = new Worker(url);
