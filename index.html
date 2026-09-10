@@ -2508,6 +2508,15 @@
                 "",
                 "            initPromise = (async () => {",
                 "                self.postMessage({ type: 'status', id, status: 'loading-library', progress: 5, message: 'Loading kokoro-js ML library...' });",
+                "                try {",
+                "                    const { env } = await import('https://esm.sh/@huggingface/transformers@3.3.3');",
+                "                    env.backends.onnx.wasm.numThreads = 1;",
+                "                    env.backends.onnx.wasm.simd = true;",
+                "                    env.backends.onnx.wasm.proxy = false;",
+                "                    env.backends.onnx.wasm.wasmPaths = 'https://esm.sh/@huggingface/transformers@3.3.3/dist/';",
+                "                } catch(e) {",
+                "                    console.warn('Could not pre-configure transformers.js env', e);",
+                "                }",
                 "                const { KokoroTTS } = await import('https://esm.sh/kokoro-js@1.2.0');",
                 "",
                 "                // Check if model weights are already cached in browser CacheStorage",
@@ -12812,6 +12821,7 @@ INSTRUCTIONS:
                                 setTtsStatusAndRef('ready');
                             }
                         } else if (type === 'chunk_audio') {
+                            if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
                             const { chunkIndex, wavBuffer } = payload || {};
                             ttsPendingRequestsRef.current.delete(chunkIndex);
                             const blob = new Blob([wavBuffer], { type: 'audio/wav' });
@@ -12836,12 +12846,14 @@ INSTRUCTIONS:
                                 playAudioChunk(chunkIndex, audioUrl);
                             }
                         } else if (type === 'error') {
+                            if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
                             console.error("Kokoro TTS Worker error:", error);
                             setTtsError(error || "Kokoro TTS inference error");
                             setTtsStatusAndRef('error');
                         }
                     };
                     worker.onerror = (wErr) => {
+                        if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
                         console.error("Worker lifecycle error:", wErr);
                         const msg = (wErr && wErr.message) ? wErr.message : "TTS Worker error. If running directly from file://, consider using a local server (e.g. node server.js or Live Server).";
                         setTtsError(msg);
@@ -12904,6 +12916,22 @@ INSTRUCTIONS:
                         speed: readerSettings.ttsSpeed || 1.0
                     }
                 });
+
+                // Fail-safe timeout for silent worker deaths (JetSam on iOS)
+                if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
+                window._ellipsisTtsTimeout = setTimeout(() => {
+                    if (ttsStatusRef.current === 'generating' && ttsCurrentChunkIndexRef.current === chunkIdx) {
+                        console.error('TTS Generation timeout - worker likely crashed');
+                        setTtsStatusAndRef('error');
+                        setTtsError("Audio generation timed out. Your device may be low on memory.");
+                        ttsPendingRequestsRef.current.delete(chunkIdx);
+                        setTtsQueueAndRef(prev => {
+                            const nextQ = [...prev];
+                            if (nextQ[chunkIdx]) nextQ[chunkIdx] = { ...nextQ[chunkIdx], status: 'error' };
+                            return nextQ;
+                        });
+                    }
+                }, 45000); // 45 seconds max per chunk
             };
 
             const primeLookaheadBuffer = (centerIdx, directQueue = null) => {
@@ -13126,6 +13154,7 @@ INSTRUCTIONS:
                 if (ttsWorkerRef.current) {
                     try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
                 }
+                if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
                 ttsQueueRef.current.forEach(c => {
                     if (c.audioUrl) try { URL.revokeObjectURL(c.audioUrl); } catch (e) {}
                 });
@@ -13150,6 +13179,7 @@ INSTRUCTIONS:
                     if (ttsWorkerRef.current) {
                         try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
                     }
+                    if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
                     ttsPendingRequestsRef.current.clear();
                     setTtsCurrentChunkIndexAndRef(targetIdx);
                     setTtsCurrentTime(0);
