@@ -2510,9 +2510,23 @@
                 "                self.postMessage({ type: 'status', id, status: 'loading-library', progress: 5, message: 'Loading kokoro-js ML library...' });",
                 "                const { KokoroTTS } = await import('https://esm.sh/kokoro-js@1.2.0');",
                 "",
-                "                self.postMessage({ type: 'status', id, status: 'loading-model', progress: 15, message: 'Fetching Kokoro-82M ONNX model weights...' });",
+                "                // Check if model weights are already cached in browser CacheStorage",
+                "                let isModelCached = false;",
+                "                try {",
+                "                    if (typeof caches !== 'undefined') {",
+                "                        const cache = await caches.open('transformers-cache');",
+                "                        const match = await cache.match('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx');",
+                "                        if (match) isModelCached = true;",
+                "                    }",
+                "                } catch (cErr) {}",
                 "",
-                "                let currentProgress = 15;",
+                "                let currentProgress = isModelCached ? 80 : 15;",
+                "                if (isModelCached) {",
+                "                    self.postMessage({ type: 'status', id, status: 'loading-model', progress: 80, message: 'Loading Kokoro-82M neural model from cache...' });",
+                "                } else {",
+                "                    self.postMessage({ type: 'status', id, status: 'loading-model', progress: 15, message: 'Downloading Kokoro-82M weights (~85MB)...' });",
+                "                }",
+                "",
                 "                const progressCallback = (p) => {",
                 "                    let pct = null;",
                 "                    if (p && typeof p.progress === 'number' && !isNaN(p.progress)) {",
@@ -2531,12 +2545,22 @@
                 "                    }",
                 "                };",
                 "",
-                "                const ticker = setInterval(() => {",
-                "                    if (currentProgress < 92) {",
-                "                        currentProgress += 1;",
-                "                        self.postMessage({ type: 'progress', id, progress: currentProgress, message: 'Downloading Kokoro-82M weights (' + currentProgress + '%)...' });",
-                "                    }",
-                "                }, 400);",
+                "                let ticker = null;",
+                "                if (!isModelCached) {",
+                "                    ticker = setInterval(() => {",
+                "                        if (currentProgress < 75) {",
+                "                            currentProgress += 1;",
+                "                            self.postMessage({ type: 'progress', id, progress: currentProgress, message: 'Downloading Kokoro-82M weights (' + currentProgress + '%)...' });",
+                "                        }",
+                "                    }, 500);",
+                "                }",
+                "",
+                "                // WebKit / Safari mobile hangs inside WebGPU worker pipelines; force WASM on Safari/iOS",
+                "                const isSafariOrIOS = typeof navigator !== 'undefined' && (",
+                "                    /iPhone|iPad|iPod/i.test(navigator.userAgent || '') ||",
+                "                    (navigator.maxTouchPoints > 1 && /Macintosh|Mac/i.test(navigator.userAgent || '')) ||",
+                "                    (/^((?!chrome|android).)*safari/i.test(navigator.userAgent || ''))",
+                "                );",
                 "",
                 "                let resolvedDevice = 'wasm';",
                 "",
@@ -2554,16 +2578,33 @@
                 "                        }",
                 "                    }",
                 "",
-                "                    if (!tts && (targetDevice === 'webgpu' || targetDevice === 'auto')) {",
+                "                    // Check if WebGPU adapter is genuinely available before attempting initialization",
+                "                    let canUseWebGpu = false;",
+                "                    if (!isSafariOrIOS && (targetDevice === 'webgpu' || targetDevice === 'auto')) {",
                 "                        try {",
-                "                            tts = await KokoroTTS.from_pretrained(targetModel, {",
+                "                            if (typeof navigator !== 'undefined' && navigator.gpu && typeof navigator.gpu.requestAdapter === 'function') {",
+                "                                const adapter = await navigator.gpu.requestAdapter();",
+                "                                if (adapter) canUseWebGpu = true;",
+                "                            }",
+                "                        } catch (checkErr) {",
+                "                            canUseWebGpu = false;",
+                "                        }",
+                "                    }",
+                "",
+                "                    if (!tts && canUseWebGpu) {",
+                "                        try {",
+                "                            const gpuLoad = KokoroTTS.from_pretrained(targetModel, {",
                 "                                dtype: targetDtype,",
                 "                                device: 'webgpu',",
                 "                                progress_callback: progressCallback",
                 "                            });",
+                "                            const timeoutPromise = new Promise((_, reject) =>",
+                "                                setTimeout(() => reject(new Error('WebGPU initialization timeout')), 6000)",
+                "                            );",
+                "                            tts = await Promise.race([gpuLoad, timeoutPromise]);",
                 "                            resolvedDevice = 'webgpu';",
                 "                        } catch (errGpu) {",
-                "                            console.warn('WebGPU acceleration not available or failed, falling back to WebAssembly:', errGpu);",
+                "                            console.warn('WebGPU acceleration failed or timed out, falling back to WebAssembly:', errGpu);",
                 "                        }",
                 "                    }",
                 "",
@@ -2576,7 +2617,7 @@
                 "                        resolvedDevice = 'wasm';",
                 "                    }",
                 "                } finally {",
-                "                    clearInterval(ticker);",
+                "                    if (ticker) clearInterval(ticker);",
                 "                }",
                 "",
                 "                currentConfig = { modelId: targetModel, dtype: targetDtype, device: targetDevice, resolvedDevice };",
@@ -8633,9 +8674,9 @@ INSTRUCTIONS:
                                 <div className="flex-1 min-w-0 px-2 text-center">
                                     <div className="text-[11px] font-mono font-bold truncate opacity-90">
                                         {(ttsStatus === 'loading-library' || ttsStatus === 'loading-model') ? (
-                                            <span className="text-gold-ink font-semibold">Downloading Kokoro-82M... {ttsProgress}%</span>
+                                            <span className="text-gold-ink font-semibold">{ttsStatusMessage || `Loading Kokoro-82M... ${ttsProgress}%`}</span>
                                         ) : ttsStatus === 'generating' ? (
-                                            <span className="opacity-70">Synthesizing audio...</span>
+                                            <span className="opacity-80">Synthesizing audio (chunk {ttsCurrentChunkIndex + 1} of {ttsQueue.length || 1})...</span>
                                         ) : ttsQueue.length > 0 ? (
                                             <span>
                                                 Chunk {ttsCurrentChunkIndex + 1} of {ttsQueue.length}
@@ -12893,6 +12934,7 @@ INSTRUCTIONS:
                     audio.pause();
                 }
 
+                audio.loop = false;
                 audio.playbackRate = readerSettings.ttsSpeed || 1.0;
                 audio.src = urlToPlay;
 
@@ -13017,7 +13059,7 @@ INSTRUCTIONS:
                     }
                 } catch (e) {}
 
-                // Crucial for iOS Safari / Mobile: Prime and unlock the persistent HTMLAudioElement during user gesture
+                // Crucial for iOS Safari / Mobile: Prime and continuously keep active the persistent HTMLAudioElement during user gesture
                 try {
                     if (!ttsAudioRef.current) {
                         const primedAudio = new Audio();
@@ -13025,6 +13067,7 @@ INSTRUCTIONS:
                         ttsAudioRef.current = primedAudio;
                     }
                     if (!window._ellipsisAudioUnlocked) {
+                        ttsAudioRef.current.loop = true;
                         ttsAudioRef.current.src = SILENT_WAV_DATA_URI;
                         const p = ttsAudioRef.current.play();
                         if (p && typeof p.then === 'function') {
@@ -13073,6 +13116,7 @@ INSTRUCTIONS:
 
             const stopTtsPlayback = () => {
                 if (ttsAudioRef.current) {
+                    ttsAudioRef.current.loop = false;
                     ttsAudioRef.current.pause();
                     try {
                         ttsAudioRef.current.removeAttribute('src');
@@ -13103,6 +13147,10 @@ INSTRUCTIONS:
                     if (ttsAudioRef.current) {
                         ttsAudioRef.current.pause();
                     }
+                    if (ttsWorkerRef.current) {
+                        try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
+                    }
+                    ttsPendingRequestsRef.current.clear();
                     setTtsCurrentChunkIndexAndRef(targetIdx);
                     setTtsCurrentTime(0);
                     playAudioChunk(targetIdx);
