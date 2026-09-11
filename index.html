@@ -2337,7 +2337,17 @@
           ----------------------------------------------------------------------
         */
 
+        const isMobileDevice = () => {
+            if (typeof navigator === 'undefined') return false;
+            return (
+                /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '') ||
+                (navigator.maxTouchPoints > 1 && /Macintosh|Mac/i.test(navigator.userAgent || ''))
+            );
+        };
+
         const KOKORO_VOICES = [
+            // Device Native System Voice (Fast, 0MB download, 0ms latency)
+            { id: 'system_native', name: 'System Voice (Instant / 0MB)', shortName: 'System', group: 'Device Native', lang: 'native', isNative: true },
             // American Female
             { id: 'af_heart', name: 'Heart (Default)', shortName: 'Heart', group: 'American Female', lang: 'en-US', gender: 'F', isDefault: true },
             { id: 'af_bella', name: 'Bella', shortName: 'Bella', group: 'American Female', lang: 'en-US', gender: 'F' },
@@ -2373,6 +2383,7 @@
         ];
 
         const KOKORO_VOICE_GROUPS = [
+            { label: "Device Native (Fast / 0MB)", voices: KOKORO_VOICES.filter(v => v.group === 'Device Native') },
             { label: "American Female", voices: KOKORO_VOICES.filter(v => v.group === 'American Female') },
             { label: "American Male", voices: KOKORO_VOICES.filter(v => v.group === 'American Male') },
             { label: "British Female", voices: KOKORO_VOICES.filter(v => v.group === 'British Female') },
@@ -2622,6 +2633,26 @@
                 "                        });",
                 "                        resolvedDevice = 'wasm';",
                 "                    }",
+                "",
+                "                    // Eagerly pre-cache the voice embedding into kokoro-voices CacheStorage",
+                "                    // so that generate() never hangs on an unexpected secondary network fetch on mobile.",
+                "                    const preloadVoice = (payload && payload.voice) || 'af_heart';",
+                "                    try {",
+                "                        if (typeof caches !== 'undefined' && preloadVoice !== 'system_native') {",
+                "                            const voiceCache = await caches.open('kokoro-voices');",
+                "                            const voiceUrl = 'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/' + preloadVoice + '.bin';",
+                "                            const match = await voiceCache.match(voiceUrl);",
+                "                            if (!match) {",
+                "                                self.postMessage({ type: 'status', id, status: 'loading-voice', progress: 95, message: 'Pre-caching neural voice (' + preloadVoice + ')...' });",
+                "                                const vResp = await fetch(voiceUrl);",
+                "                                if (vResp.ok) {",
+                "                                    await voiceCache.put(voiceUrl, vResp.clone());",
+                "                                }",
+                "                            }",
+                "                        }",
+                "                    } catch (vErr) {",
+                "                        console.warn('Voice pre-caching non-fatal warning:', vErr);",
+                "                    }",
                 "                } finally {",
                 "                    if (ticker) clearInterval(ticker);",
                 "                }",
@@ -2637,6 +2668,8 @@
                 "",
                 "            await initPromise;",
                 "",
+                "        } else if (type === 'ping') {",
+                "            self.postMessage({ type: 'pong', id });",
                 "        } else if (type === 'generate') {",
                 "            const activeSessionId = currentGenerationSessionId;",
                 "            generationQueue = generationQueue.then(async () => {",
@@ -8785,8 +8818,23 @@ INSTRUCTIONS:
 
                             {/* Error notification if any */}
                             {ttsError && (
-                                <div className="text-[10px] text-blush-600 font-mono bg-blush-tint p-1.5 rounded-lg text-center truncate">
-                                    {ttsError}
+                                <div className="text-[10px] text-blush-600 font-mono bg-blush-tint p-1.5 rounded-lg text-center flex flex-wrap items-center justify-between gap-1.5">
+                                    <span className="truncate flex-1 text-left">{ttsError}</span>
+                                    {typeof window !== 'undefined' && 'speechSynthesis' in window && readerSettings.ttsVoice !== 'system_native' && (
+                                        <button
+                                            onClick={() => {
+                                                if (changeTtsVoice) changeTtsVoice('system_native');
+                                                const activeItem = currentReaderSceneItem || flatStoryScenes[0] || null;
+                                                let prose = activeItem?.proseText || "";
+                                                if (typeof prose === 'object' && prose) prose = prose.final || prose.draft || prose.text || prose.content || "";
+                                                if (prose) startTtsFromProse(prose, ttsCurrentChunkIndexRef.current || 0);
+                                            }}
+                                            className="shrink-0 px-2 py-0.5 bg-gold text-white font-bold rounded-md hover:opacity-90 active:scale-95 transition-all cursor-pointer text-[9.5px]"
+                                            title="Instantly switch to native device speech synthesis"
+                                        >
+                                            Switch to System Voice
+                                        </button>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -12786,6 +12834,8 @@ INSTRUCTIONS:
             const ttsStatusRef = useRef('idle');
             const ttsPendingRequestsRef = useRef(new Set());
             const ttsAutoPlayNextRef = useRef(false);
+            const ttsWatchdogRef = useRef(null);
+            const ttsAwaitedChunkRef = useRef(null);
 
             // Eagerly sync refs on every render AND inside setters to avoid stale-ref bugs.
             // React batches state updates, so useEffect-only syncing can lag behind
@@ -12816,8 +12866,64 @@ INSTRUCTIONS:
                 setTtsStatus(val);
             };
 
+            // Dedicated generation watchdog that tracks the specific chunk being awaited.
+            // Avoids the previous bug where lookahead calls overwrote window._ellipsisTtsTimeout,
+            // resulting in mismatched chunkIdx comparisons that allowed hangs to sit indefinitely.
+            const startTtsWatchdog = (awaitedIdx) => {
+                if (ttsWatchdogRef.current) {
+                    clearTimeout(ttsWatchdogRef.current);
+                    ttsWatchdogRef.current = null;
+                }
+                ttsAwaitedChunkRef.current = awaitedIdx;
+                // Mobile devices have strict OS memory limits (Jetsam on iOS, LMK on Android)
+                // Shorten timeout to 25s on mobile to detect killed workers quickly; 45s on desktop.
+                const timeoutMs = isMobileDevice() ? 25000 : 45000;
+
+                ttsWatchdogRef.current = setTimeout(() => {
+                    if (ttsStatusRef.current === 'generating' && ttsCurrentChunkIndexRef.current === awaitedIdx) {
+                        console.error(`TTS Generation watchdog timeout on chunk ${awaitedIdx} (device: ${isMobileDevice() ? 'mobile' : 'desktop'})`);
+
+                        // If the worker died silently under memory pressure, kill the dead handle
+                        if (ttsWorkerRef.current) {
+                            try { ttsWorkerRef.current.terminate(); } catch (e) {}
+                            ttsWorkerRef.current = null;
+                        }
+
+                        ttsPendingRequestsRef.current.delete(awaitedIdx);
+                        setTtsQueueAndRef(prev => {
+                            const nextQ = [...prev];
+                            if (nextQ[awaitedIdx]) nextQ[awaitedIdx] = { ...nextQ[awaitedIdx], status: 'error' };
+                            return nextQ;
+                        });
+
+                        setTtsStatusAndRef('error');
+                        const msg = isMobileDevice()
+                            ? "Neural speech generation timed out on mobile. Tap 'Switch to System Voice' for instant playback."
+                            : "Audio generation timed out. Your device may be low on memory.";
+                        setTtsError(msg);
+                    }
+                }, timeoutMs);
+            };
+
+            const clearTtsWatchdog = (resolvedIdx = null) => {
+                if (resolvedIdx === null || resolvedIdx === ttsAwaitedChunkRef.current) {
+                    if (ttsWatchdogRef.current) {
+                        clearTimeout(ttsWatchdogRef.current);
+                        ttsWatchdogRef.current = null;
+                    }
+                    ttsAwaitedChunkRef.current = null;
+                }
+            };
+
             useEffect(() => {
                 return () => {
+                    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                        try { window.speechSynthesis.cancel(); } catch (e) {}
+                    }
+                    if (ttsWatchdogRef.current) {
+                        clearTimeout(ttsWatchdogRef.current);
+                        ttsWatchdogRef.current = null;
+                    }
                     if (ttsAudioRef.current) {
                         ttsAudioRef.current.pause();
                         ttsAudioRef.current = null;
@@ -12835,6 +12941,71 @@ INSTRUCTIONS:
                 };
             }, []);
 
+            // Native Web Speech API execution for mobile devices and instant 0MB fallback
+            const speakChunkWithSpeechSynthesis = (chunkIdx) => {
+                if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
+                    setTtsStatusAndRef('error');
+                    setTtsError("System speech synthesis is not supported on this browser.");
+                    return;
+                }
+                try {
+                    window.speechSynthesis.cancel();
+                } catch (e) {}
+
+                const q = ttsQueueRef.current;
+                const chunk = q && q[chunkIdx];
+                if (!chunk || !chunk.text) {
+                    setTtsStatusAndRef('ready');
+                    return;
+                }
+
+                const utterance = new SpeechSynthesisUtterance(chunk.text);
+                utterance.rate = typeof readerSettings.ttsSpeed === 'number' ? Math.max(0.5, Math.min(2.0, readerSettings.ttsSpeed)) : 1.0;
+
+                try {
+                    const voices = window.speechSynthesis.getVoices();
+                    if (voices && voices.length > 0) {
+                        const pref = voices.find(v => (v.lang.startsWith('en') || v.lang.startsWith('en-US')) && (v.name.includes('Natural') || v.name.includes('Siri') || v.name.includes('Enhanced') || v.name.includes('Google')))
+                            || voices.find(v => v.lang.startsWith('en'))
+                            || voices[0];
+                        if (pref) utterance.voice = pref;
+                    }
+                } catch (vErr) {}
+
+                utterance.onstart = () => {
+                    setTtsStatusAndRef('playing');
+                    setTtsError(null);
+                    setTtsCurrentChunkIndexAndRef(chunkIdx);
+                    setTtsCurrentTime(0);
+                    setTtsDuration(Math.max(1, Math.round(chunk.text.length / 15)));
+                };
+
+                utterance.onend = () => {
+                    const nextIdx = chunkIdx + 1;
+                    if (nextIdx < ttsQueueRef.current.length) {
+                        setTtsCurrentChunkIndexAndRef(nextIdx);
+                        speakChunkWithSpeechSynthesis(nextIdx);
+                    } else {
+                        if (currentFlatSceneIndex < flatStoryScenes.length - 1) {
+                            goToNextReaderScene();
+                        } else {
+                            setTtsStatusAndRef('ready');
+                            setTtsStatusMessage("Finished manuscript playback");
+                            setTtsCurrentTime(0);
+                        }
+                    }
+                };
+
+                utterance.onerror = (uErr) => {
+                    if (uErr.error === 'interrupted' || uErr.error === 'canceled') return;
+                    console.error("SpeechSynthesis utterance error:", uErr);
+                    setTtsStatusAndRef('error');
+                    setTtsError("System speech error: " + (uErr.error || 'unknown'));
+                };
+
+                window.speechSynthesis.speak(utterance);
+            };
+
             const getOrCreateTtsWorker = () => {
                 if (ttsWorkerRef.current) return ttsWorkerRef.current;
                 try {
@@ -12848,6 +13019,8 @@ INSTRUCTIONS:
                         } else if (type === 'progress') {
                             if (typeof progress === 'number') setTtsProgress(progress);
                             if (message) setTtsStatusMessage(message);
+                        } else if (type === 'pong') {
+                            // Worker responded to health check ping
                         } else if (type === 'ready') {
                             setTtsProgress(100);
                             setTtsActiveDevice(device || 'wasm');
@@ -12859,8 +13032,8 @@ INSTRUCTIONS:
                                 setTtsStatusAndRef('ready');
                             }
                         } else if (type === 'chunk_audio') {
-                            if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
                             const { chunkIndex, wavBuffer } = payload || {};
+                            clearTtsWatchdog(chunkIndex);
                             ttsPendingRequestsRef.current.delete(chunkIndex);
                             const blob = new Blob([wavBuffer], { type: 'audio/wav' });
                             const audioUrl = URL.createObjectURL(blob);
@@ -12884,14 +13057,14 @@ INSTRUCTIONS:
                                 playAudioChunk(chunkIndex, audioUrl);
                             }
                         } else if (type === 'error') {
-                            if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
+                            clearTtsWatchdog();
                             console.error("Kokoro TTS Worker error:", error);
                             setTtsError(error || "Kokoro TTS inference error");
                             setTtsStatusAndRef('error');
                         }
                     };
                     worker.onerror = (wErr) => {
-                        if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
+                        clearTtsWatchdog();
                         console.error("Worker lifecycle error:", wErr);
                         const msg = (wErr && wErr.message) ? wErr.message : "TTS Worker error. If running directly from file://, consider using a local server (e.g. node server.js or Live Server).";
                         setTtsError(msg);
@@ -12908,6 +13081,15 @@ INSTRUCTIONS:
             };
 
             const initTtsEngine = async (forceDevice = null) => {
+                if (readerSettings.ttsVoice === 'system_native') {
+                    setTtsError(null);
+                    setTtsActiveDevice('system');
+                    setTtsProgress(100);
+                    setTtsStatusMessage("System Voice ready (Device Native)");
+                    setTtsStatusAndRef('ready');
+                    return true;
+                }
+
                 const targetDevice = forceDevice || readerSettings.ttsDevice || 'wasm';
                 const targetDtype = readerSettings.ttsDtype || 'q8';
                 setTtsError(null);
@@ -12923,13 +13105,15 @@ INSTRUCTIONS:
                     payload: {
                         modelId: "onnx-community/Kokoro-82M-v1.0-ONNX",
                         dtype: targetDtype,
-                        device: targetDevice
+                        device: targetDevice,
+                        voice: readerSettings.ttsVoice || 'af_heart'
                     }
                 });
                 return true;
             };
 
             const requestChunkAudio = (chunkIdx, directQueue = null) => {
+                if (readerSettings.ttsVoice === 'system_native') return;
                 const q = directQueue || ttsQueueRef.current;
                 if (!q || !q[chunkIdx]) return;
                 if (q[chunkIdx].audioUrl || q[chunkIdx].status === 'ready' || q[chunkIdx].status === 'loading') return;
@@ -12955,29 +13139,29 @@ INSTRUCTIONS:
                     }
                 });
 
-                // Fail-safe timeout for silent worker deaths (JetSam on iOS)
-                if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
-                window._ellipsisTtsTimeout = setTimeout(() => {
-                    if (ttsStatusRef.current === 'generating' && ttsCurrentChunkIndexRef.current === chunkIdx) {
-                        console.error('TTS Generation timeout - worker likely crashed');
-                        setTtsStatusAndRef('error');
-                        setTtsError("Audio generation timed out. Your device may be low on memory.");
-                        ttsPendingRequestsRef.current.delete(chunkIdx);
-                        setTtsQueueAndRef(prev => {
-                            const nextQ = [...prev];
-                            if (nextQ[chunkIdx]) nextQ[chunkIdx] = { ...nextQ[chunkIdx], status: 'error' };
-                            return nextQ;
-                        });
-                    }
-                }, 45000); // 45 seconds max per chunk
+                // Only arm watchdog for the chunk currently awaited for active playback
+                if (chunkIdx === ttsCurrentChunkIndexRef.current) {
+                    startTtsWatchdog(chunkIdx);
+                }
             };
 
             const primeLookaheadBuffer = (centerIdx, directQueue = null) => {
+                if (readerSettings.ttsVoice === 'system_native') return;
+                // Crucial for mobile stability: On mobile (iOS/Android), disable multi-chunk lookahead.
+                // Running multiple 82M neural forward passes concurrently saturates single-core mobile WASM,
+                // creates severe thermal throttling, and triggers iOS Jetsam / Android LMK process termination.
+                // Synthesizing strictly 1 chunk at a time on mobile keeps memory lean and prevents kills.
+                if (isMobileDevice()) return;
                 requestChunkAudio(centerIdx + 1, directQueue);
                 requestChunkAudio(centerIdx + 2, directQueue);
             };
 
             const playAudioChunk = (chunkIdx, directUrl = null) => {
+                if (readerSettings.ttsVoice === 'system_native') {
+                    speakChunkWithSpeechSynthesis(chunkIdx);
+                    return;
+                }
+
                 const q = ttsQueueRef.current;
                 const chunk = q[chunkIdx];
                 const urlToPlay = directUrl || (chunk && chunk.audioUrl);
@@ -13067,42 +13251,45 @@ INSTRUCTIONS:
                 const chunks = chunkProseForTts(textToUse);
                 if (!chunks || chunks.length === 0) return;
 
-                // Mobile device detection and advisory toast
-                try {
-                    const isMobile = typeof navigator !== 'undefined' && (
-                        /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || '') ||
-                        (navigator.maxTouchPoints > 1 && /Macintosh|Mac/i.test(navigator.userAgent || ''))
-                    );
-                    if (isMobile && !window._ellipsisTtsMobileWarned) {
-                        window._ellipsisTtsMobileWarned = true;
-                        showToast("Kokoro TTS downloads an ~85MB neural model. Fast Wi-Fi recommended on mobile.", "info");
-                    }
-                } catch (e) {}
-
                 if (ttsAudioRef.current) {
                     ttsAudioRef.current.pause();
-                    // Keep the gesture-unlocked audio instance rather than nullifying it
+                }
+                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                    try { window.speechSynthesis.cancel(); } catch (e) {}
                 }
                 if (ttsWorkerRef.current) {
                     try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
                 }
+                clearTtsWatchdog();
                 ttsQueueRef.current.forEach(c => {
                     if (c.audioUrl) try { URL.revokeObjectURL(c.audioUrl); } catch (e) {}
                 });
                 ttsPendingRequestsRef.current.clear();
 
-                // Eagerly update refs so requestChunkAudio can read the fresh queue
-                // in the same synchronous tick (React batches setTtsQueue, so the ref
-                // would still hold the old value without this).
                 setTtsQueueAndRef(chunks);
                 setTtsCurrentChunkIndexAndRef(startChunkIdx);
                 setTtsIsMiniPlayerVisible(true);
 
+                // System Voice path: bypass neural worker entirely
+                if (readerSettings.ttsVoice === 'system_native') {
+                    setTtsStatusAndRef('playing');
+                    setTtsActiveDevice('system');
+                    setTtsStatusMessage("Using System Voice (Device Native)");
+                    speakChunkWithSpeechSynthesis(startChunkIdx);
+                    return;
+                }
+
+                // Kokoro ML Path: Mobile device detection and advisory toast
+                try {
+                    if (isMobileDevice() && !window._ellipsisTtsMobileWarned) {
+                        window._ellipsisTtsMobileWarned = true;
+                        showToast("Kokoro TTS uses an ~85MB neural model. Fast Wi-Fi recommended on mobile.", "info");
+                    }
+                } catch (e) {}
+
                 if (ttsStatusRef.current !== 'ready' && ttsStatusRef.current !== 'playing' && ttsStatusRef.current !== 'paused') {
                     ttsAutoPlayNextRef.current = true;
                     initTtsEngine();
-                    // Pass chunks directly — the ref is eagerly set above, but the
-                    // directQueue parameter provides an additional safety net.
                     requestChunkAudio(startChunkIdx, chunks);
                     primeLookaheadBuffer(startChunkIdx, chunks);
                 } else {
@@ -13145,6 +13332,38 @@ INSTRUCTIONS:
                     }
                 } catch (unlockErr) {}
 
+                if (readerSettings.ttsVoice === 'system_native') {
+                    if (ttsStatus === 'playing') {
+                        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                            try { window.speechSynthesis.pause(); } catch (e) {}
+                        }
+                        setTtsStatusAndRef('paused');
+                    } else if (ttsStatus === 'paused') {
+                        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                            try { window.speechSynthesis.resume(); } catch (e) {}
+                        }
+                        setTtsStatusAndRef('playing');
+                    } else {
+                        let overrideStr = null;
+                        if (typeof proseOverride === 'string' && proseOverride.trim()) {
+                            overrideStr = proseOverride;
+                        } else if (proseOverride && typeof proseOverride === 'object' && !proseOverride.nativeEvent && !proseOverride._reactName) {
+                            overrideStr = proseOverride.final || proseOverride.draft || proseOverride.text || proseOverride.content || null;
+                        }
+                        const activeItem = currentReaderSceneItem || flatStoryScenes[0] || null;
+                        let currentProse = overrideStr || activeItem?.proseText || "";
+                        if (typeof currentProse === 'object' && currentProse) {
+                            currentProse = currentProse.final || currentProse.draft || currentProse.text || currentProse.content || "";
+                        }
+                        if (typeof currentProse === 'string' && currentProse.trim()) {
+                            startTtsFromProse(currentProse, 0);
+                        } else {
+                            showToast("No prose drafted for this scene to read.", "warning");
+                        }
+                    }
+                    return;
+                }
+
                 if (ttsStatus === 'playing') {
                     if (ttsAudioRef.current) ttsAudioRef.current.pause();
                     setTtsStatusAndRef('paused');
@@ -13182,6 +13401,10 @@ INSTRUCTIONS:
             };
 
             const stopTtsPlayback = () => {
+                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                    try { window.speechSynthesis.cancel(); } catch (e) {}
+                }
+                clearTtsWatchdog();
                 if (ttsAudioRef.current) {
                     ttsAudioRef.current.loop = false;
                     ttsAudioRef.current.pause();
@@ -13193,7 +13416,6 @@ INSTRUCTIONS:
                 if (ttsWorkerRef.current) {
                     try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
                 }
-                if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
                 ttsQueueRef.current.forEach(c => {
                     if (c.audioUrl) try { URL.revokeObjectURL(c.audioUrl); } catch (e) {}
                 });
@@ -13212,13 +13434,23 @@ INSTRUCTIONS:
             const skipTtsChunk = (delta) => {
                 const targetIdx = ttsCurrentChunkIndexRef.current + delta;
                 if (targetIdx >= 0 && targetIdx < ttsQueueRef.current.length) {
+                    if (readerSettings.ttsVoice === 'system_native') {
+                        if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                            try { window.speechSynthesis.cancel(); } catch (e) {}
+                        }
+                        setTtsCurrentChunkIndexAndRef(targetIdx);
+                        setTtsCurrentTime(0);
+                        speakChunkWithSpeechSynthesis(targetIdx);
+                        return;
+                    }
+
                     if (ttsAudioRef.current) {
                         ttsAudioRef.current.pause();
                     }
                     if (ttsWorkerRef.current) {
                         try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
                     }
-                    if (window._ellipsisTtsTimeout) clearTimeout(window._ellipsisTtsTimeout);
+                    clearTtsWatchdog();
                     ttsPendingRequestsRef.current.clear();
                     setTtsCurrentChunkIndexAndRef(targetIdx);
                     setTtsCurrentTime(0);
@@ -13231,6 +13463,23 @@ INSTRUCTIONS:
                 const voiceObj = KOKORO_VOICES.find(v => v.id === newVoiceId) || KOKORO_VOICES[0];
                 showToast(`Voice set to ${voiceObj.shortName || voiceObj.name}`);
 
+                clearTtsWatchdog();
+                if (newVoiceId === 'system_native') {
+                    if (ttsAudioRef.current) ttsAudioRef.current.pause();
+                    if (ttsWorkerRef.current) {
+                        try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
+                    }
+                    ttsPendingRequestsRef.current.clear();
+                    setTtsActiveDevice('system');
+                    if (ttsStatusRef.current === 'playing') {
+                        speakChunkWithSpeechSynthesis(ttsCurrentChunkIndexRef.current);
+                    }
+                    return;
+                }
+
+                if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                    try { window.speechSynthesis.cancel(); } catch (e) {}
+                }
                 if (ttsWorkerRef.current) {
                     try { ttsWorkerRef.current.postMessage({ type: 'clear' }); } catch (e) {}
                 }
@@ -13256,9 +13505,9 @@ INSTRUCTIONS:
                     });
                 });
 
-                // Re-prime lookahead buffer with new voice if queue is populated
+                // Re-prime lookahead buffer with new voice if queue is populated and not mobile
                 setTimeout(() => {
-                    if (ttsQueueRef.current && ttsQueueRef.current.length > 0) {
+                    if (ttsQueueRef.current && ttsQueueRef.current.length > 0 && !isMobileDevice()) {
                         primeLookaheadBuffer(ttsCurrentChunkIndexRef.current);
                     }
                 }, 50);
