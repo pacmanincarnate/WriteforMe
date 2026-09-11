@@ -2373,6 +2373,22 @@
             return 'desktop';
         };
 
+        // Auto-detect the best available TTS accelerator for this device/browser.
+        // The worker has built-in fallback: if the selected device fails at runtime,
+        // it catches the error and retries with WASM. This function optimistically
+        // selects the best option based on API availability.
+        const getBestTtsDevice = () => {
+            if (typeof navigator === 'undefined') return 'wasm';
+            // WebNN NPU — Chromium 120+ on Windows/ChromeOS with compatible Intel/Qualcomm NPU silicon.
+            // Delivers hardware-accelerated inference with the lowest latency.
+            if (navigator.ml) return 'webnn-npu';
+            // WebGPU — Intentionally skipped for auto-selection. The ONNX runtime's WebGPU backend
+            // produces known tensor dequantization corruption with q8 weights in Chromium/Opera,
+            // resulting in garbled audio. Users can still force it via developer overrides if needed.
+            // WASM — Universal fallback. Works on every browser (Safari, Chrome, Firefox) and every OS.
+            return 'wasm';
+        };
+
         const KOKORO_VOICES = [
             // Device Native System Voice (Fast, 0MB download, 0ms latency)
             { id: 'system_native', name: 'System Voice (Instant / 0MB)', shortName: 'System', group: 'Device Native', lang: 'native', isNative: true },
@@ -8284,7 +8300,7 @@ INSTRUCTIONS:
            variant="structure" renders the denser row (lens selector, causality, inline title edit);
            variant="dashboard" renders the dark-mode-aware dashboard row. Class strings are kept
            byte-identical to the originals per variant — the .dark override block is keyed to them. */
-        const SceneRow = ({ variant, scene: s, sceneIdx: si, seqIdx, sequence, proseStale, getModeIcon, allNarrativeModes, openEditModal, setStory, showToast, setSelectedSequence, setSelectedScene, setView, handleDeleteScene }) => {
+        const SceneRow = ({ variant, scene: s, sceneIdx: si, seqIdx, sequence, proseStale, getModeIcon, allNarrativeModes, openEditModal, setStory, showToast, setSelectedSequence, setSelectedScene, setView, handleDeleteScene, enableNarrativeLenses = false }) => {
             const isStructure = variant === 'structure';
             const isProactive = String(s.scene_type).toLowerCase().includes('proactive') || s.scene_type === 'scene';
             return (
@@ -8298,13 +8314,13 @@ INSTRUCTIONS:
                                 <div className="flex flex-wrap items-center gap-2">
                                     {isStructure ? (
                                         <h4 className="font-bold font-serif text-base text-ink-900 flex items-center gap-2">
-                                            <Icon name={getModeIcon(s.dominant_narrative_mode || "BASELINE_NEUTRAL")} className="w-4 h-4 text-gold-ink shrink-0" />
+                                            <Icon name={getModeIcon(s.dominant_narrative_mode || "BASELINE_NEUTRAL")} className={`w-4 h-4 shrink-0 ${enableNarrativeLenses ? 'text-gold-ink' : 'text-ink-400'}`} />
                                             {s.title}
                                             <EditButton title={`Scene ${s.number || si + 1} Title`} value={s.title} onSave={() => openEditModal(`Scene ${s.number || si + 1} Title`, s.title, (val) => { setStory(prev => { const newScenes = { ...prev.scenes }; newScenes[`${seqIdx}`] = [...(newScenes[`${seqIdx}`] || [])]; newScenes[`${seqIdx}`][si] = { ...(newScenes[`${seqIdx}`][si] || {}), title: val }; return { ...prev, scenes: newScenes }; }); })} />
                                         </h4>
                                     ) : (
                                         <h4 className="font-serif font-bold text-base text-ink-900 flex items-center gap-2">
-                                            <Icon name={getModeIcon(s.dominant_narrative_mode || "BASELINE_NEUTRAL")} className="w-4 h-4 text-gold-ink shrink-0" />
+                                            <Icon name={getModeIcon(s.dominant_narrative_mode || "BASELINE_NEUTRAL")} className={`w-4 h-4 shrink-0 ${enableNarrativeLenses ? 'text-gold-ink' : 'text-ink-400'}`} />
                                             {s.title}
                                         </h4>
                                     )}
@@ -8329,7 +8345,7 @@ INSTRUCTIONS:
                                 </div>
 
                                 {isStructure && (
-                                    <div className="flex items-center gap-1.5 text-xs text-ink-600">
+                                    <div className={`flex items-center gap-1.5 text-xs text-ink-600 ${enableNarrativeLenses ? '' : 'opacity-80'}`}>
                                         <span className="text-[9px] font-mono uppercase text-ink-400 font-bold">Lens:</span>
                                         <select
                                             value={s.dominant_narrative_mode || "BASELINE_NEUTRAL"}
@@ -8354,6 +8370,11 @@ INSTRUCTIONS:
                                                 </option>
                                             ))}
                                         </select>
+                                        {!enableNarrativeLenses && (
+                                            <span className="text-[9px] font-mono text-ink-400 italic bg-mist-100 px-1 py-0.5 rounded border border-edge" title="Narrative lenses are temporarily disabled for generation in Settings / Writer header">
+                                                bypassed
+                                            </span>
+                                        )}
                                     </div>
                                 )}
 
@@ -9300,28 +9321,16 @@ INSTRUCTIONS:
                                         </div>
                                     </div>
 
-                                    {/* Hardware Engine / Execution Provider */}
-                                    <div className="grid grid-cols-2 gap-3 pt-1">
-                                        <div className="space-y-1">
+                                    {/* Hardware Engine / Quantization */}
+                                    <div className="space-y-3 pt-1">
+                                        {/* Auto-detected Accelerator Info */}
+                                        <div className="flex items-center justify-between">
                                             <label className="text-[10px] font-bold font-mono uppercase opacity-60 flex items-center gap-1">
                                                 <Cpu size={10} /> Accelerator
                                             </label>
-                                            <select
-                                                value={readerSettings.ttsDevice || 'wasm'}
-                                                onChange={e => {
-                                                    const newDev = e.target.value;
-                                                    updateReaderSetting('ttsDevice', newDev);
-                                                    if (ttsStatus === 'ready' || ttsStatus === 'playing') {
-                                                        initTtsEngine(newDev);
-                                                    }
-                                                }}
-                                                className="w-full bg-wash p-1.5 rounded-xl text-[11px] font-semibold appearance-none cursor-pointer outline-none border reader-ui-border text-ink-800 dark:text-stone-100"
-                                            >
-                                                <option value="wasm">WebAssembly (Recommended)</option>
-                                                <option value="auto">Auto (WASM Default)</option>
-                                                <option value="webgpu">WebGPU (Experimental)</option>
-                                                <option value="webnn-npu">WebNN (NPU)</option>
-                                            </select>
+                                            <span className="text-[10px] font-mono font-semibold text-gold-ink uppercase">
+                                                {ttsActiveDevice ? ttsActiveDevice : getBestTtsDevice()} (Auto)
+                                            </span>
                                         </div>
 
                                         <div className="space-y-1">
@@ -9338,7 +9347,7 @@ INSTRUCTIONS:
                                             </select>
                                             {isMobileDevice() && getDeviceCapabilityTier() === 'mobile-constrained' && (
                                                 <div className="text-[9px] text-ember-600 font-medium leading-tight mt-1">
-                                                    On this device, WebAssembly is the only available accelerator. Neural TTS requires ~45MB of free memory and is locked to q4 for stability.
+                                                    On this device, neural TTS requires ~45MB of free memory and is locked to q4 for stability.
                                                 </div>
                                             )}
                                         </div>
@@ -12236,6 +12245,12 @@ INSTRUCTIONS:
             const [newModeIcon, setNewModeIcon] = useState("tag");
             const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
 
+            // Master Toggle for Narrative Lenses (default to false per user request to temporarily disable)
+            const [enableNarrativeLenses, setEnableNarrativeLenses] = useState(() => {
+                const stored = localStorage.getItem("ellipsisprose_enable_narrative_lenses");
+                return stored !== null ? stored === "true" : false;
+            });
+
 
             const [bannedPhrases, setBannedPhrases] = useState(() => {
                 const saved = localStorage.getItem("ellipsisprose_banned_phrases");
@@ -12916,8 +12931,17 @@ INSTRUCTIONS:
                 }
                 ttsAwaitedChunkRef.current = awaitedIdx;
                 // Mobile devices have strict OS memory limits (Jetsam on iOS, LMK on Android)
-                // Shorten timeout to 40s on mobile to detect killed workers quickly; 45s on desktop.
-                const timeoutMs = isMobileDevice() ? 40000 : 45000;
+                // Shorten timeout to 25s on mobile to detect killed workers quickly; 45s on desktop.
+                const timeoutMs = isMobileDevice() ? 25000 : 45000;
+
+                // On mobile, show a "still working" heartbeat after 8s so the user knows it hasn't frozen
+                if (isMobileDevice()) {
+                    setTimeout(() => {
+                        if (ttsStatusRef.current === 'generating' && ttsCurrentChunkIndexRef.current === awaitedIdx) {
+                            setTtsStatusMessage("Neural synthesis in progress \u2014 this can take 10-20s on mobile...");
+                        }
+                    }, 8000);
+                }
 
                 ttsWatchdogRef.current = setTimeout(() => {
                     if (ttsStatusRef.current === 'generating' && ttsCurrentChunkIndexRef.current === awaitedIdx) {
@@ -12943,7 +12967,11 @@ INSTRUCTIONS:
                                     changeTtsVoice('system_native');
                                     setTtsError("Switched to System Voice (neural engine unavailable on this device)");
                                     setTtsStatusAndRef('error');
-                                    speakChunkWithSpeechSynthesis(awaitedIdx);
+                                    if (ttsQueueRef.current.length > 0 && ttsQueueRef.current[awaitedIdx]) {
+                                        speakChunkWithSpeechSynthesis(awaitedIdx);
+                                    } else {
+                                        setTtsIsMiniPlayerVisible(false);
+                                    }
                                 } else {
                                     setTtsStatusAndRef('error');
                                     const msg = isMobileDevice()
@@ -13090,6 +13118,11 @@ INSTRUCTIONS:
                             setTtsError(null);
                             if (ttsAutoPlayNextRef.current) {
                                 setTtsStatusAndRef('generating');
+                                setTtsStatusMessage("Synthesizing audio...");
+                                // Engine just loaded — now safe to request audio generation
+                                const idx = ttsCurrentChunkIndexRef.current;
+                                requestChunkAudio(idx);
+                                primeLookaheadBuffer(idx);
                             } else {
                                 setTtsStatusAndRef('ready');
                             }
@@ -13121,11 +13154,17 @@ INSTRUCTIONS:
                         } else if (type === 'error') {
                             clearTtsWatchdog();
                             console.error("Kokoro TTS Worker error:", error);
+                            const fallbackIdx = ttsCurrentChunkIndexRef.current;
                             if (isMobileDevice() && readerSettings.ttsVoice !== 'system_native') {
                                 changeTtsVoice('system_native');
                                 setTtsError("Switched to System Voice (neural engine unavailable on this device)");
                                 setTtsStatusAndRef('error');
-                                speakChunkWithSpeechSynthesis(chunkIndex || ttsCurrentChunkIndexRef.current);
+                                // Only attempt speech synthesis fallback if the queue has content for this chunk
+                                if (ttsQueueRef.current.length > 0 && ttsQueueRef.current[fallbackIdx]) {
+                                    speakChunkWithSpeechSynthesis(fallbackIdx);
+                                } else {
+                                    setTtsIsMiniPlayerVisible(false);
+                                }
                             } else {
                                 setTtsError(error || "Kokoro TTS inference error");
                                 setTtsStatusAndRef('error');
@@ -13139,7 +13178,12 @@ INSTRUCTIONS:
                             changeTtsVoice('system_native');
                             setTtsError("Switched to System Voice (neural engine unavailable on this device)");
                             setTtsStatusAndRef('error');
-                            speakChunkWithSpeechSynthesis(ttsCurrentChunkIndexRef.current);
+                            const fallbackIdx = ttsCurrentChunkIndexRef.current;
+                            if (ttsQueueRef.current.length > 0 && ttsQueueRef.current[fallbackIdx]) {
+                                speakChunkWithSpeechSynthesis(fallbackIdx);
+                            } else {
+                                setTtsIsMiniPlayerVisible(false);
+                            }
                         } else {
                             const msg = (wErr && wErr.message) ? wErr.message : "TTS Worker error. If running directly from file://, consider using a local server (e.g. node server.js or Live Server).";
                             setTtsError(msg);
@@ -13166,7 +13210,7 @@ INSTRUCTIONS:
                     return true;
                 }
 
-                const targetDevice = forceDevice || readerSettings.ttsDevice || 'wasm';
+                const targetDevice = forceDevice || getBestTtsDevice();
                 const tier = getDeviceCapabilityTier();
                 const targetDtype = (tier === 'mobile-constrained') ? 'q4' : (readerSettings.ttsDtype || 'q8');
                 
@@ -13393,12 +13437,15 @@ INSTRUCTIONS:
                 } catch (e) {}
 
                 if (ttsStatusRef.current !== 'ready' && ttsStatusRef.current !== 'playing' && ttsStatusRef.current !== 'paused') {
+                    // Cold start: init the engine first. Do NOT request audio yet —
+                    // the worker hasn't loaded the model. The 'ready' handler will fire
+                    // requestChunkAudio once it sees ttsAutoPlayNextRef is set.
                     ttsAutoPlayNextRef.current = true;
+                    setTtsStatusMessage("Initializing neural engine...");
                     initTtsEngine();
-                    requestChunkAudio(startChunkIdx, chunks);
-                    primeLookaheadBuffer(startChunkIdx, chunks);
                 } else {
                     setTtsStatusAndRef('generating');
+                    setTtsStatusMessage("Synthesizing audio...");
                     ttsAutoPlayNextRef.current = true;
                     requestChunkAudio(startChunkIdx, chunks);
                     primeLookaheadBuffer(startChunkIdx, chunks);
@@ -15931,7 +15978,9 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                     if (tierName === "Writing Agent" && attempt === 3) {
                         // TIER 5.4b: Writing Review Relaxed (PROMPTS.writingReviewRelaxed)
                         // Associated Prompt: PROMPTS.writingReviewRelaxed
-                        activeReviewerPrompt = PROMPTS.writingReviewRelaxed;
+                        activeReviewerPrompt = enableNarrativeLenses
+                            ? PROMPTS.writingReviewRelaxed
+                            : PROMPTS.writingReviewRelaxed.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n');
                         showToast("Using relaxed Writing Review Agent for final attempt...", "info");
                     }
 
@@ -16066,7 +16115,9 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                         if (attempt === 3) {
                                             // TIER 5.4b: Writing Review Relaxed (PROMPTS.writingReviewRelaxed)
                                             // Associated Prompt: PROMPTS.writingReviewRelaxed
-                                            activeReviewerPrompt = PROMPTS.writingReviewRelaxed;
+                                            activeReviewerPrompt = enableNarrativeLenses
+                                                ? PROMPTS.writingReviewRelaxed
+                                                : PROMPTS.writingReviewRelaxed.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n');
                                         }
                                         const reviewOutput = await callAI(reviewPrompt, activeReviewerPrompt, false, `${tierName} Reviewer`, "small");
                                         const reviewResultVal = extractReviewStatus(reviewOutput);
@@ -17711,6 +17762,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
             useEffect(() => { safeLocalStorageSet("ellipsisprose_openrouter_prose_model", openRouterProseModel); }, [openRouterProseModel]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_kobold_prose_model", koboldProseModel); }, [koboldProseModel]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_custom_modes", customModes); }, [customModes]);
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_enable_narrative_lenses", enableNarrativeLenses); }, [enableNarrativeLenses]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_banned_phrases", bannedPhrases); }, [bannedPhrases]);
 
             useEffect(() => { safeLocalStorageSet("ellipsisprose_enable_thinking_act", enableThinkingAct); }, [enableThinkingAct]);
@@ -21384,7 +21436,7 @@ Exit Conditions: Transitioning across sequence boundary into Sequence ${sequence
                         // Shared context segments for the Beat Agent's generator AND reviewer
                         // prompts - previously duplicated verbatim inside both promptFns.
                         const getBeatContextHead = () => `${buildGenreToneStyleBlocks(storyToUse.style, { includeTechnicalSpecs: true, loreContext: ragContext })}
-
+${enableNarrativeLenses ? `
 <writing_lens>
 [[CRITICAL OVERRIDE: The specific instructions in this <writing_lens> supersede and override any general stylistic direction provided in <writing_style_description> for this scene.]]
 <lens_id>${sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"}</lens_id>
@@ -21393,7 +21445,7 @@ Exit Conditions: Transitioning across sequence boundary into Sequence ${sequence
 ${(allNarrativeModes[sceneData.dominant_narrative_mode || "BASELINE_NEUTRAL"] || allNarrativeModes.BASELINE_NEUTRAL)?.prompt || "Standard narrative rhythm and focus."}
 </lens_instructions>
 </writing_lens>
-
+` : ''}
 <active_character_profiles>
 ${activeCast.map(c => `<character_profile>
   <name>${c.name}</name>
@@ -21479,8 +21531,8 @@ Output Schema:
 
 BEGIN BEAT CHOREOGRAPHY
 `,
-                            systemPrompt: PROMPTS.beatAgent,
-                            reviewerSystemPrompt: PROMPTS.beatReview,
+                            systemPrompt: enableNarrativeLenses ? PROMPTS.beatAgent : PROMPTS.beatAgent.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n'),
+                            reviewerSystemPrompt: enableNarrativeLenses ? PROMPTS.beatReview : PROMPTS.beatReview.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n'),
                             reviewerPromptFn: (genOutput) => `${getBeatContextHead()}
 
 ${getBeatContextBody()}
@@ -21728,9 +21780,12 @@ BEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`,
 
                     const activeModeId = scene.dominant_narrative_mode || "BASELINE_NEUTRAL";
                     const narrativeModeObj = allNarrativeModes[activeModeId] || allNarrativeModes.BASELINE_NEUTRAL;
-                    const injectionPrompt = narrativeModeObj.prompt || "";
+                    const injectionPrompt = enableNarrativeLenses ? (narrativeModeObj.prompt || "") : "";
 
                     let basePrompt = PROMPTS.writingAgent;
+                    if (!enableNarrativeLenses) {
+                        basePrompt = basePrompt.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n');
+                    }
                     let dynamicStyleText = "";
                     if (failedReviewCritiques && failedReviewCritiques.length > 0) {
                         dynamicStyleText = `=== DYNAMIC STYLE WARNINGS FROM PREVIOUS BEAT FAILURES ===\nAvoid these specific issues highlighted in recent reviews:\n` +
@@ -21738,7 +21793,7 @@ BEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`,
                     }
                     basePrompt = basePrompt.replace('[DYNAMIC_STYLE_WARNINGS]', () => dynamicStyleText);
 
-                    const finalWritingSystemPrompt = injectionPrompt
+                    const finalWritingSystemPrompt = (enableNarrativeLenses && injectionPrompt)
                         ? `${basePrompt}\n\n=== ACTIVE SCENE LENS MANDATE: ${activeModeId} ===\n${injectionPrompt}`
                         : basePrompt;
 
@@ -21827,7 +21882,7 @@ ${previousSceneProseText}` : "No previous scene prose available."}
 <current_chunk_choreography_blueprint>
 ${beatSequenceText}
 </current_chunk_choreography_blueprint>
-
+${enableNarrativeLenses ? `
 <writing_lens>
 <lens_id>${activeModeId}</lens_id>
 <lens_context>${narrativeModeObj?.context || 'Default baseline style'}</lens_context>
@@ -21835,7 +21890,7 @@ ${beatSequenceText}
 ${injectionPrompt || 'Default standard pacing and narrative voice.'}
 </lens_instructions>
 </writing_lens>
-${dInst ? `
+` : ""}${dInst ? `
 <directive_requirement>
 You MUST rewrite this scene's prose to satisfy the following instruction:
 "${dInst}"
@@ -21854,7 +21909,7 @@ FORMATTING DIRECTIVE: Output the final narrative prose enclosed strictly within 
 Begin writing current scene prose.
 `,
                         systemPrompt: finalWritingSystemPrompt,
-                        reviewerSystemPrompt: PROMPTS.writingReview,
+                        reviewerSystemPrompt: enableNarrativeLenses ? PROMPTS.writingReview : PROMPTS.writingReview.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n'),
                         reviewerPromptFn: (genOutput) => `${getProseContext()}
 
 
@@ -25648,6 +25703,7 @@ ${finalProseText}
                                                                                     setSelectedScene={setSelectedScene}
                                                                                     setView={setView}
                                                                                     handleDeleteScene={handleDeleteScene}
+                                                                                    enableNarrativeLenses={enableNarrativeLenses}
                                                                                 />
                                                                             ))}
                                                                         </div>
@@ -25735,6 +25791,7 @@ ${finalProseText}
                                                             setSelectedScene={setSelectedScene}
                                                             setView={setView}
                                                             handleDeleteScene={handleDeleteScene}
+                                                            enableNarrativeLenses={enableNarrativeLenses}
                                                         />
                                                     ))}
                                                 </div>
@@ -25789,8 +25846,8 @@ ${finalProseText}
                                                         )}
 
                                                         {/* Pacing Lens Selector */}
-                                                        <div className="flex items-center gap-1.5 bg-inset text-ink-800 border border-edge-strong rounded-full text-xs px-3 py-1 font-semibold transition-colors">
-                                                            <Icon name={getModeIcon(currentScene.dominant_narrative_mode || "BASELINE_NEUTRAL")} className="w-3.5 h-3.5 text-gold-ink shrink-0" />
+                                                        <div className={`flex items-center gap-1.5 bg-inset text-ink-800 border rounded-full text-xs px-3 py-1 font-semibold transition-all ${enableNarrativeLenses ? 'border-edge-strong' : 'border-dashed border-edge-300 opacity-80'}`}>
+                                                            <Icon name={getModeIcon(currentScene.dominant_narrative_mode || "BASELINE_NEUTRAL")} className={`w-3.5 h-3.5 shrink-0 ${enableNarrativeLenses ? 'text-gold-ink' : 'text-ink-400'}`} />
                                                             <select
                                                                 value={currentScene.dominant_narrative_mode || "BASELINE_NEUTRAL"}
                                                                 onChange={(e) => {
@@ -25814,6 +25871,18 @@ ${finalProseText}
                                                                     </option>
                                                                 ))}
                                                             </select>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const nextVal = !enableNarrativeLenses;
+                                                                    setEnableNarrativeLenses(nextVal);
+                                                                    showToast(nextVal ? "Narrative lenses enabled." : "Narrative lenses disabled for text generation.", nextVal ? "success" : "info");
+                                                                }}
+                                                                className={`ml-1 text-[9px] uppercase font-mono px-1.5 py-0.5 rounded transition-colors font-bold ${enableNarrativeLenses ? 'bg-gold-tint text-gold-ink hover:bg-gold-tint/80' : 'bg-mist-200 text-ink-500 hover:bg-mist-300'}`}
+                                                                title={enableNarrativeLenses ? "Lenses active in text generation. Click to temporarily disable." : "Lenses disabled for text generation. Click to enable."}
+                                                            >
+                                                                {enableNarrativeLenses ? "Active" : "Off"}
+                                                            </button>
                                                         </div>
                                                     </div>
 
@@ -27580,9 +27649,37 @@ ${finalProseText}
                                         {/* Custom Narrative Modes Section */}
                                         <div className="pt-6 border-t border-edge-strong space-y-4">
                                             <div className="flex justify-between items-center">
-                                                <label className="block text-xs font-bold text-ink-700 uppercase tracking-wider font-mono">Custom Narrative Modes</label>
+                                                <div>
+                                                    <label className="block text-xs font-bold text-ink-700 uppercase tracking-wider font-mono">Narrative Pacing Lenses</label>
+                                                    <span className="text-[10px] text-ink-400 font-mono">
+                                                        Status: <strong className={enableNarrativeLenses ? "text-gold-ink" : "text-ink-500"}>{enableNarrativeLenses ? "Active in Generations" : "Temporarily Disabled"}</strong>
+                                                    </span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const nextVal = !enableNarrativeLenses;
+                                                        setEnableNarrativeLenses(nextVal);
+                                                        showToast(nextVal ? "Narrative lenses enabled." : "Narrative lenses disabled for text generation.", nextVal ? "success" : "info");
+                                                    }}
+                                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enableNarrativeLenses ? 'bg-btn' : 'bg-mist-300'}`}
+                                                    title={enableNarrativeLenses ? "Click to temporarily disable narrative lenses" : "Click to enable narrative lenses"}
+                                                >
+                                                    <span className={`inline-block h-4 w-4 transform rounded-full bg-surface transition-transform shadow-sm ${enableNarrativeLenses ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                </button>
                                             </div>
-                                            <p className="text-xs text-ink-500">Add and modify custom writing styles and lenses. They will be indexable by the structure agents and selectable in the drop-downs.</p>
+                                            <p className="text-xs text-ink-500">
+                                                {enableNarrativeLenses
+                                                    ? "When enabled, scenes have mode-specific narrative lenses (such as Action, Romance, Suspense, or Baseline Neutral) injected into beat choreography and prose drafting."
+                                                    : "Temporarily switched off. Beats and prose draft strictly from your story's core genre, tone, and writing style guide without mode-specific lens overrides."}
+                                            </p>
+
+                                            <div className="pt-2 border-t border-edge space-y-3">
+                                                <div className="flex justify-between items-center">
+                                                    <label className="block text-[11px] font-bold text-ink-600 uppercase tracking-wider font-mono">Custom Mode Library</label>
+                                                </div>
+                                                <p className="text-xs text-ink-500">Add and modify custom writing styles and lenses. They will be indexable by the structure agents and selectable in the drop-downs.</p>
+                                            </div>
 
                                             {/* Custom Mode list */}
                                             {Object.keys(customModes).length > 0 && (
@@ -27631,25 +27728,6 @@ ${finalProseText}
                                                                 </div>
                                                             );
                                                         })}
-                                                        {Object.values(customModes).map((mode) => (
-                                                            <div key={mode.id} className="bg-inset p-3.5 rounded-xl border border-edge-strong hover:border-edge-300 transition-colors flex justify-between items-start gap-4 animate-fade-in shadow-2xs">
-                                                                <div className="min-w-0 flex-1">
-                                                                    <div className="flex items-center gap-2 mb-1">
-                                                                        <Icon name={mode.icon || "tag"} className="w-3.5 h-3.5 text-gold-ink shrink-0" />
-                                                                        <span className="text-xs font-bold text-gold-ink font-mono">{mode.id}</span>
-                                                                    </div>
-                                                                    <p className="text-xs text-ink-800 font-semibold mb-1 font-serif">{mode.context}</p>
-                                                                    <p className="text-[10px] text-ink-500 line-clamp-2 italic font-mono">{mode.prompt}</p>
-                                                                </div>
-                                                                <button
-                                                                    onClick={() => handleDeleteCustomMode(mode.id)}
-                                                                    className="text-ink-400 hover:text-blush-600 transition-colors p-1"
-                                                                    title="Delete Narrative Mode"
-                                                                >
-                                                                    <Trash2 size={14} />
-                                                                </button>
-                                                            </div>
-                                                        ))}
                                                     </div>
                                                 </div>
                                             )}
