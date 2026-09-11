@@ -2345,6 +2345,34 @@
             );
         };
 
+        const getDeviceCapabilityTier = () => {
+            if (typeof navigator === 'undefined') return 'desktop';
+            const ua = navigator.userAgent || '';
+            const isIOS = /iPhone|iPad|iPod/i.test(ua) ||
+                (navigator.maxTouchPoints > 1 && /Macintosh|Mac/i.test(ua));
+            const isAndroid = /Android/i.test(ua);
+            
+            if (!isIOS && !isAndroid) return 'desktop';
+            
+            // Estimate device memory tier
+            const deviceMemoryGB = navigator.deviceMemory || null; // null on Safari
+            
+            if (isIOS) {
+                // iPhone 15 Pro+ / iPad Pro with ≥8GB: 'mobile-capable'
+                // Older iPhones with ≤6GB: 'mobile-constrained'
+                // We can't reliably detect RAM on iOS, so default to constrained
+                // and let the user opt-in to neural TTS
+                return 'mobile-constrained';
+            }
+            
+            if (isAndroid) {
+                if (deviceMemoryGB && deviceMemoryGB >= 6) return 'mobile-capable';
+                return 'mobile-constrained';
+            }
+            
+            return 'desktop';
+        };
+
         const KOKORO_VOICES = [
             // Device Native System Voice (Fast, 0MB download, 0ms latency)
             { id: 'system_native', name: 'System Voice (Instant / 0MB)', shortName: 'System', group: 'Device Native', lang: 'native', isNative: true },
@@ -2564,7 +2592,8 @@
                 "                    if (isModelCached) {",
                 "                        self.postMessage({ type: 'status', id, status: 'loading-model', progress: 80, message: 'Loading Kokoro-82M neural model from cache...' });",
                 "                    } else {",
-                "                        self.postMessage({ type: 'status', id, status: 'loading-model', progress: 15, message: 'Downloading Kokoro-82M weights (~85MB)...' });",
+                "                        const sizeText = targetDtype === 'q4' ? '~45MB' : '~86MB';",
+                "                        self.postMessage({ type: 'status', id, status: 'loading-model', progress: 15, message: 'Downloading Kokoro-82M weights (' + sizeText + ')...' });",
                 "                    }",
                 "",
                 "                    const progressCallback = (p) => {",
@@ -2752,6 +2781,10 @@
                 "                        id,",
                 "                        payload: { chunkIndex, wavBuffer, sampleRate, elapsedMs }",
                 "                    }, [wavBuffer]);",
+                "                    // Eagerly hint garbage collection",
+                "                    f32 = null;",
+                "                    pcm16 = null;",
+                "                    wavBuffer = null;",
                 "                } else {",
                 "                    throw new Error('Failed to extract audio buffer from Kokoro output.');",
                 "                }",
@@ -2771,11 +2804,12 @@
             const url = URL.createObjectURL(blob);
             let worker;
             const isFileProtocol = typeof window !== 'undefined' && window.location.protocol === 'file:';
+            const isIOS = typeof navigator !== 'undefined' && (/iPhone|iPad|iPod/i.test(navigator.userAgent || '') || (navigator.maxTouchPoints > 1 && /Macintosh|Mac/i.test(navigator.userAgent || '')));
             try {
                 // Chrome blocks module workers created via blob:// on file:// origins, throwing a SecurityError asynchronously
                 // Classic workers support dynamic import() in Chromium 117+ and bypass this file:// restriction.
-                // We will fall back immediately to classic worker if on file:// protocol.
-                if (isFileProtocol) {
+                // We will fall back immediately to classic worker if on file:// protocol or iOS (due to blob URL resolution bugs).
+                if (isFileProtocol || isIOS) {
                     worker = new Worker(url);
                 } else {
                     worker = new Worker(url, { type: 'module' });
@@ -9295,12 +9329,18 @@ INSTRUCTIONS:
                                             <select
                                                 value={readerSettings.ttsDtype || 'q8'}
                                                 onChange={e => updateReaderSetting('ttsDtype', e.target.value)}
-                                                className="w-full bg-wash p-1.5 rounded-xl text-[11px] font-semibold appearance-none cursor-pointer outline-none border reader-ui-border text-ink-800 dark:text-stone-100"
+                                                className="w-full bg-wash p-1.5 rounded-xl text-[11px] font-semibold appearance-none cursor-pointer outline-none border reader-ui-border text-ink-800 dark:text-stone-100 disabled:opacity-50"
+                                                disabled={isMobileDevice() && getDeviceCapabilityTier() === 'mobile-constrained'}
                                             >
                                                 <option value="q8">q8 (~86 MB)</option>
                                                 <option value="q4">q4 (~45 MB)</option>
                                                 <option value="fp32">fp32 (~320 MB)</option>
                                             </select>
+                                            {isMobileDevice() && getDeviceCapabilityTier() === 'mobile-constrained' && (
+                                                <div className="text-[9px] text-ember-600 font-medium leading-tight mt-1">
+                                                    On this device, WebAssembly is the only available accelerator. Neural TTS requires ~45MB of free memory and is locked to q4 for stability.
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
 
@@ -12876,31 +12916,53 @@ INSTRUCTIONS:
                 }
                 ttsAwaitedChunkRef.current = awaitedIdx;
                 // Mobile devices have strict OS memory limits (Jetsam on iOS, LMK on Android)
-                // Shorten timeout to 25s on mobile to detect killed workers quickly; 45s on desktop.
-                const timeoutMs = isMobileDevice() ? 25000 : 45000;
+                // Shorten timeout to 40s on mobile to detect killed workers quickly; 45s on desktop.
+                const timeoutMs = isMobileDevice() ? 40000 : 45000;
 
                 ttsWatchdogRef.current = setTimeout(() => {
                     if (ttsStatusRef.current === 'generating' && ttsCurrentChunkIndexRef.current === awaitedIdx) {
-                        console.error(`TTS Generation watchdog timeout on chunk ${awaitedIdx} (device: ${isMobileDevice() ? 'mobile' : 'desktop'})`);
-
-                        // If the worker died silently under memory pressure, kill the dead handle
+                        // Send a ping before declaring death
                         if (ttsWorkerRef.current) {
-                            try { ttsWorkerRef.current.terminate(); } catch (e) {}
-                            ttsWorkerRef.current = null;
+                            const pingTimeout = setTimeout(() => {
+                                console.error(`TTS Generation watchdog timeout on chunk ${awaitedIdx} (device: ${isMobileDevice() ? 'mobile' : 'desktop'})`);
+
+                                // If the worker died silently under memory pressure, kill the dead handle
+                                if (ttsWorkerRef.current) {
+                                    try { ttsWorkerRef.current.terminate(); } catch (e) {}
+                                    ttsWorkerRef.current = null;
+                                }
+
+                                ttsPendingRequestsRef.current.delete(awaitedIdx);
+                                setTtsQueueAndRef(prev => {
+                                    const nextQ = [...prev];
+                                    if (nextQ[awaitedIdx]) nextQ[awaitedIdx] = { ...nextQ[awaitedIdx], status: 'error' };
+                                    return nextQ;
+                                });
+
+                                if (isMobileDevice() && readerSettings.ttsVoice !== 'system_native') {
+                                    changeTtsVoice('system_native');
+                                    setTtsError("Switched to System Voice (neural engine unavailable on this device)");
+                                    setTtsStatusAndRef('error');
+                                    speakChunkWithSpeechSynthesis(awaitedIdx);
+                                } else {
+                                    setTtsStatusAndRef('error');
+                                    const msg = isMobileDevice()
+                                        ? "Neural speech generation timed out on mobile. Tap 'Switch to System Voice' for instant playback."
+                                        : "Audio generation timed out. Your device may be low on memory.";
+                                    setTtsError(msg);
+                                }
+                            }, 3000);
+
+                            const onPong = (e) => {
+                                if (e.data?.type === 'pong') {
+                                    clearTimeout(pingTimeout);
+                                    // Worker is alive but slow, restart watchdog
+                                    startTtsWatchdog(awaitedIdx);
+                                }
+                            };
+                            ttsWorkerRef.current.addEventListener('message', onPong, { once: true });
+                            ttsWorkerRef.current.postMessage({ type: 'ping' });
                         }
-
-                        ttsPendingRequestsRef.current.delete(awaitedIdx);
-                        setTtsQueueAndRef(prev => {
-                            const nextQ = [...prev];
-                            if (nextQ[awaitedIdx]) nextQ[awaitedIdx] = { ...nextQ[awaitedIdx], status: 'error' };
-                            return nextQ;
-                        });
-
-                        setTtsStatusAndRef('error');
-                        const msg = isMobileDevice()
-                            ? "Neural speech generation timed out on mobile. Tap 'Switch to System Voice' for instant playback."
-                            : "Audio generation timed out. Your device may be low on memory.";
-                        setTtsError(msg);
                     }
                 }, timeoutMs);
             };
@@ -13059,16 +13121,30 @@ INSTRUCTIONS:
                         } else if (type === 'error') {
                             clearTtsWatchdog();
                             console.error("Kokoro TTS Worker error:", error);
-                            setTtsError(error || "Kokoro TTS inference error");
-                            setTtsStatusAndRef('error');
+                            if (isMobileDevice() && readerSettings.ttsVoice !== 'system_native') {
+                                changeTtsVoice('system_native');
+                                setTtsError("Switched to System Voice (neural engine unavailable on this device)");
+                                setTtsStatusAndRef('error');
+                                speakChunkWithSpeechSynthesis(chunkIndex || ttsCurrentChunkIndexRef.current);
+                            } else {
+                                setTtsError(error || "Kokoro TTS inference error");
+                                setTtsStatusAndRef('error');
+                            }
                         }
                     };
                     worker.onerror = (wErr) => {
                         clearTtsWatchdog();
                         console.error("Worker lifecycle error:", wErr);
-                        const msg = (wErr && wErr.message) ? wErr.message : "TTS Worker error. If running directly from file://, consider using a local server (e.g. node server.js or Live Server).";
-                        setTtsError(msg);
-                        setTtsStatusAndRef('error');
+                        if (isMobileDevice() && readerSettings.ttsVoice !== 'system_native') {
+                            changeTtsVoice('system_native');
+                            setTtsError("Switched to System Voice (neural engine unavailable on this device)");
+                            setTtsStatusAndRef('error');
+                            speakChunkWithSpeechSynthesis(ttsCurrentChunkIndexRef.current);
+                        } else {
+                            const msg = (wErr && wErr.message) ? wErr.message : "TTS Worker error. If running directly from file://, consider using a local server (e.g. node server.js or Live Server).";
+                            setTtsError(msg);
+                            setTtsStatusAndRef('error');
+                        }
                     };
                     ttsWorkerRef.current = worker;
                     return worker;
@@ -13091,7 +13167,19 @@ INSTRUCTIONS:
                 }
 
                 const targetDevice = forceDevice || readerSettings.ttsDevice || 'wasm';
-                const targetDtype = readerSettings.ttsDtype || 'q8';
+                const tier = getDeviceCapabilityTier();
+                const targetDtype = (tier === 'mobile-constrained') ? 'q4' : (readerSettings.ttsDtype || 'q8');
+                
+                // To prevent wasting storage (e.g., leaving an 86MB q8 model on an iPhone when switching to q4),
+                // we detect dtype changes and wipe the old cache before proceeding.
+                if (typeof window !== 'undefined' && window.localStorage) {
+                    const lastDtype = window.localStorage.getItem('kokoro_last_dtype');
+                    if (lastDtype !== targetDtype) {
+                        try { await clearKokoroModelCache(); } catch (e) {}
+                        window.localStorage.setItem('kokoro_last_dtype', targetDtype);
+                    }
+                }
+
                 setTtsError(null);
                 setTtsStatusAndRef('loading-library');
                 setTtsProgress(5);
@@ -13180,9 +13268,8 @@ INSTRUCTIONS:
                     audio = new Audio();
                     audio.preload = 'auto';
                     ttsAudioRef.current = audio;
-                } else {
-                    audio.pause();
                 }
+                // Do not call audio.pause() here. Setting audio.src directly preserves the active session better on iOS.
 
                 audio.loop = false;
                 // Single-source speed: Kokoro synthesizes with neural duration speed. Keep browser playbackRate at 1.0 to prevent double-speed distortion.
@@ -13203,6 +13290,13 @@ INSTRUCTIONS:
                 };
 
                 audio.onended = () => {
+                    // Phase 3A: Keep the audio session alive with silent loop while next chunk generates
+                    if (isMobileDevice()) {
+                        audio.loop = true;
+                        audio.src = SILENT_WAV_DATA_URI;
+                        audio.play().catch(() => {}); // Maintain iOS playback grant
+                    }
+
                     if (chunk && chunk.audioUrl) {
                         try { URL.revokeObjectURL(chunk.audioUrl); } catch (e) {}
                         chunk.audioUrl = null;
@@ -13250,6 +13344,17 @@ INSTRUCTIONS:
                 if (typeof textToUse !== 'string' || !textToUse.trim()) return;
                 const chunks = chunkProseForTts(textToUse);
                 if (!chunks || chunks.length === 0) return;
+
+                // Auto-fallback to system_native for mobile-constrained on first play
+                if (readerSettings.ttsVoice === 'af_heart' && getDeviceCapabilityTier() === 'mobile-constrained') {
+                    const hasOptedIn = typeof window !== 'undefined' && window.localStorage && window.localStorage.getItem('kokoro_opt_in') === 'true';
+                    if (!hasOptedIn) {
+                        changeTtsVoice('system_native');
+                        showToast("Using device voice for instant playback. Enable Kokoro Neural in TTS settings for AI-quality audio.", "info");
+                        // changeTtsVoice will re-trigger playback, so we can exit here
+                        return;
+                    }
+                }
 
                 if (ttsAudioRef.current) {
                     ttsAudioRef.current.pause();
@@ -13462,6 +13567,10 @@ INSTRUCTIONS:
                 updateReaderSetting('ttsVoice', newVoiceId);
                 const voiceObj = KOKORO_VOICES.find(v => v.id === newVoiceId) || KOKORO_VOICES[0];
                 showToast(`Voice set to ${voiceObj.shortName || voiceObj.name}`);
+
+                if (newVoiceId !== 'system_native' && typeof window !== 'undefined' && window.localStorage) {
+                    window.localStorage.setItem('kokoro_opt_in', 'true');
+                }
 
                 clearTtsWatchdog();
                 if (newVoiceId === 'system_native') {

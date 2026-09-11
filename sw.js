@@ -34,7 +34,9 @@ const CDN_HOSTS = [
     'cdnjs.cloudflare.com',
     'cdn.jsdelivr.net',
     'fonts.googleapis.com',
-    'fonts.gstatic.com'
+    'fonts.gstatic.com',
+    'esm.sh',           // kokoro-js + transformers.js
+    'huggingface.co'    // ONNX model weights
 ];
 
 self.addEventListener('install', (event) => {
