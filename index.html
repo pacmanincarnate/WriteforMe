@@ -601,7 +601,9 @@
         /* Momentum scrolling on iOS Safari & touch devices */
         .touch-scroll {
             overflow: auto;
+            -webkit-overflow-scrolling: touch !important;
             overscroll-behavior: contain;
+            touch-action: pan-y;
         }
 
         /* Custom Translucent Glassmorphism Scrollbar */
@@ -8746,7 +8748,7 @@ INSTRUCTIONS:
             isReaderHudVisible, toggleReaderHud, resetReaderHudTimer, isTocOpen, setIsTocOpen, isAppearanceOpen, setIsAppearanceOpen,
             tocSearchQuery, setTocSearchQuery, isFullscreen, toggleFullscreen, pageSlideDirection, isSceneTransitioning,
             readerColumnsContainerRef, readerScrollContainerRef, handleReaderTouchStart, handleReaderTouchMove, handleReaderTouchEnd,
-            touchDragOffset, isTouchDragging, touchHasDraggedRef, turnReaderPage, jumpToReaderScene, goToNextReaderScene, setView,
+            touchDragOffset, isTouchDragging, touchHasDraggedRef, justTappedRef, turnReaderPage, jumpToReaderScene, goToNextReaderScene, setView,
             ttsStatus, ttsProgress, ttsStatusMessage, ttsActiveDevice, ttsError, ttsIsMiniPlayerVisible, setTtsIsMiniPlayerVisible,
             ttsQueue, ttsCurrentChunkIndex, ttsCurrentTime, ttsDuration, toggleTtsPlayPause, stopTtsPlayback, skipTtsChunk, initTtsEngine, showToast, changeTtsVoice
         }) => {
@@ -9096,44 +9098,48 @@ INSTRUCTIONS:
                     </div>
 
                     {/* MAIN READING SURFACE */}
-                    <div className="flex-1 relative w-full h-full overflow-hidden flex flex-col justify-center items-center">
-                        {/* Click / Tap Zones */}
-                        {/* Left 22% (Previous Page) */}
-                        <div
-                            onClick={() => {
-                                if (touchHasDraggedRef && touchHasDraggedRef.current) return;
-                                turnReaderPage(-1);
-                            }}
-                            className="absolute inset-y-0 left-0 w-[22%] sm:w-[18%] z-20 cursor-pointer opacity-0 hover:opacity-100 transition-opacity flex items-center justify-start pl-2 sm:pl-4 group"
-                            title="Previous Page (Left Arrow / Swipe Right)"
-                        >
-                            <div className="p-2 rounded-full reader-ui-card opacity-0 group-hover:opacity-70 transition-opacity shadow-md border">
-                                <ChevronLeft size={20} />
-                            </div>
-                        </div>
+                    <div className={`flex-1 relative w-full h-full overflow-hidden ${readerSettings.readingMode === 'paginated' ? 'flex flex-col justify-center items-center' : 'block min-h-0'}`}>
+                        {/* Click / Tap Zones (Active in Paginated Mode) */}
+                        {readerSettings.readingMode === 'paginated' && (
+                            <>
+                                {/* Left 22% (Previous Page) */}
+                                <div
+                                    onClick={() => {
+                                        if (justTappedRef?.current || (touchHasDraggedRef && touchHasDraggedRef.current)) return;
+                                        turnReaderPage(-1);
+                                    }}
+                                    className="absolute inset-y-0 left-0 w-[22%] sm:w-[18%] z-20 cursor-pointer opacity-0 hover:opacity-100 transition-opacity flex items-center justify-start pl-2 sm:pl-4 group"
+                                    title="Previous Page (Left Arrow / Swipe Right)"
+                                >
+                                    <div className="p-2 rounded-full reader-ui-card opacity-0 group-hover:opacity-70 transition-opacity shadow-md border">
+                                        <ChevronLeft size={20} />
+                                    </div>
+                                </div>
 
-                        {/* Right 22% (Next Page) */}
-                        <div
-                            onClick={() => {
-                                if (touchHasDraggedRef && touchHasDraggedRef.current) return;
-                                turnReaderPage(1);
-                            }}
-                            className="absolute inset-y-0 right-0 w-[22%] sm:w-[18%] z-20 cursor-pointer opacity-0 hover:opacity-100 transition-opacity flex items-center justify-end pr-2 sm:pr-4 group"
-                            title="Next Page (Right Arrow / Space / Swipe Left)"
-                        >
-                            <div className="p-2 rounded-full reader-ui-card opacity-0 group-hover:opacity-70 transition-opacity shadow-md border">
-                                <ChevronRight size={20} />
-                            </div>
-                        </div>
+                                {/* Right 22% (Next Page) */}
+                                <div
+                                    onClick={() => {
+                                        if (justTappedRef?.current || (touchHasDraggedRef && touchHasDraggedRef.current)) return;
+                                        turnReaderPage(1);
+                                    }}
+                                    className="absolute inset-y-0 right-0 w-[22%] sm:w-[18%] z-20 cursor-pointer opacity-0 hover:opacity-100 transition-opacity flex items-center justify-end pr-2 sm:pr-4 group"
+                                    title="Next Page (Right Arrow / Space / Swipe Left)"
+                                >
+                                    <div className="p-2 rounded-full reader-ui-card opacity-0 group-hover:opacity-70 transition-opacity shadow-md border">
+                                        <ChevronRight size={20} />
+                                    </div>
+                                </div>
 
-                        {/* Center 56% (Toggle HUD) */}
-                        <div
-                            onClick={() => {
-                                if (touchHasDraggedRef && touchHasDraggedRef.current) return;
-                                toggleReaderHud();
-                            }}
-                            className="absolute inset-y-0 left-[22%] right-[22%] sm:left-[18%] sm:right-[18%] z-10 cursor-default"
-                        />
+                                {/* Center 56% (Toggle HUD on Click/Tap) */}
+                                <div
+                                    onClick={() => {
+                                        if (justTappedRef?.current || (touchHasDraggedRef && touchHasDraggedRef.current)) return;
+                                        toggleReaderHud();
+                                    }}
+                                    className="absolute inset-y-0 left-[22%] right-[22%] sm:left-[18%] sm:right-[18%] z-20 cursor-pointer"
+                                />
+                            </>
+                        )}
 
                         {/* Prose Content Area */}
                         {readerSettings.readingMode === 'paginated' ? (
@@ -9245,8 +9251,19 @@ INSTRUCTIONS:
                             <div
                                 ref={readerScrollContainerRef}
                                 onScroll={handleScroll}
-                                className={`w-full ${widthClass} mx-auto h-full overflow-y-auto z-15 touch-scroll ${pageSlideDirection === 'next' ? 'reader-page-slide-next' : pageSlideDirection === 'prev' ? 'reader-page-slide-prev' : ''}`}
+                                onClick={(e) => {
+                                    if (justTappedRef?.current || (touchHasDraggedRef && touchHasDraggedRef.current)) return;
+                                    if (e.target.closest('button, a, input, select')) return;
+                                    const screenW = (typeof window !== 'undefined' ? window.innerWidth : 400);
+                                    const screenH = (typeof window !== 'undefined' ? window.innerHeight : 800);
+                                    if (e.clientX >= screenW * 0.18 && e.clientX <= screenW * 0.82 && e.clientY >= screenH * 0.12 && e.clientY <= screenH * 0.88) {
+                                        toggleReaderHud();
+                                    }
+                                }}
+                                className={`w-full ${widthClass} mx-auto h-full overflow-y-auto z-10 touch-scroll`}
                                 style={{
+                                    WebkitOverflowScrolling: 'touch',
+                                    touchAction: 'pan-y',
                                     paddingTop: 'max(5rem, calc(env(safe-area-inset-top, 0px) + 3.5rem))',
                                     paddingBottom: 'max(5rem, calc(env(safe-area-inset-bottom, 0px) + 3.5rem))',
                                     paddingLeft: 'max(1.25rem, calc(env(safe-area-inset-left, 0px) + 0.75rem))',
@@ -13183,6 +13200,8 @@ INSTRUCTIONS:
             const touchHasDraggedRef = useRef(false);
             const touchStartXRef = useRef(null);
             const touchStartYRef = useRef(null);
+            const touchStartTimeRef = useRef(0);
+            const justTappedRef = useRef(false);
             const touchLastXRef = useRef(0);
             const touchLastTimeRef = useRef(0);
             const touchVelocityRef = useRef(0);
@@ -13641,6 +13660,7 @@ INSTRUCTIONS:
                 const clientY = e.touches[0].clientY;
                 touchStartXRef.current = clientX;
                 touchStartYRef.current = clientY;
+                touchStartTimeRef.current = Date.now();
                 touchLastXRef.current = clientX;
                 touchLastTimeRef.current = Date.now();
                 touchVelocityRef.current = 0;
@@ -13654,9 +13674,13 @@ INSTRUCTIONS:
                 const clientY = e.touches[0].clientY;
                 const diffX = clientX - touchStartXRef.current;
                 const diffY = clientY - touchStartYRef.current;
+                const dist = Math.hypot(diffX, diffY);
+
+                if (dist > 8) {
+                    touchHasDraggedRef.current = true;
+                }
 
                 if (touchIsHorizontalRef.current === null) {
-                    const dist = Math.hypot(diffX, diffY);
                     if (dist > 8) {
                         touchIsHorizontalRef.current = Math.abs(diffX) >= Math.abs(diffY);
                         if (touchIsHorizontalRef.current && readerSettings.readingMode === 'paginated') {
@@ -13697,6 +13721,8 @@ INSTRUCTIONS:
                 const endY = (e.changedTouches && e.changedTouches.length > 0) ? e.changedTouches[0].clientY : touchStartYRef.current;
                 const diffX = endX - touchStartXRef.current;
                 const diffY = endY - (touchStartYRef.current || endY);
+                const totalDist = Math.hypot(diffX, diffY);
+                const dt = Date.now() - (touchStartTimeRef.current || 0);
                 const isHorizontal = touchIsHorizontalRef.current ?? (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 20);
                 const velocity = touchVelocityRef.current || 0;
                 const width = readerContainerWidth || (typeof window !== 'undefined' ? window.innerWidth : 600);
@@ -13704,14 +13730,40 @@ INSTRUCTIONS:
                 setIsTouchDragging(false);
                 setTouchDragOffset(0);
 
-                if (isHorizontal) {
-                    if (readerSettings.readingMode === 'scroll') {
-                        if (diffX < -60 || velocity < -0.35) {
-                            goToNextReaderChapter();
-                        } else if (diffX > 60 || velocity > 0.35) {
-                            goToPrevReaderChapter();
+                // Tap detection: minimal movement (< 12px) and short duration (< 450ms)
+                const wasTap = !touchHasDraggedRef.current && totalDist < 12 && dt < 450;
+                const tappedInteractive = e.target && e.target.closest && e.target.closest('button, a, input, select, .reader-ui-card, .studio-top-header');
+
+                if (wasTap && !tappedInteractive) {
+                    const screenW = (typeof window !== 'undefined' ? window.innerWidth : 400);
+                    const screenH = (typeof window !== 'undefined' ? window.innerHeight : 800);
+                    const isMiddleX = endX >= screenW * 0.22 && endX <= screenW * 0.78;
+                    const isMiddleY = endY >= screenH * 0.13 && endY <= screenH * 0.87;
+
+                    if (readerSettings.readingMode === 'paginated') {
+                        if (isMiddleX && isMiddleY) {
+                            justTappedRef.current = true;
+                            toggleReaderHud();
+                            setTimeout(() => { justTappedRef.current = false; }, 350);
+                        } else if (endX < screenW * 0.22) {
+                            justTappedRef.current = true;
+                            turnReaderPage(-1);
+                            setTimeout(() => { justTappedRef.current = false; }, 350);
+                        } else if (endX > screenW * 0.78) {
+                            justTappedRef.current = true;
+                            turnReaderPage(1);
+                            setTimeout(() => { justTappedRef.current = false; }, 350);
                         }
                     } else {
+                        // Continuous Scroll Mode: single tap in middle portion brings up HUD consistently
+                        if (isMiddleX && isMiddleY) {
+                            justTappedRef.current = true;
+                            toggleReaderHud();
+                            setTimeout(() => { justTappedRef.current = false; }, 350);
+                        }
+                    }
+                } else if (!wasTap) {
+                    if (readerSettings.readingMode === 'paginated' && isHorizontal) {
                         // Paginated Mode: flick detection or drag distance threshold
                         const threshold = Math.min(60, Math.max(35, width * 0.15));
                         const isFlickNext = velocity < -0.25 || (diffX < -threshold && velocity <= 0.1);
@@ -13723,6 +13775,7 @@ INSTRUCTIONS:
                             turnReaderPage(-1);
                         }
                     }
+                    // In continuous scroll mode, sideways swipes DO NOT jump chapters.
                 }
 
                 touchStartXRef.current = null;
@@ -13732,7 +13785,7 @@ INSTRUCTIONS:
 
                 setTimeout(() => {
                     touchHasDraggedRef.current = false;
-                }, 80);
+                }, 120);
             };
 
             // --- KOKORO TTS ENGINE CONTROLLER & STREAMING AUDIO QUEUE ---
@@ -23922,6 +23975,7 @@ ${finalProseText}
                                     touchDragOffset={touchDragOffset}
                                     isTouchDragging={isTouchDragging}
                                     touchHasDraggedRef={touchHasDraggedRef}
+                                    justTappedRef={justTappedRef}
                                     turnReaderPage={turnReaderPage}
                                     jumpToReaderScene={jumpToReaderScene}
                                     goToNextReaderScene={goToNextReaderScene}
