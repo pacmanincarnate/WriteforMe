@@ -8775,6 +8775,13 @@ INSTRUCTIONS:
 
             // Track scroll position and calculate percentage in scroll mode
             const [scrollProgressPct, setScrollProgressPct] = useState(0);
+            const lastScrollTopRef = useRef(0);
+
+            useEffect(() => {
+                if (isReaderHudVisible && readerScrollContainerRef.current) {
+                    lastScrollTopRef.current = readerScrollContainerRef.current.scrollTop;
+                }
+            }, [isReaderHudVisible]);
 
             const handleScroll = (e) => {
                 const el = e.currentTarget;
@@ -8783,6 +8790,15 @@ INSTRUCTIONS:
                 const ratio = maxScroll > 0 ? (el.scrollTop / maxScroll) : 0;
                 setScrollProgressPct(Math.round(ratio * 100));
 
+                // Softly auto-dismiss HUD when actively scrolling (> 25px scroll displacement)
+                const lastScroll = lastScrollTopRef.current ?? el.scrollTop;
+                if (Math.abs(el.scrollTop - lastScroll) > 25) {
+                    if (isReaderHudVisible && !isTocOpen && !isAppearanceOpen) {
+                        toggleReaderHud(false);
+                    }
+                    lastScrollTopRef.current = el.scrollTop;
+                }
+
                 if (setVisibleScrollChapter && chaptersWithProse.length > 0) {
                     const containerTop = el.getBoundingClientRect().top;
                     for (let i = chaptersWithProse.length - 1; i >= 0; i--) {
@@ -8790,7 +8806,7 @@ INSTRUCTIONS:
                         const chEl = document.getElementById(`reader-chapter-${ch.seqIdx}`);
                         if (chEl) {
                             const rect = chEl.getBoundingClientRect();
-                            if (rect.top <= containerTop + 160) {
+                            if (rect.top <= containerTop + 200) {
                                 if (visibleScrollChapter !== ch.seqIdx) {
                                     setVisibleScrollChapter(ch.seqIdx);
                                 }
@@ -8981,7 +8997,6 @@ INSTRUCTIONS:
             return (
                 <div
                     className={`fixed inset-0 z-50 flex flex-col select-none ${themeClass} transition-colors duration-300 overflow-hidden`}
-                    onMouseMove={resetReaderHudTimer}
                     onTouchStart={handleReaderTouchStart}
                     onTouchMove={handleReaderTouchMove}
                     onTouchEnd={handleReaderTouchEnd}
@@ -8991,6 +9006,40 @@ INSTRUCTIONS:
                     {(readerSettings.readerTheme === 'light' || readerSettings.readerTheme === 'sepia') && (
                         <div className="reader-paper-texture" aria-hidden="true" />
                     )}
+                    {/* AMBIENT STICKY CHAPTER BREADCRUMB (Scroll Mode - Visible when HUD is hidden) */}
+                    <div
+                        className={`fixed top-0 inset-x-0 z-25 transition-all duration-300 pointer-events-auto ${
+                            !isReaderHudVisible && readerSettings.readingMode === 'scroll' && chaptersWithProse.length > 0
+                                ? 'opacity-100 translate-y-0'
+                                : 'opacity-0 -translate-y-full pointer-events-none'
+                        }`}
+                        style={{
+                            paddingTop: 'max(0.6rem, calc(env(safe-area-inset-top, 0px) + 0.35rem))',
+                            paddingLeft: 'max(0.75rem, calc(env(safe-area-inset-left, 0px) + 0.5rem))',
+                            paddingRight: 'max(0.75rem, calc(env(safe-area-inset-right, 0px) + 0.5rem))'
+                        }}
+                    >
+                        <div
+                            onClick={() => toggleReaderHud(true)}
+                            className="mx-auto max-w-md px-3.5 py-1.5 rounded-full backdrop-blur-md reader-ui-bg/95 border reader-ui-border shadow-xs flex items-center justify-between gap-2.5 cursor-pointer hover:opacity-90 active:scale-98 transition-all group"
+                            title="Tap to reveal reading controls"
+                        >
+                            <div className="flex items-center gap-2 min-w-0 truncate">
+                                <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-gold shrink-0">
+                                    Chapter {displayChapter?.chapterNumber || (visibleScrollChapter + 1)}
+                                </span>
+                                <span className="text-ink-300 dark:text-stone-600 text-[10px] shrink-0">•</span>
+                                <span className="text-[11.5px] font-serif font-semibold truncate text-ink-800 dark:text-stone-200">
+                                    {displayChapter?.title || "Manuscript"}
+                                </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-mono font-semibold opacity-60 group-hover:opacity-100 transition-opacity">
+                                <span>{scrollProgressPct}%</span>
+                                <ChevronDown size={11} className="text-gold opacity-75" />
+                            </div>
+                        </div>
+                    </div>
+
                     {/* TOP FLOATING HUD (Auto-Hides) */}
                     <div className={`fixed top-0 inset-x-0 z-30 transition-all duration-300 ${isReaderHudVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none'}`}>
                         <div
@@ -9193,13 +9242,20 @@ INSTRUCTIONS:
                                             }}
                                         >
                                             {/* Chapter Heading at the top of Page 1 */}
-                                            <div className="reader-chapter-header">
-                                                <span className="reader-chapter-number block">
-                                                    Chapter {activeChapter.chapterNumber}
-                                                </span>
-                                                <h2 className="reader-chapter-title">
+                                            <div className="reader-chapter-header space-y-1.5 text-center">
+                                                <div className="inline-block px-3.5 py-1 rounded-full reader-ui-card border reader-ui-border text-[11px] font-mono font-bold uppercase tracking-widest text-gold shadow-2xs mb-2">
+                                                    <span className="reader-chapter-number">
+                                                        Chapter {activeChapter.chapterNumber}
+                                                    </span>
+                                                </div>
+                                                <h2 className="reader-chapter-title font-serif font-bold text-2xl sm:text-3xl text-ink-900 dark:text-stone-100 tracking-tight leading-tight">
                                                     {activeChapter.title}
                                                 </h2>
+                                                {activeChapter.summary && (
+                                                    <p className="text-xs sm:text-sm font-sans italic opacity-70 max-w-md mx-auto pt-1 leading-relaxed">
+                                                        {activeChapter.summary}
+                                                    </p>
+                                                )}
                                             </div>
 
                                             {/* Scenes within chapter with thin gold line between them */}
@@ -9279,14 +9335,30 @@ INSTRUCTIONS:
                                                     id={`reader-chapter-${ch.seqIdx}`}
                                                     className={`reader-chapter-container ${chIdx > 0 ? 'mt-24 sm:mt-32 pt-16 border-t border-gold/20' : ''}`}
                                                 >
+                                                    {/* Decorative Fleuron between chapters */}
+                                                    {chIdx > 0 && (
+                                                        <div className="flex items-center justify-center gap-3 mb-12 sm:mb-16 opacity-60">
+                                                            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
+                                                            <span className="text-gold text-xs tracking-widest font-serif">✦ &nbsp; ✦ &nbsp; ✦</span>
+                                                            <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gold/40 to-transparent" />
+                                                        </div>
+                                                    )}
+
                                                     {/* Chapter Heading */}
-                                                    <div className="reader-chapter-header">
-                                                        <span className="reader-chapter-number block">
-                                                            Chapter {ch.chapterNumber}
-                                                        </span>
-                                                        <h2 className="reader-chapter-title">
+                                                    <div className="reader-chapter-header space-y-2 text-center">
+                                                        <div className="inline-block px-3.5 py-1 rounded-full reader-ui-card border reader-ui-border text-[11px] font-mono font-bold uppercase tracking-widest text-gold shadow-2xs mb-2">
+                                                            <span className="reader-chapter-number">
+                                                                Chapter {ch.chapterNumber}
+                                                            </span>
+                                                        </div>
+                                                        <h2 className="reader-chapter-title font-serif font-bold text-2xl sm:text-3xl md:text-4xl text-ink-900 dark:text-stone-100 tracking-tight leading-tight">
                                                             {ch.title}
                                                         </h2>
+                                                        {ch.summary && (
+                                                            <p className="text-xs sm:text-sm font-sans italic opacity-70 max-w-md mx-auto pt-1 leading-relaxed">
+                                                                {ch.summary}
+                                                            </p>
+                                                        )}
                                                     </div>
 
                                                     {/* Chapter Scenes */}
@@ -9296,7 +9368,15 @@ INSTRUCTIONS:
                                                         return (
                                                             <React.Fragment key={sc.sceneKey}>
                                                                 {showDividerBefore && (
-                                                                    <div className="reader-scene-divider-line" role="separator" aria-label="Scene break" />
+                                                                    <div className="reader-scene-divider-line my-10 sm:my-14" role="separator" aria-label={`Scene ${scIdx + 1}`}>
+                                                                        <div className="flex items-center justify-center gap-3 opacity-70">
+                                                                            <div className="h-px w-10 sm:w-16 bg-gold/40" />
+                                                                            <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-gold">
+                                                                                Scene {scIdx + 1}{sc.title ? ` • ${sc.title}` : ''}
+                                                                            </span>
+                                                                            <div className="h-px w-10 sm:w-16 bg-gold/40" />
+                                                                        </div>
+                                                                    </div>
                                                                 )}
                                                                 <div className="reader-text" dangerouslySetInnerHTML={{ __html: formatReaderProse(sc.proseText) }} />
                                                             </React.Fragment>
@@ -13215,22 +13295,17 @@ INSTRUCTIONS:
                 }, 300);
             };
 
-            const resetReaderHudTimer = () => {
-                setIsReaderHudVisible(true);
+            const toggleReaderHud = (forceState) => {
                 if (hudTimeoutRef.current) clearTimeout(hudTimeoutRef.current);
-                hudTimeoutRef.current = setTimeout(() => {
-                    if (!isTocOpen && !isAppearanceOpen) {
-                        setIsReaderHudVisible(false);
-                    }
-                }, 4000);
-            };
-
-            const toggleReaderHud = () => {
                 setIsReaderHudVisible(prev => {
-                    const next = !prev;
-                    if (next) resetReaderHudTimer();
+                    const next = typeof forceState === 'boolean' ? forceState : !prev;
                     return next;
                 });
+            };
+
+            const resetReaderHudTimer = () => {
+                if (hudTimeoutRef.current) clearTimeout(hudTimeoutRef.current);
+                setIsReaderHudVisible(true);
             };
 
             const saveReadingProgress = (seqIdx, sceneIdx, pageIdx = 0, scrollRatio = 0) => {
@@ -13484,6 +13559,9 @@ INSTRUCTIONS:
             };
 
             const turnReaderPage = (delta) => {
+                if (isReaderHudVisible && !isTocOpen && !isAppearanceOpen) {
+                    setIsReaderHudVisible(false);
+                }
                 if (readerSettings.readingMode === 'scroll') {
                     if (readerScrollContainerRef.current) {
                         const el = readerScrollContainerRef.current;
@@ -13730,36 +13808,34 @@ INSTRUCTIONS:
                 setIsTouchDragging(false);
                 setTouchDragOffset(0);
 
-                // Tap detection: minimal movement (< 12px) and short duration (< 450ms)
-                const wasTap = !touchHasDraggedRef.current && totalDist < 12 && dt < 450;
+                // Tap detection: minimal movement (< 16px) and short duration (< 450ms)
+                const wasTap = !touchHasDraggedRef.current && totalDist < 16 && dt < 450;
                 const tappedInteractive = e.target && e.target.closest && e.target.closest('button, a, input, select, .reader-ui-card, .studio-top-header');
 
                 if (wasTap && !tappedInteractive) {
+                    if (e.cancelable) {
+                        e.preventDefault();
+                    }
                     const screenW = (typeof window !== 'undefined' ? window.innerWidth : 400);
                     const screenH = (typeof window !== 'undefined' ? window.innerHeight : 800);
-                    const isMiddleX = endX >= screenW * 0.22 && endX <= screenW * 0.78;
-                    const isMiddleY = endY >= screenH * 0.13 && endY <= screenH * 0.87;
+                    const isMiddleX = endX >= screenW * 0.20 && endX <= screenW * 0.80;
+                    const isMiddleY = endY >= screenH * 0.12 && endY <= screenH * 0.88;
+
+                    justTappedRef.current = true;
+                    setTimeout(() => { justTappedRef.current = false; }, 400);
 
                     if (readerSettings.readingMode === 'paginated') {
                         if (isMiddleX && isMiddleY) {
-                            justTappedRef.current = true;
                             toggleReaderHud();
-                            setTimeout(() => { justTappedRef.current = false; }, 350);
-                        } else if (endX < screenW * 0.22) {
-                            justTappedRef.current = true;
+                        } else if (endX < screenW * 0.20) {
                             turnReaderPage(-1);
-                            setTimeout(() => { justTappedRef.current = false; }, 350);
-                        } else if (endX > screenW * 0.78) {
-                            justTappedRef.current = true;
+                        } else if (endX > screenW * 0.80) {
                             turnReaderPage(1);
-                            setTimeout(() => { justTappedRef.current = false; }, 350);
                         }
                     } else {
                         // Continuous Scroll Mode: single tap in middle portion brings up HUD consistently
                         if (isMiddleX && isMiddleY) {
-                            justTappedRef.current = true;
                             toggleReaderHud();
-                            setTimeout(() => { justTappedRef.current = false; }, 350);
                         }
                     }
                 } else if (!wasTap) {
