@@ -564,6 +564,8 @@
             padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
             padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
             min-height: calc(3.75rem + env(safe-area-inset-top, 0px));
+            width: 100%;
+            max-width: 100%;
         }
 
 
@@ -603,6 +605,22 @@
             overflow: auto;
             -webkit-overflow-scrolling: touch !important;
             overscroll-behavior: contain;
+            touch-action: pan-x pan-y;
+        }
+
+        .touch-scroll-x {
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior-x: contain;
+            touch-action: pan-x pan-y;
+        }
+
+        .touch-scroll-y {
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior-y: contain;
             touch-action: pan-y;
         }
 
@@ -2244,7 +2262,7 @@
     </script>
 
     <script type="text/babel" data-presets="react">
-        const { useState, useEffect, useLayoutEffect, useRef, useMemo } = React;
+        const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = React;
 
         let jsZipPromise = null;
         const ensureJSZip = () => {
@@ -8750,7 +8768,8 @@ INSTRUCTIONS:
             readerColumnsContainerRef, readerScrollContainerRef, handleReaderTouchStart, handleReaderTouchMove, handleReaderTouchEnd,
             touchDragOffset, isTouchDragging, touchHasDraggedRef, justTappedRef, turnReaderPage, jumpToReaderScene, goToNextReaderScene, setView,
             ttsStatus, ttsProgress, ttsStatusMessage, ttsActiveDevice, ttsError, ttsIsMiniPlayerVisible, setTtsIsMiniPlayerVisible,
-            ttsQueue, ttsCurrentChunkIndex, ttsCurrentTime, ttsDuration, toggleTtsPlayPause, stopTtsPlayback, skipTtsChunk, initTtsEngine, showToast, changeTtsVoice
+            ttsQueue, ttsCurrentChunkIndex, ttsCurrentTime, ttsDuration, toggleTtsPlayPause, stopTtsPlayback, skipTtsChunk, initTtsEngine, showToast, changeTtsVoice,
+            scrollReaderToElement
         }) => {
             const activeChapter = currentChapter || storyChapters[currentChapterIndex] || storyChapters[0] || null;
             const activeChapterIdx = activeChapter ? activeChapter.chapterIndex : (selectedSequence || 0);
@@ -8776,6 +8795,23 @@ INSTRUCTIONS:
             // Track scroll position and calculate percentage in scroll mode
             const [scrollProgressPct, setScrollProgressPct] = useState(0);
             const lastScrollTopRef = useRef(0);
+            const scrollSaveTimerRef = useRef(null);
+
+            const scrollToElement = useCallback((targetEl, smooth = true) => {
+                if (scrollReaderToElement) {
+                    scrollReaderToElement(targetEl, smooth);
+                    return;
+                }
+                const container = readerScrollContainerRef?.current;
+                if (!container || !targetEl) return;
+                const containerRect = container.getBoundingClientRect();
+                const targetRect = targetEl.getBoundingClientRect();
+                const targetScrollTop = container.scrollTop + (targetRect.top - containerRect.top) - 30;
+                container.scrollTo({
+                    top: Math.max(0, targetScrollTop),
+                    behavior: smooth ? 'smooth' : 'auto'
+                });
+            }, [scrollReaderToElement, readerScrollContainerRef]);
 
             useEffect(() => {
                 if (isReaderHudVisible && readerScrollContainerRef.current) {
@@ -8799,21 +8835,48 @@ INSTRUCTIONS:
                     lastScrollTopRef.current = el.scrollTop;
                 }
 
-                if (setVisibleScrollChapter && chaptersWithProse.length > 0) {
+                if (chaptersWithProse.length > 0) {
                     const containerTop = el.getBoundingClientRect().top;
+                    let detectedSeq = visibleScrollChapter;
                     for (let i = chaptersWithProse.length - 1; i >= 0; i--) {
                         const ch = chaptersWithProse[i];
                         const chEl = document.getElementById(`reader-chapter-${ch.seqIdx}`);
                         if (chEl) {
                             const rect = chEl.getBoundingClientRect();
                             if (rect.top <= containerTop + 200) {
-                                if (visibleScrollChapter !== ch.seqIdx) {
+                                detectedSeq = ch.seqIdx;
+                                if (setVisibleScrollChapter && visibleScrollChapter !== ch.seqIdx) {
                                     setVisibleScrollChapter(ch.seqIdx);
                                 }
                                 break;
                             }
                         }
                     }
+
+                    // Find currently visible scene in that chapter
+                    let detectedScIdx = 0;
+                    const curChObj = storyChapters[detectedSeq];
+                    if (curChObj && curChObj.scenes) {
+                        for (let sIdx = curChObj.scenes.length - 1; sIdx >= 0; sIdx--) {
+                            const sc = curChObj.scenes[sIdx];
+                            const scEl = document.getElementById(`reader-scene-${detectedSeq}-${sc.sceneIdx}`);
+                            if (scEl) {
+                                const scRect = scEl.getBoundingClientRect();
+                                if (scRect.top <= containerTop + 260) {
+                                    detectedScIdx = sc.sceneIdx;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Debounced saving of scroll reading progress
+                    if (scrollSaveTimerRef.current) clearTimeout(scrollSaveTimerRef.current);
+                    scrollSaveTimerRef.current = setTimeout(() => {
+                        if (saveReadingProgress) {
+                            saveReadingProgress(detectedSeq, detectedScIdx, 0, ratio);
+                        }
+                    }, 400);
                 }
             };
 
@@ -9263,12 +9326,12 @@ INSTRUCTIONS:
                                                 if (!sc.proseText) return null;
                                                 const showDividerBefore = scIdx > 0 && activeChapterScenes.slice(0, scIdx).some(prevSc => prevSc.hasProse);
                                                 return (
-                                                    <React.Fragment key={sc.sceneKey}>
+                                                    <div key={sc.sceneKey} id={`reader-paginated-scene-${activeChapterIdx}-${sc.sceneIdx}`} className="reader-scene-paginated-block">
                                                         {showDividerBefore && (
                                                             <div className="reader-scene-divider-line" role="separator" aria-label="Scene break" />
                                                         )}
                                                         <div className="reader-text" dangerouslySetInnerHTML={{ __html: formatReaderProse(sc.proseText) }} />
-                                                    </React.Fragment>
+                                                    </div>
                                                 );
                                             })}
                                         </div>
@@ -9316,7 +9379,7 @@ INSTRUCTIONS:
                                         toggleReaderHud();
                                     }
                                 }}
-                                className={`w-full ${widthClass} mx-auto h-full overflow-y-auto z-10 touch-scroll`}
+                                className={`w-full ${widthClass} mx-auto h-full overflow-y-auto z-10 touch-scroll touch-scroll-y`}
                                 style={{
                                     WebkitOverflowScrolling: 'touch',
                                     touchAction: 'pan-y',
@@ -9366,7 +9429,7 @@ INSTRUCTIONS:
                                                         if (!sc.proseText) return null;
                                                         const showDividerBefore = scIdx > 0 && ch.scenes.slice(0, scIdx).some(prev => prev.hasProse);
                                                         return (
-                                                            <React.Fragment key={sc.sceneKey}>
+                                                            <div key={sc.sceneKey} id={`reader-scene-${ch.seqIdx}-${sc.sceneIdx}`}>
                                                                 {showDividerBefore && (
                                                                     <div className="reader-scene-divider-line my-10 sm:my-14" role="separator" aria-label={`Scene ${scIdx + 1}`}>
                                                                         <div className="flex items-center justify-center gap-3 opacity-70">
@@ -9379,7 +9442,7 @@ INSTRUCTIONS:
                                                                     </div>
                                                                 )}
                                                                 <div className="reader-text" dangerouslySetInnerHTML={{ __html: formatReaderProse(sc.proseText) }} />
-                                                            </React.Fragment>
+                                                            </div>
                                                         );
                                                     })}
                                                 </article>
@@ -9688,12 +9751,14 @@ INSTRUCTIONS:
                                             <div key={ch.seqIdx} className="space-y-1">
                                                 <button
                                                     onClick={() => {
+                                                        setIsTocOpen(false);
                                                         if (readerSettings.readingMode === 'scroll') {
-                                                            setIsTocOpen(false);
                                                             const targetEl = document.getElementById(`reader-chapter-${ch.seqIdx}`);
                                                             if (targetEl) {
-                                                                targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                                scrollToElement(targetEl, true);
                                                             }
+                                                            if (setVisibleScrollChapter) setVisibleScrollChapter(ch.seqIdx);
+                                                            if (saveReadingProgress) saveReadingProgress(ch.seqIdx, 0, 0);
                                                         } else {
                                                             jumpToReaderChapter(ch.seqIdx, 0);
                                                         }
@@ -9721,14 +9786,16 @@ INSTRUCTIONS:
                                                             <button
                                                                 key={scIdx}
                                                                 onClick={() => {
+                                                                    setIsTocOpen(false);
                                                                     if (readerSettings.readingMode === 'scroll') {
-                                                                        setIsTocOpen(false);
-                                                                        const targetEl = document.getElementById(`reader-chapter-${ch.seqIdx}`);
+                                                                        const targetEl = document.getElementById(`reader-scene-${ch.seqIdx}-${sc.sceneIdx}`) || document.getElementById(`reader-chapter-${ch.seqIdx}`);
                                                                         if (targetEl) {
-                                                                            targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                                                            scrollToElement(targetEl, true);
                                                                         }
+                                                                        if (setVisibleScrollChapter) setVisibleScrollChapter(ch.seqIdx);
+                                                                        if (saveReadingProgress) saveReadingProgress(ch.seqIdx, sc.sceneIdx, 0);
                                                                     } else {
-                                                                        jumpToReaderChapter(ch.seqIdx, 0);
+                                                                        jumpToReaderScene(ch.seqIdx, sc.sceneIdx);
                                                                     }
                                                                 }}
                                                                 className="w-full text-left px-2.5 py-1.5 rounded-lg text-[11px] flex items-center justify-between hover:bg-wash opacity-70 hover:opacity-100 transition-all cursor-pointer"
@@ -13271,10 +13338,24 @@ INSTRUCTIONS:
             const [isSceneTransitioning, setIsSceneTransitioning] = useState(false);
             const [readerContainerWidth, setReaderContainerWidth] = useState(0);
             const pendingTargetPageRef = useRef(null);
+            const pendingTargetSceneRef = useRef(null);
+            const pendingScrollTargetRef = useRef(null);
             const pageSlideTimerRef = useRef(null);
             const readerScrollContainerRef = useRef(null);
             const readerColumnsContainerRef = useRef(null);
             const hudTimeoutRef = useRef(null);
+
+            const scrollReaderToElement = useCallback((targetEl, smooth = true) => {
+                const container = readerScrollContainerRef.current;
+                if (!container || !targetEl) return;
+                const containerRect = container.getBoundingClientRect();
+                const targetRect = targetEl.getBoundingClientRect();
+                const targetScrollTop = container.scrollTop + (targetRect.top - containerRect.top) - 30;
+                container.scrollTo({
+                    top: Math.max(0, targetScrollTop),
+                    behavior: smooth ? 'smooth' : 'auto'
+                });
+            }, []);
             const [touchDragOffset, setTouchDragOffset] = useState(0);
             const [isTouchDragging, setIsTouchDragging] = useState(false);
             const touchHasDraggedRef = useRef(false);
@@ -13501,30 +13582,26 @@ INSTRUCTIONS:
                 setSelectedSequence(chapterIdx);
                 setSelectedScene(0);
                 setVisibleScrollChapter(chapterIdx);
-
-                if (initialPage === -1 || initialPage === 'last') {
-                    pendingTargetPageRef.current = 'last';
-                } else {
-                    pendingTargetPageRef.current = null;
-                    setReaderPageIndex(initialPage);
-                }
                 setIsTocOpen(false);
 
-                if (readerScrollContainerRef.current) {
-                    if (readerSettings.readingMode === 'scroll') {
-                        setTimeout(() => {
-                            const targetEl = document.getElementById(`reader-chapter-${chapterIdx}`);
-                            if (targetEl && readerScrollContainerRef.current) {
-                                targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            }
-                        }, 50);
+                if (readerSettings.readingMode === 'scroll') {
+                    setTimeout(() => {
+                        const targetEl = document.getElementById(`reader-chapter-${chapterIdx}`);
+                        if (targetEl) {
+                            scrollReaderToElement(targetEl, true);
+                        }
+                    }, 60);
+                    saveReadingProgress(chapterIdx, 0, 0);
+                } else {
+                    if (initialPage === -1 || initialPage === 'last') {
+                        pendingTargetPageRef.current = 'last';
                     } else {
-                        readerScrollContainerRef.current.scrollTop = 0;
+                        pendingTargetPageRef.current = initialPage;
+                        setReaderPageIndex(initialPage);
                     }
-                }
-
-                if (initialPage !== -1 && initialPage !== 'last') {
-                    saveReadingProgress(chapterIdx, 0, initialPage);
+                    if (initialPage !== -1 && initialPage !== 'last') {
+                        saveReadingProgress(chapterIdx, 0, initialPage);
+                    }
                 }
                 setTimeout(() => setIsSceneTransitioning(false), 420);
             };
@@ -13546,8 +13623,41 @@ INSTRUCTIONS:
                 }
             };
 
-            const jumpToReaderScene = (seqIdx, sceneIdx, initialPage = 0, dir = 'next') => {
-                jumpToReaderChapter(seqIdx, initialPage, dir);
+            const jumpToReaderScene = (seqIdx, sceneIdx, dir = 'next') => {
+                if (seqIdx < 0 || seqIdx >= storyChapters.length) return;
+                triggerMicroHaptic([6, 30, 6]);
+                setIsSceneTransitioning(true);
+                triggerPageSlide(dir);
+                setSelectedSequence(seqIdx);
+                setSelectedScene(sceneIdx);
+                setVisibleScrollChapter(seqIdx);
+                setIsTocOpen(false);
+
+                if (readerSettings.readingMode === 'scroll') {
+                    setTimeout(() => {
+                        const targetEl = document.getElementById(`reader-scene-${seqIdx}-${sceneIdx}`) || document.getElementById(`reader-chapter-${seqIdx}`);
+                        if (targetEl) {
+                            scrollReaderToElement(targetEl, true);
+                        }
+                    }, 60);
+                    saveReadingProgress(seqIdx, sceneIdx, 0);
+                } else {
+                    if (seqIdx === selectedSequence && readerColumnsContainerRef.current) {
+                        const sceneEl = document.getElementById(`reader-paginated-scene-${seqIdx}-${sceneIdx}`);
+                        const gap = window.innerWidth <= 640 ? 24 : 48;
+                        const width = readerContainerWidth || measureReaderPages(readerColumnsContainerRef.current)?.width || 600;
+                        if (sceneEl && width > 0 && (sceneIdx === 0 || sceneEl.offsetLeft > 0)) {
+                            const targetPage = Math.max(0, Math.min(Math.floor(sceneEl.offsetLeft / (width + gap)), Math.max(1, readerTotalPages) - 1));
+                            setReaderPageIndex(targetPage);
+                            saveReadingProgress(seqIdx, sceneIdx, targetPage);
+                        } else {
+                            pendingTargetSceneRef.current = { seqIdx, sceneIdx };
+                        }
+                    } else {
+                        pendingTargetSceneRef.current = { seqIdx, sceneIdx };
+                    }
+                }
+                setTimeout(() => setIsSceneTransitioning(false), 420);
             };
 
             const goToNextReaderScene = () => {
@@ -13576,13 +13686,31 @@ INSTRUCTIONS:
                 }
 
                 // Paginated Mode
+                const findSceneForPage = (targetPg) => {
+                    if (!readerColumnsContainerRef.current) return selectedScene || 0;
+                    const scenes = currentChapter?.scenes || [];
+                    const gap = window.innerWidth <= 640 ? 24 : 48;
+                    const width = readerContainerWidth || 600;
+                    const pageLeft = targetPg * (width + gap);
+                    let foundSc = 0;
+                    for (let i = 0; i < scenes.length; i++) {
+                        const s = scenes[i];
+                        const sEl = document.getElementById(`reader-paginated-scene-${selectedSequence}-${s.sceneIdx}`);
+                        if (sEl && sEl.offsetLeft <= pageLeft + (width / 2)) {
+                            foundSc = s.sceneIdx;
+                        }
+                    }
+                    return foundSc;
+                };
+
                 if (delta > 0) {
                     if (readerPageIndex + 1 < readerTotalPages) {
                         triggerMicroHaptic(8);
                         triggerPageSlide('next');
                         setReaderPageIndex(prev => {
                             const next = prev + 1;
-                            saveReadingProgress(selectedSequence, 0, next);
+                            const currentSc = findSceneForPage(next);
+                            saveReadingProgress(selectedSequence, currentSc, next);
                             return next;
                         });
                     } else {
@@ -13594,7 +13722,8 @@ INSTRUCTIONS:
                         triggerPageSlide('prev');
                         setReaderPageIndex(prev => {
                             const next = prev - 1;
-                            saveReadingProgress(selectedSequence, 0, next);
+                            const currentSc = findSceneForPage(next);
+                            saveReadingProgress(selectedSequence, currentSc, next);
                             return next;
                         });
                     } else {
@@ -13604,29 +13733,65 @@ INSTRUCTIONS:
             };
 
             const enterReaderMode = (seqIdx = null, scIdx = null) => {
-                if (seqIdx !== null) {
-                    setSelectedSequence(seqIdx);
-                    setSelectedScene(scIdx !== null ? scIdx : 0);
-                    setReaderPageIndex(0);
-                    setVisibleScrollChapter(seqIdx);
-                    saveReadingProgress(seqIdx, scIdx !== null ? scIdx : 0, 0);
-                } else if (readingProgress.sequenceIndex !== undefined) {
-                    setSelectedSequence(readingProgress.sequenceIndex);
-                    setSelectedScene(readingProgress.sceneIndex !== undefined ? readingProgress.sceneIndex : 0);
-                    setReaderPageIndex(readingProgress.pageIndex || 0);
-                    setVisibleScrollChapter(readingProgress.sequenceIndex);
-                } else if (selectedSequence !== null) {
-                    saveReadingProgress(selectedSequence, selectedScene || 0, readerPageIndex || 0);
-                } else {
-                    const firstWithProse = storyChapters.find(ch => ch.hasAnyProse) || storyChapters[0];
-                    if (firstWithProse) {
-                        setSelectedSequence(firstWithProse.seqIdx);
-                        setSelectedScene(0);
-                        setReaderPageIndex(0);
-                        setVisibleScrollChapter(firstWithProse.seqIdx);
-                        saveReadingProgress(firstWithProse.seqIdx, 0, 0);
+                let targetSeq = seqIdx;
+                let targetSc = scIdx;
+                let targetPage = null;
+
+                if (targetSeq === null) {
+                    if (readingProgress.sequenceIndex !== undefined) {
+                        targetSeq = readingProgress.sequenceIndex;
+                        targetSc = readingProgress.sceneIndex !== undefined ? readingProgress.sceneIndex : 0;
+                        targetPage = readingProgress.pageIndex || 0;
+                    } else if (selectedSequence !== null && selectedSequence !== undefined) {
+                        targetSeq = selectedSequence;
+                        targetSc = selectedScene !== null && selectedScene !== undefined ? selectedScene : 0;
+                        targetPage = readerPageIndex || 0;
+                    } else {
+                        const firstWithProse = storyChapters.find(ch => ch.hasAnyProse) || storyChapters[0];
+                        targetSeq = firstWithProse ? firstWithProse.seqIdx : 0;
+                        targetSc = 0;
+                        targetPage = 0;
                     }
                 }
+
+                setSelectedSequence(targetSeq);
+                setSelectedScene(targetSc !== null && targetSc !== undefined ? targetSc : 0);
+                setVisibleScrollChapter(targetSeq);
+
+                if (readerSettings.readingMode === 'scroll') {
+                    pendingScrollTargetRef.current = {
+                        seqIdx: targetSeq,
+                        scIdx: targetSc,
+                        scrollRatio: (seqIdx === null && readingProgress.scrollRatio) ? readingProgress.scrollRatio : 0
+                    };
+                } else {
+                    if (seqIdx === null) {
+                        // Resuming reading or general ReaderView entry: prioritize saved page
+                        if (targetPage !== null && targetPage !== undefined) {
+                            pendingTargetPageRef.current = targetPage;
+                            setReaderPageIndex(targetPage);
+                        } else {
+                            pendingTargetPageRef.current = 0;
+                            setReaderPageIndex(0);
+                        }
+                        pendingTargetSceneRef.current = null;
+                    } else {
+                        // Explicit navigation to specific sequence / scene
+                        if (targetSc !== null && targetSc !== undefined && targetSc > 0) {
+                            pendingTargetSceneRef.current = { seqIdx: targetSeq, sceneIdx: targetSc };
+                            pendingTargetPageRef.current = null;
+                        } else if (targetPage !== null && targetPage !== undefined) {
+                            pendingTargetPageRef.current = targetPage;
+                            setReaderPageIndex(targetPage);
+                            pendingTargetSceneRef.current = null;
+                        } else {
+                            pendingTargetPageRef.current = 0;
+                            setReaderPageIndex(0);
+                            pendingTargetSceneRef.current = null;
+                        }
+                    }
+                }
+
                 setView('reader');
                 setIsSidebarOpen(false);
                 resetReaderHudTimer();
@@ -13642,6 +13807,44 @@ INSTRUCTIONS:
                 }
             };
 
+            // Scroll Mode position restoration effect
+            useEffect(() => {
+                if (view !== 'reader') return;
+                if (readerSettings.readingMode === 'scroll') {
+                    let attempts = 0;
+                    const tryScroll = () => {
+                        if (!pendingScrollTargetRef.current) return;
+                        const { seqIdx, scIdx, scrollRatio } = pendingScrollTargetRef.current;
+                        let target = null;
+                        if (scIdx !== null && scIdx !== undefined) {
+                            target = document.getElementById(`reader-scene-${seqIdx}-${scIdx}`);
+                        }
+                        if (!target && seqIdx !== null && seqIdx !== undefined) {
+                            target = document.getElementById(`reader-chapter-${seqIdx}`);
+                        }
+                        if (target) {
+                            scrollReaderToElement(target, false);
+                            pendingScrollTargetRef.current = null;
+                        } else if (scrollRatio > 0 && readerScrollContainerRef.current) {
+                            const el = readerScrollContainerRef.current;
+                            const max = el.scrollHeight - el.clientHeight;
+                            if (max > 0) {
+                                el.scrollTop = Math.round(scrollRatio * max);
+                                pendingScrollTargetRef.current = null;
+                            } else if (attempts < 5) {
+                                attempts++;
+                                setTimeout(tryScroll, 60);
+                            }
+                        } else if (attempts < 5) {
+                            attempts++;
+                            setTimeout(tryScroll, 60);
+                        }
+                    };
+                    const timer = setTimeout(tryScroll, 60);
+                    return () => clearTimeout(timer);
+                }
+            }, [view, readerSettings.readingMode, selectedSequence]);
+
             // Dynamic synchronous page count calculation in Paginated Mode (runs before browser paint)
             useLayoutEffect(() => {
                 if (view !== 'reader' || readerSettings.readingMode !== 'paginated') return;
@@ -13652,14 +13855,44 @@ INSTRUCTIONS:
                     if (!measured) return;
                     setReaderContainerWidth(measured.width);
                     setReaderTotalPages(measured.pages);
+                    if (pendingTargetSceneRef.current) {
+                        const { seqIdx, sceneIdx } = pendingTargetSceneRef.current;
+                        const sceneEl = document.getElementById(`reader-paginated-scene-${seqIdx}-${sceneIdx}`);
+                        const gap = window.innerWidth <= 640 ? 24 : 48;
+                        if (sceneEl && measured.width > 0) {
+                            if (sceneIdx > 0 && sceneEl.offsetLeft === 0 && (measured.pages > 1 || currentChapter?.totalWords > 150)) {
+                                requestAnimationFrame(() => calculatePages());
+                                return;
+                            }
+                            const targetPage = Math.max(0, Math.min(Math.floor(sceneEl.offsetLeft / (measured.width + gap)), measured.pages - 1));
+                            setReaderPageIndex(targetPage);
+                            saveReadingProgress(seqIdx, sceneIdx, targetPage);
+                            pendingTargetSceneRef.current = null;
+                            pendingTargetPageRef.current = null;
+                            return;
+                        }
+                    }
 
                     if (pendingTargetPageRef.current === 'last') {
+                        if (measured.pages <= 1 && currentChapter?.totalWords > 150) {
+                            requestAnimationFrame(() => calculatePages());
+                            return;
+                        }
                         const lastIdx = Math.max(0, measured.pages - 1);
                         setReaderPageIndex(lastIdx);
                         pendingTargetPageRef.current = null;
-                        saveReadingProgress(selectedSequence, 0, lastIdx);
+                    } else if (typeof pendingTargetPageRef.current === 'number') {
+                        if (pendingTargetPageRef.current >= measured.pages && currentChapter?.totalWords > 150) {
+                            requestAnimationFrame(() => calculatePages());
+                            return;
+                        }
+                        const targetIdx = Math.max(0, Math.min(pendingTargetPageRef.current, measured.pages - 1));
+                        setReaderPageIndex(targetIdx);
+                        pendingTargetPageRef.current = null;
                     } else if (readerPageIndex >= measured.pages) {
-                        setReaderPageIndex(Math.max(0, measured.pages - 1));
+                        if (measured.pages > 1 || !currentChapter?.totalWords || currentChapter.totalWords <= 150) {
+                            setReaderPageIndex(Math.max(0, measured.pages - 1));
+                        }
                     }
                 };
 
@@ -23914,11 +24147,23 @@ ${finalProseText}
                     </div>
 
                     {/* MAIN CONTENT WORKSPACE */}
-                    <div className={`studio-main-workspace flex-1 flex flex-col h-full relative w-full transition-all duration-300 ${view === 'reader' ? 'md:ml-0' : isSidebarCollapsed ? 'md:ml-16' : 'md:ml-72'} bg-void`}>
+                    <div className={`studio-main-workspace flex-1 flex flex-col h-full relative w-full min-w-0 max-w-full transition-all duration-300 ${view === 'reader' ? 'md:ml-0' : isSidebarCollapsed ? 'md:ml-16' : 'md:ml-72'} bg-void`}>
                         {/* STUDIO APP HEADER (iOS Safe Region & Mobile Momentum Scrollable) */}
                         {view !== 'reader' && (
                             <header className="studio-top-header border-b border-edge backdrop-blur-md z-30 sticky top-0 shadow-2xs flex flex-col justify-center transition-all">
-                                <div className="w-full flex items-center justify-between gap-3 overflow-x-auto no-scrollbar touch-scroll py-2 px-2 md:px-6 min-w-0" style={{ WebkitOverflowScrolling: 'touch' }}>
+                                <div
+                                    className="w-full flex items-center justify-between gap-3 overflow-x-auto overflow-y-hidden no-scrollbar touch-scroll touch-scroll-x py-2 px-2 md:px-6 min-w-0"
+                                    style={{
+                                        WebkitOverflowScrolling: 'touch',
+                                        touchAction: 'pan-x pan-y',
+                                        overscrollBehaviorX: 'contain'
+                                    }}
+                                    onWheel={(e) => {
+                                        if (e.deltaY && !e.deltaX && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
+                                            e.currentTarget.scrollLeft += e.deltaY;
+                                        }
+                                    }}
+                                >
                                     <div className="flex items-center gap-2.5 shrink-0 min-w-0">
                                         <button
                                             onClick={() => setIsSidebarOpen(true)}
@@ -23957,7 +24202,7 @@ ${finalProseText}
                                     </div>
 
                                     {/* Header Actions: Reader Mode, Autopilot & Theme Switcher */}
-                                    <div className="flex items-center gap-2 shrink-0 ml-auto pl-2">
+                                    <div className="flex items-center gap-2 shrink-0 ml-auto pl-2 pr-1">
                                         <button
                                             onClick={() => enterReaderMode()}
                                             className="px-3 py-1.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 border shrink-0 bg-gold-tint hover:bg-gold-tint border-gold-edge text-gold-ink cursor-pointer"
@@ -24073,6 +24318,7 @@ ${finalProseText}
                                     initTtsEngine={initTtsEngine}
                                     showToast={showToast}
                                     changeTtsVoice={changeTtsVoice}
+                                    scrollReaderToElement={scrollReaderToElement}
                                 />
                             )}
 
