@@ -2314,6 +2314,7 @@
         const RefreshCw = (p) => <Icon name="refresh-cw" {...p} />;
         const Edit3 = (p) => <Icon name="edit-3" {...p} />;
         const ArrowLeft = (p) => <Icon name="arrow-left" {...p} />;
+        const ArrowUpRight = (p) => <Icon name="arrow-up-right" {...p} />;
         const FileText = (p) => <Icon name="file-text" {...p} />;
         const Settings = (p) => <Icon name="settings" {...p} />;
         const AlertCircle = (p) => <Icon name="alert-circle" {...p} />;
@@ -4303,23 +4304,7 @@ Story Ending Value State${fullStoryLabels ? ' (Full Story)' : ''}: ${story.endin
             const authorialIntent = extractTag(block, 'authorial_intent') || extractTag(block, 'authorialIntent');
 
             let description = "";
-            if (beatStructure || characterIntent || atmosphereAndFeel || epistemicBoundaries || authorialIntent || beatType) {
-                const parts = [];
-                if (beatType) parts.push(`**BEAT TYPE & PACING:** ${beatType.trim()}\n`);
-                if (beatStructure) parts.push(`**STRUCTURE:**\n${beatStructure.trim()}\n`);
-                if (characterIntent) parts.push(`**CHARACTER INTENT & SPEECH ACTS:**\n${characterIntent.trim()}\n`);
-                if (atmosphereAndFeel) parts.push(`**ATMOSPHERE & COGNITIVE FILTERS:**\n${atmosphereAndFeel.trim()}\n`);
-                if (epistemicBoundaries) parts.push(`**EPISTEMIC BOUNDARIES & FOCALIZATION:**\n${epistemicBoundaries.trim()}\n`);
-                if (authorialIntent) parts.push(`**AUTHORIAL INTENT:**\n${authorialIntent.trim()}\n`);
-
-                if (tactic || action || reaction) {
-                    parts.push(`**CHOREOGRAPHY:**`);
-                    if (tactic) parts.push(`- Tactic: ${tactic}`);
-                    if (action) parts.push(`- Action: ${action}`);
-                    if (reaction) parts.push(`- Reaction: ${reaction}`);
-                }
-                description = parts.join("\n");
-            } else if (tactic || action || reaction) {
+            if (tactic || action || reaction) {
                 const parts = [];
                 if (tactic) parts.push(`[Tactic: ${tactic}]`);
                 if (action) parts.push(action);
@@ -7349,10 +7334,13 @@ INSTRUCTIONS:
                     const usage = data.usageMetadata || {};
                     const thinkingToks = usage.thoughtsTokenCount !== undefined ? usage.thoughtsTokenCount : (reasoningText ? Math.round(reasoningText.trim().split(/\s+/).length * 1.33) : 0);
                     const respToks = usage.candidatesTokenCount !== undefined ? usage.candidatesTokenCount : (text ? Math.round(text.trim().split(/\s+/).length * 1.33) : null);
+                    const promptToks = usage.promptTokenCount !== undefined && usage.promptTokenCount !== null
+                        ? usage.promptTokenCount
+                        : (prompt ? Math.round(((systemPrompt || "") + " " + (prompt || "")).trim().split(/\s+/).length * 1.33) : null);
                     options.onSuccess({
                         modelUsed: modelId,
-                        tokensUsed: usage.totalTokenCount || null,
-                        promptTokens: usage.promptTokenCount || null,
+                        tokensUsed: usage.totalTokenCount || (promptToks !== null && respToks !== null ? promptToks + respToks + thinkingToks : null),
+                        promptTokens: promptToks,
                         responseTokens: respToks,
                         thinkingTokens: thinkingToks,
                         reasoningTokensUsed: thinkingToks,
@@ -7535,10 +7523,13 @@ INSTRUCTIONS:
                     const usage = data.usage || {};
                     const thinkingToks = usage.completion_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens ?? (reasoningText ? Math.round(reasoningText.trim().split(/\s+/).length * 1.33) : 0);
                     const respToks = usage.completion_tokens !== undefined ? usage.completion_tokens : (text ? Math.round(text.trim().split(/\s+/).length * 1.33) : null);
+                    const promptToks = usage.prompt_tokens !== undefined && usage.prompt_tokens !== null
+                        ? usage.prompt_tokens
+                        : (prompt ? Math.round(((systemPrompt || "") + " " + (prompt || "")).trim().split(/\s+/).length * 1.33) : null);
                     options.onSuccess({
                         modelUsed: data.model || modelId,
-                        tokensUsed: usage.total_tokens || null,
-                        promptTokens: usage.prompt_tokens || null,
+                        tokensUsed: usage.total_tokens || (promptToks !== null && respToks !== null ? promptToks + respToks + thinkingToks : null),
+                        promptTokens: promptToks,
                         responseTokens: respToks,
                         thinkingTokens: thinkingToks,
                         reasoningTokensUsed: thinkingToks,
@@ -7669,10 +7660,13 @@ INSTRUCTIONS:
                     const usage = data.usage || {};
                     const thinkingToks = usage.completion_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens ?? (reasoningText ? Math.round(reasoningText.trim().split(/\s+/).length * 1.33) : 0);
                     const respToks = usage.completion_tokens !== undefined ? usage.completion_tokens : (text ? Math.round(text.trim().split(/\s+/).length * 1.33) : null);
+                    const promptToks = usage.prompt_tokens !== undefined && usage.prompt_tokens !== null
+                        ? usage.prompt_tokens
+                        : (prompt ? Math.round(((systemPrompt || "") + " " + (prompt || "")).trim().split(/\s+/).length * 1.33) : null);
                     opts.onSuccess({
                         modelUsed: data.model || modelId,
-                        tokensUsed: usage.total_tokens || null,
-                        promptTokens: usage.prompt_tokens || null,
+                        tokensUsed: usage.total_tokens || (promptToks !== null && respToks !== null ? promptToks + respToks + thinkingToks : null),
+                        promptTokens: promptToks,
                         responseTokens: respToks,
                         thinkingTokens: thinkingToks,
                         reasoningTokensUsed: thinkingToks,
@@ -7848,10 +7842,13 @@ INSTRUCTIONS:
                     const usage = data.usage || {};
                     const thinkingToks = usage.completion_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens ?? (reasoningText ? Math.round(reasoningText.trim().split(/\s+/).length * 1.33) : 0);
                     const respToks = usage.completion_tokens !== undefined ? usage.completion_tokens : (text ? Math.round(text.trim().split(/\s+/).length * 1.33) : null);
+                    const promptToks = usage.prompt_tokens !== undefined && usage.prompt_tokens !== null
+                        ? usage.prompt_tokens
+                        : (prompt ? Math.round(((systemPrompt || "") + " " + (prompt || "")).trim().split(/\s+/).length * 1.33) : null);
                     opts.onSuccess({
                         modelUsed: data.model || modelId,
-                        tokensUsed: usage.total_tokens || null,
-                        promptTokens: usage.prompt_tokens || null,
+                        tokensUsed: usage.total_tokens || (promptToks !== null && respToks !== null ? promptToks + respToks + thinkingToks : null),
+                        promptTokens: promptToks,
                         responseTokens: respToks,
                         thinkingTokens: thinkingToks,
                         reasoningTokensUsed: thinkingToks,
@@ -8393,6 +8390,67 @@ INSTRUCTIONS:
         // Global singleton for story persistence
         const storyStore = new StoryStore();
         window.storyStore = storyStore;
+
+        class LogStore {
+            constructor(dbName = 'EllipsisLogStore') {
+                this.dbName = dbName;
+                this.db = null;
+                this.ready = this.init();
+            }
+
+            init() {
+                return new Promise((resolve, reject) => {
+                    const request = indexedDB.open(this.dbName, 1);
+                    request.onupgradeneeded = (event) => {
+                        const db = event.target.result;
+                        if (!db.objectStoreNames.contains('logs')) {
+                            db.createObjectStore('logs', { keyPath: 'id' });
+                        }
+                    };
+                    request.onsuccess = (event) => {
+                        this.db = event.target.result;
+                        resolve();
+                    };
+                    request.onerror = (event) => reject(event.target.error);
+                });
+            }
+
+            async saveLogs(storyId, logsArray) {
+                await this.ready;
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction('logs', 'readwrite');
+                    const store = tx.objectStore('logs');
+                    store.put({ id: storyId, logs: logsArray, timestamp: Date.now() });
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+
+            async loadLogs(storyId) {
+                await this.ready;
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction('logs', 'readonly');
+                    const store = tx.objectStore('logs');
+                    const request = store.get(storyId);
+                    request.onsuccess = () => resolve(request.result ? request.result.logs : []);
+                    request.onerror = () => reject(request.error);
+                });
+            }
+
+            async clearLogs(storyId) {
+                await this.ready;
+                return new Promise((resolve, reject) => {
+                    const tx = this.db.transaction('logs', 'readwrite');
+                    const store = tx.objectStore('logs');
+                    const request = store.delete(storyId);
+                    tx.oncomplete = () => resolve();
+                    tx.onerror = () => reject(tx.error);
+                });
+            }
+        }
+        
+        const logStore = new LogStore();
+        window.logStore = logStore;
 
         // Saved or generated lore may use a single relation string instead of an array.
         // Keep names intact; unsupported metadata is not a graph link.
@@ -10194,16 +10252,41 @@ INSTRUCTIONS:
            EllipsisProsef (the log is written by the generation pipeline and the detail
            modal is mounted at app level); this is the pure list view over them. */
         const LogsView = ({ promptLog, setPromptLog, logFilter, setLogFilter, openLogDetailModal, showToast }) => {
+            const totalSentTokens = promptLog.reduce((acc, e) => acc + (e.promptTokens || 0), 0);
+            const totalThinkingTokens = promptLog.reduce((acc, e) => acc + (e.thinkingTokens || e.reasoningTokensUsed || 0), 0);
+            const totalResponseTokens = promptLog.reduce((acc, e) => acc + (e.responseTokens || 0), 0);
+            const totalAllTokens = totalSentTokens + totalThinkingTokens + totalResponseTokens;
+
             return (
                 <div className="max-w-6xl mx-auto space-y-6 animate-fade-in">
                     <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-wrap items-center gap-2.5">
                             <h2 className="text-2xl sm:text-3xl font-serif font-bold text-ink-900 flex items-center gap-2.5">
                                 <History className="text-gold-ink" /> Pipeline & Prompt Log
                             </h2>
                             <span className="text-xs font-mono font-bold text-ink-500 bg-mist-100 px-3 py-1 rounded-full border border-edge-strong">
                                 {promptLog.length} entries
                             </span>
+                            {totalSentTokens > 0 && (
+                                <span className="text-xs font-mono font-bold text-sage-800 bg-sage-tint px-2.5 py-1 rounded-full border border-sage-edge flex items-center gap-1" title="Total tokens sent to AI across all steps">
+                                    <ArrowUpRight size={11} className="text-sage-600" /> Sent: {totalSentTokens.toLocaleString()} tok
+                                </span>
+                            )}
+                            {totalThinkingTokens > 0 && (
+                                <span className="text-xs font-mono font-bold text-plum-800 bg-plum-tint px-2.5 py-1 rounded-full border border-plum-edge flex items-center gap-1" title="Total thinking / reasoning tokens generated">
+                                    <Brain size={11} className="text-plum-600" /> Think: {totalThinkingTokens.toLocaleString()} tok
+                                </span>
+                            )}
+                            {totalResponseTokens > 0 && (
+                                <span className="text-xs font-mono font-bold text-blue-800 bg-azure-tint px-2.5 py-1 rounded-full border border-azure-edge flex items-center gap-1" title="Total response tokens generated">
+                                    <MessageSquare size={11} className="text-blue-600" /> Resp: {totalResponseTokens.toLocaleString()} tok
+                                </span>
+                            )}
+                            {totalAllTokens > 0 && (
+                                <span className="text-xs font-mono font-bold text-ink-700 bg-inset px-2.5 py-1 rounded-full border border-edge-strong flex items-center gap-1" title="Total context & generation tokens (Sent + Think + Resp)">
+                                    Total: {totalAllTokens.toLocaleString()} tok
+                                </span>
+                            )}
                         </div>
                         <div className="flex flex-wrap items-center gap-1.5 bg-surface p-1 rounded-xl border border-edge-strong shadow-2xs text-xs">
                             {['all', 'calls', 'validations', 'delays', 'errors'].map(filterKey => (
@@ -10279,6 +10362,21 @@ INSTRUCTIONS:
                                                 {!isDelay && (
                                                     <div className="flex flex-wrap items-center gap-2">
                                                         <button
+                                                            onClick={() => openLogDetailModal('prompt', entry)}
+                                                            className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold font-sans transition-all border shadow-2xs ${entry.prompt || entry.systemPrompt
+                                                                ? 'bg-sage-tint hover:bg-emerald-100 text-sage-900 border-sage-edge hover:border-emerald-300'
+                                                                : 'bg-mist-100 text-ink-500 border-edge-strong hover:bg-mist-200/80 hover:text-ink-700'
+                                                                }`}
+                                                            title="View Full Prompt & Context Sent to AI in Pop-up Window"
+                                                        >
+                                                            <ArrowUpRight size={12} className={entry.prompt || entry.systemPrompt ? 'text-sage-700' : 'text-ink-400'} />
+                                                            <span>Sent Prompt</span>
+                                                            {(entry.promptTokens !== null && entry.promptTokens !== undefined) && (
+                                                                <span className="text-[10px] font-mono font-normal opacity-85">({entry.promptTokens.toLocaleString()} tok)</span>
+                                                            )}
+                                                        </button>
+
+                                                        <button
                                                             onClick={() => openLogDetailModal('thinking', entry)}
                                                             className={`text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold font-sans transition-all border shadow-2xs ${entry.reasoningText || (entry.thinkingTokens && entry.thinkingTokens > 0)
                                                                 ? 'bg-plum-tint hover:bg-plum-tint-strong text-plum-900 border-plum-edge hover:border-plum-edge'
@@ -10309,7 +10407,7 @@ INSTRUCTIONS:
                                                         </button>
 
                                                         <button
-                                                            onClick={() => { navigator.clipboard.writeText(`System: ${entry.systemPrompt}\n\nUser: ${entry.prompt}`); showToast("Copied full context!"); }}
+                                                            onClick={() => { navigator.clipboard.writeText(`System: ${entry.systemPrompt || ''}\n\nUser: ${entry.prompt || ''}`); showToast("Copied full context!"); }}
                                                             className="text-xs flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-ink-500 hover:text-ink-900 hover:bg-wash transition-colors font-medium border border-transparent hover:border-edge-strong"
                                                             title="Copy System & User Prompt Context"
                                                         >
@@ -10328,25 +10426,36 @@ INSTRUCTIONS:
                                                 )}
 
                                                 {entry.modelUsed && (
-                                                    <div className="flex flex-wrap gap-4 text-xs text-ink-600 bg-inset p-3 rounded-xl border border-edge-strong font-sans">
+                                                    <div className="flex flex-wrap items-center gap-4 text-xs text-ink-600 bg-inset p-3 rounded-xl border border-edge-strong font-sans">
                                                         <div>Model: <span className="text-ink-900 font-bold font-mono">{entry.modelUsed}</span></div>
                                                         {entry.modelSize && <div>Size Target: <span className="text-gold-ink font-bold uppercase font-mono">{entry.modelSize}</span></div>}
                                                         {entry.provider && <div>Provider: <span className="text-ink-800 uppercase font-bold">{entry.provider}</span></div>}
+                                                        {entry.promptTokens !== null && entry.promptTokens !== undefined && (
+                                                            <div className="flex items-center gap-1 text-sage-900 font-bold">
+                                                                <ArrowUpRight size={12} className="text-sage-700" />
+                                                                Sent Tokens: <span className="font-mono text-sage-800">{entry.promptTokens.toLocaleString()}</span>
+                                                            </div>
+                                                        )}
                                                         {(entry.thinkingTokens !== null && entry.thinkingTokens !== undefined) ? (
                                                             <div className="flex items-center gap-1 text-plum-900 font-bold">
                                                                 <Brain size={12} className="text-plum-600" />
-                                                                Thinking Tokens: <span className="font-mono text-plum-800">{entry.thinkingTokens}</span>
+                                                                Thinking Tokens: <span className="font-mono text-plum-800">{entry.thinkingTokens.toLocaleString()}</span>
                                                             </div>
                                                         ) : (entry.reasoningTokensUsed !== null && entry.reasoningTokensUsed !== undefined) ? (
                                                             <div className="flex items-center gap-1 text-plum-900 font-bold">
                                                                 <Brain size={12} className="text-plum-600" />
-                                                                Thinking Tokens: <span className="font-mono text-plum-800">{entry.reasoningTokensUsed}</span>
+                                                                Thinking Tokens: <span className="font-mono text-plum-800">{entry.reasoningTokensUsed.toLocaleString()}</span>
                                                             </div>
                                                         ) : null}
                                                         {entry.responseTokens !== null && entry.responseTokens !== undefined && (
                                                             <div className="flex items-center gap-1 text-blue-900 font-bold">
                                                                 <MessageSquare size={12} className="text-blue-600" />
-                                                                Response Tokens: <span className="font-mono text-blue-800">{entry.responseTokens}</span>
+                                                                Response Tokens: <span className="font-mono text-blue-800">{entry.responseTokens.toLocaleString()}</span>
+                                                            </div>
+                                                        )}
+                                                        {((entry.promptTokens !== null && entry.promptTokens !== undefined) || (entry.tokensUsed !== null && entry.tokensUsed !== undefined)) && (
+                                                            <div className="flex items-center gap-1 text-ink-700 font-bold sm:ml-auto">
+                                                                <span className="text-ink-500 font-normal">Total:</span> <span className="font-mono text-ink-900 font-bold">{((entry.tokensUsed ?? ((entry.promptTokens || 0) + (entry.thinkingTokens || entry.reasoningTokensUsed || 0) + (entry.responseTokens || 0)))).toLocaleString()} tok</span>
                                                             </div>
                                                         )}
                                                     </div>
@@ -10394,17 +10503,34 @@ INSTRUCTIONS:
                                                     </div>
                                                 )}
 
-                                                {!isDelay && entry.systemPrompt && (
-                                                    <div>
-                                                        <div className="text-[10px] text-ink-400 font-bold uppercase mb-1 font-mono">System Prompt</div>
-                                                        <div className="text-ink-700 whitespace-pre-wrap max-h-28 overflow-y-auto bg-inset p-3 rounded-xl border border-edge-strong custom-scrollbar text-xs leading-relaxed">{entry.systemPrompt}</div>
-                                                    </div>
-                                                )}
-
-                                                {!isDelay && entry.prompt && (
-                                                    <div>
-                                                        <div className="text-[10px] text-ink-400 font-bold uppercase mb-1 font-mono">User Prompt</div>
-                                                        <div className="text-ink-800 whitespace-pre-wrap max-h-40 overflow-y-auto bg-inset p-3 rounded-xl border border-edge-strong text-xs custom-scrollbar leading-relaxed">{entry.prompt}</div>
+                                                {!isDelay && (entry.prompt || entry.systemPrompt) && (
+                                                    <div className="space-y-2 pt-1 border-t border-edge-strong">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="text-[10px] text-ink-400 font-bold uppercase font-mono flex items-center gap-1">
+                                                                <ArrowUpRight size={11} className="text-sage-600" /> Sent Context & Prompts
+                                                                {entry.promptTokens !== null && entry.promptTokens !== undefined && (
+                                                                    <span className="text-sage-800 font-bold ml-1">({entry.promptTokens.toLocaleString()} tok)</span>
+                                                                )}
+                                                            </div>
+                                                            <button
+                                                                onClick={() => openLogDetailModal('prompt', entry)}
+                                                                className="text-[11px] text-sage-700 hover:text-sage-900 flex items-center gap-1 font-sans font-bold hover:underline"
+                                                            >
+                                                                Pop-up Prompt Window <Maximize2 size={11} />
+                                                            </button>
+                                                        </div>
+                                                        {entry.systemPrompt && (
+                                                            <div>
+                                                                <div className="text-[10px] text-ink-400 font-bold uppercase mb-1 font-mono">System Prompt</div>
+                                                                <div className="text-ink-700 whitespace-pre-wrap max-h-28 overflow-y-auto bg-inset p-3 rounded-xl border border-edge-strong custom-scrollbar text-xs leading-relaxed">{entry.systemPrompt}</div>
+                                                            </div>
+                                                        )}
+                                                        {entry.prompt && (
+                                                            <div>
+                                                                <div className="text-[10px] text-ink-400 font-bold uppercase mb-1 font-mono">User Prompt</div>
+                                                                <div className="text-ink-800 whitespace-pre-wrap max-h-40 overflow-y-auto bg-inset p-3 rounded-xl border border-edge-strong text-xs custom-scrollbar leading-relaxed">{entry.prompt}</div>
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
@@ -10733,13 +10859,14 @@ INSTRUCTIONS:
             if (!isOpen) return null;
 
             const isThinking = type === 'thinking';
+            const isPrompt = type === 'prompt';
             const charCount = (content || '').length;
             const wordCount = (content || '').trim() ? (content || '').trim().split(/\s+/).length : 0;
 
             const handleCopy = () => {
                 if (content) {
                     navigator.clipboard.writeText(content);
-                    if (showToast) showToast(`Copied ${isThinking ? 'thinking trace' : 'response'} to clipboard!`, 'success');
+                    if (showToast) showToast(`Copied ${isThinking ? 'thinking trace' : isPrompt ? 'sent prompt context' : 'response'} to clipboard!`, 'success');
                 }
             };
 
@@ -10747,14 +10874,14 @@ INSTRUCTIONS:
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 backdrop-blur-sm p-4 animate-fade-in" onClick={onClose}>
                     <div className="glass-modal w-full max-w-4xl rounded-2xl flex flex-col max-h-[88vh] shadow-2xl overflow-hidden bg-surface border border-edge-strong" onClick={e => e.stopPropagation()}>
                         {/* Modal Header */}
-                        <div className={`p-4 sm:p-5 border-b border-edge-strong flex flex-wrap justify-between items-center gap-3 ${isThinking ? 'bg-plum-tint' : 'bg-azure-tint'}`}>
+                        <div className={`p-4 sm:p-5 border-b border-edge-strong flex flex-wrap justify-between items-center gap-3 ${isThinking ? 'bg-plum-tint' : isPrompt ? 'bg-sage-tint' : 'bg-azure-tint'}`}>
                             <div className="flex items-center gap-3">
-                                <div className={`p-2 rounded-xl border ${isThinking ? 'bg-plum-tint-strong border-plum-edge text-plum-700' : 'bg-blue-100 border-azure-edge text-blue-700'}`}>
-                                    {isThinking ? <Brain size={20} /> : <MessageSquare size={20} />}
+                                <div className={`p-2 rounded-xl border ${isThinking ? 'bg-plum-tint-strong border-plum-edge text-plum-700' : isPrompt ? 'bg-sage-tint-strong border-sage-edge text-sage-800' : 'bg-blue-100 border-azure-edge text-blue-700'}`}>
+                                    {isThinking ? <Brain size={20} /> : isPrompt ? <ArrowUpRight size={20} /> : <MessageSquare size={20} />}
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2">
-                                        <h3 className={`text-base font-bold font-serif ${isThinking ? 'text-plum-950' : 'text-blue-950'}`}>
+                                        <h3 className={`text-base font-bold font-serif ${isThinking ? 'text-plum-950' : isPrompt ? 'text-sage-950' : 'text-blue-950'}`}>
                                             {title}
                                         </h3>
                                         <span className="text-[11px] font-bold font-mono px-2.5 py-0.5 rounded-full bg-mist-200/80 text-ink-800 border border-edge-300">
@@ -10765,8 +10892,8 @@ INSTRUCTIONS:
                                         {timestamp && <span>🕒 {timestamp}</span>}
                                         {model && <span>🤖 {model}</span>}
                                         {tokens !== null && tokens !== undefined && (
-                                            <span className={`font-bold px-2 py-0.5 rounded border ${isThinking ? 'bg-plum-tint-strong text-plum-800 border-plum-edge' : 'bg-blue-100 text-blue-800 border-blue-300'}`}>
-                                                {isThinking ? 'Thinking' : 'Response'} Tokens: {tokens}
+                                            <span className={`font-bold px-2 py-0.5 rounded border ${isThinking ? 'bg-plum-tint-strong text-plum-800 border-plum-edge' : isPrompt ? 'bg-sage-tint-strong text-sage-800 border-sage-edge' : 'bg-blue-100 text-blue-800 border-blue-300'}`}>
+                                                {isThinking ? 'Thinking' : isPrompt ? 'Sent' : 'Response'} Tokens: {tokens.toLocaleString()}
                                             </span>
                                         )}
                                     </div>
@@ -12764,6 +12891,7 @@ INSTRUCTIONS:
                 try {
                     const deletedId = storyItem.id;
                     await storyStore.deleteStory(deletedId);
+                    await logStore.clearLogs(deletedId);
                     try {
                         await imageStore.deleteImage(`cover_${deletedId}`);
                     } catch (imgErr) {
@@ -12845,7 +12973,7 @@ INSTRUCTIONS:
             const handleQuickExportJson = (storyItem) => {
                 if (!storyItem || !storyItem.data) return;
                 try {
-                    const jsonStr = JSON.stringify(storyItem.data, null, 2);
+                    const jsonStr = JSON.stringify(storyItem.data);
                     const blob = new Blob([jsonStr], { type: "application/json" });
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
@@ -13270,6 +13398,32 @@ INSTRUCTIONS:
             const coverUploadInputRef = useRef(null);
 
             const [promptLog, setPromptLog] = useState([]);
+            const isLogHydrated = useRef(false);
+
+            useEffect(() => {
+                let isMounted = true;
+                const loadLogs = async () => {
+                    if (!activeStoryId) return;
+                    try {
+                        const savedLogs = await logStore.loadLogs(activeStoryId);
+                        if (!isMounted) return;
+                        setPromptLog(savedLogs || []);
+                        isLogHydrated.current = true;
+                    } catch (e) {
+                        console.error("Failed to load logs:", e);
+                    }
+                };
+                isLogHydrated.current = false;
+                loadLogs();
+                return () => { isMounted = false; };
+            }, [activeStoryId]);
+
+            useEffect(() => {
+                if (activeStoryId && isLogHydrated.current) {
+                    logStore.saveLogs(activeStoryId, promptLog).catch(e => console.error("Failed to save logs:", e));
+                }
+            }, [promptLog, activeStoryId]);
+
             const [currentPipelineStep, setCurrentPipelineStep] = useState(null);
             const [inspectedStepId, setInspectedStepId] = useState(null);
             const [generatingSceneKey, setGeneratingSceneKey] = useState(null);
@@ -15044,6 +15198,28 @@ INSTRUCTIONS:
                         model: entry.modelUsed || '',
                         tokens: tokens,
                         content: thinkingContent
+                    });
+                } else if (type === 'prompt') {
+                    let promptContent = "";
+                    if (entry.systemPrompt && entry.systemPrompt.trim()) {
+                        promptContent += `=== SYSTEM PROMPT ===\n\n${entry.systemPrompt.trim()}\n\n`;
+                    }
+                    if (entry.prompt && entry.prompt.trim()) {
+                        promptContent += `=== USER PROMPT ===\n\n${entry.prompt.trim()}`;
+                    }
+                    if (!promptContent.trim()) {
+                        promptContent = "(No prompt context recorded for this step.)";
+                    }
+                    const tokens = entry.promptTokens ?? (promptContent ? Math.round(promptContent.trim().split(/\s+/).length * 1.33) : null);
+                    setLogModalState({
+                        isOpen: true,
+                        type: 'prompt',
+                        title: 'Sent Prompt & Input Context',
+                        functionName: entry.function,
+                        timestamp: entry.timestamp,
+                        model: entry.modelUsed || '',
+                        tokens: tokens,
+                        content: promptContent
                     });
                 } else {
                     const respContent = entry.response || entry.responseSnippet || "(No response output recorded.)";
@@ -20108,7 +20284,7 @@ BEGIN GENERATING IMAGE PROMPT`;
 
             const handleExport = () => {
                 try {
-                    const jsonString = JSON.stringify(story, null, 2);
+                    const jsonString = JSON.stringify(story);
                     const blob = new Blob([jsonString], { type: "application/json" });
                     const url = URL.createObjectURL(blob);
                     const link = document.createElement('a');
@@ -20497,7 +20673,7 @@ ${chapterBody}
                             dbExport.images[key] = imagesMap[key];
                         }
                     });
-                    zip.folder("META-INF").file("story.json", JSON.stringify(dbExport, null, 2));
+                    zip.folder("META-INF").file("story.json", JSON.stringify(dbExport));
 
                     // 7. Generate
                     const content = await zip.generateAsync({ type: "blob" });
@@ -20767,6 +20943,8 @@ ${chapterBody}
                 };
                 const modelToUse = getModel();
 
+                const initialEstimatedPromptTokens = Math.round(((systemPrompt || "") + " " + (prompt || "")).trim().split(/\s+/).length * 1.33);
+
                 const logEntry = {
                     id: logId,
                     timestamp: new Date().toLocaleTimeString(),
@@ -20780,7 +20958,7 @@ ${chapterBody}
                     durationSec: null,
                     durationMs: null,
                     tokensUsed: null,
-                    promptTokens: null,
+                    promptTokens: initialEstimatedPromptTokens,
                     responseTokens: null,
                     thinkingTokens: null,
                     reasoningTokensUsed: null,
@@ -20860,7 +21038,8 @@ ${chapterBody}
                         const durationMs = Math.round(performance.now() - startTime);
                         const thinkingToks = metadata.thinkingTokens ?? metadata.reasoningTokensUsed ?? 0;
                         const respToks = metadata.responseTokens ?? (metadata.tokensUsed ? Math.max(0, metadata.tokensUsed - thinkingToks) : null);
-                        console.log(`[AI Call - "${logName}"] SUCCESS in ${durationSec}s | Model: ${metadata.modelUsed} | Thinking Tokens: ${thinkingToks} | Response Tokens: ${respToks || 'unknown'}`);
+                        const promptToks = metadata.promptTokens ?? (prompt ? Math.round(((finalSystemPrompt || "") + " " + (prompt || "")).trim().split(/\s+/).length * 1.33) : initialEstimatedPromptTokens);
+                        console.log(`[AI Call - "${logName}"] SUCCESS in ${durationSec}s | Model: ${metadata.modelUsed} | Sent Tokens: ${promptToks ?? 'unknown'} | Thinking Tokens: ${thinkingToks} | Response Tokens: ${respToks || 'unknown'}`);
                         setPromptLog(prev => prev.map(entry => {
                             if (entry.id === logId) {
                                 return {
@@ -20869,8 +21048,8 @@ ${chapterBody}
                                     durationSec: durationSec,
                                     durationMs: durationMs,
                                     modelUsed: metadata.modelUsed || modelToUse,
-                                    tokensUsed: metadata.tokensUsed,
-                                    promptTokens: metadata.promptTokens,
+                                    tokensUsed: metadata.tokensUsed ?? ((promptToks || 0) + (thinkingToks || 0) + (respToks || 0)),
+                                    promptTokens: promptToks,
                                     responseTokens: respToks,
                                     thinkingTokens: thinkingToks,
                                     reasoningTokensUsed: thinkingToks,
@@ -20909,9 +21088,13 @@ ${chapterBody}
                         const respStr = typeof response === 'string' ? response : JSON.stringify(response, null, 2);
                         const snippet = respStr.length > 300 ? respStr.slice(0, 300) + '...' : respStr;
                         const estimatedRespTokens = Math.round(respStr.trim().split(/\s+/).length * 1.33);
+                        const estimatedPromptTokens = Math.round(((finalSystemPrompt || "") + " " + (prompt || "")).trim().split(/\s+/).length * 1.33);
 
                         setPromptLog(prev => prev.map(entry => {
                             if (entry.id === logId) {
+                                const finalPromptTokens = entry.promptTokens !== null && entry.promptTokens !== undefined ? entry.promptTokens : estimatedPromptTokens;
+                                const finalRespTokens = entry.responseTokens !== null && entry.responseTokens !== undefined ? entry.responseTokens : estimatedRespTokens;
+                                const finalThinkingTokens = entry.thinkingTokens || 0;
                                 return {
                                     ...entry,
                                     status: 'success',
@@ -20919,7 +21102,9 @@ ${chapterBody}
                                     durationMs: entry.durationMs || durationMs,
                                     response: respStr,
                                     responseSnippet: snippet,
-                                    responseTokens: entry.responseTokens !== null && entry.responseTokens !== undefined ? entry.responseTokens : estimatedRespTokens,
+                                    promptTokens: finalPromptTokens,
+                                    responseTokens: finalRespTokens,
+                                    tokensUsed: entry.tokensUsed ?? ((finalPromptTokens || 0) + (finalThinkingTokens || 0) + (finalRespTokens || 0)),
                                     validationSummary: entry.validationSummary || `Valid response received (${respStr.length} chars) in ${durationSec}s`
                                 };
                             }
@@ -23263,13 +23448,16 @@ ${finalProseText}
                     // ============================================================================
                     // STEP 4: Scene Archivist Step & State Update (D14)
                     setLoadingStep("Final Agent: Archiving scene updates (Tier 6.4)...");
+                    const rawDraft = proseResult.parsedData?.prose || finalProseText;
                     const proseEntry = {
-                        draft: proseResult.parsedData?.prose || finalProseText,
                         final: finalProseText,
                         metrics: proseMetrics,
                         failed: proseResult.failed || false,
                         critique: proseResult.critique || ""
                     };
+                    if (rawDraft !== finalProseText) {
+                        proseEntry.draft = rawDraft;
+                    }
                     const updatedProseMap = {
                         ...(storyToUse.prose || {}),
                         [sId]: proseEntry
