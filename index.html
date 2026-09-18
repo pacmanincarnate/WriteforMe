@@ -3648,12 +3648,11 @@
 
         // Structured extractor for Writing Style Description (Tier 0.1)
         const parseStructuredStyle = (rawStyle, fallbackObj = {}) => {
-            if (!rawStyle && !fallbackObj) return { focalizerBias: "", thematicLexicon: "", syntacticRhythm: "", antiPatterns: "", raw: "" };
+            if (!rawStyle && !fallbackObj) return { focalizerBias: "", syntacticRhythm: "", antiPatterns: "", raw: "" };
             const obj = typeof rawStyle === 'object' && rawStyle !== null ? rawStyle : (typeof fallbackObj === 'object' ? fallbackObj : {});
             const text = typeof rawStyle === 'string' ? rawStyle : (obj.style_raw || obj.writing_guide || "");
 
             const focalizerBias = obj.focalizer_bias || obj.focalizerBias || extractTag(text, 'focalizer_bias') || extractTag(text, 'bias');
-            const thematicLexicon = obj.thematic_lexicon || obj.thematicLexicon || extractTag(text, 'thematic_lexicon') || extractTag(text, 'lexicon');
             const syntacticRhythm = obj.syntactic_rhythm || obj.syntacticRhythm || extractTag(text, 'syntactic_rhythm') || extractTag(text, 'rhythm');
 
             const antiPatternTags = extractTagList(text, 'anti_patterns');
@@ -3666,11 +3665,10 @@
                 antiPatterns = extractTag(text, 'anti_patterns') || extractTag(text, 'anti_pattern');
             }
 
-            const cleanFallback = (!focalizerBias && !thematicLexicon && !syntacticRhythm && !antiPatterns && text) ? stripXmlTags(text) : "";
+            const cleanFallback = (!focalizerBias && !syntacticRhythm && !antiPatterns && text) ? stripXmlTags(text) : "";
 
             return {
                 focalizerBias: focalizerBias ? decodeXmlEntities(focalizerBias).trim() : cleanFallback,
-                thematicLexicon: thematicLexicon ? decodeXmlEntities(thematicLexicon).trim() : "",
                 syntacticRhythm: syntacticRhythm ? decodeXmlEntities(syntacticRhythm).trim() : "",
                 antiPatterns: antiPatterns ? decodeXmlEntities(antiPatterns).trim() : "",
                 raw: text
@@ -3697,7 +3695,6 @@
             const sensoryDirective = parsedTone.sensoryDirective || "Filter physical details through the focalizer character's emotional state and worldview";
 
             const focalizerBias = parsedStyle.focalizerBias || "Distort descriptions through the protagonist's biases and psychological blind spots";
-            const thematicLexicon = parsedStyle.thematicLexicon || (style.writing_guide ? stripXmlTags(style.writing_guide) : "Rich, precise vocabulary matching story themes");
             const syntacticRhythm = parsedStyle.syntacticRhythm || "Dynamic sentence cadence matching scene pacing and tension";
             const antiPatterns = parsedStyle.antiPatterns || "Avoid melodrama, purple prose, empty exposition, and redundant adverbs";
 
@@ -3724,7 +3721,6 @@
 
             const styleBlock = `<writing_style_description>
   <focalizer_bias>${focalizerBias}</focalizer_bias>
-  <thematic_lexicon>${thematicLexicon}</thematic_lexicon>
   <syntactic_rhythm>${syntacticRhythm}</syntactic_rhythm>
   <anti_patterns>${antiPatterns}</anti_patterns>${techLines}${loreLines}
 </writing_style_description>`;
@@ -5084,10 +5080,30 @@ BEGIN SURGICAL BEAT REPAIR`;
                                 targetBeat.reaction = rep.char_B_reaction;
                             }
                             if (rep.power_shift) targetBeat.power_shift = rep.power_shift;
+
+                            const escapedId = repId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            let blockRegex = new RegExp(`<beat>[\\s\\S]*?(?:<beat_id>|<id>)\\s*${escapedId}\\s*(?:<\\/beat_id>|<\\/id>)[\\s\\S]*?<\\/beat>`, 'i');
+                            let match = genOutput.match(blockRegex);
+                            if (match) {
+                                let newBlock = match[0];
+                                if (rep.char_A_tactic) {
+                                    newBlock = newBlock.replace(/<(tactic|char_A_tactic)>[\s\S]*?<\/\1>/gi, `<$1>${rep.char_A_tactic}</$1>`);
+                                }
+                                if (rep.char_A_action) {
+                                    newBlock = newBlock.replace(/<(action|char_A_action)>[\s\S]*?<\/\1>/gi, `<$1>${rep.char_A_action}</$1>`);
+                                }
+                                if (rep.char_B_reaction) {
+                                    newBlock = newBlock.replace(/<(reaction|char_B_reaction)>[\s\S]*?<\/\1>/gi, `<$1>${rep.char_B_reaction}</$1>`);
+                                }
+                                if (rep.power_shift && newBlock.includes('<power_shift>')) {
+                                    newBlock = newBlock.replace(/<power_shift>[\s\S]*?<\/power_shift>/gi, `<power_shift>${rep.power_shift}</power_shift>`);
+                                }
+                                genOutput = genOutput.replace(match[0], newBlock);
+                            }
                         }
                     }
                     console.groupEnd();
-                    return { success: true, repairedCount: repairedList.length };
+                    return { success: true, repairedCount: repairedList.length, genOutput };
                 }
             } catch (err) {
                 console.error("[Surgical MRU Choreographer] Failed to execute surgical repair:", err);
@@ -5180,10 +5196,24 @@ BEGIN SURGICAL BEAT REPAIR`;
                         if (targetScene && rep.value_shift && rep.value_shift.start_state && rep.value_shift.end_state) {
                             targetScene.value_shift.start_state = rep.value_shift.start_state;
                             targetScene.value_shift.end_state = rep.value_shift.end_state;
+                            
+                            const escapedId = repId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            let blockRegex = new RegExp(`<scene>[\\s\\S]*?(?:<number>|<scene_id>)\\s*${escapedId}\\s*(?:<\\/number>|<\\/scene_id>)[\\s\\S]*?<\\/scene>`, 'i');
+                            let match = genOutput.match(blockRegex);
+                            if (match) {
+                                let newBlock = match[0];
+                                if (rep.value_shift.start_state) {
+                                    newBlock = newBlock.replace(/<start_state>[\s\S]*?<\/start_state>/gi, `<start_state>${rep.value_shift.start_state}</start_state>`);
+                                }
+                                if (rep.value_shift.end_state) {
+                                    newBlock = newBlock.replace(/<end_state>[\s\S]*?<\/end_state>/gi, `<end_state>${rep.value_shift.end_state}</end_state>`);
+                                }
+                                genOutput = genOutput.replace(match[0], newBlock);
+                            }
                         }
                     }
                     console.groupEnd();
-                    return { success: true, repairedCount: repairedList.length };
+                    return { success: true, repairedCount: repairedList.length, genOutput };
                 }
             } catch (err) {
                 console.error("[Surgical Value Shift Repair] Failed to execute surgical repair:", err);
@@ -7076,6 +7106,7 @@ Based on the Frank Daniel 8-Sequence Model:
 
 ## Pillar 3: Sequence Boundaries & Causal Handoffs
 - A sequence boundary is drawn exclusively when the short-term dramatic goal is resolved (definitive success or failure). The moment the immediate approach resolves or shifts, the sequence concludes, and the ending hook compels the characters into the next dramatic chapter (Therefore/But progression).
+- CRITICAL STATE TRACKING: Explicitly maintain continuity between sequences. A sequence must begin exactly where the previous sequence's ending_hook left the characters, both physically and temporally. Do not loop the same dramatic beats or reset character progress.
 - Goal: To create relentless narrative drive and prevent episodic, disconnected "And Then" plotting.
 
 ## Pillar 4: The 8 Sequences Across the Novel
@@ -7594,7 +7625,7 @@ You will receive the following context blocks:
 
 DWIGHT SWAIN & ROBERT MCKEE MANDATES:
 1. Biological Reaction Order (char_B_reaction):
-   - Step 1: Involuntary visceral sensation / feeling (breath hitch, pulse spike, gut drop, muscle freeze).
+   - Step 1: Involuntary visceral sensation / feeling (sudden flinch, pulse spike, gut drop, muscle freeze).
    - Step 2: Voluntary physical action / movement (stepping in/back, shifting stance, gripping an object).
    - Step 3: Speech / spoken counter-dialogue (verbal response or emotional bid).
 2. Action / Stimulus (char_A_action):
@@ -7647,30 +7678,52 @@ BEGIN SURGICAL MRU REPAIR`,
 - Beat 1 must open precisely at the designated starting situation, honoring transition_jump and entrance_conditions. The final beat must culminate at the designated turning point and resolve into the exit conditions. Beats must never bleed into subsequent scenes.
 - Goal: To strictly enforce scene boundaries while filling the space *between* the boundaries with rich, eventful, and emotionally resonant narrative.
 
-## Pillar 6: Character Tactics & Emotional Bids
+## Pillar 8: Character Tactics, Emotional Bids & Empathy
 - A tactic is any intentional/subconscious attempt to fulfill a desire. Tactics include BOTH strategic moves (Probes, Deflects) AND soft emotional bids (Seeks Reassurance, Pleads, Expresses Vulnerability). When resisted, characters pivot, escalate, or retreat. Subtext reflects emotional truth—not merely cold calculation.
-- Goal: To ensure dialogue is character-driven, emotionally rich, and adapted perfectly to the genre tone.
+- **Empathy & Stakes:** Your underlying objective is to make the reader care deeply about the characters. Expose their vulnerabilities, their desperate attempts to connect or protect themselves, and the raw emotional stakes driving their tactics. Let them bleed, fail, and hope.
+- Goal: To ensure dialogue is character-driven, emotionally rich, and engineered to build profound empathy with the reader.
 
-## Pillar 7: Chronotope Pacing Control
+## Pillar 9: Chronotope Pacing Control
 - Classify beats as DRAMATIC (high stakes peaks with deep sensory focus) or TRANSITIONAL (lean, kinetic spatial handoffs).
 - Goal: To provide the downstream prose stylist with explicit pacing instructions.
 
-## Pillar 8: Action-First Execution & The "Camera Lens" Constraint
+## Pillar 10: Action-First Execution & The "Camera Lens" Constraint
 - Clearly articulate who does what to whom, how the physical environment is manipulated, and what specific verbal/physical strike or bid is launched.
 - **The Camera Rule:** If a camera cannot film it, it should not be the primary focus of the beat. Banish extended internal monologues. Emotion must be translated into outward physical action, kinetic movement, or spoken dialogue.
 - Goal: To prevent the narrative from stalling in endless, passive interiority and ground the interaction in tangible physical reality.
 
-## Pillar 9: The Anchor Protocol
+## Pillar 11: Dramatic Specifications (What & Why, Not How)
+- You are writing a **dramatic specification**, not a rough draft of the prose. Your output must define WHAT happens (the action/event) and WHY it matters (the subtext/tactic).
+- **DO NOT write near-prose descriptions** or dictate the specific literary language, adjectives, or metaphors to be used. Leave the actual physical descriptions and prose styling to the downstream Writing Agent.
+- Instead of prescriptive prose (e.g., "He drives the rusted, heavy-gauge edge of the shovel into the calcified silt"), provide structural components (e.g., "EVENT: He resumes his grueling daily labor of well-clearing. SENSORY PRIORITY: Weight of tool, resistance of earth. SUBTEXT: Trying to control his world through exhaustion.").
+- Goal: To prevent beats from becoming prescriptive rough drafts, giving the Writing Agent the freedom to translate pure dramatic logic into high-quality original prose.
+
+## Pillar 12: The Anchor Protocol
 - Every beat that introduces a new fact, decision, reveal, or irreversible change must codify it in the <anchor> field as a single concrete sentence.
 - TRANSITIONAL beats with no new information may use "—" as the anchor.
 - Goal: Create an auditable trail of plot-critical facts that downstream agents can verify verbatim.
 
-## Pillar 10: Character Attribution
+## Pillar 13: Character Attribution
 - Every beat MUST specify an <initiator> — the character who launches the action.
 - If another character receives and reacts, specify a <reactor>.
 - For solo beats (character acting alone — exploring, discovering, internal realization), set <reactor> to "—".
 - If more than two characters are actively involved in the beat (group discussions, crowd scenes, multi-party confrontations), list ALL active character names (beyond initiator and reactor) in <participants> as a comma-separated list.
 - The writing agent uses these fields for strict POV focalization and character attribution.
+
+## Pillar 14: Beat Typology & Mandatory Variety
+- **Mandatory Minimums:** Every scene MUST contain a diverse ecosystem of beat types. You are strictly mandated to include AT LEAST ONE of each of the following beat types in every scene:
+  1. **ENVIRONMENT:** A beat spent describing the setting, architecture, or worldbuilding, letting the physical world act upon the character or set the atmosphere.
+  2. **REFLECTION:** A beat where the character thinks about what is happening, processes new information, and re-evaluates their stance or strategy.
+  3. **MEMORY:** A beat where the protagonist relates the current events to something from their past life or history. *(Note: Anchor this internal memory to a present physical trigger to respect the Camera Lens constraint).*
+  4. **ACTION / KINETIC:** A beat focused on physical momentum, exertion, or tangible interaction with the space or an object.
+  5. **SENSORY / TENSION:** A beat dedicated to a visceral sensory discovery (a sudden sound, a shift in temperature, a shadow) that raises stakes or anticipation.
+- **Anti-Repetition:** Never generate a sequence of identical beat types (e.g., do not write 5 consecutive Action beats of a character performing labor). Interleave these types to ensure dynamic pacing and deep narrative density.
+- Goal: To prevent repetitive prose loops by forcing a rich, multi-dimensional texture into every scene.
+
+## Pillar 15: Stylistic Alignment & Setting Integration
+- **Honor the Style:** You MUST consider the provided <genre_classification>, <tone_and_atmosphere> (including reference authors), and <writing_style_description> when choreographing actions. The tone should dictate *what* happens in the beat, not just how it's described.
+- **Setting as an Active Force:** Ground the choreography deeply in the physical setting. Tie actions directly into the environment, and let the world push back against the characters.
+- Goal: To ensure the micro-level choreography is saturated with the intended genre flavor and atmospheric weight.
 </beat_development_theory>
 
 ## Input Schema Definition
@@ -7684,6 +7737,7 @@ You will receive the following context blocks:
 - <character_relationships>: Existing relationship dynamics to leverage.
 - <continuity_ledger>: Hard facts established in the story.
 - <previous_scene_description>: Preceding scene context (Title, Scene Objective, Characters Present, and Exit Conditions) to ensure seamless narrative and physical continuity.
+- <previous_scene_trailing_prose>: Optional block containing the final prose of the previous scene (provided only during continuous temporal/spatial jumps to ensure seamless physical/emotional blocking).
 - <already_choreographed_beats_in_this_scene>: Optional beats already generated for this scene (when chunking).
 - <current_scene_full_description>: The detailed blueprint for the scene you are choreographing.
 - <following_scene_starting_situation>: Optional starting state of the next scene.
@@ -7706,28 +7760,33 @@ EVALUATION CRITERIA (Prioritized in Strict Order of Severity):
    - If any beat repeats previous dialogue arguments, re-states already-established feelings or dilemmas, loops through the same physical blocking (e.g. stepping forward again, looking toward the door again, hesitating again), or stalls without meaningful forward momentum: **MANDATORY FAIL** with reason category \`REPETITION\`.
    - In \`<deviation_reasons><reason>\`, explicitly cite the repeated beats and demand removal or forward progression.
 
-2. **Gate 2: Exit Condition Anti-Overshoot & Boundary Containment (MANDATORY CRITICAL GATE):**
+2. **Gate 2: Mandatory Beat Typology Ecosystem (MANDATORY CRITICAL GATE):**
+   - Verify the scene contains AT LEAST ONE of each mandatory beat type: **ENVIRONMENT**, **REFLECTION**, **MEMORY**, **ACTION/KINETIC**, and **SENSORY/TENSION**.
+   - If the sequence consists entirely of dialogue or purely physical action without at least one environmental, reflective, or memory beat: **MANDATORY FAIL** with reason category \`MISSING_TYPOLOGY\`.
+   - In \`<deviation_reasons><reason>\`, explicitly demand the insertion of the missing beat type(s).
+
+3. **Gate 3: Exit Condition Anti-Overshoot & Boundary Containment (MANDATORY CRITICAL GATE):**
    - Verify that the beats DO NOT overshoot the scene's designated \`exit_conditions\` or preempt future scene events.
    - The moment the scene's core dramatic turning point is reached and the \`exit_conditions\` are satisfied, the scene MUST conclude.
    - If beats drag on past the exit condition with gratuitous post-climax banter, aimless wanderings, or start staging the subsequent scene: **MANDATORY FAIL** with reason category \`OVERSHOOT\`.
    - In \`<deviation_reasons><reason>\`, explicitly recommend: "Truncate beats after Beat [ID] using action truncate_after to conclude cleanly at the scene exit conditions."
 
-3. **Gate 3: Action Clarity & No-Op / Filler Elimination (MANDATORY CRITICAL GATE):**
+4. **Gate 4: Action Clarity & No-Op / Filler Elimination (MANDATORY CRITICAL GATE):**
    - Every beat must depict an active, observable tactical maneuver or physical action.
    - If a beat is a "no-op" where nothing happens (e.g. a character merely sits in passive contemplation with no externalized stimulus/response, a beat that simply restates what was just said, or a transitional beat that accomplishes zero change): **MANDATORY FAIL** with reason category \`NO_OP_FILLER\`.
 
-4. **Gate 4: Scene Budget & Proportion:**
+5. **Gate 5: Scene Budget & Proportion:**
    - A standard scene requires only 8–18 beats (8–14 for reactive scenes; 10–18 for proactive scenes) to achieve full dramatic progression from entrance to exit conditions.
    - If a scene contains circular cycles or stretches beyond needed narrative weight, flag as bloat and demand compression.
 
-5. **Gate 5: Starting Situation & Transition Jump:**
+6. **Gate 6: Starting Situation & Transition Jump:**
    - Verify Beat 1 starts precisely at the scene's designated starting situation, honoring \`transition_jump\` and \`entrance_conditions\`.
    - If <following_scene_starting_situation> is provided, verify that the current scene's beats leave characters positioned correctly for that subsequent scene without preempting its events.
 
-6. **Gate 6: Physical & Inventory Continuity & Epistemic Boundaries:**
+7. **Gate 7: Physical & Inventory Continuity & Epistemic Boundaries:**
    - Verify held items, physical wounds, spatial geography, and that characters only act on information they possess. If a character uses an unheld item, output "[CharacterName] lacks [ItemName]".
 
-7. **Gate 7: Dwight Swain Biological Reaction Order & Subtext Quality:**
+8. **Gate 8: Dwight Swain Biological Reaction Order & Subtext Quality:**
    - Verify MRU reaction order (1. Involuntary Visceral Reflex -> 2. Voluntary Physical Action -> 3. Verbal Speech) and that subtext conveys the unspoken friction and emotional truth.
    - Does every beat contain substantive, concrete text for \`action\`, \`reaction\`, \`tactic\`, and \`subtext\` (no empty or one-word fields)?
 
@@ -7741,6 +7800,7 @@ You will receive the following context blocks:
 - <character_relationships>: Relationship dynamics.
 - <continuity_ledger>: Hard facts established in the story.
 - <previous_scene_description>: Preceding scene context (Title, Scene Objective, Characters Present, and Exit Conditions).
+- <previous_scene_trailing_prose>: Optional block containing the final prose of the previous scene (provided only during continuous temporal/spatial jumps to ensure seamless physical/emotional blocking).
 - <already_choreographed_beats_in_this_scene>: Optional beats already generated for this scene (when chunking).
 - <current_scene_full_description>: Scene blueprint parameters.
 - <following_scene_starting_situation>: Optional starting state of the next scene.
@@ -7783,20 +7843,25 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 - **Strict Focalization**: Confine knowledge to the POV character's immediate perception. Never state non-focal internal thoughts or feelings as objective fact. Convey external characters strictly through observable cues (voice tremor, gaze shift, micro-gestures) interpreted through the POV character's biased lens.
 - **Phenomenological Immersion (Sensory Priority)**: Ground scenes in embodied cognition. Prioritize kinesthetic weight, acoustic shifts, temperature, and tactile friction before visual cataloging. Let bodily sensations drive immediate reflexes.
 - **Collapse Psychic Distance**: Eradicate filter words ("saw," "felt," "heard," "noticed," "watched"). Make the sensory object the active subject of the sentence (e.g., write "The glass shattered," not "She heard the glass shatter").
+- **Ground the Abstract**: Root abstract emotions and existential thoughts firmly in concrete, tangible reality. Do not saturate the text with flowery, over-extended, or repetitive metaphors. Keep the imagery sharp, precise, and physically grounded.
 - **Objective Correlative**: Evoke emotional states through tactile interaction with environment and material objects rather than stating feelings directly.
 
 ### 3. PROSE ECONOMY & PACING
 - **Action-Emotion Compression**: Deliver emotional reactions through a single high-impact micro-gesture. Never follow physical action with explanatory translation telling the reader what the gesture meant.
 - **Aristotelian Pivots**: Dramatize each beat's turning point (peripeteia/anagnorisis) as an irreversible shift in understanding or tactical advantage, anchored in concrete action or definitive dialogue.
-- **Syntactic Modulation**: Modulate rhythm to reflect tension—taut, staccato phrasing for sudden impact and kinetic crisis; legato, sensory-rich clauses for interior reflection and mounting tension.
+- **Dynamic Pacing & Syntactic Modulation**: Modulate the rhythm and pacing of the prose to avoid a monotonous cadence. Vary sentence length and structure creatively to reflect the emotional state of the scene—use taut, staccato phrasing for sudden impact and kinetic crisis, and fluid, evocative clauses to build sweeping atmosphere and bring the setting to life.
 - **Modifier Economy (*Le Mot Juste*)**: Replace adverb-heavy constructions and stacked adjectives with solitary, muscular verbs and precise nouns.
-- **Tactical Environmentalism**: Restrict environmental and architectural descriptions to elements offering immediate tactical utility, obstacle value, social leverage, or sensory tension to the POV character.
+- **Creative Environmentalism**: Be highly creative in how you bring the setting to life. Treat the environment as an active, breathing participant in the scene rather than a static backdrop. Let the world push back against the characters, using rich sensory details to reveal atmosphere, history, and tension.
 
 ### 4. DYNAMIC DIALOGUE & SUBTEXT
-- **Character Idiolect**: Distinct vocal cadences, vocabulary, sentence length, and verbal habits must reflect the individual character profile so clearly that dialogue tags are largely unnecessary.
+- **Character Idiolect & Speech Variety**: Distinct vocal cadences, vocabulary, and sentence lengths must reflect the individual character profiles. Vary the style of speech to match the immediate emotional stakes and ensure conversations feel dynamic and unpredictable.
 - **Speech Acts & Subtext**: Characters rarely speak unvarnished truth; treat speech as tactical bids (deflecting vulnerability, testing boundaries, asserting dominance). Allow non-sequiturs, oblique answers, and strategic silences.
 - **Motivation-Reaction Dialogue Beats**: Ground spoken lines in simultaneous physical blocking. Minimize dialogue tags; eliminate creative tags ("she growled", "he hissed") and use "said" sparingly.
 - **Anti-Exposition**: Prohibit lore data-dumps and informational monologues. Convey history, relationship friction, and lore implicitly through casual disregard and oblique reference.
+
+### 5. STYLISTIC EXECUTION & AUTHORIAL ALIGNMENT
+- **Genre & Tone Fidelity**: The prose MUST breathe with the exact genre, tone, and atmosphere defined in the prompt. Do not default to a generic "AI" writing style. Carefully consider how your use of language, word choice, and stylistic rhythms fit the specific genre, tone, and themes of the novel. Saturate the narrative with the distinct atmospheric weight and worldview established in the instructions.
+- **Authorial Emulation**: Carefully study the referenced authors in <tone_and_atmosphere>. Deeply internalize and reflect their specific writing styles, thematic preoccupations, and syntactic rhythms. Weave these influences seamlessly to create a sophisticated, highly specific narrative voice that matches the original vision.
 
 ## Input Context Schema
 You will receive: <genre_classification>, <tone_and_atmosphere>, <writing_style_description>, <scene_blueprint>, <continuity_ledger>, <active_characters_profiles>, <relationship_friction_matrix>, <previous_context>, <current_chunk_choreography_blueprint>, <writing_lens>, and optional <directive_requirement>.
@@ -7850,7 +7915,7 @@ EVALUATION CRITERIA (in order of severity):
 **MAJOR (note in issues, but DO NOT FAIL for these alone unless pervasive):**
 14. **Chronotope Pacing Drag:** Does a simple transitional beat stall under heavy, unnecessary "thick description"?
 15. **Filter Words & Passive Voice:** Flag instances of "felt," "saw," "heard," "seemed to," "began to" — but only fail if there are more than 5 instances in a single beat.
-16. **Somatic Clichés:** Flag overused body-reaction tropes ("breath caught", "heart stuttered", "silence stretched").
+16. **Somatic Clichés:** Flag overused body-reaction tropes ("breath caught", "breath hitched", "heart stuttered", "silence stretched").
 17. **Telling Over Showing:** Flag explanatory abstractions that spell out emotions instead of dramatizing them.
 18. **Generic AI Voice:** Flag prose that sounds like default ChatGPT/Gemini output — overly polished, uniformly rhythmic, lacking texture.
 
@@ -13831,7 +13896,17 @@ INSTRUCTIONS:
             "cold sweat",
             "gasping for air",
             "not only, but also",
-            "in the heart of"
+            "in the heart of",
+            "breath hitch",
+            "breath hitched",
+            "breath hitching",
+            "hitched breath",
+            "hitching breath",
+            "hitch in her breath",
+            "hitch in his breath",
+            "hitch in their breath",
+            "hitch in my breath",
+            "breath caught"
         ];
 
         const DEFAULT_READER_SETTINGS = {
@@ -13986,7 +14061,16 @@ INSTRUCTIONS:
             };
 
             // Declared here because the library effect below reads it; with native const this is a TDZ otherwise.
-            const [view, setView] = useState(() => localStorage.getItem("ellipsisprose_view") || 'setup');
+            const [view, setViewRaw] = useState(() => localStorage.getItem("ellipsisprose_view") || 'setup');
+            const viewRef = useRef(view);
+            const setView = useCallback((nextView) => {
+                const resolved = typeof nextView === 'function' ? nextView(viewRef.current) : nextView;
+                viewRef.current = resolved;
+                setViewRaw(resolved);
+            }, []);
+            useEffect(() => {
+                viewRef.current = view;
+            }, [view]);
 
             // Fetch library when viewing library or activeStoryId changes
             useEffect(() => {
@@ -18796,7 +18880,7 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                 while (attempt <= 3) {
                     const chunkPrefix = chunkContext ? ` [${chunkContext}]` : "";
                     const rsiSuffix = isRsiRedo ? " (RSI Re-attempt)" : "";
-                    console.groupCollapsed(`[Pipeline - ${tierName}${chunkPrefix}] Attempt ${attempt}${rsiSuffix} Started`);
+                    console.group(`[Pipeline - ${tierName}${chunkPrefix}] Attempt ${attempt}${rsiSuffix} Started`);
                     console.log("Model Size Target:", currentModelSize);
 
                     // Sanitize deviation reasons: dedupe, filter un-actionable, cap at 5
@@ -18870,6 +18954,7 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                                 const repairResult = await surgicallyRepairBeatMRUs(defectiveBeats, beats, validationContext, genOutput);
                                 if (repairResult.success) {
                                     showToast(`Surgical repair successful!`, 'success');
+                                    if (repairResult.genOutput) genOutput = repairResult.genOutput;
                                     const revalidation = validateStructuralOutput(tierName, parsedData, validationContext);
                                     if (revalidation.valid) {
                                         console.log(`[${tierName}] Structural validation passed after surgical repair.`);
@@ -18889,6 +18974,7 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                                 const repairResult = await surgicallyRepairValueShifts(defectiveScenes, scenes, validationContext, genOutput);
                                 if (repairResult.success) {
                                     showToast(`Surgical repair successful!`, 'success');
+                                    if (repairResult.genOutput) genOutput = repairResult.genOutput;
                                     const revalidation = validateStructuralOutput(tierName, parsedData, validationContext);
                                     if (revalidation.valid) {
                                         console.log(`[${tierName}] Structural validation passed after surgical repair.`);
@@ -19434,14 +19520,13 @@ Output Schema:
   <tone_and_atmosphere>
     Define the psychological weight and atmospheric pressure of the world.
     - AUTHORIAL TRIANGULATION: Name 2 to 3 disparate, highly distinct published authors whose styles, when blended, perfectly capture this unique tone.
-    - SENSORY DIRECTIVE: Instruct the downstream writer on HOW to filter descriptions based on the story's genre and the protagonist's worldview. Do not list static smells or sounds. Instead, dictate the lens: Does the narrative cynically inventory exits and threats (Noir)? Does it obsess over the geometry of bodies and the friction of proximity (Erotic)? Does it focus on the crushing weight of history and scale (Epic Fantasy)? Tell the prose generator exactly what types of details to hyper-fixate on, and what to ignore.
+    - SENSORY DIRECTIVE AND PERFORMER'S LENS: Instruct the downstream writer on HOW to filter descriptions and embody the characters. Do not list static smells or sounds. Instead, dictate the lens: Does the narrative cynically inventory exits and threats (Noir)? Does it obsess over the crushing weight of history and scale (Epic Fantasy)? Crucially, provide guidance on how the narrative lens shifts dynamically during different moments (action, reflection, dialogue) to prevent the prose from falling into a repetitive, monotone rhythm. Give the writer permission to breathe and vary their focus based on the context of the scene.
   </tone_and_atmosphere>
   <writing_style_description>
     Provide an evocative but highly mechanical engineering manual for the prose generator. You must define:
     1. FOCALIZER BIAS: Dictate exactly how the protagonist's internal biases and flaws distort what the narrative camera notices.
-    2. THEMATIC LEXICON: Define a specific vocabulary domain that must color the prose (e.g., using transactional/financial words for a corporate thriller, or words of decay and rot for a gothic horror).
-    3. SYNTACTIC RHYTHM: Dictate the required sentence structure (e.g., sharp, staccato fragments for kinetic tension vs. flowing, multi-clause legato for deep introspection).
-    4. ANTI-PATTERNS: Name one specific stylistic habit or crutch this book must avoid at all costs.
+    2. SYNTACTIC RHYTHM: Dictate the required sentence structure (e.g., sharp, staccato fragments for kinetic tension vs. flowing, multi-clause legato for deep introspection).
+    3. ANTI-PATTERNS: Name one specific stylistic habit or crutch this book must avoid at all costs.
   </writing_style_description>
   <status_quo>Comprehensive, multi-paragraph detailing of the setting, rules, history, societal structures, and normal world status quo in its baseline equilibrium before the plot begins.</status_quo>
   <character_briefs>
@@ -19859,7 +19944,7 @@ BEGIN STORY ARC CRITIQUE REVIEW
 
                     await storyStore.saveStory(newStoryId, finalStory);
                     setStory(finalStory);
-                    setView('dashboard');
+                    if (!isAutopilot || viewRef.current !== 'reader') setView('dashboard');
                     if (storyArcGenerated) {
                         showToast("Story Bible & Arcs initialized! Click 'Structure Acts & Sequences' to develop narrative structure.");
                     } else {
@@ -20270,8 +20355,10 @@ BEGIN ACT CRITIQUE REVIEW
                         thread_statuses: actResult.parsedData.thread_statuses || []
                     };
                     setStory(intermediateStoryWithActs);
-                    setView('structure');
-                    setActiveActTab(0);
+                    if (!isAutopilot || viewRef.current !== 'reader') {
+                        setView('structure');
+                        setActiveActTab(0);
+                    }
                     if (intermediateStoryWithActs.id) {
                         await storyStore.saveStory(intermediateStoryWithActs.id, intermediateStoryWithActs);
                     }
@@ -20480,7 +20567,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
 
                     await storyStore.saveStory(finalStory.id, finalStory);
                     setStory(finalStory);
-                    setView('structure');
+                    if (!isAutopilot || viewRef.current !== 'reader') setView('structure');
                     showToast("Acts & 8 Sequences structured successfully!", "success");
                     return finalStory;
                 } catch (e) {
@@ -22974,19 +23061,64 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                 return deepProfileText;
             };
 
-            const handleBeatChange = (seqIdx, sceneIdx, beatIdx, newText) => {
-                let seq = seqIdx, s = sceneIdx, b = beatIdx, txt = newText;
-                if (newText === undefined) {
-                    seq = selectedSequence !== null ? selectedSequence : 0;
-                    s = seqIdx;
-                    b = sceneIdx;
-                    txt = beatIdx;
+            const handleBeatChange = (seqIdx, sceneIdx, beatIdx, fieldOrText, maybeText) => {
+                let seq = seqIdx, s = sceneIdx, b = beatIdx;
+                let field = 'action';
+                let txt = '';
+
+                if (maybeText !== undefined) {
+                    seq = seqIdx;
+                    s = sceneIdx;
+                    b = beatIdx;
+                    field = fieldOrText;
+                    txt = maybeText;
+                } else if (typeof fieldOrText === 'string') {
+                    if (beatIdx !== undefined && typeof beatIdx === 'string') {
+                        seq = selectedSequence !== null ? selectedSequence : 0;
+                        s = seqIdx;
+                        b = sceneIdx;
+                        txt = beatIdx;
+                        field = 'description';
+                    } else {
+                        txt = fieldOrText;
+                        field = 'action';
+                    }
                 }
+
                 const sId = `${seq}-${s}`;
                 setStory(prev => {
                     const beatsList = prev.beats[sId] ? [...prev.beats[sId]] : [];
                     if (beatsList[b]) {
-                        beatsList[b] = { ...beatsList[b], description: txt, action_description: txt };
+                        const existingBeat = beatsList[b];
+                        const updatedBeat = { ...existingBeat };
+
+                        if (field === 'action') {
+                            updatedBeat.action = txt;
+                            updatedBeat.char_A_action = txt;
+                            const tactic = updatedBeat.char_A_tactic || updatedBeat.tactic || '';
+                            const reaction = updatedBeat.char_B_reaction || updatedBeat.reaction || '';
+                            const combined = `${tactic ? `[${tactic}] ` : ''}${txt}${reaction && reaction !== '—' ? ` -> ${reaction}` : ''}`.trim();
+                            updatedBeat.description = combined;
+                            updatedBeat.action_description = combined;
+                        } else if (field === 'reaction') {
+                            updatedBeat.reaction = txt;
+                            updatedBeat.char_B_reaction = txt;
+                            const tactic = updatedBeat.char_A_tactic || updatedBeat.tactic || '';
+                            const action = updatedBeat.char_A_action || updatedBeat.action || '';
+                            const combined = `${tactic ? `[${tactic}] ` : ''}${action}${txt && txt !== '—' ? ` -> ${txt}` : ''}`.trim();
+                            updatedBeat.description = combined;
+                            updatedBeat.action_description = combined;
+                        } else {
+                            updatedBeat[field] = txt;
+                            updatedBeat.description = txt;
+                            updatedBeat.action_description = txt;
+                            if (!updatedBeat.action) {
+                                updatedBeat.action = txt;
+                                updatedBeat.char_A_action = txt;
+                            }
+                        }
+
+                        beatsList[b] = updatedBeat;
                     }
                     return {
                         ...prev,
@@ -22997,6 +23129,7 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                     };
                 });
             };
+
 
             const handleAddBeat = (seqIdx, sceneIdx, insertAfterIdx) => {
                 let seq = seqIdx, s = sceneIdx, ins = insertAfterIdx;
@@ -23528,6 +23661,13 @@ BEGIN DEVELOPING STORY SEQUENCES
                                 }).join('\n');
 
                                 seqParts.push(`<previous_sequence_scene_objectives>\n[[CRITICAL CONTINUITY NOTE - FOR REFERENCE ONLY: The following scenes have already occurred in Sequence ${previousSequence.number}. Your current sequence scenes must respond to, build upon, and logically follow these established outcomes without repeating or recreating these events:]]\n${sceneLines}\n</previous_sequence_scene_objectives>`);
+
+                                const lastScene = prevSeqScenes[prevSeqScenes.length - 1];
+                                const exitCond = lastScene.exit_conditions || "Unknown exit state";
+                                const setting = lastScene.setting_anchor || lastScene.setting || "Unknown location";
+                                const tempScope = lastScene.temporal_scope || "Unknown time";
+
+                                seqParts.push(`<context_prompt_state_tracking>\n[[CRITICAL STATE TRACKING REQUIREMENT]]\nThe exact physical position, location, and timeline state of the characters from the end of the previous generation is:\n- Location: ${setting}\n- Timeline/Time: ${tempScope}\n- Exit Condition/Status: ${exitCond}\n\nWARNING: You MUST explicitly use this state as the starting point for your new scenes. Do not reset characters to a default state, and do not loop the same dramatic beats.\n</context_prompt_state_tracking>`);
                             }
                         }
 
@@ -23734,7 +23874,16 @@ ${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`)
 
                         // 6. Previous Scene Summary
                         let prevSceneSummaryContent = "";
+                        let lastSetting = "Unknown location";
+                        let lastTime = "Unknown time";
+                        let lastExit = "Unknown exit state";
+
                         if (expandedScenes.length > 0) {
+                            const lastEs = expandedScenes[expandedScenes.length - 1];
+                            lastSetting = lastEs.setting || lastEs.setting_anchor || "Unknown location";
+                            lastTime = lastEs.temporal_scope || "Unknown time";
+                            lastExit = lastEs.exit_conditions || "Unknown exit state";
+
                             prevSceneSummaryContent = expandedScenes.map(es => `[Scene ${es.number}: ${es.title}] (${es.scene_type || 'SCENE'})
 - Exit State & Physical Conditions: ${es.exit_conditions || "Standard transition state"}
 - Value Shift: ${es.value_shift?.start_state ?? 0} -> ${es.value_shift?.end_state ?? 1}
@@ -23743,6 +23892,10 @@ ${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`)
                             const prevSeqScenes = (storyToUse.scenes && (storyToUse.scenes[String(seqIdx - 1)] || storyToUse.scenes[String(previousSequence.number - 1)] || storyToUse.scenes[String(previousSequence.number)] || storyToUse.scenes[previousSequence.id])) || (prevScenesList.length > 0 ? [prevScenesList[prevScenesList.length - 1]] : []);
                             if (prevSeqScenes.length > 0) {
                                 const lastSc = prevSeqScenes[prevSeqScenes.length - 1];
+                                lastSetting = lastSc.setting || lastSc.setting_anchor || "Unknown location";
+                                lastTime = lastSc.temporal_scope || "Unknown time";
+                                lastExit = lastSc.exit_conditions || "Sequence boundary";
+
                                 prevSceneSummaryContent = `[Sequence ${previousSequence.number} Climax / Scene ${lastSc.number || `${previousSequence.number}.${prevSeqScenes.length}`}: ${lastSc.title}] (${lastSc.scene_type || 'REACTIVE'})
 - Exit State: ${lastSc.exit_conditions || 'Sequence boundary'}
 - Summary & Fallout: ${(lastSc.description || lastSc.objective || 'Previous sequence concluded successfully.').substring(0, 400)}`;
@@ -23753,6 +23906,7 @@ ${(storyToUse.threads || []).map(t => `- [${t.id}] ${t.name}: ${t.description}`)
                             prevSceneSummaryContent = `Story & Sequence Start: Inciting incident: ${storyToUse.inciting_incident || 'The journey begins.'}. No preceding scenes.`;
                         }
                         const previousSceneSummaryBlock = `<previous_scene_summary>\n${prevSceneSummaryContent}\n</previous_scene_summary>`;
+                        const stateTrackingBlock = `<context_prompt_state_tracking>\n[[CRITICAL STATE TRACKING REQUIREMENT]]\nThe exact physical position, location, and timeline state of the characters from the end of the previous generation is:\n- Location: ${lastSetting}\n- Timeline/Time: ${lastTime}\n- Exit Condition/Status: ${lastExit}\n\nWARNING: You MUST explicitly use this state as the starting point for your new scene expansion. Do not loop the same dramatic beats.\n</context_prompt_state_tracking>`;
 
                         // 7. Upcoming Scene Summary
                         const futureScenesInSeq = leanScenes.slice(pIdx * 2 + pair.length);
@@ -23868,6 +24022,8 @@ ${continuityLedgerBlock}
 ${sequenceObjectivesBlock}
 
 ${previousSceneSummaryBlock}
+
+${stateTrackingBlock}
 
 ${upcomingSceneSummaryBlock}
 
@@ -24620,6 +24776,13 @@ ${followingScene.objective ? `Objective: ${followingScene.objective}\n` : ''}${f
 
                     // Determine previous scene description for continuity (whether in current or previous sequence)
                     let previousSceneBlock = "";
+                    let previousSceneProseText = null;
+                    const isContinuousJump = sceneData.transition_jump && (
+                        sceneData.transition_jump.toLowerCase().includes('continuous') || 
+                        sceneData.transition_jump.toLowerCase().includes('immediate') || 
+                        sceneData.transition_jump.toLowerCase().includes('seamless')
+                    );
+
                     if (scene > 0 && scenesList && scenesList[scene - 1]) {
                         const prevSc = scenesList[scene - 1];
                         const prevCastNames = (prevSc.cast_names && prevSc.cast_names.length)
@@ -24632,6 +24795,9 @@ Scene Objective: ${prevSc.objective || prevSc.scene_objective || "No objective r
 Characters Present: ${prevCastNames}
 Exit Conditions: ${prevSc.exit_conditions || "Standard transition state"}
 </previous_scene_description>`;
+                        if (isContinuousJump) {
+                            previousSceneProseText = storyToUse.prose?.[`${seq}-${scene - 1}`] || storyToUse.prose?.[`${seq}-0-${scene - 1}`];
+                        }
                     } else if (seq > 0 || sequenceData.number > 1) {
                         const prevSeqIdx = seq > 0 ? seq - 1 : sequenceData.number - 2;
                         const prevSeqScenes = (storyToUse.scenes && (
@@ -24651,6 +24817,9 @@ Scene Objective: ${prevSc.objective || prevSc.scene_objective || "Conclude previ
 Characters Present: ${prevCastNames}
 Exit Conditions: ${prevSc.exit_conditions || "Sequence boundary transition"}
 </previous_scene_description>`;
+                            if (isContinuousJump) {
+                                previousSceneProseText = storyToUse.prose?.[`${prevSeqIdx}-${prevSeqScenes.length - 1}`] || storyToUse.prose?.[`${prevSeqIdx}-0-${prevSeqScenes.length - 1}`];
+                            }
                         } else {
                             const prevSeqData = (storyToUse.sequences && storyToUse.sequences[prevSeqIdx]) || {};
                             previousSceneBlock = `<previous_scene_description>
@@ -24665,6 +24834,17 @@ Exit Conditions: Transitioning across sequence boundary into Sequence ${sequence
                         previousSceneBlock = `<previous_scene_description>
 [Story Start: Scene 1.1 is the opening scene of the novel. No preceding scenes exist.]
 </previous_scene_description>`;
+                    }
+
+                    if (previousSceneProseText && typeof previousSceneProseText === 'object') {
+                        previousSceneProseText = previousSceneProseText.prose || previousSceneProseText.final || previousSceneProseText.draft;
+                    }
+                    if (previousSceneProseText && typeof previousSceneProseText === 'string') {
+                        const words = previousSceneProseText.split(/\s+/);
+                        if (words.length > 500) {
+                            previousSceneProseText = "..." + words.slice(-500).join(" ");
+                        }
+                        previousSceneBlock += `\n<previous_scene_trailing_prose>\n${previousSceneProseText}\n</previous_scene_trailing_prose>`;
                     }
 
                     let hasMore = true;
@@ -24772,6 +24952,7 @@ You MUST adapt the beat choreography to address this specific instruction:
                             tierName: "Beat Agent",
                             chunkContext: `Chunk ${chunkCount}`,
                             isAutopilot: autoP,
+                            context: sceneData,
                             generatorPromptFn: () => `
 ${getBeatContextHead()}
 
@@ -25241,6 +25422,7 @@ You MUST rewrite this scene's prose to satisfy the following instruction:
                     const proseResult = await runAgentWithEscalation({
                         tierName: "Writing Agent",
                         isAutopilot: autoP,
+                        context: scene,
                         generatorPromptFn: () => `${getProseContext()}
 
 <output_format_description>
@@ -25477,19 +25659,19 @@ ${finalProseText}
                 try {
                     // 1. Initialize Story Bible & Arcs
                     const storyBible = await initStory(true);
-                    setView('dashboard');
+                    if (viewRef.current !== 'reader') setView('dashboard');
 
                     // 2. Structure Acts & 8 Sequences
                     const seqStory = await generateActsAndSequences(storyBible, true);
-                    setView('structure');
+                    if (viewRef.current !== 'reader') setView('structure');
 
                     // 3. Weave Scenes for Sequence 1
                     const scenesStory = await generateScenes(0, seqStory, true);
-                    setView('sequence_dashboard');
+                    if (viewRef.current !== 'reader') setView('sequence_dashboard');
 
                     // 4. Direct Beats for Sequence 1, Scene 1
                     const beatsStory = await generateBeats(0, 0, scenesStory, true);
-                    setView('writer');
+                    if (viewRef.current !== 'reader') setView('writer');
 
                     // 5. Write Prose for Sequence 1, Scene 1
                     const sId = "0-0";
@@ -25598,7 +25780,7 @@ ${finalProseText}
 
                 // Check if Acts and Sequences are structured
                 if (!currentStory.sequences || currentStory.sequences.length === 0) {
-                    setView('structure');
+                    if (viewRef.current !== 'reader') setView('structure');
                     if (currentStory.acts && currentStory.acts.length >= 3) {
                         setLoadingStep("Autopilot: Weaving 8 Frank Daniel Sequences...");
                         currentStory = await generateSequences(currentStory, true);
@@ -25666,8 +25848,10 @@ ${finalProseText}
                             }
                         }
 
-                        setSelectedSequence(seqIdx);
-                        setView('sequence_dashboard');
+                        if (viewRef.current !== 'reader') {
+                            setSelectedSequence(seqIdx);
+                            setView('sequence_dashboard');
+                        }
                         setLoadingStep(`Autopilot: Weaving scenes for Sequence ${seqIdx + 1} (${sequence.title})...`);
                         currentStory = await generateScenes(seqIdx, currentStory, true);
                         if (!continuousAutopilotRef.current) {
@@ -25725,9 +25909,11 @@ ${finalProseText}
                             }
 
                             if (!prefetchTriggered) {
-                                setSelectedSequence(seqIdx);
-                                setSelectedScene(sceneIdx);
-                                setView('writer');
+                                if (viewRef.current !== 'reader') {
+                                    setSelectedSequence(seqIdx);
+                                    setSelectedScene(sceneIdx);
+                                    setView('writer');
+                                }
                                 setLoadingStep(`Autopilot: Generating beats for Sequence ${seqIdx + 1}, Scene ${sceneIdx + 1}...`);
                                 currentStory = await generateBeats(seqIdx, sceneIdx, currentStory, true);
                                 if (!continuousAutopilotRef.current) {
@@ -25756,9 +25942,11 @@ ${finalProseText}
                         let missingProse = !prose || (!prose.final && typeof prose !== 'string');
 
                         if (missingProse) {
-                            setSelectedSequence(seqIdx);
-                            setSelectedScene(sceneIdx);
-                            setView('writer');
+                            if (viewRef.current !== 'reader') {
+                                setSelectedSequence(seqIdx);
+                                setSelectedScene(sceneIdx);
+                                setView('writer');
+                            }
 
                             if (!continuousAutopilotRef.current) {
                                 setLoading(false);
@@ -29533,31 +29721,39 @@ ${finalProseText}
                                                                                 </div>
                                                                             )}
 
-                                                                            {/* Action Summary / Beat Description Textarea */}
+                                                                            {/* Stimulus Action (Motivation) */}
                                                                             <div>
-                                                                                <span className="text-[9px] font-bold text-ink-600 uppercase font-mono tracking-wider block mb-1">Action Description:</span>
+                                                                                <span className="text-[9px] font-bold text-sage-800 uppercase block mb-1 font-mono">Stimulus Action (Motivation):</span>
                                                                                 <textarea
-                                                                                    className="w-full bg-inset text-ink-800 text-xs font-medium p-3 rounded-xl border border-edge-strong hover:border-edge-300 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none resize-y transition-colors min-h-[70px] leading-relaxed shadow-2xs"
-                                                                                    value={beat.description || beat.action_description || ""}
-                                                                                    onChange={(e) => handleBeatChange(selectedSequence, selectedScene, bi, e.target.value)}
-                                                                                    rows={3}
-                                                                                    placeholder="Describe beat choreography and actions..."
+                                                                                    className="w-full bg-inset text-ink-800 text-xs font-medium p-3 rounded-xl border border-edge-strong hover:border-edge-300 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none resize-y transition-colors min-h-[60px] leading-relaxed shadow-2xs"
+                                                                                    value={beat.action !== undefined && beat.action !== null ? beat.action : (beat.char_A_action || (!beat.reaction ? (beat.description || beat.action_description || "") : ""))}
+                                                                                    onChange={(e) => handleBeatChange(selectedSequence, selectedScene, bi, 'action', e.target.value)}
+                                                                                    rows={2}
+                                                                                    placeholder="Describe the stimulus action or dialogue..."
                                                                                 />
                                                                             </div>
 
-                                                                            {/* Stimulus Action */}
-                                                                            {beat.action && (
+                                                                            {/* Reaction (Swain MRU) */}
+                                                                            {(beat.reactor !== '—' || (typeof beat.reaction === 'string' && beat.reaction !== '—')) ? (
                                                                                 <div>
-                                                                                    <span className="text-[9px] font-bold text-sage-800 uppercase block mb-0.5 font-mono">Stimulus Action (Motivation):</span>
-                                                                                    <p className="text-xs text-ink-800 bg-sage-tint p-2.5 rounded-xl border border-sage-edge leading-relaxed">{beat.action}</p>
+                                                                                    <span className="text-[9px] font-bold text-ember-800 uppercase block mb-1 font-mono">Reaction (Swain MRU):</span>
+                                                                                    <textarea
+                                                                                        className="w-full bg-inset text-ink-800 text-xs font-medium p-3 rounded-xl border border-edge-strong hover:border-edge-300 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none resize-y transition-colors min-h-[60px] leading-relaxed shadow-2xs"
+                                                                                        value={beat.reaction && beat.reaction !== '—' ? beat.reaction : (beat.char_B_reaction && beat.char_B_reaction !== '—' ? beat.char_B_reaction : "")}
+                                                                                        onChange={(e) => handleBeatChange(selectedSequence, selectedScene, bi, 'reaction', e.target.value)}
+                                                                                        rows={2}
+                                                                                        placeholder="Describe visceral reaction (Feeling -> Action -> Speech)..."
+                                                                                    />
                                                                                 </div>
-                                                                            )}
-
-                                                                            {/* Reaction (MRU) */}
-                                                                            {beat.reaction && (
-                                                                                <div>
-                                                                                    <span className="text-[9px] font-bold text-ember-800 uppercase block mb-0.5 font-mono">Reaction (Swain MRU):</span>
-                                                                                    <p className="text-xs text-ink-800 bg-ember-tint p-2.5 rounded-xl border border-ember-edge leading-relaxed">{beat.reaction}</p>
+                                                                            ) : (
+                                                                                <div className="pt-0.5">
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleBeatChange(selectedSequence, selectedScene, bi, 'reaction', '')}
+                                                                                        className="text-[10px] text-ink-400 hover:text-ember-700 font-mono flex items-center gap-1 transition-colors cursor-pointer"
+                                                                                    >
+                                                                                        + Add Reaction (MRU)
+                                                                                    </button>
                                                                                 </div>
                                                                             )}
 
