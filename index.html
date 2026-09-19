@@ -4730,22 +4730,62 @@ Story Ending Value State${fullStoryLabels ? ' (Full Story)' : ''}: ${story.endin
                 } else {
                     for (let i = 0; i < beats.length; i++) {
                         const b = beats[i];
+                        const bType = String(b.beat_type || "").toUpperCase();
+                        const isSoloOrEnv = bType.includes("ENVIRONMENT") || bType.includes("TRANSITIONAL") ||
+                            b.reaction === '—' || b.char_B_reaction === '—' || b.reactor === '—' || b.char_B === '—';
                         const action = (b.action || b.char_A_action || "").trim();
                         const reaction = (b.reaction || b.char_B_reaction || "").trim();
-                        if (!action || action.length < 15 || !reaction || reaction.length < 15) {
-                            errors.push(`Beat Agent: Beat ${b.id || i + 1} has trivial MRU (action/reaction < 15 chars)`);
+                        if (!action || action.length < 15) {
+                            errors.push(`Beat Agent: Beat ${b.id || i + 1} has trivial action (< 15 chars)`);
+                        }
+                        if (!isSoloOrEnv && (!reaction || (reaction.length < 15 && reaction !== '—'))) {
+                            errors.push(`Beat Agent: Beat ${b.id || i + 1} has trivial reaction (< 15 chars)`);
                         }
                     }
                     // Validate beat character attribution
                     for (let i = 0; i < beats.length; i++) {
                         const b = beats[i];
-                        if (!b.initiator || b.initiator.trim().length < 2) {
-                            errors.push(`Beat Agent: Beat ${b.id || i + 1} missing initiator character attribution`);
+                        const bType = String(b.beat_type || "").toUpperCase();
+                        const isEnv = bType.includes("ENVIRONMENT");
+                        if (!isEnv) {
+                            if (!b.initiator || (b.initiator.trim().length < 2 && b.initiator.trim() !== '—')) {
+                                errors.push(`Beat Agent: Beat ${b.id || i + 1} missing initiator character attribution`);
+                            }
                         }
                     }
                 }
+            } else if (tierName === "Writing Agent") {
+                const prose = parsedData.prose || (typeof parsedData === 'string' ? parsedData : "");
+                if (prose.length > 50) {
+                    const words = prose.trim().split(/\s+/).length;
+                    
+                    let inQuote = false;
+                    let quoteWords = 0;
+                    const tokens = prose.trim().split(/\s+/);
+                    for (const token of tokens) {
+                        const count = (token.match(/["“”]/g) || []).length;
+                        if (count % 2 !== 0) {
+                            if (!inQuote) {
+                                inQuote = true;
+                                quoteWords++;
+                            } else {
+                                inQuote = false;
+                                quoteWords++;
+                            }
+                        } else if (inQuote || count > 0) {
+                            quoteWords++;
+                        }
+                    }
+                    
+                    const density = words > 0 ? (quoteWords / words) : 0;
+                    if (density < 0.15 && words > 100) { 
+                        errors.push(`Writing Agent: Dialogue density is too low (${(density * 100).toFixed(1)}%). Must be at least 20%. You MUST include more spoken dialogue.`);
+                    }
+                } else {
+                     errors.push("Writing Agent: Prose is too short or missing.");
+                }
             }
-
+            
             return {
                 valid: errors.length === 0,
                 errors
@@ -4971,10 +5011,16 @@ Story Ending Value State${fullStoryLabels ? ' (Full Story)' : ''}: ${story.endin
             const defective = [];
             for (let i = 0; i < beats.length; i++) {
                 const b = beats[i];
+                const bType = String(b.beat_type || "").toUpperCase();
+                const isSoloOrEnv = bType.includes("ENVIRONMENT") || bType.includes("TRANSITIONAL") ||
+                    b.reaction === '—' || b.char_B_reaction === '—' || b.reactor === '—' || b.char_B === '—';
                 const actStr = String(b.char_A_action || b.action || "");
                 const reactStr = String(b.char_B_reaction || b.reaction || "");
 
-                if (actStr.trim().length < 30 || reactStr.trim().length < 30) {
+                const actionDefective = actStr.trim().length < 25;
+                const reactionDefective = !isSoloOrEnv && (reactStr.trim().length < 25);
+
+                if (actionDefective || reactionDefective) {
                     defective.push({
                         index: i,
                         beat: b,
@@ -5082,7 +5128,7 @@ BEGIN SURGICAL BEAT REPAIR`;
                             if (rep.power_shift) targetBeat.power_shift = rep.power_shift;
 
                             const escapedId = repId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                            let blockRegex = new RegExp(`<beat>[\\s\\S]*?(?:<beat_id>|<id>)\\s*${escapedId}\\s*(?:<\\/beat_id>|<\\/id>)[\\s\\S]*?<\\/beat>`, 'i');
+                            let blockRegex = new RegExp(`<beat>(?:(?!<\\/beat>)[\\s\\S])*?(?:<beat_id>|<id>)\\s*${escapedId}\\s*(?:<\\/beat_id>|<\\/id>)[\\s\\S]*?<\\/beat>`, 'i');
                             let match = genOutput.match(blockRegex);
                             if (match) {
                                 let newBlock = match[0];
@@ -5198,7 +5244,7 @@ BEGIN SURGICAL BEAT REPAIR`;
                             targetScene.value_shift.end_state = rep.value_shift.end_state;
                             
                             const escapedId = repId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                            let blockRegex = new RegExp(`<scene>[\\s\\S]*?(?:<number>|<scene_id>)\\s*${escapedId}\\s*(?:<\\/number>|<\\/scene_id>)[\\s\\S]*?<\\/scene>`, 'i');
+                            let blockRegex = new RegExp(`<scene>(?:(?!<\\/scene>)[\\s\\S])*?(?:<number>|<scene_id>)\\s*${escapedId}\\s*(?:<\\/number>|<\\/scene_id>)[\\s\\S]*?<\\/scene>`, 'i');
                             let match = genOutput.match(blockRegex);
                             if (match) {
                                 let newBlock = match[0];
@@ -6457,6 +6503,42 @@ BEGIN SURGICAL BEAT REPAIR`;
         // ======
         // FEATURE C8: Local Prose Analytics Engine
         // ======
+        
+        const getDynamicBannedPhrases = (recentProse, exclusions = []) => {
+            if (!recentProse) return [];
+            
+            const stopWords = new Set(["the", "be", "to", "of", "and", "a", "in", "that", "have", "i", "it", "for", "not", "on", "with", "he", "as", "you", "do", "at", "this", "but", "his", "by", "from", "they", "we", "say", "her", "she", "or", "an", "will", "my", "one", "all", "would", "there", "their", "what", "so", "up", "out", "if", "about", "who", "get", "which", "go", "me", "when", "make", "can", "like", "time", "no", "just", "him", "know", "take", "people", "into", "year", "your", "good", "some", "could", "them", "see", "other", "than", "then", "now", "look", "only", "come", "its", "over", "think", "also", "back", "after", "use", "two", "how", "our", "work", "first", "well", "way", "even", "new", "want", "because", "any", "these", "give", "day", "most", "us", "said", "asked", "replied", "nodded", "looked", "turned", "eyes", "face", "head", "hand", "hands", "voice", "door", "room", "man", "woman", "felt", "knew", "saw", "heard", "stood", "sat", "walked", "went", "came", "told", "left", "right", "down", "around", "away", "off", "through", "something", "anything", "nothing", "everything", "someone", "anyone", "everyone", "no", "one", "was", "were", "had", "been", "are", "is", "am", "has", "did", "doing", "does", "got", "gotten", "going", "went", "gone", "very", "really", "too", "quite", "rather", "somewhat", "almost", "always", "never", "sometimes", "often", "usually", "suddenly", "finally", "quickly", "slowly", "carefully", "sudden", "moment", "second", "minute", "hour", "while", "during", "before", "until", "again", "then", "once", "twice"]);
+
+            const ex = new Set(exclusions.map(e => String(e).toLowerCase().trim()));
+
+            const words = recentProse.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean);
+
+            const ngrams = {};
+            const addNgram = (phrase) => {
+                if (!phrase) return;
+                const parts = phrase.split(' ');
+                // Exclude if entirely stop words or exclusions
+                if (parts.every(p => stopWords.has(p) || ex.has(p))) return;
+                // Exclude if it strictly contains an exclusion (to avoid banning "character name said")
+                if (parts.some(p => ex.has(p))) return;
+
+                ngrams[phrase] = (ngrams[phrase] || 0) + 1;
+            };
+
+            for (let i = 0; i < words.length; i++) {
+                if (i < words.length - 1) addNgram(`${words[i]} ${words[i+1]}`);
+                if (i < words.length - 2) addNgram(`${words[i]} ${words[i+1]} ${words[i+2]}`);
+            }
+
+            const overused = Object.entries(ngrams)
+                .filter(([phrase, count]) => count >= 5)
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(entry => entry[0]);
+
+            return overused;
+        };
+
         function analyzeProseQuality(proseText, bannedPhrases = []) {
             if (!proseText || typeof proseText !== 'string') {
                 return {
@@ -6817,6 +6899,22 @@ Output Schema (four available edit types; emit only the edits needed):
   </structural_edit>
 </edits>`;
 
+        
+        const getValenceInstruction = (score) => {
+            if (!score) return "";
+            const num = parseInt(score, 10);
+            if (num >= 2) {
+                return "This scene operates at maximum dramatic intensity. The narrative should feel breathless, visceral, and urgent. Focus on crisis, immediate physical or emotional conflict, and explosive momentum.";
+            } else if (num === 1) {
+                return "This scene operates at a moderate tension. The narrative should feel active and driving. Focus on tactical maneuvering, rising complications, and escalating stakes.";
+            } else if (num === -1) {
+                return "This scene operates at a low intensity. The narrative should feel transitional and interactive. Focus on negotiations, travel, regrouping, and simmering subtext rather than overt conflict.";
+            } else if (num <= -2) {
+                return "This scene operates at minimum intensity. The narrative should feel calm, reflective, and decompression-focused. Focus on character interiority, quiet contemplation, and tender or vulnerable bonding.";
+            }
+            return "";
+        };
+
         const PROMPTS = {
             // TIER 0: CONCEPTUAL FOUNDATION
             // TIER 0.1: Conceptual Development Agent (LARGE)
@@ -7118,6 +7216,7 @@ Based on the Frank Daniel 8-Sequence Model:
 - Sequence 6 (Act II, Seq 6) - Tightening Net & Dark Night: The strategy collapses under pressure, culminating in the crisis/lowest ebb before the Act III break.
 - Sequence 7 (Act III, Seq 7) - Climax & Decisive Confrontation: The protagonist synthesizes internal truth and skills to confront the central conflict directly.
 - Sequence 8 (Act III, Seq 8) - Resolution & New Equilibrium: Aftermath, thematic crystallization, and establishment of the new irreversible reality.
+- **Act 2 Core Lie Counterpoint Mandate:** At least one sequence in Act 2 (Sequences 3, 4, 5, or 6) must explicitly include a strong, unavoidable counterpoint to the protagonist’s core lie, presented in a way that adds complexity to their personality. This counterpoint must not merely be a passing thought or intellectual abstraction; it must arrive through concrete external friction (an opposing character's compelling philosophy or action, a moral dilemma, or the tangible fallout of the protagonist's stubborn flaw) that directly challenges their worldview and forces psychological depth.
 
 ## Pillar 5: Scale, Distribution & Genre Adaptability
 - You must generate all 8 sequences with robust thematic, dramatic, character, and pacing depth. Ensure the nature of the "Dark Night" or "Decisive Confrontation" aligns strictly with the requested genre (e.g., an emotional confrontation in a Romance, a courtroom showdown in a Legal Thriller).
@@ -7156,6 +7255,10 @@ You will receive the following context blocks to inform your architectural desig
 ## Criterion 4: Causal Chain & Hook Quality
 - Check: Does the conclusion of Sequence N logically force the protagonist to adopt the new approach of Sequence N+1? (Therefore/But progression). Does every sequence end with an unresolved tension or shift?
 - Goal: To confirm unbroken causal momentum across the entire novel.
+
+## Criterion 5: Act 2 Core Lie Counterpoint Audit
+- Check: Does at least one sequence in Act 2 (Sequences 3, 4, 5, or 6) explicitly incorporate a strong counterpoint to the protagonist's core lie, presented in a way that adds complexity and dimensional nuance to their personality?
+- Goal: To ensure the protagonist's internal conflict is dynamically challenged before the Act III climax.
 </evaluation_criteria>
 
 ## Input Schema Definition
@@ -7183,6 +7286,22 @@ If the 8 sequences are structurally sound, use the required headings, establish 
 
 
 <scene_development_theory>
+## Pillar 0: The Pacing Valence Algorithm & Running Sum Constraint
+Pacing across the sequence must be mathematically modulated to prevent both unrelenting sensory burnout and narrative stasis. You must assign each scene an explicit <valence_score> that represents its dramatic intensity, and track a cumulative <valence_running_sum>.
+
+- **The 4 Valence Levels:**
+  * **2 (High Intensity):** Visceral physical conflict, life-or-death crisis, frantic pursuit, explosive revelation, catastrophic turning point, or peak emotional confrontation.
+  * **1 (Moderate Intensity):** Active tactical maneuvering, pressing interrogation, rising complications, urgent investigation, or focused interpersonal confrontation.
+  * **-1 (Low Intensity Interaction / Transition):** Uneasy alliances, tactical planning, negotiations, physical travel, regrouping, or minor character interactions.
+  * **-2 (Calm / Reflective / Exposition):** Quiet decompression, campfire moments, philosophical contemplation, deep memory integration, tender bonding, or lore exploration.
+
+- **The Running Sum Rule:**
+  * The sequence starts with a running sum of 0 before Scene 1.
+  * For each scene, add its <valence_score> to the running sum to produce <valence_running_sum>.
+  * **The running sum MUST ALWAYS remain between -2 and 2 (inclusive):** -2 <= running_sum <= 2 at every single scene.
+  * This rule mathematically controls dramatic pacing: If the running sum reaches +2, the next scene MUST be assigned a negative score (-1 or -2) to relieve pressure and allow characters/readers to breathe. If the running sum reaches -2, the next scene MUST be assigned a positive score (1 or 2) to inject momentum and drive the plot forward.
+  * **Placement in Output:** List <valence_score> immediately after <title>, and <valence_running_sum> immediately after <valence_score>, before describing the scene.
+
 *Based on D.V Swain's Scene and Sequel loop:*
 
 - **The Continuous Action Unit:**
@@ -7217,7 +7336,12 @@ If the 8 sequences are structurally sound, use the required headings, establish 
 - You must establish an Active Vector: The events of this scene must irreversibly advance the central plot or explicitly escalate a vital subplot. Characters may reflect on the past, but that reflection must be weaponized into a new realization or irreversible decision that pushes the story forward.
 - Goal: To drive relentless forward momentum by structuring the scene around decisive action, subtextual maneuvering, and hard choices.
 
-## Pillar 2: The Value Shift & Turning Point (McKee's Dynamics)
+
+    ## Pillar X: Setting Diversity & Creative Obstacles (NO STASIS)
+    - **The "Cockpit Trap" is BANNED:** Do NOT trap the protagonist in a single static setting (e.g., a cockpit, a chair, a bridge) for multiple scenes. You MUST force them to move, change locations, or physically interact with different environments.
+    - Provide varied, dynamic physical and tactical obstacles. The character must interact with the world, not just sit and think or fight purely digital/internal battles.
+
+    ## Pillar 2: The Value Shift & Turning Point (McKee's Dynamics)
 - A masterful scene is a micro-story that irrevocably changes the narrative landscape.
 - Identify the specific abstract value at stake (e.g., from Ignorance to Knowledge, Trust to Suspicion, or Safety to Peril). Pinpoint the exact Turning Point of the scene—the specific moment of Anagnorisis (discovery of a new truth) or Peripeteia (a sudden reversal of fortune) that causes this value to shift.
 - Utilize Information Asymmetry: Increase narrative complexity by leveraging what the character knows versus what the reader (or opposing characters) knows. The turning point is often triggered by the sudden revelation of a withheld truth.
@@ -7301,6 +7425,12 @@ You will receive the following context blocks to inform your architectural desig
 - Check: Does <setting_anchor> provide a concrete location and time grounding (not vague)?
 - Check: Do <plot_commitments> codify any hard promises, reveals, or information exchanges (or explicitly say 'None')?
 - Goal: To ensure narrative data integrity and precise staging mechanics.
+
+## Criterion 8: Pacing Valence Algorithm & Running Sum Audit
+- Check: Does every scene declare a valid <valence_score> (chosen from 2, 1, -1, -2) and an accurate <valence_running_sum>?
+- Check: Does the <valence_running_sum> mathematically stay strictly between -2 and 2 (inclusive) across the sequence?
+- Check: Does the scene's actual narrative intensity genuinely match its declared valence score (e.g. a calm reflection is not scored 2; an intense shootout is not scored -2)?
+- Goal: To ensure mathematical control of narrative pacing, alternating between high tension and decompression.
 </evaluation_criteria>
 
 ## Input Schema Definition
@@ -7717,6 +7847,7 @@ BEGIN SURGICAL MRU REPAIR`,
   3. **MEMORY:** A beat where the protagonist relates the current events to something from their past life or history. *(Note: Anchor this internal memory to a present physical trigger to respect the Camera Lens constraint).*
   4. **ACTION / KINETIC:** A beat focused on physical momentum, exertion, or tangible interaction with the space or an object.
   5. **SENSORY / TENSION:** A beat dedicated to a visceral sensory discovery (a sudden sound, a shift in temperature, a shadow) that raises stakes or anticipation.
+  6. **DIALOGUE:** A beat focused on spoken interaction, verbal confrontation, bargaining, or revelation. *(Crucial Rule: Even when a character is entirely alone, talking aloud to themselves, muttering, vocalizing thoughts, addressing an inanimate object, or calling out is an option and satisfies this mandate—dialogue is key to understanding characters).*
 - **Anti-Repetition:** Never generate a sequence of identical beat types (e.g., do not write 5 consecutive Action beats of a character performing labor). Interleave these types to ensure dynamic pacing and deep narrative density.
 - Goal: To prevent repetitive prose loops by forcing a rich, multi-dimensional texture into every scene.
 
@@ -7761,8 +7892,8 @@ EVALUATION CRITERIA (Prioritized in Strict Order of Severity):
    - In \`<deviation_reasons><reason>\`, explicitly cite the repeated beats and demand removal or forward progression.
 
 2. **Gate 2: Mandatory Beat Typology Ecosystem (MANDATORY CRITICAL GATE):**
-   - Verify the scene contains AT LEAST ONE of each mandatory beat type: **ENVIRONMENT**, **REFLECTION**, **MEMORY**, **ACTION/KINETIC**, and **SENSORY/TENSION**.
-   - If the sequence consists entirely of dialogue or purely physical action without at least one environmental, reflective, or memory beat: **MANDATORY FAIL** with reason category \`MISSING_TYPOLOGY\`.
+   - Verify the scene contains AT LEAST ONE of each mandatory beat type: **ENVIRONMENT**, **REFLECTION**, **MEMORY**, **ACTION/KINETIC**, **SENSORY/TENSION**, and **DIALOGUE** (in solo scenes, externalized vocalization, muttering aloud, or speaking to oneself qualifies as DIALOGUE).
+   - If the sequence lacks any of the mandatory types (including DIALOGUE, even if solo vocalization is required), or consists purely of one type without environmental, reflective, memory, or dialogue beats: **MANDATORY FAIL** with reason category \`MISSING_TYPOLOGY\`.
    - In \`<deviation_reasons><reason>\`, explicitly demand the insertion of the missing beat type(s).
 
 3. **Gate 3: Exit Condition Anti-Overshoot & Boundary Containment (MANDATORY CRITICAL GATE):**
@@ -7849,11 +7980,14 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 ### 3. PROSE ECONOMY & PACING
 - **Action-Emotion Compression**: Deliver emotional reactions through a single high-impact micro-gesture. Never follow physical action with explanatory translation telling the reader what the gesture meant.
 - **Aristotelian Pivots**: Dramatize each beat's turning point (peripeteia/anagnorisis) as an irreversible shift in understanding or tactical advantage, anchored in concrete action or definitive dialogue.
-- **Dynamic Pacing & Syntactic Modulation**: Modulate the rhythm and pacing of the prose to avoid a monotonous cadence. Vary sentence length and structure creatively to reflect the emotional state of the scene—use taut, staccato phrasing for sudden impact and kinetic crisis, and fluid, evocative clauses to build sweeping atmosphere and bring the setting to life.
+- **Organic Syntactic Modulation & Anti-Telegraphic Rule**: Modulate sentence length and rhythm organically to avoid a monotonous cadence. Vary sentence structures creatively to reflect the emotional velocity of the scene. Follow short, high-impact action clauses with balanced, rhythmic compound sentences. Strictly avoid strings of three or more consecutive sentences under four words (e.g. ban telegraphic chains like *"He fires. Metal groans. The gate falls. Light dies."*). Ground action in muscular, specific verbs and physical causality rather than machine-gun fragment lists.
+- **Anti-Binary Whiplash**: Eliminate artificial binary whiplash between telegraphic two-word fragments and sprawling thirty-word Latinate abstraction clauses. Transitions between sentence lengths must feel natural, musical, and purposeful.
 - **Modifier Economy (*Le Mot Juste*)**: Replace adverb-heavy constructions and stacked adjectives with solitary, muscular verbs and precise nouns.
 - **Creative Environmentalism**: Be highly creative in how you bring the setting to life. Treat the environment as an active, breathing participant in the scene rather than a static backdrop. Let the world push back against the characters, using rich sensory details to reveal atmosphere, history, and tension.
 
 ### 4. DYNAMIC DIALOGUE & SUBTEXT
+- **Mandatory Dialogue Quota (20–35% Dialogue Density)**: In every scene featuring two or more characters, spoken dialogue must constitute at least 20% to 35% of the total scene word count. Banish "silent pantomime" and uninterrupted walls of descriptive prose where characters merely gesticulate in silence. Characters must actively converse, argue, probe, interrupt, deflect, bargain, and react out loud. Spoken words are the primary engine of interpersonal tension.
+- **Solo Character Vocalization**: Even when a character is physically alone, spoken dialogue is still strictly mandated. When isolated, characters must mutter under their breath, curse, talk aloud to themselves, question out loud, address an inanimate obstacle, or vocalize tactical decisions. Spoken dialogue is essential to understanding character psychology and externalizing their interiority.
 - **Character Idiolect & Speech Variety**: Distinct vocal cadences, vocabulary, and sentence lengths must reflect the individual character profiles. Vary the style of speech to match the immediate emotional stakes and ensure conversations feel dynamic and unpredictable.
 - **Speech Acts & Subtext**: Characters rarely speak unvarnished truth; treat speech as tactical bids (deflecting vulnerability, testing boundaries, asserting dominance). Allow non-sequiturs, oblique answers, and strategic silences.
 - **Motivation-Reaction Dialogue Beats**: Ground spoken lines in simultaneous physical blocking. Minimize dialogue tags; eliminate creative tags ("she growled", "he hissed") and use "said" sparingly.
@@ -7862,6 +7996,7 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 ### 5. STYLISTIC EXECUTION & AUTHORIAL ALIGNMENT
 - **Genre & Tone Fidelity**: The prose MUST breathe with the exact genre, tone, and atmosphere defined in the prompt. Do not default to a generic "AI" writing style. Carefully consider how your use of language, word choice, and stylistic rhythms fit the specific genre, tone, and themes of the novel. Saturate the narrative with the distinct atmospheric weight and worldview established in the instructions.
 - **Authorial Emulation**: Carefully study the referenced authors in <tone_and_atmosphere>. Deeply internalize and reflect their specific writing styles, thematic preoccupations, and syntactic rhythms. Weave these influences seamlessly to create a sophisticated, highly specific narrative voice that matches the original vision.
+- **Style Directive Translation Guard**: If <writing_style_description> or <tone_and_atmosphere> prescribes directives like "staccato," "pulse-and-burst," or "kinetic compression," interpret this as an instruction for *rhythmic tension, crisp verbs, and forward momentum*, NEVER as permission to eradicate sentence variety, collapse into telegraphic two-word lists, or abandon musical prosody.
 
 ## Input Context Schema
 You will receive: <genre_classification>, <tone_and_atmosphere>, <writing_style_description>, <scene_blueprint>, <continuity_ledger>, <active_characters_profiles>, <relationship_friction_matrix>, <previous_context>, <current_chunk_choreography_blueprint>, <writing_lens>, and optional <directive_requirement>.
@@ -7918,10 +8053,12 @@ EVALUATION CRITERIA (in order of severity):
 16. **Somatic Clichés:** Flag overused body-reaction tropes ("breath caught", "breath hitched", "heart stuttered", "silence stretched").
 17. **Telling Over Showing:** Flag explanatory abstractions that spell out emotions instead of dramatizing them.
 18. **Generic AI Voice:** Flag prose that sounds like default ChatGPT/Gemini output — overly polished, uniformly rhythmic, lacking texture.
+19. **Dialogue Density & Voice Execution:** In scenes with 2+ characters present, verify spoken dialogue constitutes a substantial presence (target 20–35% of prose). Flag any multi-character scene that descends into silent pantomime or lacks dialogue (< 10% dialogue words or fewer than 3 spoken lines). In solo scenes, flag if the character fails to vocalize, mutter aloud, or speak to externalize their interiority.
+20. **Telegraphic Syntax & Binary Whiplash:** Flag repetitive strings of three or more consecutive sentences under four words (e.g., "He fires. Metal groans. The gate falls."), or jarring binary whiplash between ultra-short fragments and sprawling abstract run-on clauses.
 
 **MINOR (note in critique_analysis only):**
-19. **Dialogue Tag Variety:** Creative dialogue tags ("she hissed", "he growled") — note but do not fail.
-20. **Pacing Preference:** Subjective rhythm preferences — note but do not fail.
+21. **Dialogue Tag Variety:** Creative dialogue tags ("she hissed", "he growled") — note but do not fail.
+22. **Pacing Preference:** Subjective rhythm preferences — note but do not fail.
 
 PASS/FAIL DECISION FRAMEWORK:
 - **PASS** if: The prose faithfully executes the start → pivot → end choreography, preserves all specific dialogue stakes/challenges/plot terms with semantic accuracy, respects epistemic boundaries, maintains physical continuity, advances physical posture, and uses correct character names.
@@ -7947,6 +8084,10 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 - Check: Does the drafted prose accurately execute the core actions, dialogue challenges, wagers, rules, and outcomes from the beats? If the prose watered down or altered a specific plot condition (e.g., changing an explicit challenge or rule into something vague), you must flag it.
 - Goal: To ensure architectural plot logic survives the translation to prose.
 - **Circuit Breaker**: Do not fail prose for consolidating or pruning redundant/duplicate beat cycles from upstream chunk errors if all substantive plot terms and dramatic outcomes are met.
+
+## Criterion 4: Spoken Dialogue Presence
+- Check: Does the scene feature spoken dialogue as required by the beats? Flag scenes where characters who are together in a room engage in silent pantomime without speaking, or solo scenes with zero externalized vocalization.
+- Goal: To prevent silent, dialogue-free pantomime across narrative scenes.
 </evaluation_criteria>
 
 ## CRITICAL AUDIT RULE
@@ -8734,9 +8875,13 @@ INSTRUCTIONS:
 
                 if (!isThinkingEnabled) {
                     payload.reasoning_effort = "none";
-                } else if (opts.provider === 'codex' && ['low', 'medium', 'high'].includes(opts.thinking?.effort)) {
-                    // The Codex bridge maps this onto codex exec's reasoning effort; otherwise the CLI config decides.
-                    payload.reasoning_effort = opts.thinking.effort;
+                } else {
+                    const budget = opts.thinking?.budget || 0;
+                    const effort = (opts.thinking?.effort && opts.thinking.effort !== 'none')
+                        ? opts.thinking.effort
+                        : (budget <= 2048 ? "low" : budget <= 4096 ? "medium" : "high");
+                    payload.reasoning_effort = effort;
+                    payload.enable_reasoning = true;
                 }
 
                 let response;
@@ -18946,7 +19091,7 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                         console.warn(`[${tierName}] Structural validation failed (bypassing Reviewer LLM):`, structuralValidation.errors);
 
                         // FEATURE B6.5: Intercept trivial MRU failures for surgical repair
-                        if (tierName === "Beat Agent" && structuralValidation.errors.some(e => e.includes("trivial MRU"))) {
+                        if (tierName === "Beat Agent" && structuralValidation.errors.some(e => e.includes("trivial MRU") || e.includes("trivial action") || e.includes("trivial reaction"))) {
                             const beats = parsedData.beats || (Array.isArray(parsedData) ? parsedData : []);
                             const defectiveBeats = findTrivialMRUBeats(beats);
                             if (defectiveBeats.length > 0) {
@@ -18955,6 +19100,17 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                                 if (repairResult.success) {
                                     showToast(`Surgical repair successful!`, 'success');
                                     if (repairResult.genOutput) genOutput = repairResult.genOutput;
+                                    if (typeof parserFn === 'function' && repairResult.genOutput) {
+                                        try {
+                                            const reparsed = parserFn(repairResult.genOutput);
+                                            if (reparsed) {
+                                                parsedData = reparsed;
+                                                lastParsedData = reparsed;
+                                            }
+                                        } catch (e) {
+                                            console.warn("[Beat Agent] Failed to re-parse repaired output:", e);
+                                        }
+                                    }
                                     const revalidation = validateStructuralOutput(tierName, parsedData, validationContext);
                                     if (revalidation.valid) {
                                         console.log(`[${tierName}] Structural validation passed after surgical repair.`);
@@ -18975,6 +19131,17 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                                 if (repairResult.success) {
                                     showToast(`Surgical repair successful!`, 'success');
                                     if (repairResult.genOutput) genOutput = repairResult.genOutput;
+                                    if (typeof parserFn === 'function' && repairResult.genOutput) {
+                                        try {
+                                            const reparsed = parserFn(repairResult.genOutput);
+                                            if (reparsed) {
+                                                parsedData = reparsed;
+                                                lastParsedData = reparsed;
+                                            }
+                                        } catch (e) {
+                                            console.warn("[Scene Agent] Failed to re-parse repaired output:", e);
+                                        }
+                                    }
                                     const revalidation = validateStructuralOutput(tierName, parsedData, validationContext);
                                     if (revalidation.valid) {
                                         console.log(`[${tierName}] Structural validation passed after surgical repair.`);
@@ -19049,9 +19216,9 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                         reviewResult = extractReviewStatus(reviewOutput);
                     }
 
-                    const reviewStatus = reviewResult.status || "FAIL";
-                    const reasons = reviewResult.reasons || [];
-                    const critique = reviewResult.critique || "";
+                    let reviewStatus = reviewResult.status || "FAIL";
+                    let reasons = reviewResult.reasons || [];
+                    let critique = reviewResult.critique || "";
 
                     console.log("Review Status:", reviewStatus);
                     console.log("Review Critique:", critique);
@@ -19178,16 +19345,16 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                                 ? PROMPTS.writingReviewRelaxed
                                                 : PROMPTS.writingReviewRelaxed.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n');
                                         }
-                                        const reviewOutput = await callAI(reviewPrompt, activeReviewerPrompt, false, `${tierName} Reviewer`, "small");
-                                        const reviewResultVal = extractReviewStatus(reviewOutput);
+                                        const innerReviewOutput = await callAI(reviewPrompt, activeReviewerPrompt, false, `${tierName} Reviewer`, "small");
+                                        const reviewResultVal = extractReviewStatus(innerReviewOutput);
 
-                                        const reviewStatus = reviewResultVal.status;
-                                        const reasons = reviewResultVal.reasons;
-                                        const critique = reviewResultVal.critique;
+                                        const reviewStatusVal = reviewResultVal.status;
+                                        const reasonsVal = reviewResultVal.reasons;
+                                        const critiqueVal = reviewResultVal.critique;
                                         let reviewBriefs = reviewResultVal.briefs;
                                         await spawnNewCharacters(reviewBriefs);
 
-                                        if (reviewStatus.trim().toUpperCase() === 'PASS') {
+                                        if (reviewStatusVal.trim().toUpperCase() === 'PASS') {
                                             showToast(`${tierName} passed review after surgical edits!`);
                                             console.log(`[Pipeline - ${tierName}${chunkPrefix}] PASS after surgical edits on inner pass ${innerPass}`);
                                             setFeedbackLedger(prev => {
@@ -19205,9 +19372,9 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                             console.groupEnd(); // Close Attempt group
                                             return { genOutput: patchedOutput, parsedData, spawnedBriefs };
                                         } else {
-                                            innerIssues = reviewResultVal.issues && reviewResultVal.issues.length > 0 ? reviewResultVal.issues : parseIssuesFromReview(reviewOutput);
-                                            deviationReasons = reasons.length > 0 ? reasons : ["Failing after surgical edit"];
-                                            innerCritique = critique;
+                                            innerIssues = reviewResultVal.issues && reviewResultVal.issues.length > 0 ? reviewResultVal.issues : parseIssuesFromReview(innerReviewOutput);
+                                            deviationReasons = reasonsVal.length > 0 ? reasonsVal : ["Failing after surgical edit"];
+                                            innerCritique = critiqueVal;
                                             currentDraft = patchedOutput;
                                             lastGenOutput = patchedOutput;
 
@@ -19304,16 +19471,16 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                         // Re-review
                                         setLoadingStep(`Reviewing patched ${tierName}${chunkPrefix} output (Inner Pass ${innerPass})...`);
                                         const reviewPrompt = reviewerPromptFn(patchedOutput);
-                                        const reviewOutput = await callAI(reviewPrompt, reviewerSystemPrompt, false, `${tierName} Reviewer`, "small");
-                                        const reviewResultVal = extractReviewStatus(reviewOutput);
-                                        const reviewStatus = reviewResultVal.status;
+                                        const innerReviewOutput = await callAI(reviewPrompt, reviewerSystemPrompt, false, `${tierName} Reviewer`, "small");
+                                        const reviewResultVal = extractReviewStatus(innerReviewOutput);
+                                        const reviewStatusVal = reviewResultVal.status;
                                         const reasonsVal = reviewResultVal.reasons;
                                         const critiqueVal = reviewResultVal.critique;
                                         let reviewBriefs = reviewResultVal.briefs;
                                         await spawnNewCharacters(reviewBriefs);
 
-                                        console.log(`[${tierName} Re-review Pass ${innerPass}] Status:`, reviewStatus);
-                                        if (reviewStatus.trim().toUpperCase() === 'PASS') {
+                                        console.log(`[${tierName} Re-review Pass ${innerPass}] Status:`, reviewStatusVal);
+                                        if (reviewStatusVal.trim().toUpperCase() === 'PASS') {
                                             showToast(`${tierName} passed review after surgical edits!`);
                                             console.log(`[Pipeline - ${tierName}${chunkPrefix}] PASS after surgical edit on inner pass ${innerPass}`);
                                             setFeedbackLedger(prev => {
@@ -19331,7 +19498,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                             console.groupEnd(); // Close Attempt group
                                             return { genOutput: patchedOutput, parsedData, spawnedBriefs };
                                         } else {
-                                            innerIssues = reviewResultVal.issues && reviewResultVal.issues.length > 0 ? reviewResultVal.issues : parseIssuesFromReview(reviewOutput);
+                                            innerIssues = reviewResultVal.issues && reviewResultVal.issues.length > 0 ? reviewResultVal.issues : parseIssuesFromReview(innerReviewOutput);
                                             deviationReasons = reasonsVal.length > 0 ? reasonsVal : ["Failing after surgical edit"];
                                             innerCritique = critiqueVal;
                                             currentDraft = patchedOutput;
@@ -19525,7 +19692,7 @@ Output Schema:
   <writing_style_description>
     Provide an evocative but highly mechanical engineering manual for the prose generator. You must define:
     1. FOCALIZER BIAS: Dictate exactly how the protagonist's internal biases and flaws distort what the narrative camera notices.
-    2. SYNTACTIC RHYTHM: Dictate the required sentence structure (e.g., sharp, staccato fragments for kinetic tension vs. flowing, multi-clause legato for deep introspection).
+    2. SYNTACTIC RHYTHM: Dictate the required sentence structure and cadence, mandating organic sentence variety (modulating between crisp action clauses and flowing, musical compound sentences). Explicitly prohibit telegraphic strings of ultra-short fragments (e.g., chains of <= 3-word sentences) or rigid binary whiplash between extremes.
     3. ANTI-PATTERNS: Name one specific stylistic habit or crutch this book must avoid at all costs.
   </writing_style_description>
   <status_quo>Comprehensive, multi-paragraph detailing of the setting, rules, history, societal structures, and normal world status quo in its baseline equilibrium before the plot begins.</status_quo>
@@ -20419,7 +20586,7 @@ Output Schema:
         - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this sequence. Explain its role in the global value shift.
         - **DRAMATIC ARC & PACING CURVES:** Map the sequence-level narrative movement. Detail the starting state, rising action, and dramatic climax.
         - **THREAD PROGRESSION & CONVERGENCE:** Describe how active plot threads evolve and intersect within this sequence.
-        - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on internal struggles, character tests, and shifting motivations.
+        - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on internal struggles, character tests, and shifting motivations. (ACT 2 MANDATE: At least one sequence in Act 2 must explicitly incorporate a strong counterpoint to the protagonist's core lie that challenges their worldview and adds psychological complexity).
         - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems for downstream scene planners to navigate.
       </description>
       <sequence_objective>The single most important narrative goal this sequence accomplishes.</sequence_objective>
@@ -22027,6 +22194,19 @@ BEGIN GENERATING IMAGE PROMPT`;
                                 imagePromises.push(promise);
                             });
                         });
+
+                        // 3. Character Portraits
+                        (story.cast || []).forEach(char => {
+                            if (!char || !char.id) return;
+                            const portKey = `portrait_${story.id}_${char.id}`;
+                            const promise = imageStore.getImage(portKey).then(dataUrl => {
+                                if (dataUrl) {
+                                    imagesMap[portKey] = dataUrl;
+                                }
+                            });
+                            imagePromises.push(promise);
+                        });
+
                         await Promise.all(imagePromises);
                     }
 
@@ -22108,6 +22288,198 @@ BEGIN GENERATING IMAGE PROMPT`;
 
                     // 4. Content (Acts, Sequences, and Scenes)
                     const escapeXml = (str) => String(str || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+                    const slugify = (text) => String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                    const ensureXhtmlVoidTags = (html) => String(html || '').replace(/<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)([^>]*?)(?<!\/)>/gi, '<$1$2 />');
+
+                    // Prepare Linkable Entities for First-Use Prose Linking & Appendix
+                    const castList = Array.isArray(story.cast) ? story.cast : [];
+                    const ledgerList = Array.isArray(story.continuity_ledger) ? story.continuity_ledger : [];
+                    const linkableItems = []; // { id, targetAnchor, type, entity, terms: [] }
+
+                    // Count first names to ensure unique first-name matching
+                    const characterFirstNamesCount = {};
+                    castList.forEach(c => {
+                        if (!c || !c.name) return;
+                        const parts = c.name.trim().split(/\s+/);
+                        if (parts.length > 0) {
+                            const fn = parts[0].toLowerCase();
+                            characterFirstNamesCount[fn] = (characterFirstNamesCount[fn] || 0) + 1;
+                        }
+                    });
+
+                    castList.forEach((c, cIdx) => {
+                        if (!c || !c.name) return;
+                        const charSlug = slugify(c.id || c.name || `char_${cIdx}`);
+                        const targetAnchor = `char_${charSlug}`;
+                        const terms = [];
+
+                        const fullName = c.name.trim();
+                        if (fullName.length >= 2) terms.push(fullName);
+
+                        const aliases = Array.isArray(c.aliases) ? c.aliases : (Array.isArray(c.details?.aliases) ? c.details.aliases : []);
+                        aliases.forEach(a => {
+                            const aTrim = String(a || '').trim();
+                            if (aTrim.length >= 2 && !terms.some(t => t.toLowerCase() === aTrim.toLowerCase())) {
+                                terms.push(aTrim);
+                            }
+                        });
+
+                        const parts = fullName.split(/\s+/);
+                        if (parts.length > 1) {
+                            const fn = parts[0];
+                            if (fn.length >= 3 && characterFirstNamesCount[fn.toLowerCase()] === 1) {
+                                if (!terms.some(t => t.toLowerCase() === fn.toLowerCase())) {
+                                    terms.push(fn);
+                                }
+                            }
+                        }
+
+                        linkableItems.push({
+                            id: `char_${c.id || cIdx}`,
+                            targetAnchor,
+                            type: 'character',
+                            entity: c,
+                            terms
+                        });
+                    });
+
+                    const seenLedgerKeys = new Set();
+                    ledgerList.forEach((fact, fIdx) => {
+                        if (!fact || !fact.key) return;
+                        const rawKey = String(fact.key).trim();
+                        // Skip if contains bracketed actions like "[defeats]" or "[ally]"
+                        if (/\[.*?\]/.test(rawKey)) return;
+                        // Skip short or generic stop words
+                        if (rawKey.length < 4) return;
+                        // Skip if it's already just a character's name
+                        if (castList.some(c => c && c.name && c.name.toLowerCase() === rawKey.toLowerCase())) return;
+
+                        const lowerKey = rawKey.toLowerCase();
+                        if (seenLedgerKeys.has(lowerKey)) return;
+                        seenLedgerKeys.add(lowerKey);
+
+                        const factSlug = slugify(fact.tracking_tag || rawKey);
+                        const targetAnchor = `ledger_${factSlug}`;
+                        linkableItems.push({
+                            id: `ledger_${fIdx}`,
+                            targetAnchor,
+                            type: 'ledger',
+                            entity: fact,
+                            terms: [rawKey]
+                        });
+                    });
+
+                    // Build search terms list sorted by length descending
+                    const searchTerms = [];
+                    linkableItems.forEach(item => {
+                        item.terms.forEach(term => {
+                            const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                            const prefix = /^\w/.test(term) ? '\\b' : '';
+                            const suffix = /\w$/.test(term) ? '\\b' : '';
+                            searchTerms.push({
+                                term,
+                                regex: new RegExp(`${prefix}${escaped}${suffix}`, 'i'),
+                                itemId: item.id,
+                                targetAnchor: item.targetAnchor
+                            });
+                        });
+                    });
+                    searchTerms.sort((a, b) => b.term.length - a.term.length);
+
+                    const linkedItemIds = new Set();
+                    const firstUseCitations = {}; // itemId -> { file, title, anchor }
+                    const charPortraits = {}; // char.id -> relative image path in EPUB
+
+                    const linkFirstUsesInHtml = (htmlContent, chapFilename, chapHeading) => {
+                        if (!htmlContent || searchTerms.length === 0) return htmlContent;
+                        const activeTerms = searchTerms.filter(st => !linkedItemIds.has(st.itemId));
+                        if (activeTerms.length === 0) return htmlContent;
+
+                        try {
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(`<body>${htmlContent}</body>`, 'text/html');
+                            const body = doc.body;
+
+                            const processNode = (node) => {
+                                if (!node) return;
+                                if (node.nodeType === Node.ELEMENT_NODE) {
+                                    const tag = node.tagName.toLowerCase();
+                                    if (tag === 'a' || tag === 'script' || tag === 'style' || tag === 'h1' || tag === 'h2' || tag === 'h3') {
+                                        return;
+                                    }
+                                    const children = Array.from(node.childNodes);
+                                    for (let i = 0; i < children.length; i++) {
+                                        processNode(children[i]);
+                                    }
+                                    return;
+                                }
+
+                                if (node.nodeType === Node.TEXT_NODE) {
+                                    const text = node.nodeValue;
+                                    if (!text || text.trim().length === 0) return;
+
+                                    let bestMatch = null;
+                                    let bestTerm = null;
+
+                                    for (let i = 0; i < activeTerms.length; i++) {
+                                        const st = activeTerms[i];
+                                        if (linkedItemIds.has(st.itemId)) continue;
+                                        st.regex.lastIndex = 0;
+                                        const match = st.regex.exec(text);
+                                        if (match) {
+                                            if (!bestMatch || match.index < bestMatch.index || (match.index === bestMatch.index && st.term.length > bestTerm.term.length)) {
+                                                bestMatch = match;
+                                                bestTerm = st;
+                                            }
+                                        }
+                                    }
+
+                                    if (bestMatch && bestTerm) {
+                                        const matchIdx = bestMatch.index;
+                                        const matchStr = bestMatch[0];
+                                        const citeId = `cite_${bestTerm.targetAnchor}_${Math.random().toString(36).substring(2, 8)}`;
+
+                                        linkedItemIds.add(bestTerm.itemId);
+                                        firstUseCitations[bestTerm.itemId] = {
+                                            file: chapFilename,
+                                            title: chapHeading,
+                                            anchor: citeId
+                                        };
+
+                                        const beforeText = text.substring(0, matchIdx);
+                                        const afterText = text.substring(matchIdx + matchStr.length);
+
+                                        const anchorEl = doc.createElement('a');
+                                        anchorEl.setAttribute('href', `Appendix.xhtml#${bestTerm.targetAnchor}`);
+                                        anchorEl.setAttribute('class', 'appendix-ref');
+                                        anchorEl.setAttribute('id', citeId);
+                                        anchorEl.textContent = matchStr;
+
+                                        const parent = node.parentNode;
+                                        if (parent) {
+                                            if (beforeText) {
+                                                parent.insertBefore(doc.createTextNode(beforeText), node);
+                                            }
+                                            parent.insertBefore(anchorEl, node);
+                                            const afterNode = doc.createTextNode(afterText);
+                                            parent.insertBefore(afterNode, node);
+                                            parent.removeChild(node);
+
+                                            if (afterText.trim().length > 0) {
+                                                processNode(afterNode);
+                                            }
+                                        }
+                                    }
+                                }
+                            };
+
+                            processNode(body);
+                            return body.innerHTML;
+                        } catch (err) {
+                            console.warn("Error during first-use prose linking:", err);
+                            return htmlContent;
+                        }
+                    };
 
                     const isActionScene = (scene, sIdx) => {
                         if (scene && (scene.scene_type || scene.type)) {
@@ -22258,6 +22630,10 @@ BEGIN GENERATING IMAGE PROMPT`;
                                     chapterBody += sceneProseHtml;
                                 });
 
+                                // Apply first-use prose linking and XHTML void tag compliance
+                                chapterBody = linkFirstUsesInHtml(chapterBody, chapFilename, chapHeading);
+                                chapterBody = ensureXhtmlVoidTags(chapterBody);
+
                                 const chapterHtml = `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
@@ -22269,6 +22645,8 @@ p { margin-bottom: 1em; text-indent: 0; }
 .beat p { text-indent: 1.5em; }
 h1 { text-align: center; margin-bottom: 2em; }
 .scene-divider { text-align: center; margin: 2em auto; border: 0; border-top: 1px solid #ccc; width: 50%; }
+a.appendix-ref { color: inherit; text-decoration: underline dotted #888; text-underline-offset: 2px; }
+a.appendix-ref:hover { text-decoration: underline; color: #8a6d3b; }
 </style>
 </head>
 <body>
@@ -22295,6 +22673,186 @@ ${chapterBody}
                         actNavPoint += `</navPoint>`;
                         tocPoints.push(actNavPoint);
                     });
+
+                    // 4.1 Appendix (Dramatis Personæ & Continuity Ledger)
+                    if (castList.length > 0 || ledgerList.length > 0) {
+                        // Ingest character portrait images into Images/
+                        castList.forEach((c, cIdx) => {
+                            if (!c || !c.id) return;
+                            const portKey = `portrait_${story.id}_${c.id}`;
+                            const portData = imagesMap[portKey];
+                            if (portData && typeof portData === 'string' && portData.includes(',')) {
+                                try {
+                                    const { mime: portMime, ext: portExt } = getMimeAndExt(portData);
+                                    const safeCharId = slugify(c.id || c.name || `char_${cIdx}`);
+                                    const portFilename = `portrait_${safeCharId}.${portExt}`;
+                                    const portImgId = `port_${safeCharId}`;
+                                    const portBlob = dataURLtoBlob(portData);
+                                    imagesFolder.file(portFilename, portBlob);
+                                    manifestItems.push(`<item id="${portImgId}" href="Images/${portFilename}" media-type="${portMime}"/>`);
+                                    charPortraits[c.id] = `../Images/${portFilename}`;
+                                } catch (e) {
+                                    console.warn("Failed to attach character portrait to EPUB:", e);
+                                }
+                            }
+                        });
+
+                        let appendixHtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.1//EN" "http://www.w3.org/TR/xhtml11/DTD/xhtml11.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>Appendix: Dramatis Personæ &amp; Continuity Ledger</title>
+<style>
+body { font-family: sans-serif; line-height: 1.6; padding: 1.5em; max-width: 800px; margin: 0 auto; color: #222; }
+h1 { text-align: center; font-size: 1.8em; margin-bottom: 0.5em; border-bottom: 2px solid #ddd; padding-bottom: 0.5em; font-family: serif; }
+h2 { font-size: 1.4em; margin-top: 2em; margin-bottom: 0.8em; border-bottom: 1px solid #ccc; padding-bottom: 0.3em; font-family: serif; color: #333; }
+h3 { font-size: 1.15em; margin-top: 1.5em; margin-bottom: 0.5em; font-family: serif; color: #444; }
+h4 { font-size: 1.05em; margin: 0; font-family: serif; color: #111; }
+.appendix-entry { margin-bottom: 1.8em; padding: 1.2em; background: #fdfdfd; border: 1px solid #e2e2e2; border-radius: 8px; }
+.appendix-entry-header { display: flex; align-items: baseline; gap: 0.5em; margin-bottom: 0.5em; flex-wrap: wrap; }
+.badge { display: inline-block; font-size: 0.75em; text-transform: uppercase; font-family: monospace; font-weight: bold; background: #eaeaea; color: #555; padding: 2px 7px; border-radius: 4px; border: 1px solid #d0d0d0; }
+.badge-appearance { background: #f5eef8; color: #6c3483; border-color: #d7bde2; }
+.badge-object { background: #fef5e7; color: #b9770e; border-color: #f8c471; }
+.badge-place { background: #eafaf1; color: #1e8449; border-color: #a9dfbf; }
+.badge-lore { background: #ebf5fb; color: #2874a6; border-color: #aed6f1; }
+.badge-agreement { background: #f4ecf7; color: #7d3c98; border-color: #d2b4de; }
+.portrait-img { float: right; max-width: 110px; max-height: 150px; border-radius: 6px; border: 1px solid #ccc; margin: 0 0 1em 1em; object-fit: cover; }
+.backlink { display: inline-block; margin-top: 0.6em; font-size: 0.85em; color: #8a6d3b; text-decoration: none; font-style: italic; }
+.backlink:hover { text-decoration: underline; }
+.entry-detail { margin: 0.3em 0; font-size: 0.95em; }
+.voice-sample { font-style: italic; background: #fffdf5; padding: 0.6em 0.8em; border-left: 3px solid #d4af37; margin: 0.6em 0; font-size: 0.9em; }
+.nav-pills { text-align: center; margin-bottom: 2em; font-size: 0.9em; }
+.nav-pills a { margin: 0 0.8em; color: #8a6d3b; text-decoration: none; font-weight: bold; }
+.nav-pills a:hover { text-decoration: underline; }
+.clear { clear: both; }
+</style>
+</head>
+<body>
+<h1>Appendix</h1>
+<p style="text-align: center; font-style: italic; color: #666; margin-bottom: 1.5em;">A companion reference containing Dramatis Personæ and the Canon Continuity Ledger.</p>
+`;
+
+                        if (castList.length > 0 && ledgerList.length > 0) {
+                            appendixHtml += `<div class="nav-pills"><a href="#dramatis-personae">Dramatis Personæ</a> &bull; <a href="#continuity-ledger">Continuity Ledger</a></div>\n`;
+                        }
+
+                        // Section 1: Dramatis Personæ
+                        if (castList.length > 0) {
+                            appendixHtml += `<section id="dramatis-personae">\n<h2>Dramatis Personæ</h2>\n`;
+                            castList.forEach((c, cIdx) => {
+                                const item = linkableItems.find(li => li.type === 'character' && li.entity === c);
+                                const targetAnchor = item ? item.targetAnchor : `char_${slugify(c.id || c.name || cIdx)}`;
+                                const cite = item ? firstUseCitations[item.id] : null;
+                                const portSrc = charPortraits[c.id];
+
+                                appendixHtml += `<div id="${targetAnchor}" class="appendix-entry">\n`;
+                                if (portSrc) {
+                                    appendixHtml += `  <img src="${portSrc}" alt="${escapeXml(c.name)}" class="portrait-img" />\n`;
+                                }
+                                appendixHtml += `  <div class="appendix-entry-header">\n`;
+                                appendixHtml += `    <h4>${escapeXml(c.name)}</h4>\n`;
+                                if (c.role) {
+                                    appendixHtml += `    <span class="badge">${escapeXml(c.role)}</span>\n`;
+                                }
+                                appendixHtml += `  </div>\n`;
+
+                                if (c.archetype) {
+                                    appendixHtml += `  <p class="entry-detail"><strong>Archetype:</strong> ${escapeXml(c.archetype)}</p>\n`;
+                                }
+                                if (c.core_flaw || c.core_desire) {
+                                    appendixHtml += `  <p class="entry-detail">`;
+                                    if (c.core_desire) appendixHtml += `<strong>Desire:</strong> ${escapeXml(c.core_desire)} `;
+                                    if (c.core_flaw) appendixHtml += `<strong>Flaw:</strong> ${escapeXml(c.core_flaw)}`;
+                                    appendixHtml += `</p>\n`;
+                                }
+                                if (c.psychological_profile) {
+                                    const pp = c.psychological_profile;
+                                    if (pp.lie_believed || pp.truth_needed) {
+                                        appendixHtml += `  <p class="entry-detail"><strong>Psychological Arc:</strong> `;
+                                        if (pp.lie_believed) appendixHtml += `Believes "${escapeXml(pp.lie_believed)}"; `;
+                                        if (pp.truth_needed) appendixHtml += `Truth Needed: "${escapeXml(pp.truth_needed)}"`;
+                                        appendixHtml += `</p>\n`;
+                                    }
+                                }
+                                if (c.details?.history) {
+                                    appendixHtml += `  <p class="entry-detail"><strong>Backstory:</strong> ${escapeXml(c.details.history)}</p>\n`;
+                                }
+                                if (c.voice_sample || c.vocal_cadence) {
+                                    appendixHtml += `  <div class="voice-sample"><strong>Voice:</strong> ${escapeXml(c.voice_sample || c.vocal_cadence)}</div>\n`;
+                                }
+                                if (cite) {
+                                    appendixHtml += `  <p><a href="${cite.file}#${cite.anchor}" class="backlink">&#x21a9; Return to first mention (${escapeXml(cite.title)})</a></p>\n`;
+                                }
+                                appendixHtml += `  <div class="clear"></div>\n</div>\n`;
+                            });
+                            appendixHtml += `</section>\n`;
+                        }
+
+                        // Section 2: Continuity Ledger
+                        if (ledgerList.length > 0) {
+                            appendixHtml += `<section id="continuity-ledger">\n<h2>Continuity Ledger &amp; World Lore</h2>\n`;
+                            const categoryGroups = {};
+                            ledgerList.forEach((fact, fIdx) => {
+                                if (!fact || !fact.key) return;
+                                const cat = (fact.category || 'Fact').trim();
+                                if (!categoryGroups[cat]) categoryGroups[cat] = [];
+                                categoryGroups[cat].push({ fact, fIdx });
+                            });
+
+                            const catOrder = ['place', 'object', 'lore', 'agreement', 'appearance', 'state change', 'fact'];
+                            const sortedCategories = Object.keys(categoryGroups).sort((a, b) => {
+                                const idxA = catOrder.indexOf(a.toLowerCase());
+                                const idxB = catOrder.indexOf(b.toLowerCase());
+                                const weightA = idxA === -1 ? 99 : idxA;
+                                const weightB = idxB === -1 ? 99 : idxB;
+                                return weightA - weightB || a.localeCompare(b);
+                            });
+
+                            sortedCategories.forEach(catName => {
+                                const items = categoryGroups[catName];
+                                const catLower = catName.toLowerCase();
+                                let badgeClass = 'badge';
+                                if (catLower.includes('place')) badgeClass = 'badge badge-place';
+                                else if (catLower.includes('object')) badgeClass = 'badge badge-object';
+                                else if (catLower.includes('lore')) badgeClass = 'badge badge-lore';
+                                else if (catLower.includes('agreement')) badgeClass = 'badge badge-agreement';
+                                else if (catLower.includes('appearance')) badgeClass = 'badge badge-appearance';
+
+                                appendixHtml += `<h3>${escapeXml(catName)}</h3>\n`;
+                                items.forEach(({ fact, fIdx }) => {
+                                    const item = linkableItems.find(li => li.type === 'ledger' && li.entity === fact);
+                                    const targetAnchor = item ? item.targetAnchor : `ledger_${slugify(fact.key)}`;
+                                    const cite = item ? firstUseCitations[item.id] : null;
+
+                                    appendixHtml += `<div id="${targetAnchor}" class="appendix-entry">\n`;
+                                    appendixHtml += `  <div class="appendix-entry-header">\n`;
+                                    appendixHtml += `    <h4>${escapeXml(fact.key)}</h4>\n`;
+                                    appendixHtml += `    <span class="${badgeClass}">${escapeXml(fact.category || 'Fact')}</span>\n`;
+                                    if (fact.source_scene) {
+                                        appendixHtml += `    <span style="font-size: 0.8em; color: #888; font-family: monospace;">(${escapeXml(fact.source_scene)})</span>\n`;
+                                    }
+                                    appendixHtml += `  </div>\n`;
+                                    if (fact.value) {
+                                        appendixHtml += `  <p class="entry-detail">${escapeXml(fact.value)}</p>\n`;
+                                    }
+                                    if (cite) {
+                                        appendixHtml += `  <p><a href="${cite.file}#${cite.anchor}" class="backlink">&#x21a9; Return to first mention (${escapeXml(cite.title)})</a></p>\n`;
+                                    }
+                                    appendixHtml += `</div>\n`;
+                                });
+                            });
+                            appendixHtml += `</section>\n`;
+                        }
+
+                        appendixHtml += `</body>\n</html>`;
+                        appendixHtml = ensureXhtmlVoidTags(appendixHtml);
+
+                        textFolder.file("Appendix.xhtml", appendixHtml);
+                        manifestItems.push(`<item id="appendix" href="Text/Appendix.xhtml" media-type="application/xhtml+xml"/>`);
+                        spineItems.push(`<itemref idref="appendix"/>`);
+                        tocPoints.push(`<navPoint id="navPoint-${playOrder}" playOrder="${playOrder}"><navLabel><text>Appendix: Dramatis Personæ &amp; Continuity Ledger</text></navLabel><content src="Text/Appendix.xhtml"/></navPoint>`);
+                        playOrder++;
+                    }
 
                     // 5. NCX (TOC)
                     const ncx = `<?xml version="1.0" encoding="UTF-8"?>
@@ -22652,21 +23210,24 @@ ${chapterBody}
 
                 // Comprehensive thinking configuration mapping across all pipeline agents
                 let thinkingConfig = { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
-                if (logName.includes("Reviewer")) {
+                const isReviewOrSurgical = logName.includes("Reviewer") || logName.includes("Surgical") || logName.includes("Editor") || logName.includes("Choreographer") || logName.includes("Review");
+                if (isReviewOrSurgical) {
                     thinkingConfig = { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
-                } else if (logName.includes("Act Agent") || logName.includes("Conceptual") || logName.includes("Character") || logName.includes("Archivist") || logName.includes("Directive")) {
-                    thinkingConfig = enableThinkingAct ? getThinkingConfigFromBudget(thinkingBudgetAct) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
+                } else if (logName.includes("Act Agent") || logName.includes("Conceptual") || logName.includes("Character") || logName.includes("Directive")) {
+                    thinkingConfig = (enableThinkingAct !== false && thinkingBudgetAct > 0) ? getThinkingConfigFromBudget(thinkingBudgetAct) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
                 } else if (logName.includes("Story Arc")) {
-                    thinkingConfig = enableThinkingAct ? getThinkingConfigFromBudget(thinkingBudgetStoryArc) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
+                    thinkingConfig = (enableThinkingAct !== false && thinkingBudgetStoryArc > 0) ? getThinkingConfigFromBudget(thinkingBudgetStoryArc) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
                 } else if (logName.includes("Scene Agent") || logName.includes("Scene Roster") || logName.includes("Scene Expander") || logName.includes("Sequence Agent") || logName.includes("Pacing")) {
-                    thinkingConfig = enableThinkingScene ? getThinkingConfigFromBudget(thinkingBudgetScene) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
+                    thinkingConfig = (enableThinkingScene !== false && thinkingBudgetScene > 0) ? getThinkingConfigFromBudget(thinkingBudgetScene) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
                 } else if (logName.includes("Writing Agent") || logName.includes("Beat Agent") || logName.includes("Prose")) {
-                    thinkingConfig = enableThinkingWriting ? getThinkingConfigFromBudget(thinkingBudgetWriting) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
+                    thinkingConfig = (enableThinkingWriting !== false && thinkingBudgetWriting > 0) ? getThinkingConfigFromBudget(thinkingBudgetWriting) : { enabled: false, budget: 0, effort: "none", level: "MINIMAL" };
                 }
 
                 // Per-agent max_tokens to prevent structural XML truncation & prose starvation
                 const agentMaxTokens = (() => {
-                    const isHeavyAgent = logName.includes("Story Arc") || logName.includes("Act Agent") || logName.includes("Scene Agent") || logName.includes("Scene Roster") || logName.includes("Scene Expander") || logName.includes("Sequence Agent") || logName.includes("Writing Agent") || logName.includes("Prose Generator") || logName.includes("Prose") || logName.includes("Conceptual") || logName.includes("Character") || logName.includes("Archivist") || logName.includes("Directive") || logName.includes("Surgical") || logName.includes("Lore Merger");
+                    const isSurgicalOrEditor = logName.includes("Surgical") || logName.includes("Editor") || logName.includes("Choreographer");
+                    if (isSurgicalOrEditor) return 8192; // Surgical editors output targeted patches
+                    const isHeavyAgent = logName.includes("Story Arc") || logName.includes("Act Agent") || logName.includes("Scene Agent") || logName.includes("Scene Roster") || logName.includes("Scene Expander") || logName.includes("Sequence Agent") || logName.includes("Writing Agent") || logName.includes("Prose Generator") || logName.includes("Prose") || logName.includes("Conceptual") || logName.includes("Character") || logName.includes("Archivist") || logName.includes("Directive") || logName.includes("Lore Merger");
                     if (thinkingConfig && thinkingConfig.enabled) {
                         return isHeavyAgent ? 32768 : 16384;
                     }
@@ -23367,7 +23928,7 @@ Output Schema:
         - **THEMATIC & STRUCTURAL FUNCTION:** Deep thematic and emotional exploration of this sequence. Explain its role in the global value shift.
         - **DRAMATIC ARC & PACING CURVES:** Map the sequence-level narrative movement. Detail the starting state, rising action, and dramatic climax.
         - **THREAD PROGRESSION & CONVERGENCE:** Describe how active plot threads evolve and intersect within this sequence.
-        - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on internal struggles, character tests, and shifting motivations.
+        - **CHARACTER & PSYCHOLOGICAL JOURNEY:** Focus on internal struggles, character tests, and shifting motivations. (ACT 2 MANDATE: At least one sequence in Act 2 must explicitly incorporate a strong counterpoint to the protagonist's core lie that challenges their worldview and adds psychological complexity).
         - **ANTICIPATED ISSUES & CRITICAL CONSTRAINTS:** Identify potential structural problems for downstream scene planners to navigate.
       </description>
       <sequence_objective>The single most important narrative goal this sequence accomplishes.</sequence_objective>
@@ -23685,6 +24246,15 @@ BEGIN DEVELOPING STORY SEQUENCES
                     const getSceneTargetBlock = () => `<target_scenes_per_sequence>
 Generate between ${scenesRange.min} and ${scenesRange.max} scenes (hard minimum 4) for this sequence.
 Structure them with Dwight Swain's Scene and Sequel alternation (Proactive Scene -> Reactive Sequel).
+
+PACING VALENCE ALGORITHM & RUNNING SUM MANDATE:
+Every scene must declare its <valence_score> and cumulative <valence_running_sum> immediately following <title>.
+- 4 Valence Levels:
+  * 2: High intensity scene (visceral physical conflict, life-or-death crisis, frantic pursuit, explosive revelation, catastrophic reversal).
+  * 1: Moderate intensity scene (active tactical maneuvering, pressing interrogation, rising complications, urgent investigation, focused confrontation).
+  * -1: Low intensity interaction or transition (uneasy alliances, tactical planning, negotiations, physical travel, regrouping, minor character interactions).
+  * -2: Calm and reflective or exposition (quiet decompression, campfire moments, philosophical contemplation, deep memory integration, tender bonding, lore exploration).
+- Running Sum Constraint: Start at 0. Add each scene's <valence_score> to the running sum. The <valence_running_sum> MUST ALWAYS STAY BETWEEN -2 AND 2 (inclusive): -2 <= running_sum <= 2 across all scenes. If the sum reaches +2, the next scene MUST be negative (-1 or -2) to relieve tension. If the sum reaches -2, the next scene MUST be positive (1 or 2) to re-engage momentum.
 </target_scenes_per_sequence>`;
 
                     const sceneResult = await runAgentWithEscalation({
@@ -23709,6 +24279,8 @@ Output Schema:
     <scene>
       <scene_id>${currentSequence.number}.1</scene_id> <!-- SequenceNum.SceneNum (e.g. ${currentSequence.number}.1, ${currentSequence.number}.2). Must be strictly sequential integers, no letters. -->
       <title>Scene Title</title>
+      <valence_score>1</valence_score> <!-- 2 (high intensity), 1 (moderate intensity), -1 (low intensity interaction/transition), -2 (calm/reflective/exposition) -->
+      <valence_running_sum>1</valence_running_sum> <!-- Cumulative running sum starting at 0. MUST ALWAYS stay between -2 and 2 (inclusive). -->
       <characters_present>
         <character>Character Full Name</character> <!-- (e.g. ${(sceneActiveCast[0] || {}).name || "Elena Rostova"}) -->
       </characters_present>
@@ -23734,7 +24306,7 @@ BEGIN DEVELOPING OUTLINE OF THE CURRENT SEQUENCE SCENES
 `,
                         systemPrompt: PROMPTS.sceneRosterAgent,
                         reviewerSystemPrompt: PROMPTS.sceneRosterReview,
-                        reviewerPromptFn: (genOutput) => `${getSceneContextIntro()}\n\n<continuity_ledger>\n${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}\n</continuity_ledger>\n\n${getSceneActsAndStyle()}\n\n${getSceneTargetBlock()}\n\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Critique the generated scenes based on causality, Swain Scene/Sequel flow, transition jumps, and dramatic conflict. Note: Characters are identified by their names, and the system automatically reconciles IDs.</critique_analysis>\n  <issues>\n    <issue>\n      <severity>MINOR</severity> <!-- CRITICAL | MAJOR | MINOR -->\n      <category>SWAIN_FLOW</category> <!-- SWAIN_FLOW | CAUSALITY | TRANSITION | CAST | OBJECTIVES | SCALE -->\n      <description>Clear explanation of the problem.</description>\n      <location>Scene ID (e.g. Scene ${currentSequence.number}.1)</location>\n      <fix_suggestion>Exact surgical edit to resolve the issue.</fix_suggestion>\n    </issue>\n  </issues>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`,
+                        reviewerPromptFn: (genOutput) => `${getSceneContextIntro()}\n\n<continuity_ledger>\n${formatContinuityLedgerForPrompt(storyToUse, { sequence: currentSequence.number, act: actNumber })}\n</continuity_ledger>\n\n${getSceneActsAndStyle()}\n\n${getSceneTargetBlock()}\n\n\n<generated_scenes>\n${genOutput}\n</generated_scenes>\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Critique the generated scenes based on causality, Swain Scene/Sequel flow, transition jumps, dramatic conflict, and the Pacing Valence running sum rule (-2 <= running_sum <= 2). Note: Characters are identified by their names, and the system automatically reconciles IDs.</critique_analysis>\n  <issues>\n    <issue>\n      <severity>MINOR</severity> <!-- CRITICAL | MAJOR | MINOR -->\n      <category>SWAIN_FLOW</category> <!-- SWAIN_FLOW | CAUSALITY | TRANSITION | CAST | OBJECTIVES | SCALE -->\n      <description>Clear explanation of the problem.</description>\n      <location>Scene ID (e.g. Scene ${currentSequence.number}.1)</location>\n      <fix_suggestion>Exact surgical edit to resolve the issue.</fix_suggestion>\n    </issue>\n  </issues>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nBEGIN SCENE CRITIQUE REVIEW`,
                         // --- SCENE ROSTER AGENT (TIER 4.1) OUTPUT PARSER ---
                         parserFn: (text) => {
                             const scenesMatch = /<scenes>([\s\S]*?)<\/scenes>/i.exec(text);
@@ -23774,6 +24346,7 @@ BEGIN DEVELOPING OUTLINE OF THE CURRENT SEQUENCE SCENES
                                 });
 
                                 const sceneId = extractTag(sData, 'scene_id') || `${currentSequence.number}.${sIdx + 1}`;
+
                                 parsedScenes.push({
                                     id: sceneId,
                                     number: sceneId,
@@ -23791,6 +24364,8 @@ BEGIN DEVELOPING OUTLINE OF THE CURRENT SEQUENCE SCENES
                                     cast_ids: castIds,
                                     cast_names: castNames,
                                     thread_ids: threadIds,
+                                    valence_score: extractTag(sData, 'valence_score') || "",
+                                    valence_running_sum: extractTag(sData, 'valence_running_sum') || "",
                                     active_thread_ids: threadIds
                                 });
                                 sIdx++;
@@ -23945,6 +24520,7 @@ ${pair.map(sc => `<scene id="${sc.number}">
   Exit Conditions: ${sc.exit_conditions}
   Characters Present: ${(sc.cast_names || sc.characters_present || []).join(', ')}
   Active Threads: ${(sc.active_thread_ids || sc.thread_ids || []).join(', ')}
+  Pacing Instruction: ${getValenceInstruction(sc.valence_score)}
 </scene>`).join('\n\n')}
 </current_scene_premise>`;
 
@@ -24349,6 +24925,7 @@ ${leanScenes.map(sc => `<scene id="${sc.number}">
   Exit Conditions: ${sc.exit_conditions}
   Characters Present: ${(sc.cast_names || sc.characters_present || []).join(', ')}
   Active Threads: ${(sc.active_thread_ids || sc.thread_ids || []).join(', ')}
+  Pacing Instruction: ${getValenceInstruction(sc.valence_score)}
 </scene>`).join('\n\n')}
 </current_scene_premise>`;
 
@@ -24866,7 +25443,7 @@ Exit Conditions: Transitioning across sequence boundary into Sequence ${sequence
     * Reaction / State: "${lastBeat.reaction || 'In progress'}"
     * Tactic: "${lastBeat.tactic || 'Advancing scene'}"
 - Required Scene Exit Conditions: "${sceneData.exit_conditions || 'Satisfy scene objective and dramatic shift'}"
-- DIRECTIVE FOR THIS CHUNK: Start immediately at Beat ${accumulatedBeats.length + 1}. Drive directly and briskly toward the Exit Conditions above. If the scene reaches its exit conditions in this chunk, you MUST set <has_more>false</has_more>. Do NOT repeat, circle back, or stall.
+- DIRECTIVE FOR THIS CHUNK: Start immediately at Beat ${accumulatedBeats.length + 1}. Drive directly and briskly toward the Exit Conditions above. If the scene reaches its exit conditions in this chunk, you MUST set <has_more>false</has_more> at the bottom of your response. Do NOT repeat, circle back, or stall.
 </continuation_progress_status>
 ` : '';
 
@@ -24937,6 +25514,7 @@ Transition Jump (Starting Situation): ${sceneData.transition_jump || "Seamless t
 Entrance Conditions: ${sceneData.entrance_conditions || "Starting position in scene environment"}
 Exit Conditions: ${sceneData.exit_conditions || "Ending position and state in scene environment"}
 Value Shift: ${sceneData.start_valence || sceneData.value_shift?.start_state || "Neutral"} -> ${sceneData.end_valence || sceneData.value_shift?.end_state || "Shifted"}
+Pacing Instruction: ${getValenceInstruction(sceneData.valence_score)}
 Objective: ${sceneData.objective || ""}
 ${sceneData.plot_commitments && ((Array.isArray(sceneData.plot_commitments) && sceneData.plot_commitments.length > 0) || typeof sceneData.plot_commitments === 'string') ? `Plot Commitments (MUST be choreographed into beats):\n${Array.isArray(sceneData.plot_commitments) ? sceneData.plot_commitments.map(pc => typeof pc === 'object' ? `- ${pc.description}: "${pc.exact_terms}"` : `- ${pc}`).join('\n') : sceneData.plot_commitments}\n` : ""}Dramatic Blueprint & Description:
 ${sceneData.description}
@@ -24961,7 +25539,7 @@ ${getBeatContextBody()}
 <target_beats_for_chunk>
 Generate a cohesive chunk of Motivation-Reaction Unit (MRU) beats for this scene (Target total for this scene: ${sceneTargetMin} - ${sceneTargetMax} beats).
 ${accumulatedBeats.length > 0 ? `The scene already has ${accumulatedBeats.length} beats. Drive directly toward the Exit Conditions and conclude the scene in this chunk unless strictly impossible.` : `Plan a tight, focused progression that achieves the scene objective and exit conditions.`}
-CRITICAL COMPLETION RULE: When the scene's exit conditions and dramatic resolution are reached, you MUST output <has_more>false</has_more>. Only output <has_more>true</has_more> if the scene has genuinely not finished its core dramatic objective.
+CRITICAL COMPLETION RULE: Only after generating the beats for this chunk, you MUST output <has_more> at the bottom of your response (after the </beats> tag). When the scene's exit conditions and dramatic resolution are reached, output <has_more>false</has_more>. Only output <has_more>true</has_more> if the scene has genuinely not finished its core dramatic objective and requires another chunk.
 </target_beats_for_chunk>
 
 <output_format_description>
@@ -24970,11 +25548,10 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
 <response>
-  <has_more>false</has_more> <!-- Set to false (default) when the scene's narrative blueprint and exit conditions are achieved. Only set to true if additional beats are strictly required. -->
   <beats>
     <beat>
       <beat_id>${sceneData.number || `${sequenceData.number}.${scene + 1}`}.${accumulatedBeats.length + 1}</beat_id>
-      <beat_type>DRAMATIC</beat_type> <!-- or TRANSITIONAL -->
+      <beat_type>DIALOGUE</beat_type> <!-- ENVIRONMENT | REFLECTION | MEMORY | ACTION/KINETIC | SENSORY/TENSION | DIALOGUE | TRANSITIONAL -->
       <initiator>Character Name launching the action</initiator>
       <reactor>Character Name receiving/responding (or "—" for solo beat with no reactor)</reactor>
       <participants>Optional comma-separated list of any additional active characters beyond initiator and reactor (or "None")</participants>
@@ -24986,6 +25563,7 @@ Output Schema:
     </beat>
     <!-- Add more <beat> blocks as needed -->
   </beats>
+  <has_more>false</has_more> <!-- Placed at the bottom of the response: Set to false (default) when the scene's narrative blueprint and exit conditions are achieved. Only set to true if additional beats are strictly required in a subsequent chunk. -->
 </response>
 </output_format_description>
 
@@ -25007,7 +25585,7 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 Output Schema:
 <response>
-  <critique_analysis>Audit for: 1) Delta progression / anti-repetition, 2) Exit condition compliance / anti-overshoot, 3) Action clarity & no-op elimination, 4) Scene budget (${sceneTargetMin}-${sceneTargetMax} beats), 5) Boundary & inventory continuity.</critique_analysis>
+  <critique_analysis>Audit for: 1) Delta progression / anti-repetition, 2) Mandatory Beat Typology Ecosystem (ENVIRONMENT, REFLECTION, MEMORY, ACTION, SENSORY, DIALOGUE/solo vocalization), 3) Exit condition compliance / anti-overshoot, 4) Action clarity & no-op elimination, 5) Scene budget (${sceneTargetMin}-${sceneTargetMax} beats), 6) Boundary & inventory continuity.</critique_analysis>
   <status>PASS</status> <!-- or FAIL -->
   <deviation_reasons>
     <reason>Explain the exact issue and how to fix it (e.g. recommend truncate_after on Beat X if beats overshoot or loop).</reason>
@@ -25020,8 +25598,10 @@ Output Schema:
 
 BEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`,
                             parserFn: (text) => {
-                                const hasMoreMatch = text.match(/<has_more>\s*(true|false)\s*<\/has_more>/i);
-                                const has_more = hasMoreMatch ? hasMoreMatch[1].toLowerCase() === 'true' : false;
+                                // Extract has_more tag, prioritizing the last occurrence (placed at the bottom of the response)
+                                const hasMoreMatches = [...text.matchAll(/<has_more[^>]*>(?:\s*<!\[CDATA\[)?\s*(true|false)\s*(?:\]\]>)?\s*(?:<\/has_more>|$)/gi)];
+                                const lastHasMore = hasMoreMatches.length > 0 ? hasMoreMatches[hasMoreMatches.length - 1] : null;
+                                const has_more = lastHasMore ? lastHasMore[1].toLowerCase() === 'true' : false;
 
                                 const beats = [];
                                 const beatRegex = /<beat>([\s\S]*?)<\/beat>/gi;
@@ -25031,12 +25611,21 @@ BEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`,
                                     const beatContent = match[1];
                                     const extract = (tag) => {
                                         const tMatch = new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`, 'i').exec(beatContent);
-                                        return tMatch ? tMatch[1].trim() : "";
+                                        if (tMatch) return decodeXmlEntities(tMatch[1].trim());
+                                        if (tag === 'beat_id' || tag === 'id') {
+                                            const idMatch = new RegExp(`<(?:beat_id|id)>([\\s\\S]*?)<\\/(?:beat_id|id|beat_type|beat_by_type|type)>`, 'i').exec(beatContent);
+                                            if (idMatch) return decodeXmlEntities(idMatch[1].trim());
+                                        }
+                                        if (tag === 'beat_type' || tag === 'type') {
+                                            const typeMatch = new RegExp(`<(?:beat_type|type)>([\\s\\S]*?)<\\/(?:beat_type|type)>`, 'i').exec(beatContent);
+                                            if (typeMatch) return decodeXmlEntities(typeMatch[1].trim());
+                                        }
+                                        return "";
                                     };
 
                                     const currentBeatIndex = accumulatedBeats.length + beats.length + 1;
-                                    const beatId = extract('beat_id') || `${sceneData.number || `${seq + 1}.${scene + 1}`}.${currentBeatIndex}`;
-                                    const beatType = extract('beat_type') || "DRAMATIC";
+                                    const beatId = extract('beat_id') || extract('id') || `${sceneData.number || `${seq + 1}.${scene + 1}`}.${currentBeatIndex}`;
+                                    const beatType = extract('beat_type') || extract('type') || "DRAMATIC";
                                     const initiator = extract('initiator');
                                     const reactor = extract('reactor');
                                     const participants = extract('participants');
@@ -25400,6 +25989,24 @@ You MUST rewrite this scene's prose to satisfy the following instruction:
 
                     // Shared context for the Writing Agent's generator AND reviewer prompts -
                     // compiles data elements in the standardized order matching Step 18 schema.
+                    
+                    const dynamicExclusions = [...activeCast.map(c => c.name), ...(storyToUse.lore || []).map(l => l.keyword)];
+                    let recentProseCombined = "";
+                    let scenesFound = 0;
+                    for (let bSeq = seq; bSeq >= 0; bSeq--) {
+                        const seqScenes = storyToUse.scenes?.[`${bSeq}`] || [];
+                        for (let bSc = (bSeq === seq ? s - 1 : seqScenes.length - 1); bSc >= 0; bSc--) {
+                            const scProse = storyToUse.prose?.[`${bSeq}-${bSc}`] || storyToUse.prose?.[`${bSeq}-0-${bSc}`];
+                            if (scProse) {
+                                recentProseCombined += " " + (scProse.final || scProse.prose || scProse.draft || "");
+                                scenesFound++;
+                            }
+                            if (scenesFound >= 3) break;
+                        }
+                        if (scenesFound >= 3) break;
+                    }
+                    const dynamicBannedList = getDynamicBannedPhrases(recentProseCombined, dynamicExclusions);
+
                     const getProseContext = () => buildProseContext({
                         storyToUse,
                         scene,
@@ -25417,7 +26024,12 @@ You MUST rewrite this scene's prose to satisfy the following instruction:
                         narrativeModeObj,
                         injectionPrompt,
                         dInst
-                    });
+                    }) + (dynamicBannedList.length > 0 ? `
+<dynamic_banned_phrases>
+CRITICAL DIRECTIVE: The following phrases have been heavily overused in the previous recent scenes. You are STRICTLY FORBIDDEN from using any of these exact phrases in this scene:
+${dynamicBannedList.map(p => "- " + p).join('\n')}
+</dynamic_banned_phrases>
+` : "");
 
                     const proseResult = await runAgentWithEscalation({
                         tierName: "Writing Agent",
@@ -31062,7 +31674,11 @@ ${finalProseText}
                                                     <label className="block text-[10px] font-bold text-ink-400 uppercase font-mono mb-1">Thinking Max Tokens & Effort</label>
                                                     <select
                                                         value={thinkingBudgetStoryArc}
-                                                        onChange={(e) => setThinkingBudgetStoryArc(parseInt(e.target.value, 10))}
+                                                        onChange={(e) => {
+                                                            const val = parseInt(e.target.value, 10);
+                                                            setThinkingBudgetStoryArc(val);
+                                                            setEnableThinkingAct(val > 0);
+                                                        }}
                                                         className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 outline-none focus:border-gold transition-colors"
                                                     >
                                                         <option value={0}>Off (0)</option>
@@ -31086,7 +31702,11 @@ ${finalProseText}
                                                     <label className="block text-[10px] font-bold text-ink-400 uppercase font-mono mb-1">Thinking Max Tokens & Effort</label>
                                                     <select
                                                         value={thinkingBudgetAct}
-                                                        onChange={(e) => setThinkingBudgetAct(parseInt(e.target.value, 10))}
+                                                        onChange={(e) => {
+                                                            const val = parseInt(e.target.value, 10);
+                                                            setThinkingBudgetAct(val);
+                                                            setEnableThinkingAct(val > 0);
+                                                        }}
                                                         className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 outline-none focus:border-gold transition-colors"
                                                     >
                                                         <option value={0}>Off (0)</option>
@@ -31110,7 +31730,11 @@ ${finalProseText}
                                                     <label className="block text-[10px] font-bold text-ink-400 uppercase font-mono mb-1">Thinking Max Tokens & Effort</label>
                                                     <select
                                                         value={thinkingBudgetScene}
-                                                        onChange={(e) => setThinkingBudgetScene(parseInt(e.target.value, 10))}
+                                                        onChange={(e) => {
+                                                            const val = parseInt(e.target.value, 10);
+                                                            setThinkingBudgetScene(val);
+                                                            setEnableThinkingScene(val > 0);
+                                                        }}
                                                         className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 outline-none focus:border-gold transition-colors"
                                                     >
                                                         <option value={0}>Off (0)</option>
@@ -31134,7 +31758,11 @@ ${finalProseText}
                                                     <label className="block text-[10px] font-bold text-ink-400 uppercase font-mono mb-1">Thinking Max Tokens & Effort</label>
                                                     <select
                                                         value={thinkingBudgetWriting}
-                                                        onChange={(e) => setThinkingBudgetWriting(parseInt(e.target.value, 10))}
+                                                        onChange={(e) => {
+                                                            const val = parseInt(e.target.value, 10);
+                                                            setThinkingBudgetWriting(val);
+                                                            setEnableThinkingWriting(val > 0);
+                                                        }}
                                                         className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 outline-none focus:border-gold transition-colors"
                                                     >
                                                         <option value={0}>Off (0)</option>
