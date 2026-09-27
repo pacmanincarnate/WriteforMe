@@ -636,7 +636,7 @@
                     <div class="step-title"><i class="fa-solid fa-comments" style="color: var(--purple);"></i> Character Developer (Interviews)</div>
                     <div class="step-desc">
                         <span class="badge-ai large-model">large-model</span> (Sequential Loop)
-                        Interviews each generated character brief in first-person to extract deep dossiers and voice guides.
+                        Conducts a dramatized 12-question character interview to extract deep dossiers and voice guides.
                     </div>
                     <div class="step-inputs">
                         <strong>Inputs:</strong> World bible context, active character briefs (id, name, role, core flaw, core desire).
@@ -1029,7 +1029,7 @@
                 function: "initStory() - Tier 0.2",
                 model: "<code>deepseek/deepseek-v4-pro</code> (large, JSON: false)",
                 inputs: "World bible context, active character brief (name, role, flaw, desire), and narrative tone guidelines.",
-                output: "First-person narrative interview context, voice samples, and psychological dossiers.",
+                output: "Dramatized character interview responses, voice samples, and psychological dossiers.",
                 gate: "A text interview block is successfully generated for every single character profile brief in the cast list.",
                 retries: "No automated rollback. If any interview fails, it retries the generation. If it fails permanently, the story baseline initialization aborts."
             },
