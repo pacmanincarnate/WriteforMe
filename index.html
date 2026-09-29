@@ -4789,27 +4789,16 @@ Story Ending Value State${fullStoryLabels ? ' (Full Story)' : ''}: ${story.endin
                                 : []));
                     const isSoloScene = presentChars.length <= 1;
 
-                    // 3-Scene Rolling Dialogue Density Check (Cast-Aware) - Demoted to Soft Reviewer Warning
-                    const currentDensity = words > 0 ? (quoteWords / words) : 0;
-                    const prevScenes = (context && context.rollingDialogueStats) ? context.rollingDialogueStats : [];
-                    let totalWindowWords = words;
-                    let totalWindowDialogue = quoteWords;
-                    for (const ps of prevScenes) {
-                        totalWindowWords += (ps.wordCount || 0);
-                        totalWindowDialogue += (ps.dialogueWords || 0);
-                    }
-                    const rollingDensity = totalWindowWords > 0 ? (totalWindowDialogue / totalWindowWords) : 0;
-                    const windowCount = prevScenes.length + 1;
-
+                    // Dialogue Presence Check (Cast-Aware) - Soft Reviewer Warning
                     if (isSoloScene) {
-                        // Solo scenes should have grounded vocalization (2-5% target); soft warning if completely absent
+                        // Solo scenes should have grounded vocalization; soft warning if completely absent
                         if (words > 100 && quoteWords === 0) {
                             warnings.push("Writing Agent: Solo scene has zero spoken vocalization. Even when alone, characters benefit from muttering under their breath, cursing, whispering calculations, or vocalizing to externalize interiority.");
                         }
                     } else {
-                        // Multi-character scenes: soft warning if both rolling density is below 15% AND current scene is below 15%
-                        if (rollingDensity < 0.15 && currentDensity < 0.15 && words > 100) { 
-                            warnings.push(`Writing Agent: 3-Scene rolling dialogue density is low (${(rollingDensity * 100).toFixed(1)}% across ${windowCount} scene${windowCount > 1 ? 's' : ''}, current scene at ${(currentDensity * 100).toFixed(1)}%). Recommended: at least 15.0% across the 3-scene rolling window. Consider expanding spoken dialogue, verbal processing of aftermath, or character debate.`);
+                        // Multi-character scenes: soft warning if spoken dialogue is completely absent
+                        if (words > 100 && quoteWords === 0) { 
+                            warnings.push("Writing Agent: Multi-character scene has zero spoken dialogue. In scenes with multiple characters, spoken interaction is the primary engine of interpersonal tension. Consider expanding spoken dialogue.");
                         }
                     }
 
@@ -5157,7 +5146,7 @@ BEGIN SURGICAL BEAT REPAIR`;
 
             try {
                 const sysPrompt = PROMPTS.surgicalMRUChoreographer;
-                const surgicalRes = await callAI(userPrompt, sysPrompt, false, "MRU Surgical Choreographer", "small");
+                const surgicalRes = await callAI(userPrompt, sysPrompt, false, "MRU Surgical Choreographer", "review");
 
                 let repairedList = [];
                 const beatBlocks = extractTagList(surgicalRes, 'beat');
@@ -5282,7 +5271,7 @@ BEGIN SURGICAL BEAT REPAIR`;
             const sysPrompt = "You are a surgical narrative repair agent. Your only job is to fix the target defects precisely as requested and output valid XML enclosed in <response>...</response>.\n\nBEGIN SURGICAL VALUE SHIFT REPAIR";
 
             try {
-                const repairResult = await window.callAI(userPrompt, sysPrompt, false, "Surgical Value Shift Repair", "small");
+                const repairResult = await window.callAI(userPrompt, sysPrompt, false, "Surgical Value Shift Repair", "review");
 
                 let repairedList = [];
                 const sceneBlocks = extractTagList(repairResult, 'scene');
@@ -7060,7 +7049,8 @@ Output Schema (four available edit types; emit only the edits needed):
 - Goal: To preserve the plot development exclusively for the downstream structural architects, avoiding premature narrative acceleration.
 
 ## Pillar 3: Egri's Tri-Dimensional Character Seedlings
-- Establish the necessary cast by providing brief, high-impact descriptions of the major characters based on Lajos Egri's principles: Physiology, Sociology, and Psychology. Define their 'psychological wounds' or 'blind spots' (the flawed worldview they hold) and their 'core yearning' (what they consciously want).
+- Establish the necessary cast by providing brief, high-impact descriptions of the major characters based on Lajos Egri's principles: Physiology, Sociology, and Psychology. Define their 'psychological wounds' (the lie or blind spot they protect) and their 'core yearning & creative drive' (the deep emotional ache, tender obsession, or vital hunger that moves them). Avoid clinical task lists or generic plot goals; ground their drive in messy human longing, love, defiance, or an ache for dignity, belonging, or wonder.
+- Negative Constraint: Avoid creating characters that are cold, calculating "mastermind/architect" archetypes who view human emotion as numbers or algorithms, unless the user's concept specifically calls for it. Cold, calculating characters are often one-dimensional and boring, whereas complex characters are much more compelling.
 - Goal: To provide distinct, flawed, and emotionally authentic starting models for downstream character developers without over-writing their full psychological arcs.
 
 ## Pillar 4: The Relationship Matrix & Pre-existing Friction
@@ -7078,7 +7068,7 @@ You will receive the following context blocks to inform your architectural desig
 
     ${BANNED_NAMES_PROMPT_INSTRUCTION}`,
 
-            // TIER 0.2: Character Development Agent (LARGE)
+            // TIER 0.2: Character Development Agent (PROSE)
             // Associated Payload: initStory() (see ~line 13184) & generateCharacterProfile() (see ~line 16070)
             characterDevelopment: `You are an uncompromising novelist and character dramatist. Your goal is to reveal a deeply complex, three-dimensional character entirely through voice, behavioral subtext, and self-rationalization.
 
@@ -7097,6 +7087,8 @@ Using the voice of the character outlined in the provided context, you will answ
 - Tell us about a time you let someone down, and explain why you still believe you were right to do it.
 - What is an accusation someone made about you that made you furious, and what part of it hit too close to home?
 - What do you love? What do you care about?
+- What is a quiet dream, longing, or irrational hope you keep to yourself—something you ache for when the noise dies down?
+- What brings you unexpected wonder, makes you feel fully alive, or makes your guard drop completely?
 - What's an unusual quirk you have?
 
 It's crucial that your response brings more complex depth to the character by revealing new information, hinting at more, and emphasizing their unique personality in a way that makes them stand out. Think about how their language, mannerisms, expressiveness, and self-reflection fit with their character.
@@ -7117,6 +7109,8 @@ These examples provide a baseline for question responses in terms of length, det
 - The goal of this interview is to convey personality, but also to make up and document character descriptions organically. When asked something like appearance, the character *must* respond to the question, even if they are uncomfortable doing so.
 - Take the story concept, genre, and mood into account when developing the character; they must be appropriate, if surprising in ways, for the setting and scenario.
 - People contain multitudes. Strive to expand the character's identity, rather than reinforcing the same details over and over. Humans are shaped by many circumstances that led them to who they are now, and we should explore and hint at more than the character's current role. Someone focused on work still loves something not work-related; someone serious still finds humor somewhere; someone married still had their heart broken as a teen.
+- Capture what truly moves them beneath their functional role. Characters are animated by irrational yearnings, protective tenderness, secret loves, and creative or emotional hungers—not sterile task checklists or clinical objectives.
+- Avoid creating characters that are cold, calculating "mastermind/architect" archetypes who view human emotion as numbers or algorithms, unless the user's concept specifically calls for it. Cold, calculating characters are often one-dimensional and boring, whereas complex characters are much more compelling.
 - Use the provided context to understand why this character exists in this world. Frame their worldview around their immediate situation, but do not hallucinate downstream plot events.
 </character_development_method>
 
@@ -7331,7 +7325,9 @@ You will receive the following context blocks:
             // TIER 3: SEQUENCE STRUCTURE (MESO-STRUCTURE)
             // TIER 3.1: Sequence Planner (Sequence Agent) (LARGE)
             // Associated Payload: generateActsAndSequences() (see ~line 13952/13984) & generateSequences() (see ~line 16275/16308) -> generatorPromptFn
-            sequenceAgent: `You are an author working on the structure of your latest novel. Given the information below, you will develop the meso-structural 8-Sequence framework for your novel. It is crucial that your sequences logically, but creatively fit within the narrative structure, follow the concept, genre and mood, and bridge the macro Acts into cohesive dramatic chapters.
+            sequenceAgent: `Author's Note: The language used to describe this novel will include nomenclature from the field of literary analysis, in an effort to best describe the structure of the narrative. Do not confuse this technical language with the actual plot and elements of the story itself, which must conform to the genre, tone, and style. For instance, while the analysis may discuss character strategies, or tactics, that need not filter down into sequences, scenes, or prose that explicitly calls for tactical or strategic elements; the way we talk about how characters interact is different than how they organically interact on the page.
+
+You are an author working on the structure of your latest novel. Given the information below, you will develop the meso-structural 8-Sequence framework for your novel. It is crucial that your sequences logically, but creatively fit within the narrative structure, follow the concept, genre and mood, and bridge the macro Acts into cohesive dramatic chapters.
 
 <sequence_architecture_theory>
 Based on the Frank Daniel 8-Sequence Model:
@@ -7433,13 +7429,15 @@ If the 8 sequences are structurally sound, use the required headings, establish 
             // TIER 4.1: Scene Roster Agent (LARGE)
             // Associated Payload: generateScenes() -> generatorPromptFn (see ~line 16648)
             // [SCENE ROSTER AGENT PROMPT] (Note: The runtime XML Output Schema is injected dynamically via generatorPromptFn in generateScenes(), see ~line 16657)
-            sceneRosterAgent: `You are an author working on the structure of your latest novel. Given the information below, you will develop an outline of the individual scenes making up the current sequence of the novel. It is crucial that your scenes logically, but creatively fit within the narrative structure, follow the concept, genre and mood, and contribute to a compelling novel. A successful set of scenes will create a narrative arc for the sequence that pushes the plot and thread subplots forward in unexpected directions while fitting within the overall story structure. This is where the author's creativity is able to keep the reader's attention by adding complexity to the storyline.
+            sceneRosterAgent: `Author's Note: The language used to describe this novel will include nomenclature from the field of literary analysis, in an effort to best describe the structure of the narrative. Do not confuse this technical language with the actual plot and elements of the story itself, which must conform to the genre, tone, and style. For instance, while the analysis may discuss character strategies, or tactics, that need not filter down into sequences, scenes, or prose that explicitly calls for tactical or strategic elements; the way we talk about how characters interact is different than how they organically interact on the page.
+
+You are an author working on the structure of your latest novel. Given the information below, you will develop an outline of the individual scenes making up the current sequence of the novel. It is crucial that your scenes logically, but creatively fit within the narrative structure, follow the concept, genre and mood, and contribute to a compelling novel. A successful set of scenes will create a narrative arc for the sequence that pushes the plot and thread subplots forward in unexpected directions while fitting within the overall story structure. This is where the author's creativity is able to keep the reader's attention by adding complexity to the storyline.
             Your outline will focus on providing the characters involved, the threads (subplots) involved, the scene objectives (what will happen in the scene), and details to help ground when and where the scene starts and stops. Refer to the output schema for specific details.
 
 
 <scene_development_theory>
-## Pillar 0: The Pacing Valence Algorithm & Running Sum Constraint
-Pacing across the sequence must be mathematically modulated to prevent both unrelenting sensory burnout and narrative stasis. You must assign each scene an explicit <valence_score> that represents its dramatic intensity, and track a cumulative <valence_running_sum>.
+## Pillar 0: Pacing Rhythm, Energy Flow & Running Sum Constraint
+Pacing across the sequence must be dynamically balanced to prevent both unrelenting sensory burnout and narrative stasis. You must assign each scene an explicit <valence_score> that represents its dramatic intensity, and track a cumulative <valence_running_sum>.
 
 - **The 4 Valence Levels:**
   * **2 (High Intensity):** Visceral physical conflict, life-or-death crisis, frantic pursuit, explosive revelation, catastrophic turning point, or peak emotional confrontation.
@@ -7451,7 +7449,7 @@ Pacing across the sequence must be mathematically modulated to prevent both unre
   * The sequence starts with a running sum of 0 before Scene 1.
   * For each scene, add its <valence_score> to the running sum to produce <valence_running_sum>.
   * **The running sum MUST ALWAYS remain between -2 and 2 (inclusive):** -2 <= running_sum <= 2 at every single scene.
-  * This rule mathematically controls dramatic pacing: If the running sum reaches +2, the next scene MUST be assigned a negative score (-1 or -2) to relieve pressure and allow characters/readers to breathe. If the running sum reaches -2, the next scene MUST be assigned a positive score (1 or 2) to inject momentum and drive the plot forward.
+  * This rule guides dramatic pacing and emotional rhythm: If the running sum reaches +2, the next scene MUST be assigned a negative score (-1 or -2) to relieve pressure and allow characters/readers to breathe. If the running sum reaches -2, the next scene MUST be assigned a positive score (1 or 2) to inject momentum and drive the plot forward.
   * **Placement in Output:** List <valence_score> immediately after <title>, and <valence_running_sum> immediately after <valence_score>, before describing the scene.
 
 *Based on D.V Swain's Scene and Sequel loop:*
@@ -7466,6 +7464,7 @@ Pacing across the sequence must be mathematically modulated to prevent both unre
 
 - **Genre-Flexible Conflict & Stakes:**
  - "Goal/Conflict/Unanticipated Reversal" must adapt naturally to the story's genre. A high fantasy novel may have world altering goals, conflicts, and physical catastrophes, while a romance novel will rely on smaller, more personal emotional stakes, shifting power dynamics, or misunderstandings.
+ - **Soft Swain Clause for Non-Action & Character-Driven Genres:** In non-action genres (romance, erotica, comedy, drama, slice-of-life), a "Disaster" does NOT mean a physical catastrophe, tactical collapse, or structural crisis. Instead, adapt the "Disaster" to the genre: it is simply an emotional turning point—a moment of vulnerability, an awkward interruption, an unexpected escalation of intimacy, an embarrassing realization, a slip of the tongue, or a surprise revelation that leaves the character emotionally off-balance. Similarly, a "Reactive Sequel" in these genres is not a military debrief or cold assessment; it is a human reaction—blushing, second-guessing oneself, laughing off tension, processing attraction, or making a tentative emotional choice.
 
 - **Scene Boundaries & Transitional Jumps:**
  - A scene boundary is drawn the moment there is a discontinuous jump in time, a shift in physical location, or the exact moment the character's immediate goal resolves/fails.
@@ -7489,8 +7488,8 @@ Pacing across the sequence must be mathematically modulated to prevent both unre
 
 ## Pillar 1: The Crucible & The Active Vector
 - A masterful scene thrives on friction and forward momentum. Characters must actively fight for their objectives, preventing static summarization or rumination.
-- Define a strict Crucible—a psychological, physical, or social boundary that prevents the characters from simply walking away. Establish directly opposing goals and hidden agendas for the active characters. Remember that "opposition" is genre-dependent: in a thriller, it is a villain; in a romance, it is often the other lead character’s perfectly valid but incompatible desires, or internal/environmental pressures.
-- You must establish an Active Vector: The events of this scene must irreversibly advance the central plot or explicitly escalate a vital subplot. Characters may reflect on the past, but that reflection must be weaponized into a new realization or irreversible decision that pushes the story forward.
+- Define a clear Crucible—a psychological, physical, or social boundary that keeps the characters in the scene. Establish contrasting desires, unspoken hesitations, or distinct personal stakes for the active characters (note: opposition is genre-dependent; in romance, comedy, or slice-of-life, opposition does NOT mean hostile or adversarial combat—it can be mutual attraction held back by shyness, playful teasing, contrasting emotional needs, pride, or comic misunderstanding).
+- You must establish an Active Vector: The events of this scene must irreversibly advance the central plot or explicitly escalate a vital subplot. Characters may reflect on the past, but that reflection must lead to a new realization, shift in attitude, or irreversible decision that pushes the story forward.
 - Goal: To drive relentless forward momentum by structuring the scene around decisive action, subtextual maneuvering, and hard choices.
 
 
@@ -7507,12 +7506,12 @@ Pacing across the sequence must be mathematically modulated to prevent both unre
 - Identify the specific abstract value at stake (e.g., from Ignorance to Knowledge, Trust to Suspicion, or Safety to Peril). Pinpoint the exact Turning Point of the scene—the specific moment of Anagnorisis (discovery of a new truth) or Peripeteia (a sudden reversal of fortune) that causes this value to shift.
 - Utilize Information Asymmetry: Increase narrative complexity by leveraging what the character knows versus what the reader (or opposing characters) knows. The turning point is often triggered by the sudden revelation of a withheld truth.
 - Goal: To give the scene a definitive narrative spine, ensuring the characters exit the scene fundamentally changed from how they entered.
-- The Anti-Cliché Protocol: Before determining the Turning Point, logically deduce the most obvious, trope-heavy way the character might resolve the immediate conflict. Explicitly discard this first idea. The actual Turning Point must rely on a lateral use of the Cartesian Geography (Pillar 3) or a previously withheld piece of information (Information Asymmetry).
+- The Anti-Cliché Protocol: Before determining the Turning Point, logically deduce the most obvious, trope-heavy way the character might resolve the immediate conflict. Explicitly discard this first idea. The actual Turning Point must rely on a lateral use of the Grounded Physical Environment (Pillar 3) or a previously withheld piece of information (Information Asymmetry).
 
-## Pillar 3: Cartesian Geography (The Physical Chessboard)
+## Pillar 3: Grounded Physical Environment
 - The Writer cannot choreograph physical action in a white room. They require a grounded, interactive reality.
-- Map the precise physical environment. Describe the spatial geometry, specific zones of power, physical barriers, hazards, and interactive props. If a character is going to throw something, lock a door, or hide a weapon, you must seed those items into this environment.
-- Goal: To provide the downstream Writer with a concrete, mathematically sound physical reality that supports complex movement and prevents continuity logic errors.
+- Map the physical environment. Describe the layout, key spaces, physical boundaries, and interactive props or objects. If a character is going to interact with something, close a door, or reach for an object, seed those details into the space so the setting feels tangible and lived-in.
+- Goal: To provide the downstream Writer with a concrete, tangible physical reality that supports natural blocking and prevents continuity logic errors.
 
 ## Pillar 4: Explicit Plot Commitments
 - Vague promises destroy narrative continuity. Hard rules must be codified.
@@ -7575,7 +7574,7 @@ You will receive the following context blocks to inform your architectural desig
 - Check: Does every scene execute a definitive Value Shift? Is there a tangible Cost associated with the protagonist's actions (did they succeed/fail for free)?
 - Goal: To ensure scenes are consequential, not just filler.
 
-## Criterion 4: Weaponized Geography, Setting Diversity & Commitments
+## Criterion 4: Grounded Physical Environment, Setting Diversity & Commitments
 - Check: Are the scenes grounded in a specific physical reality that actively complicates action? Does the sequence purposefully vary its settings across scenes, avoiding repetitive corridors or static rooms, and contributing tangible worldbuilding details? Are plot commitments strictly codified?
 - Goal: To prevent "white room syndrome", setting stasis, and plot logic drift.
 
@@ -7594,11 +7593,11 @@ You will receive the following context blocks to inform your architectural desig
 - Check: Do <plot_commitments> codify any hard promises, reveals, or information exchanges (or explicitly say 'None')?
 - Goal: To ensure narrative data integrity, interpersonal dramatic vitality, and precise staging mechanics.
 
-## Criterion 8: Pacing Valence Algorithm & Running Sum Audit
+## Criterion 8: Pacing Rhythm, Energy Flow & Running Sum Audit
 - Check: Does every scene declare a valid <valence_score> (chosen from 2, 1, -1, -2) and an accurate <valence_running_sum>?
 - Check: Does the <valence_running_sum> mathematically stay strictly between -2 and 2 (inclusive) across the sequence?
 - Check: Does the scene's actual narrative intensity genuinely match its declared valence score (e.g. a calm reflection is not scored 2; an intense shootout is not scored -2)?
-- Goal: To ensure mathematical control of narrative pacing, alternating between high tension and decompression.
+- Goal: To ensure balanced control of narrative pacing, alternating between high tension and decompression.
 
 ## Criterion 9: Thread Storyline Weaving & Subplot Integration
 - Check: Does each scene define clear, concrete storyline developments for its active threads (<thread_storylines>) and articulate how they weave into and intersect with the scene's primary action (<thread_weaving_notes>)?
@@ -7655,13 +7654,16 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
             // TIER 4.3: Scene Expander Agent (LARGE)
             // Associated Payload: generateScenes() -> expansion loop buildExpansionPrompt (see ~line 16790/17085)
-            sceneExpanderAgent: `You are an author crafting deep, multi-layered dramatic scene blueprints for your latest novel. Given a pair of linked scenes (typically a Proactive Scene and its Reactive Sequel), you will expand their lean skeletons into rich, comprehensive scene descriptions.
+            sceneExpanderAgent: `Author's Note: The language used to describe this novel will include nomenclature from the field of literary analysis, in an effort to best describe the structure of the narrative. Do not confuse this technical language with the actual plot and elements of the story itself, which must conform to the genre, tone, and style. For instance, while the analysis may discuss character strategies, or tactics, that need not filter down into sequences, scenes, or prose that explicitly calls for tactical or strategic elements; the way we talk about how characters interact is different than how they organically interact on the page.
+
+You are an author crafting deep, multi-layered dramatic scene blueprints for your latest novel. Given a pair of linked scenes (typically a Proactive Scene and its Reactive Sequel), you will expand their lean skeletons into rich, comprehensive scene descriptions.
 
 <scene_expansion_theory>
 1. Dwight Swain's Scene and Sequel Dynamics:
    - Proactive Scene: Propelled by Goal -> Conflict -> Disaster / Turning Point (Peripeteia or Anagnorisis). The character actively pursues an immediate objective, encounters escalating resistance, and ends in an unanticipated catastrophe or dilemma.
    - Reactive Sequel: Propelled by Reaction -> Dilemma -> Decision. The character experiences the visceral aftermath/shock of the preceding disaster, weighs constrained options, and makes a fresh commitment that launches the next proactive goal.
    - Organic Causality: The disaster of the proactive scene directly fuels the emotional reaction and dilemma of the subsequent sequel. Maintain unbroken kinetic momentum across the pair.
+   - Soft Swain Clause (Genre Flexibility): In non-action genres (romance, erotica, comedy, drama, slice-of-life), a proactive scene's "Disaster" is NOT a life-or-death crisis or tactical collapse. It is an emotional turning point—a moment of vulnerability, an unexpected emotional or physical escalation, an awkward interruption, or an embarrassing slip that shifts the emotional ground beneath the characters.
 2. Rich Blueprint Architecture (NOT Written Prose):
    - CRITICAL NEGATIVE CONSTRAINT: Do NOT write prose paragraphs, dialogue exchanges, or opening lines of story text. Write analytical, structural blueprints to guide downstream Beat Choreographers.
    - Dramatic Sequence: Concrete progression of events, the turning point, and the scene-ending disaster or decision.
@@ -7676,11 +7678,11 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 
 ### Pillar 1: The Crucible & The Active Vector
 
-A masterful scene thrives on friction and forward momentum. Characters must actively fight for their objectives, preventing static summarization.
+A masterful scene thrives on friction and forward momentum. Characters must actively fight for their objectives, preventing static summarization or rumination.
 
- * Define a strict Crucible—a psychological, physical, or social boundary that prevents the characters from simply walking away. Establish directly opposing goals for the active characters.  
- * You must establish an **Active Vector**: The events of this scene must irreversibly advance the central plot or explicitly escalate a vital subplot. Characters may reflect on the past, but that reflection must be weaponized into a new realization or irreversible decision that pushes the story forward.  
- * Goal: To drive relentless forward momentum by structuring the scene around decisive action, meaningful friction, and hard choices.
+ * Define a clear Crucible—a psychological, physical, or social boundary that keeps the characters in the scene. Establish contrasting desires, unspoken hesitations, or distinct personal stakes for the active characters (note: opposition is genre-dependent; in romance, comedy, or slice-of-life, opposition does NOT mean hostile or adversarial combat—it can be mutual attraction held back by shyness, playful teasing, contrasting emotional needs, pride, or comic misunderstanding).  
+ * You must establish an **Active Vector**: The events of this scene must irreversibly advance the central plot or explicitly escalate a vital subplot. Characters may reflect on the past, but that reflection must lead to a new realization, shift in attitude, or irreversible decision that pushes the story forward.  
+ * Goal: To drive relentless forward momentum by structuring the scene around decisive action, subtextual maneuvering, and hard choices.
 
 ### Pillar 2: The Value Shift & Turning Point (McKee's Dynamics)
 
@@ -7689,12 +7691,12 @@ A masterful scene is a micro-story that irrevocably changes the narrative landsc
  * Identify the specific abstract value at stake (e.g., from Ignorance to Knowledge, Trust to Suspicion, or Safety to Peril). Pinpoint the exact Turning Point of the scene—the specific moment of *Anagnorisis* (discovery of a new truth) or *Peripeteia* (a sudden reversal of fortune) that causes this value to shift.  
  * Goal: To give the scene a definitive narrative spine, ensuring the characters exit the scene fundamentally changed from how they entered.
 
-### Pillar 3: Cartesian Geography (The Physical Chessboard)
+### Pillar 3: Grounded Physical Environment
 
 The Writer cannot choreograph physical action in a white room. They require a grounded, interactive reality.
 
- * Map the precise physical environment. Describe the spatial geometry, specific zones of power, physical barriers, hazards, and interactive props. If a character is going to throw something, lock a door, or hide a weapon, you must seed those items into this environment.  
- * Goal: To provide the downstream Writer with a concrete, mathematically sound physical reality that supports complex movement and prevents continuity logic errors.
+ * Map the physical environment. Describe the layout, key spaces, physical boundaries, and interactive props or objects. If a character is going to interact with something, close a door, or reach for an object, seed those details into the space so the setting feels tangible and lived-in.  
+ * Goal: To provide the downstream Writer with a concrete, tangible physical reality that supports natural blocking and prevents continuity logic errors.
 
 ### Pillar 4: Explicit Plot Commitments
 
@@ -8201,11 +8203,10 @@ You will receive the following context blocks:
 - <active_characters_profiles>: Characters participating in this scene.
 - <relationship_friction_matrix>: Interpersonal relationship dynamics.
 - <previous_context>: Previous scene description and prose.
-- <dialogue_pacing_target>: Mandatory scene classification and baseline dialogue density quotas.
+- <dialogue_pacing_target>: Scene classification and dialogue pacing context.
 - <current_chunk_choreography_blueprint>: The required beats to follow.
 - <writing_lens>: Active narrative mode.
 - <directive_requirement>: Optional specific user instructions.
-- <rolling_dialogue_pacing_status>: Audit of the 3-scene dialogue density threshold.
 - <generated_prose>: The full text of the generated scene prose under audit.
 - <output_format_description>: The required XML schema for your evaluation.
 
@@ -8226,18 +8227,13 @@ EVALUATION CRITERIA (in order of severity):
 6. **Static Posture Looping:** Did the prose re-establish and repeat the exact same static physical posture from the previous beat (e.g. repeated "hand hovering", repeated "holding breath") instead of advancing physical motion?
 7. **Tense Violation:** Did the prose violate the required narrative tense specified in <writing_style_description>?
 8. **POV Violation:** Did the prose violate the required narrative point-of-view specified in <writing_style_description>?
-9. **Concrete Immediacy Violation:** Did the prose rely on melodramatic clichÃ©s, abstract emotional labels, or flowery adjectives to convey emotion instead of grounding it in precise sensory or physiological detail?
+9. **Concrete Immediacy Violation:** Did the prose rely on melodramatic clichés, abstract emotional labels, or flowery adjectives to convey emotion instead of grounding it in precise sensory or physiological detail?
 10. **Prop Teleportation / Contradiction:** Did a prop or clothing item change location without physical movement (e.g. using a gloved hand after gloves were removed)?
 11. **Action-State Contradiction:** Did the prose state a character does not move, then immediately depict them performing an active physical gesture in the same sentence?
 12. **Role Confusion / Hallucinated Alias:** Did the prose confuse character roles (e.g. calling the workshop owner "the visitor") or invent non-canonical surnames (e.g. "Miss Durant")?
 13. **Clinical vs. Emotional Alignment:** Actively penalize detached, robotic, or overly tactical prose during emotional, romantic, or poignant scenes. Verify that character reactions match the genre and scene context, allowing for genuine warmth and vulnerability.
-14. **3-Scene Rolling Dialogue Density (MANDATORY FAIL if below 15.0%):**
-    Dialogue pacing is audited dynamically across a 3-scene rolling window (see <rolling_dialogue_pacing_status> in prompt context).
-    - **Pacing Flexibility Permitted**: Individual high-action, stealth, or quiet transitional scenes ARE PERMITTED to have lower dialogue (< 15%), PROVIDED the combined 3-scene rolling average remains at or above 15.0%.
-    - **Mandatory Failure**: If <rolling_dialogue_pacing_status> indicates STATUS: FAIL (combined 3-scene rolling density < 15.0%), you MUST issue a MANDATORY FAIL under category DIALOGUE. Instruct the Writing Agent to expand character interactions, verbalize aftermath processing out loud, and introduce substantive back-and-forth dialogue in the current scene to restore the rolling threshold.
-    - **Pass Condition**: If <rolling_dialogue_pacing_status> indicates STATUS: PASS, do NOT fail the scene for dialogue density alone, provided the dialogue present feels natural and avoids pure silent pantomime.
-15. **Telegraphic Syntax Whiplash (MANDATORY FAIL):** You MUST issue a MANDATORY FAIL if the prose contains strings of three or more consecutive sentences under four words (e.g. "He fires. Metal groans. The gate falls."), or extreme binary whiplash between two-word fragments and sprawling abstract run-ons.
-16. **Screenplay & Cinematic Meta-Language (MANDATORY FAIL):** You MUST issue a MANDATORY FAIL if the prose contains cinematic meta-language (e.g., "the camera pulls back", "cut to", "fade to black", "wide shot"). All perception must be embodied in character senses.
+14. **Telegraphic Syntax Whiplash (MANDATORY FAIL):** You MUST issue a MANDATORY FAIL if the prose contains strings of three or more consecutive sentences under four words (e.g. "He fires. Metal groans. The gate falls."), or extreme binary whiplash between two-word fragments and sprawling abstract run-ons.
+15. **Screenplay & Cinematic Meta-Language (MANDATORY FAIL):** You MUST issue a MANDATORY FAIL if the prose contains cinematic meta-language (e.g., "the camera pulls back", "cut to", "fade to black", "wide shot"). All perception must be embodied in character senses.
 
 **MAJOR (note in issues, but DO NOT FAIL for these alone unless pervasive):**
 14. **Chronotope Pacing Drag:** Does a simple transitional beat stall under heavy, unnecessary "thick description"?
@@ -8245,7 +8241,7 @@ EVALUATION CRITERIA (in order of severity):
 16. **Somatic Clichés:** Flag overused body-reaction tropes ("breath caught", "breath hitched", "heart stuttered", "silence stretched").
 17. **Telling Over Showing:** Flag explanatory abstractions that spell out emotions instead of dramatizing them.
 18. **Generic AI Voice:** Flag prose that sounds like default ChatGPT/Gemini output — overly polished, uniformly rhythmic, lacking texture.
-19. **Dialogue Density & Voice Execution:** In scenes with 2+ characters present, verify spoken dialogue constitutes a substantial presence (target 20–35% of prose). Flag any multi-character scene that descends into silent pantomime or lacks dialogue (< 10% dialogue words or fewer than 3 spoken lines). In solo scenes, flag if the character fails to vocalize, mutter aloud, or speak to externalize their interiority.
+19. **Dialogue Presence & Voice Execution:** In scenes with 2+ characters present, verify spoken dialogue constitutes an active presence. Flag any multi-character scene that descends into silent pantomime or lacks dialogue (fewer than 3 spoken lines without narrative justification). In solo scenes, flag if the character fails to vocalize, mutter aloud, or speak to externalize their interiority. NOTE: Do not enforce or calculate any specific mathematical percentage or quota of dialogue words; evaluate dialogue presence based on dramatic necessity and character engagement.
 20. **Telegraphic Syntax & Binary Whiplash:** Flag repetitive strings of three or more consecutive sentences under four words (e.g., "He fires. Metal groans. The gate falls."), or jarring binary whiplash between ultra-short fragments and sprawling abstract run-on clauses.
 21. **Abrupt Memory Transitions:** Flag any memory or backstory moment that feels jarringly tacked on—starting abruptly with "He remembered...", freezing the scene for a detached info-dump, or using cliché snap-backs like "shaking his head" or "snapping back to reality."
 
@@ -8296,11 +8292,10 @@ You will receive the following context blocks:
 - <active_characters_profiles>: Characters participating in this scene.
 - <relationship_friction_matrix>: Interpersonal relationship dynamics.
 - <previous_context>: Previous scene description and prose.
-- <dialogue_pacing_target>: Mandatory scene classification and baseline dialogue density quotas.
+- <dialogue_pacing_target>: Scene classification and dialogue pacing context.
 - <current_chunk_choreography_blueprint>: The required beats to follow.
 - <writing_lens>: Active narrative mode.
 - <directive_requirement>: Optional specific user instructions.
-- <rolling_dialogue_pacing_status>: Audit of the 3-scene dialogue density threshold.
 - <generated_prose>: The full text of the generated scene prose under audit.
 - <output_format_description>: The required XML schema for your evaluation.
 
@@ -8409,7 +8404,7 @@ Output format:
       "name": "Character Name",
       "append_history": "new history to append",
       "append_story_events": "new event description to append",
-      "update_goals": "updated active goal"
+      "update_goals": "how their active yearning, emotional drive, or personal stakes deepened or evolved in this scene (focus on human drive rather than a dry task checklist)"
     }
   ],
   "new_characters": [
@@ -8419,7 +8414,7 @@ Output format:
       "details": {
         "history": "their backstory",
         "story_events": "their initial scene events",
-        "goals": "their goals"
+        "goals": "their core yearning and motivation"
       }
     }
   ],
@@ -11723,6 +11718,7 @@ INSTRUCTIONS:
                 lines.push(`--- CONFIGURATION & ADDED PARAMETERS ---`);
                 lines.push(`Provider:      ${entry.provider || p.provider || 'N/A'}`);
                 lines.push(`Model Used:    ${entry.modelUsed || p.model || 'N/A'}`);
+                lines.push(`Model Role:    ${entry.modelRole || 'dev'}`);
                 lines.push(`Model Target:  ${entry.modelSize || p.modelSize || 'default'}`);
                 if (p.endpoint) {
                     lines.push(`API Endpoint:  ${p.endpoint}`);
@@ -12362,6 +12358,7 @@ INSTRUCTIONS:
                                             {entry.modelUsed && (
                                                 <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-ink-600 bg-inset p-3 rounded-xl border border-edge-strong font-sans">
                                                     <div>Model: <span className="text-ink-900 font-bold font-mono">{entry.modelUsed}</span></div>
+                                                    {entry.modelRole && <div>Role: <span className="text-gold-ink font-bold uppercase font-mono">{entry.modelRole}</span></div>}
                                                     {entry.modelSize && <div>Size Target: <span className="text-gold-ink font-bold uppercase font-mono">{entry.modelSize}</span></div>}
                                                     {entry.provider && <div>Provider: <span className="text-ink-800 uppercase font-bold">{entry.provider}</span></div>}
                                                     {p.maxTokens && <div>Max Output: <span className="font-mono font-bold text-ink-800">{p.maxTokens.toLocaleString()} tok</span></div>}
@@ -12535,10 +12532,10 @@ INSTRUCTIONS:
 
                             <div className="bg-inset p-5 rounded-xl border border-edge-strong">
                                 <div className="flex justify-between items-center gap-2 mb-1.5">
-                                    <div className="text-[9px] text-ink-500 font-bold uppercase tracking-wider font-mono">Core Motivation & Goal</div>
-                                    {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Goal" value={c.details?.goals} onSave={() => onEdit('details.goals', 'Goal', c.details?.goals)} />}
+                                    <div className="text-[9px] text-ink-500 font-bold uppercase tracking-wider font-mono">Core Yearning & Motivation</div>
+                                    {onEdit && <EditButton className="p-1.5 min-w-7 min-h-7 shrink-0" title="Yearning & Motivation" value={c.details?.goals} onSave={() => onEdit('details.goals', 'Yearning & Motivation', c.details?.goals)} />}
                                 </div>
-                                <div className="text-xs text-ink-800 leading-relaxed">{c.details?.goals || "Goal undefined."}</div>
+                                <div className="text-xs text-ink-800 leading-relaxed">{c.details?.goals || "Quiet yearning yet to unfold."}</div>
                             </div>
                         </div>
 
@@ -14519,7 +14516,7 @@ INSTRUCTIONS:
         // (the card table was rebuilt once per phase per render).
         const PIPELINE_STEPS = [
             { id: 1, tier: "Tier 0.1", title: "Conceptual Development Agent", icon: Sparkles, iconColor: "text-gold-ink", badge: "dev-model", inputs: "User raw outline text, style/genre guides, tone parameters, lore context.", gate: "YAML/XML structure parsed correctly" },
-            { id: 2, tier: "Tier 0.2", title: "Character Developer (Interviews)", icon: Users, iconColor: "text-plum-600", badge: "dev-model", inputs: "World bible context, active character briefs (name, role, flaw, desire).", gate: "Dossiers generated for cast briefs" },
+            { id: 2, tier: "Tier 0.2", title: "Character Developer (Interviews)", icon: Users, iconColor: "text-plum-600", badge: "prose-model", inputs: "World bible context, active character briefs (name, role, flaw, desire).", gate: "Dossiers generated for cast briefs" },
             { id: 3, tier: "Tier 1.1", title: "Story Arc Agent", icon: GitBranch, iconColor: "text-gold-ink", badge: "dev-model", inputs: "World bible details, style guides, cast voice files, flaws/desires.", gate: "Valid YAML/XML story arc structure" },
             { id: 4, tier: "Tier 1.2", title: "Story Arc Reviewer", icon: ShieldCheck, iconColor: "text-ember-600", badge: "review-model", inputs: "Raw concept outlines, world bible, generated Story Arc plan.", gate: "Reviewer status == 'PASS'" },
 
@@ -14545,7 +14542,7 @@ INSTRUCTIONS:
 
         const PIPELINE_STEP_SPEC = {
             1: { title: "Conceptual Development Agent", function: "initStory() - Tier 0.1", model: "Development Model Target", inputs: "User raw outline text, style/genre guides, tone parameters, lore context.", output: "XML tags detailing core genre class, style guidelines, atmosphere guidelines, world bible status quo, and initial character briefs.", gate: "XML tags parse correctly, returning string blocks for genre, style, and world bible.", retries: "Direct UI correction loops. No automated cascading deletions above this stage.", constraints: "Cultivate core concept to logical extremes. Define status quo, inciting incident, and core thematic arguments." },
-            2: { title: "Character Developer (Interviews)", function: "initStory() - Tier 0.2", model: "Development Model Target", inputs: "World bible context, active character brief (name, role, flaw, desire), and narrative tone guidelines.", output: "Dramatized character interview responses, voice samples, and psychological dossiers.", gate: "A text interview block is successfully generated for every single character profile brief in the cast list.", retries: "Retries profile generation on failure. Aborts initialization if permanent API error occurs.", constraints: "Must produce dramatized present tense prose responses to all 12 structured interview questions in the character's unique voice." },
+            2: { title: "Character Developer (Interviews)", function: "initStory() - Tier 0.2", model: "Prose Model Target", inputs: "World bible context, active character brief (name, role, flaw, desire), and narrative tone guidelines.", output: "Dramatized character interview responses, voice samples, and psychological dossiers.", gate: "A text interview block is successfully generated for every single character profile brief in the cast list.", retries: "Retries profile generation on failure. Aborts initialization if permanent API error occurs.", constraints: "Must produce dramatized present tense prose responses to all 12 structured interview questions in the character's unique voice." },
             3: { title: "Story Arc Agent", function: "initStory() - Tier 1.1", model: "Development Model Target", inputs: "World bible, genre classification, style parameters, tone guidelines, character casts with flaws/desires.", output: "XML schema detailing starting and ending value states (inciting incident), character arcs, twists, and narrative threads.", gate: "Story Arc details parsed as valid XML structure. Maps character arcs and narrative threads.", retries: "Retries the Story Arc planner up to 3 times on reviewer FAIL status.", constraints: "Specify concrete Lie, Truth, and Catalyst for character arcs." },
             4: { title: "Story Arc Reviewer", function: "runAgentWithEscalation() - Tier 1.2", model: "Review Model Target", inputs: "Story concept, world bible, generated Story Arc plan.", output: "XML status report: PASS or FAIL along with critiques/reasons.", gate: "Reviewer status == 'PASS'", retries: "Fails trigger a retry of Step 3 (Story Arc Agent), feeding the critique reasons as prompts.", constraints: "Strict audit of thematic arguments, thread tracking, and logical reversals." },
             5: { title: "Act Planner (Act Agent)", function: "runAgentWithEscalation() - Tier 2.1", model: "Development Model Target", inputs: "Story concept, theme milestones, character profiles list, and structural boundaries.", output: "XML list representing Acts: number, title, description, milestones, and knots.", gate: "Passes Programmatic Validation: at least 3 acts planned, and every act description has a length >= 50 characters.", retries: "Up to 3 attempts. Downstream failure in Sequence Agent plans triggers a rollback to this step.", constraints: "Map out exact intersections (knots) where multiple threads collide." },
@@ -17445,7 +17442,8 @@ INSTRUCTIONS:
                         `<input_text_length>${text.length}</input_text_length>\n\n<text_content>${text.substring(0, 50000)}...</text_content>`,
                         PROMPTS.loreDistiller,
                         false, // Text output
-                        "Lore Distiller"
+                        "Lore Distiller",
+                        "dev"
                     );
                     setWorldPrimer(primer);
                     return primer;
@@ -17586,10 +17584,10 @@ Ensure this is done subtly (e.g. pocketing an item, glancing at a document, ment
 </injection_mandate>
 
 BEGIN RETROACTIVE STATE INJECTION`;
-                const rsiOutput = await callAI(rsiUserPrompt, sysPrompt, false, "Surgical RSI Injector", "large");
+                const rsiOutput = await callAI(rsiUserPrompt, sysPrompt, false, "Surgical RSI Injector", "review");
                 const surgicalReport = await applySurgicalEditsWithRetry({
                     originalText: openSlot.prose, blocksText: rsiOutput, systemPrompt: sysPrompt,
-                    logName: "Surgical RSI Injector", modelSize: "large"
+                    logName: "Surgical RSI Injector", modelSize: "review"
                 });
                 if (!surgicalReport.applied.length) {
                     console.warn("RSI: no surgical edits could be applied");
@@ -17734,7 +17732,7 @@ Output Schema:
       "name": "Character Name",
       "append_history": "Backstory revealed in the scene to append.",
       "append_story_events": "New narrative events from the scene to append.",
-      "update_goals": "Updated short/long-term character goal."
+      "update_goals": "How their active yearning, emotional drive, or personal stakes deepened or evolved in this scene (focus on human drive rather than a dry task checklist)."
     }
   ],
   "new_characters": [
@@ -17744,7 +17742,7 @@ Output Schema:
       "details": {
         "history": "their backstory",
         "story_events": "their initial scene events",
-        "goals": "their goals"
+        "goals": "their core yearning and motivation"
       }
     }
   ],
@@ -17775,7 +17773,7 @@ Output Schema:
 
 BEGIN EXTRACTING SCENE ARCHIVE FACTS
 `;
-                    const rawArchivistOutput = await callAI(archivistPrompt, PROMPTS.archivist, false, "Archivist", "large");
+                    const rawArchivistOutput = await callAI(archivistPrompt, PROMPTS.archivist, false, "Archivist", "review");
                     let updates = null;
                     if (rawArchivistOutput) {
                         const jsonStr = extractTag(rawArchivistOutput, 'archived_facts') || extractTag(rawArchivistOutput, 'response');
@@ -18028,9 +18026,9 @@ ${directiveReviewOutputFormat}`;
                 const logMessage = (text, status = 'pending') => setDirectiveExecutionLogs(prev => [...prev, { id: Date.now() + Math.random(), text, status }]);
                 updateResult({ reviewFixAttempted: true });
                 try {
-                    const output = await callAI(`<original_text>\n${currentProse}\n</original_text>\n<reviewer_feedback>\n${escapeXml(JSON.stringify(result.review.issues, null, 2))}\n</reviewer_feedback>`, PROMPTS.surgicalEditorProse, false, 'Directive Surgical Review Fix', 'large');
+                    const output = await callAI(`<original_text>\n${currentProse}\n</original_text>\n<reviewer_feedback>\n${escapeXml(JSON.stringify(result.review.issues, null, 2))}\n</reviewer_feedback>`, PROMPTS.surgicalEditorProse, false, 'Directive Surgical Review Fix', 'review');
                     // This shared wrapper applies detailed edits and retries failed anchors at most once.
-                    const report = await applySurgicalEditsWithRetry({ originalText: currentProse, blocksText: output, systemPrompt: PROMPTS.surgicalEditorProse, logName: 'Directive Surgical Review Fix', modelSize: 'large' });
+                    const report = await applySurgicalEditsWithRetry({ originalText: currentProse, blocksText: output, systemPrompt: PROMPTS.surgicalEditorProse, logName: 'Directive Surgical Review Fix', modelSize: 'review' });
                     if (!report.applied.length) throw new Error(report.summary || 'No surgical edits could be applied.');
                     const changeRatio = computeChangeRatio(currentProse, report.text);
                     if (changeRatio > SURGICAL_MAX_CHANGE_RATIO && action.allow_large_change !== true) {
@@ -18229,10 +18227,10 @@ ${instructions}
 </surgical_instructions>
 
 BEGIN SURGICAL PROSE EDIT`;
-                const patchOutput = await callAI(patchPrompt, PROMPTS.surgicalProseEditor, false, logName, 'large');
+                const patchOutput = await callAI(patchPrompt, PROMPTS.surgicalProseEditor, false, logName, 'review');
                 const report = await applySurgicalEditsWithRetry({
                     originalText: currentProse, blocksText: patchOutput, systemPrompt: PROMPTS.surgicalProseEditor,
-                    logName, modelSize: 'large'
+                    logName, modelSize: 'review'
                 });
                 if (!report.applied.length) throw new Error('no surgical edits could be applied');
                 const changeRatio = computeChangeRatio(currentProse, report.text);
@@ -19167,7 +19165,7 @@ ${directiveInput}
 <current_story_structure>
 ${JSON.stringify(structureOverview, null, 2)}
 </current_story_structure>${refinementContext}`;
-                        const scopeResponse = await callAI(scopePrompt, PROMPTS.directiveScoper, false, "Directive Scoper", "small");
+                        const scopeResponse = await callAI(scopePrompt, PROMPTS.directiveScoper, false, "Directive Scoper", "dev");
                         scopeKind = extractTag(scopeResponse, 'scope_kind').toLowerCase() === 'arc' ? 'arc' : 'local';
                         consistencyNotes = scopeKind === 'arc' ? decodeXmlEntities(extractTag(scopeResponse, 'consistency_notes') || '') : '';
                         const seenTargets = new Set();
@@ -19267,7 +19265,7 @@ Output Schema:
 BEGIN DEVELOPING SURGICAL DIRECTIVES
 `;
 
-                    const response = await callAI(prompt, PROMPTS.directivePlanner, false, "Directive Planner", "large");
+                    const response = await callAI(prompt, PROMPTS.directivePlanner, false, "Directive Planner", "dev");
                     const parsed = parseDirectivePlan(response);
                     parsed.scope_kind = scopeKind;
                     if (scopeKind === 'arc' && !parsed.consistency_notes) parsed.consistency_notes = consistencyNotes;
@@ -19424,7 +19422,7 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                 reviewerSystemPrompt,
                 reviewerPromptFn,
                 parserFn,
-                modelSize = "large",
+                modelSize = "dev",
                 spawningContext = "",
                 parentTierFailFn = null,
                 activeActNum = 1,
@@ -19437,7 +19435,7 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                 let attempt = 1;
                 let rsiAttemptsCount = 0;
                 let isRsiRedo = false;
-                let currentModelSize = modelSize;
+                let currentModelSize = tierName === "Writing Agent" ? "prose" : modelSize;
                 let deviationReasons = [];
                 let lastCritique = "";
                 let lastGenOutput = "";
@@ -19464,7 +19462,7 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                             vocal_cadence: brief.vocal_cadence || "Standard rhythm and tone",
                             details: {
                                 history: `Introduced dynamically in ${spawningContext || 'the narrative'}.`,
-                                goals: brief.core_desire || "To be revealed",
+                                goals: brief.core_desire || "Quiet yearning yet to unfold",
                                 story_events: `Spawned during ${spawningContext || 'generation'}.`
                             }
                         };
@@ -19517,8 +19515,7 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                     setLoadingStep(`Running ${tierName}${chunkPrefix}${rsiSuffix} (Attempt ${attempt}/3)...`);
 
                     if (attempt === 3) {
-                        currentModelSize = "large";
-                        showToast(`Escalating ${tierName} to LARGE model...`, 'info');
+                        showToast(`Final attempt for ${tierName}...`, 'info');
                     }
 
                     let genOutput = "";
@@ -19799,13 +19796,13 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                         showToast("Using relaxed Writing Review Agent for final attempt...", "info");
                     }
 
-                    let reviewOutput = await callAI(reviewPrompt, activeReviewerPrompt, false, `${tierName} Reviewer (Attempt ${attempt}/3)${chunkPrefix}`, "small");
+                    let reviewOutput = await callAI(reviewPrompt, activeReviewerPrompt, false, `${tierName} Reviewer (Attempt ${attempt}/3)${chunkPrefix}`, "review");
                     let reviewResult = extractReviewStatus(reviewOutput);
 
                     if (!reviewResult.isValid) {
-                        console.warn(`[${tierName}] Review output anomalous. Escalating to large reviewer model...`);
-                        showToast(`Review output anomalous. Retrying review with large model...`, 'info');
-                        reviewOutput = await callAI(reviewPrompt, activeReviewerPrompt, false, `${tierName} Reviewer (Attempt ${attempt}/3, Large Retry)${chunkPrefix}`, "large");
+                        console.warn(`[${tierName}] Review output anomalous. Retrying review...`);
+                        showToast(`Review output anomalous. Retrying review...`, 'info');
+                        reviewOutput = await callAI(reviewPrompt, activeReviewerPrompt, false, `${tierName} Reviewer (Attempt ${attempt}/3, Retry)${chunkPrefix}`, "review");
                         reviewResult = extractReviewStatus(reviewOutput);
                     }
 
@@ -19927,10 +19924,9 @@ Return one edit per failure, in listed order, preserving the requested replaceme
                             setLoadingStep(`Surgical Editor: Patching ${tierName}${chunkPrefix} (Inner Pass ${innerPass}/2, Attempt ${attempt}/3)...`);
                             showToast(`Surgical Editor running (Pass ${innerPass}/2)...`, 'info');
 
-                            const hasMajorOrCritical = innerIssues.some(i => i.severity === "MAJOR" || i.severity === "CRITICAL");
-                            const surgicalModel = hasMajorOrCritical ? "large" : "small";
+                            const surgicalModel = "review";
 
-                            console.log("Using model:", surgicalModel);
+                            console.log("Using model role:", surgicalModel);
 
                             let issuesText = innerIssues.map((iss, idx) => `Issue #${idx + 1} [${iss.severity} - ${iss.category}]:
 - Description: ${iss.description}
@@ -19950,11 +19946,11 @@ ${issuesText}
 ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>\n` : ''}
 `;
                             try {
-                                const surgicalOutput = await callAI(surgicalUserPrompt, surgicalPrompt, false, `Surgical Editor (${tierName}) (Pass ${innerPass}/2, Attempt ${attempt}/3)`, surgicalModel);
+                                const surgicalOutput = await callAI(surgicalUserPrompt, surgicalPrompt, false, `Surgical Editor (${tierName}) (Pass ${innerPass}/2, Attempt ${attempt}/3)`, "review");
                                 console.log("Surgical Output:", surgicalOutput);
                                 const surgicalReport = await applySurgicalEditsWithRetry({
                                     originalText: currentDraft, blocksText: surgicalOutput, systemPrompt: surgicalPrompt,
-                                    logName: `Surgical Editor (${tierName}) (Pass ${innerPass}/2, Attempt ${attempt}/3)`, modelSize: surgicalModel
+                                    logName: `Surgical Editor (${tierName}) (Pass ${innerPass}/2, Attempt ${attempt}/3)`, modelSize: "review"
                                 });
                                 const patchedOutput = surgicalReport.text;
                                 showToast(surgicalReport.summary, surgicalReport.failed.length ? 'warning' : surgicalReport.applied.length ? 'success' : 'info');
@@ -19993,7 +19989,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                             ? PROMPTS.writingReviewRelaxed
                                             : PROMPTS.writingReviewRelaxed.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n');
                                     }
-                                    const innerReviewOutput = await callAI(reviewPrompt, activeReviewerPrompt, false, `${tierName} Reviewer (Post-Surgical Pass ${innerPass}/2, Attempt ${attempt}/3)`, "small");
+                                    const innerReviewOutput = await callAI(reviewPrompt, activeReviewerPrompt, false, `${tierName} Reviewer (Post-Surgical Pass ${innerPass}/2, Attempt ${attempt}/3)`, "review");
                                     const reviewResultVal = extractReviewStatus(innerReviewOutput);
 
                                     const reviewStatusVal = reviewResultVal.status;
@@ -20112,11 +20108,6 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                             while (innerPass <= 2) {
                                 console.groupCollapsed(`Pass ${innerPass}/2`);
                                 setLoadingStep(`Surgical Editor: Patching ${tierName}${chunkPrefix} (Inner Pass ${innerPass}/2, Attempt ${attempt}/3)...`);
-                                showToast(`Surgical Editor running on ${tierName} (Pass ${innerPass}/2)...`, 'info');
-
-                                const hasMajor = innerIssues.some(i => i.severity === "MAJOR");
-                                const surgicalModel = hasMajor ? "large" : "small";
-
                                 let issuesText = innerIssues.map((iss, idx) => `Issue #${idx + 1} [${iss.severity} - ${iss.category}]:
 - Description: ${iss.description}
 ${iss.location ? `- Location in structure: "${iss.location}"` : ""}
@@ -20139,11 +20130,11 @@ ${issuesText}
 ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>\n` : ''}
 `;
                                 try {
-                                    const surgicalOutput = await callAI(surgicalUserPrompt, surgicalPrompt, false, `Surgical Editor (${tierName}) (Pass ${innerPass}/2, Attempt ${attempt}/3)`, surgicalModel);
+                                    const surgicalOutput = await callAI(surgicalUserPrompt, surgicalPrompt, false, `Surgical Editor (${tierName}) (Pass ${innerPass}/2, Attempt ${attempt}/3)`, "review");
                                     console.log(`[Surgical Editor (${tierName})] Pass ${innerPass} Output:`, surgicalOutput);
                                     const surgicalReport = await applySurgicalEditsWithRetry({
                                         originalText: currentDraft, blocksText: surgicalOutput, systemPrompt: surgicalPrompt,
-                                        logName: `Surgical Editor (${tierName}) (Pass ${innerPass}/2, Attempt ${attempt}/3)`, modelSize: surgicalModel
+                                        logName: `Surgical Editor (${tierName}) (Pass ${innerPass}/2, Attempt ${attempt}/3)`, modelSize: "review"
                                     });
                                     const patchedOutput = surgicalReport.text;
                                     showToast(surgicalReport.summary, surgicalReport.failed.length ? 'warning' : surgicalReport.applied.length ? 'success' : 'info');
@@ -20173,7 +20164,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                         // Re-review
                                         setLoadingStep(`Reviewing patched ${tierName}${chunkPrefix} output (Inner Pass ${innerPass}/2, Attempt ${attempt}/3)...`);
                                         const reviewPrompt = reviewerPromptFn(patchedOutput);
-                                        const innerReviewOutput = await callAI(reviewPrompt, reviewerSystemPrompt, false, `${tierName} Reviewer (Post-Surgical Pass ${innerPass}/2, Attempt ${attempt}/3)`, "small");
+                                        const innerReviewOutput = await callAI(reviewPrompt, reviewerSystemPrompt, false, `${tierName} Reviewer (Post-Surgical Pass ${innerPass}/2, Attempt ${attempt}/3)`, "review");
                                         const reviewResultVal = extractReviewStatus(innerReviewOutput);
                                         const reviewStatusVal = reviewResultVal.status;
                                         const reasonsVal = reviewResultVal.reasons;
@@ -20465,7 +20456,7 @@ Output Schema:
       <name>Character Name</name>
       <role>1-2 sentences on their role in the world.</role>
       <core_flaw>The lie they believe.</core_flaw>
-      <core_desire>What they consciously want.</core_desire>
+      <core_desire>The deep emotional yearning, quiet ache, or idiosyncratic passion that animates them (the human hunger beneath their choices, rather than a sterile plot objective).</core_desire>
       <vocal_cadence>Rhythm, pitch, mannerisms, and speech patterns.</vocal_cadence>
     </brief>
   </character_briefs>
@@ -20489,7 +20480,7 @@ BEGIN DEVELOPING CONCEPTUAL FOUNDATION`;
                     // ============================================================================
                     console.log("[initStory] Starting Tier 0.1: Conceptual Development...");
                     setLoadingStep("Conceptual Development (Tier 0.1)...");
-                    const conceptOutput = await callAI(finalPrompt, PROMPTS.conceptualDevelopment, false, "Conceptual Development (0.1)", "large");
+                    const conceptOutput = await callAI(finalPrompt, PROMPTS.conceptualDevelopment, false, "Conceptual Development (0.1)", "dev");
 
                     console.log("[initStory] Tier 0.1 complete. Parsing output...");
 
@@ -20587,14 +20578,15 @@ Output Schema:
   <character_registry>
     <id>C1</id>
     <name>Character Name</name>
-    <first_person_interview>The complete dramatized interview: present tense prose responses to all 12 interview questions, written in the character's unmistakable voice with behavioral subtext and self-rationalization throughout.</first_person_interview>
+    <first_person_interview>The complete dramatized interview: present tense prose responses to all interview questions, written in the character's unmistakable voice with behavioral subtext and self-rationalization throughout.</first_person_interview>
     <vocal_cadence>Rhythm, pitch, mannerisms, and speech patterns.</vocal_cadence>
+    <core_yearning>A rich, poetic 1-2 sentence distillation of what truly drives this character: blending their outward striving with their tender internal longing and the emotional stakes that make them human.</core_yearning>
   </character_registry>
 </response>
 </output_format_description>
 
 BEGIN DEVELOPING CHARACTER PROFILES`;
-                        const interviewOutput = await callAI(interviewPrompt, PROMPTS.characterDevelopment, false, `Character Developer (${char.name})`, "large");
+                        const interviewOutput = await callAI(interviewPrompt, PROMPTS.characterDevelopment, false, `Character Developer (${char.name})`, "prose");
                         let interviewText = extractTag(interviewOutput, 'first_person_interview') || interviewOutput;
                         interviewText = decodeXmlEntities(interviewText);
 
@@ -20605,6 +20597,10 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                         char.voice_sample = interviewText.split('.')[0].substring(0, 100) + "...";
                         if (!char.vocal_cadence) {
                             char.vocal_cadence = decodeXmlEntities(extractTag(interviewOutput, 'vocal_cadence') || char.voice_sample || "Standard rhythm and tone");
+                        }
+                        const parsedYearning = extractTag(interviewOutput, 'core_yearning');
+                        if (parsedYearning && parsedYearning.trim()) {
+                            char.core_desire = decodeXmlEntities(parsedYearning.trim());
                         }
                         char.details = {
                             history: char.core_flaw,
@@ -20862,7 +20858,7 @@ Output Schema:
 BEGIN STORY ARC CRITIQUE REVIEW
 `,
                             parserFn: parseStoryArcXml,
-                            modelSize: "large",
+                            modelSize: "dev",
                             spawningContext: "Story Arc planning"
                         });
 
@@ -21036,7 +21032,7 @@ Output Schema:
 BEGIN STORY ARC CRITIQUE REVIEW
 `,
                         parserFn: parseStoryArcXml,
-                        modelSize: "large",
+                        modelSize: "dev",
                         spawningContext: "Story Arc planning"
                     });
 
@@ -21269,7 +21265,7 @@ BEGIN ACT CRITIQUE REVIEW
                                 relationship_shifts: relShifts
                             };
                         },
-                        modelSize: "large",
+                        modelSize: "dev",
                         spawningContext: "Act division and pacing",
                         parentTierFailFn: async (reasons) => {
                             setFeedbackLedger(prev => ({
@@ -21448,7 +21444,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                             }
                             return { sequences: parsedSequences };
                         },
-                        modelSize: "large",
+                        modelSize: "dev",
                         spawningContext: "Novel 8-Sequence Architecture",
                         parentTierFailFn: async (reasons) => {
                             setFeedbackLedger(prev => ({
@@ -21582,7 +21578,8 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                                 `Existing: ${redundancy.text}\nNew: ${item.detail}\n\nTask: Merge these two lore entries into one concise, consistent entry.`,
                                 "You are a Lore Keeper.",
                                 false,
-                                "Lore Merger"
+                                "Lore Merger",
+                                "review"
                             );
                             const reEmbedding = await service.getEmbedding(`${item.topic}: ${chosenDetail}`);
                             if (rebuild && (!reEmbedding || reEmbedding.length === 0)) throw new Error('No embedding returned for merged lore item.');
@@ -22010,7 +22007,7 @@ Output Schema:
 
 BEGIN EXTRACTING WORLD LORE
 `;
-                    const extractionOutput = await callAI(promptText, PROMPTS.loreExtraction, false, "Lore Extraction Agent", "small");
+                    const extractionOutput = await callAI(promptText, PROMPTS.loreExtraction, false, "Lore Extraction Agent", "review");
                     if (extractionOutput && !extractionOutput.includes("<extracted_lore>NONE</extracted_lore>")) {
                         const entries = extractAllTags(extractionOutput, 'lore_entry');
                         if (entries.length > 0) {
@@ -22623,7 +22620,7 @@ Please write a highly detailed and symbolic cover art image generation prompt. I
 
 BEGIN GENERATING IMAGE PROMPT`;
 
-                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Cover Image Prompt Agent", "small");
+                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Cover Image Prompt Agent", "dev");
 
                     const selectedStyleId = story.imageStyle || 'none';
                     const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
@@ -22696,7 +22693,7 @@ ${characterInfo}
 STORY GENRE: ${story.style?.genre || 'Not specified'}
 STORY MOOD: ${story.style?.mood || 'Not specified'}
 Create a waist-up, three-quarter view portrait prompt with an expression that fits this character's temperament, a plain softly lit background, no text, and no watermark.`;
-                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Character Portrait Prompt Agent", "small");
+                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Character Portrait Prompt Agent", "dev");
                     const selectedStyleId = story.imageStyle || 'none';
                     const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
                     const styleObj = combinedStyles.find(s => s.id === selectedStyleId);
@@ -22818,7 +22815,7 @@ Please write a highly descriptive and specific image generation prompt focusing 
 
 BEGIN GENERATING IMAGE PROMPT`;
 
-                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Beat Image Prompt Agent", "small");
+                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Beat Image Prompt Agent", "dev");
 
                     const selectedStyleId = story.imageStyle || 'none';
                     const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
@@ -23884,15 +23881,51 @@ h4 { font-size: 1.05em; margin: 0; font-family: serif; color: #111; }
             };
 
             const resolveRole = (modelRoleOrSize, logName = "") => {
-                if (modelRoleOrSize === "prose") return "prose";
-                if (modelRoleOrSize === "review") return "review";
-                if (modelRoleOrSize === "dev") return "dev";
-
                 const name = (logName || "").toLowerCase();
-                if (name.includes("prose") || name.includes("writing agent")) return "prose";
-                if (name.includes("review") || name.includes("editor") || name.includes("archivist") || name.includes("ledger") || name.includes("continuity") || name.includes("banned words")) {
+
+                // 1. Any Review, Reviewer, Surgical Editor, Continuity, Archivist, or Consistency tasks ALWAYS use Review Model Target
+                if (
+                    modelRoleOrSize === "review" ||
+                    name.includes("review") ||
+                    name.includes("reviewer") ||
+                    name.includes("surgical") ||
+                    name.includes("editor") ||
+                    name.includes("archivist") ||
+                    name.includes("ledger") ||
+                    name.includes("continuity") ||
+                    name.includes("banned words") ||
+                    name.includes("audit") ||
+                    name.includes("auditor") ||
+                    name.includes("critique") ||
+                    name.includes("consistency") ||
+                    name.includes("choreographer") ||
+                    name.includes("repair")
+                ) {
                     return "review";
                 }
+
+                // 2. Explicit Prose role override
+                if (modelRoleOrSize === "prose") return "prose";
+
+                // 3. Character interview / developer (Tier 0.2) uses Prose Model Target
+                if (name.includes("character developer") || name.includes("character interview") || name.includes("tier 0.2")) {
+                    return "prose";
+                }
+
+                // 4. Writing Agent prose drafting and prose generation use Prose Model Target
+                if (
+                    name.includes("writing agent") ||
+                    name.includes("prose generator") ||
+                    name.includes("prose writer") ||
+                    name.includes("prose") ||
+                    name.includes("drafting scene") ||
+                    name.includes("tier 5.3")
+                ) {
+                    return "prose";
+                }
+
+                // 5. Default to Dev Model Target for all structural, planning, and expansion agents
+                if (modelRoleOrSize === "dev") return "dev";
                 return "dev";
             };
 
@@ -24330,19 +24363,22 @@ Output Schema:
   <character_registry>
     <id>C1</id>
     <name>Character Name</name>
-    <first_person_interview>The complete dramatized interview: present tense prose responses to all 12 interview questions, written in the character's unmistakable voice with behavioral subtext and self-rationalization throughout.</first_person_interview>
+    <first_person_interview>The complete dramatized interview: present tense prose responses to all interview questions, written in the character's unmistakable voice with behavioral subtext and self-rationalization throughout.</first_person_interview>
     <vocal_cadence>Rhythm, pitch, mannerisms, and speech patterns.</vocal_cadence>
+    <core_yearning>A rich, poetic 1-2 sentence distillation of what truly drives this character: blending their outward striving with their tender internal longing and the emotional stakes that make them human.</core_yearning>
   </character_registry>
 </response>
 </output_format_description>
 
 BEGIN DEVELOPING CHARACTER PROFILES`;
-                const interviewOutput = await callAI(prompt, PROMPTS.characterDevelopment, false, "Character Developer (Tier 0.2)", "large");
+                const interviewOutput = await callAI(prompt, PROMPTS.characterDevelopment, false, "Character Developer (Tier 0.2)", "prose");
                 const interviewText = extractTag(interviewOutput, 'first_person_interview') || interviewOutput;
                 const parsedCadence = extractTag(interviewOutput, 'vocal_cadence');
+                const parsedYearning = extractTag(interviewOutput, 'core_yearning');
                 return {
                     deep_profile: decodeXmlEntities(interviewText),
-                    vocal_cadence: parsedCadence ? decodeXmlEntities(parsedCadence).trim() : cadence
+                    vocal_cadence: parsedCadence ? decodeXmlEntities(parsedCadence).trim() : cadence,
+                    core_yearning: parsedYearning ? decodeXmlEntities(parsedYearning).trim() : ""
                 };
             };
 
@@ -24370,6 +24406,7 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                 const profileResult = await generateCharacterProfile(char, storyContext);
                 const deepProfileText = typeof profileResult === 'object' && profileResult !== null ? profileResult.deep_profile : String(profileResult || "");
                 const parsedCadence = typeof profileResult === 'object' && profileResult !== null ? profileResult.vocal_cadence : "";
+                const parsedYearning = typeof profileResult === 'object' && profileResult !== null ? profileResult.core_yearning : "";
 
                 if (!mutableCastList[charIdx].details) mutableCastList[charIdx].details = {};
                 mutableCastList[charIdx].details.deep_profile = deepProfileText;
@@ -24379,6 +24416,10 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                 }
                 if (parsedCadence && (!mutableCastList[charIdx].vocal_cadence || mutableCastList[charIdx].vocal_cadence === "Standard")) {
                     mutableCastList[charIdx].vocal_cadence = parsedCadence;
+                }
+                if (parsedYearning && parsedYearning.trim()) {
+                    mutableCastList[charIdx].core_desire = parsedYearning.trim();
+                    mutableCastList[charIdx].details.goals = parsedYearning.trim();
                 }
                 return deepProfileText;
             };
@@ -24616,7 +24657,7 @@ Output Schema:
                             if (!data.story_so_far || data.story_so_far.length < 20) return { valid: false, errors: ["Story so far description is too short or missing."] };
                             return { valid: true };
                         },
-                        modelSize: "small",
+                        modelSize: "review",
                         spawningContext: "Story So Far Update"
                     });
                     
@@ -24745,7 +24786,7 @@ BEGIN DEVELOPING STORY SEQUENCES
                             }
                             return { sequences: parsedSequences };
                         },
-                        modelSize: "large",
+                        modelSize: "dev",
                         spawningContext: "Novel 8-Sequence Architecture",
                         parentTierFailFn: async (reasons) => {
                             setFeedbackLedger(prev => ({
@@ -25182,7 +25223,7 @@ BEGIN DEVELOPING OUTLINE OF THE CURRENT SEQUENCE SCENES
                             const normalizedScenes = normalizeScenesForSequence(parsedScenes, currentSequence.number);
                             return { scenes: normalizedScenes };
                         },
-                        modelSize: "large",
+                        modelSize: "dev",
                         spawningContext: `Sequence ${currentSequence.number} Scene Roster Generation`,
                         parentTierFailFn: async (reasons) => {
                             setFeedbackLedger(prev => ({
@@ -25642,7 +25683,7 @@ BEGIN EXPANDING SCENE PAIR
                             reviewerSystemPrompt: null, // Batch reviewed and surgically repaired in Tier 4.4
                             reviewerPromptFn: null,
                             parserFn: (text) => parseExpandedScenesXml(text, pair),
-                            modelSize: "small",
+                            modelSize: "dev",
                             spawningContext: `${pairLabels} Details Expansion (Batch ${pIdx + 1}/${scenePairs.length})`,
                             parentTierFailFn: async () => { },
                             activeActNum: actNumber,
@@ -25929,12 +25970,12 @@ ${currentCritique ? `\n<critique_analysis>\n${currentCritique}\n</critique_analy
                                     surgicalPrompt,
                                     false,
                                     `Surgical Editor (Scene Expansion Pass ${surgicalPass}/2)`,
-                                    "small"
+                                    "review"
                                 );
                                 console.log(`[Surgical Editor (Scene Expansion)] Pass ${surgicalPass} Output:`, surgicalOutput);
                                 const surgicalReport = await applySurgicalEditsWithRetry({
                                     originalText: currentPayload, blocksText: surgicalOutput, systemPrompt: surgicalPrompt,
-                                    logName: `Surgical Editor (Scene Expansion Pass ${surgicalPass}/2)`, modelSize: "small"
+                                    logName: `Surgical Editor (Scene Expansion Pass ${surgicalPass}/2)`, modelSize: "review"
                                 });
                                 const patchedPayload = surgicalReport.text;
                                 showToast(surgicalReport.summary, surgicalReport.failed.length ? 'warning' : surgicalReport.applied.length ? 'success' : 'info');
@@ -25970,7 +26011,7 @@ ${currentCritique ? `\n<critique_analysis>\n${currentCritique}\n</critique_analy
                                         PROMPTS.sceneExpanderReview,
                                         false,
                                         `Scene Expander Reviewer (Post-Surgical Pass ${surgicalPass}/2)`,
-                                        "small"
+                                        "review"
                                     );
                                     const reReviewResult = extractReviewStatus(reReviewOutput);
                                     reviewStatus = reReviewResult.status || extractTag(reReviewOutput, 'status') || "FAIL";
@@ -26591,7 +26632,7 @@ BEGIN BEAT CHOREOGRAPHY CRITIQUE AUDIT`,
 
                                 return { beats, has_more };
                             },
-                            modelSize: "small",
+                            modelSize: "dev",
                             spawningContext: `Sequence ${seq + 1} Scene ${scene + 1} Beat choreography`,
                             parentTierFailFn: async (reasons) => {
                                 setFeedbackLedger(prev => ({
@@ -27057,7 +27098,6 @@ Begin writing current scene prose.
                             : (enableNarrativeLenses ? PROMPTS.writingReview : PROMPTS.writingReview.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n')),
                         reviewerPromptFn: (genOutput) => {
                             const parsedOutput = parseWritingOutput(genOutput);
-                            const rollingStatus = computeRollingDialogueStatus(parsedOutput.prose, rollingDialogueStats);
                             const structuralVal = validateStructuralOutput("Writing Agent", parsedOutput, { ...scene, rollingDialogueStats });
                             const advisoryWarningsBlock = (structuralVal.warnings && structuralVal.warnings.length > 0) ? `
 <advisory_stylistic_observations>
@@ -27066,19 +27106,9 @@ ${structuralVal.warnings.map(w => `- ${w}`).join('\n')}
 Evaluate whether the scene's dramatic velocity, tension, or isolation justifies these choices, or if they should be flagged as issues for surgical revision.
 </advisory_stylistic_observations>
 ` : "";
-                            const rollingAuditBlock = `
-<rolling_dialogue_pacing_status>
-AUDIT OF 3-SCENE ROLLING DIALOGUE WINDOW:
-${rollingStatus.prevScenes.length > 0 ? rollingStatus.prevScenes.map(ps => `- ${ps.id}: ${ps.wordCount} words, ${ps.dialogueWords} dialogue words (${(ps.density * 100).toFixed(1)}%)`).join('\n') : '- No prior scenes in story (Beginning of novel)'}
-- Current Scene Draft: ${rollingStatus.currentWords} words, ${rollingStatus.currentDialogueWords} dialogue words (${(rollingStatus.currentDensity * 100).toFixed(1)}%)
-- Combined Rolling Window (${rollingStatus.windowSceneCount} scene${rollingStatus.windowSceneCount > 1 ? 's' : ''}): ${rollingStatus.totalWindowWords} total words, ${rollingStatus.totalWindowDialogue} dialogue words -> ${(rollingStatus.rollingDensity * 100).toFixed(1)}% dialogue
-- Policy Rule: Combined 3-scene dialogue density MUST remain >= 15.0%.
-- STATUS: ${rollingStatus.isPass ? 'PASS (Dialogue density satisfies 3-scene rolling pacing threshold)' : 'FAIL - MANDATORY REJECT (3-scene rolling dialogue density is below 15.0%. You MUST fail this generation under category DIALOGUE and demand expanded dialogue for the current scene)'}
-</rolling_dialogue_pacing_status>`;
 
                             return `${getProseContext()}
 
-${rollingAuditBlock}
 ${advisoryWarningsBlock}
 
 <generated_prose>
@@ -27088,7 +27118,7 @@ ${genOutput}
 ${directiveReviewOutputFormat}`;
                         },
                         parserFn: (text) => parseWritingOutput(text),
-                        modelSize: "large",
+                        modelSize: "prose",
                         spawningContext: `Sequence ${seq + 1} Scene ${s + 1} Full Scene Prose Writing`,
                         activeActNum: sequenceData.parent_act || 1,
                         activeChapNum: seq,
@@ -29220,11 +29250,18 @@ ${finalProseText}
                                                     role: role || "Supporting",
                                                     archetype: archetype || "Wanderer",
                                                     logline: "Newly introduced character.",
+                                                    core_flaw: "Struggling with unresolved vulnerability and trust.",
+                                                    core_desire: "Searching for meaning, belonging, and authentic connection.",
+                                                    details: {
+                                                        history: "Introduced by the author.",
+                                                        goals: "Searching for meaning, belonging, and authentic connection.",
+                                                        story_events: "Newly added to cast."
+                                                    },
                                                     psychological_profile: {
                                                         wound: "Unresolved past conflict.",
                                                         lie_believed: "They must struggle alone.",
                                                         truth_needed: "Vulnerability is strength.",
-                                                        want: "Achieve their goal.",
+                                                        want: "Search for meaning and authentic connection.",
                                                         need: "Inner acceptance."
                                                     },
                                                     voice: {
@@ -32728,7 +32765,7 @@ ${finalProseText}
                                                                     <span className="text-xs font-bold text-ink-900 uppercase tracking-wider font-mono">3. Prose Model</span>
                                                                     <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-ember-tint border border-ember-edge text-ember-800 font-semibold">Prose Generation</span>
                                                                 </div>
-                                                                <p className="text-[11px] text-ink-500 mt-0.5">Generates novel manuscript prose scene by scene directly from choreographed beats.</p>
+                                                                <p className="text-[11px] text-ink-500 mt-0.5">Generates dramatized character interviews and novel manuscript prose scene by scene directly from choreographed beats.</p>
                                                             </div>
                                                             {(!isInherited) && (
                                                                 <button
