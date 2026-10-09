@@ -3953,6 +3953,12 @@
         };
         window.buildGenreToneBlocks = buildGenreToneBlocks;
 
+        const getAuthorNoteXml = (story) => {
+            if (!story || !story.author_note || !story.author_note.trim()) return "";
+            return `\n<author_note>\n${story.author_note.trim()}\n</author_note>\n`;
+        };
+        window.getAuthorNoteXml = getAuthorNoteXml;
+
         const DIRECTIVE_STRUCTURAL_ACTIONS = new Set([
             'MODIFY_ACT', 'MODIFY_SEQUENCE', 'MODIFY_SCENE', 'ADD_SCENE', 'DELETE_SCENE',
             'ADD_SEQUENCE', 'DELETE_SEQUENCE', 'MOVE_SCENE',
@@ -5255,7 +5261,7 @@ PACING REGISTER: ${sceneTarget.register.name}. ${sceneTarget.register.directive}
                 const prose = parsedData.prose || (typeof parsedData === 'string' ? parsedData : "");
                 if (prose.length > 50) {
                     if (context && context.writing_mode === 'audio_drama') {
-                        // Audio Drama Structural Validation (Breeze TTS 2 syntax)
+                        // Audio Drama Structural Validation (Qwen 3 TTS syntax)
                         const rawLines = prose.split('\n').map(l => l.trim()).filter(Boolean);
                         let speakerLineCount = 0;
                         let narratorLineCount = 0;
@@ -5269,10 +5275,10 @@ PACING REGISTER: ${sceneTarget.register.name}. ${sceneTarget.register.directive}
                                     narratorLineCount++;
                                 }
                             }
-                            if (/\([^)]+\)/.test(line)) {
+                            if (/\[[^\]]+\]/.test(line) && !(/\[SFX/i.test(line))) {
                                 expressionCount++;
                             }
-                            if (/\[SFX:[^\]]*\]/i.test(line) || (/^\([^)]+\)$/.test(line) && !line.includes(':'))) {
+                            if (/\[SFX:[^\]]*\]/i.test(line) || (/^\[[^\]]+\]$/.test(line) && !line.includes(':'))) {
                                 foleyOrStageViolations++;
                             }
                         }
@@ -5284,7 +5290,7 @@ PACING REGISTER: ${sceneTarget.register.name}. ${sceneTarget.register.directive}
                             warnings.push("Writing Agent (Audio Drama): No lines attributed to 'Narrator'. The Narrator must speak all scene setting, physical movement, and staging aloud.");
                         }
                         if (expressionCount === 0 && rawLines.length > 3) {
-                            warnings.push("Writing Agent (Audio Drama): Zero inline expression tags detected (e.g. '(whisper)', '(sigh)', '(pause)'). Include expression tags to guide multi-voice TTS delivery.");
+                            warnings.push("Writing Agent (Audio Drama): Zero inline expression tags detected (e.g. '[crying]', '[trembling]', '[very slowly]'). Include expression tags to guide multi-voice TTS delivery.");
                         }
                         if (foleyOrStageViolations > 0) {
                             warnings.push(`Writing Agent (Audio Drama): Detected ${foleyOrStageViolations} bracketed sound effect or standalone stage direction(s). Unspoken actions or [SFX: ...] tags must be spoken aloud by the Narrator.`);
@@ -8176,7 +8182,8 @@ ${acts.map(a => `## Act ${a.number}: ${a.title}
 Mandate: ${a.act_mandate || a.description}
 World Developments: ${a.world_building_developments || ""}
 Knots: ${(a.knots || []).map(k => `${k.description} (${k.interaction})`).join("; ")}`).join('\n\n')}
-</act_descriptions>`;
+</act_descriptions>
+${getAuthorNoteXml(storyToUse)}`;
         };
         window.buildSequencePromptContext = buildSequencePromptContext;
 
@@ -10550,8 +10557,8 @@ CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
             audioDramaWritingModifier: `
 
-=== MANDATORY FORMATTING OVERRIDE: AUDIO DRAMA SCRIPT (BREEZE TTS 2) ===
-CRITICAL INSTRUCTION: You are NOT generating standard prose paragraphs for this story. You are translating the scene blueprint and choreography into a full-cast, narrator-led audio drama script formatted strictly for multi-voice TTS (Breeze TTS 2 syntax).
+=== MANDATORY FORMATTING OVERRIDE: AUDIO DRAMA SCRIPT (QWEN 3 TTS) ===
+CRITICAL INSTRUCTION: You are NOT generating standard prose paragraphs for this story. You are translating the scene blueprint and choreography into a full-cast, narrator-led audio drama script formatted strictly for multi-voice TTS (Qwen 3 TTS syntax).
 
 1. MULTI-VOICE SPEAKER SYNTAX:
 - Every line in your response MUST start with a speaker identifier followed by a colon and a single space:
@@ -10561,14 +10568,17 @@ CRITICAL INSTRUCTION: You are NOT generating standard prose paragraphs for this 
 
 2. THE NARRATOR AS AN AUDIBLE VOICE:
 - The "Narrator" is a dedicated, audible voice actor in the production carrying the descriptive weight of the scene.
-- Because multi-voice TTS reads all text aloud, there are NO UNSPOKEN STAGE DIRECTIONS, NO SCREENPLAY PARENTHETICALS (e.g. do NOT write "(He turns toward the door)"), and NO FOLEY/SFX BRACKETS (e.g. do NOT write "[SFX: explosion]" or "*click*").
+- Because Qwen 3 TTS reads all text aloud, there are NO UNSPOKEN STAGE DIRECTIONS, NO SCREENPLAY PARENTHETICALS (e.g. do NOT write "(He turns toward the door)"), and NO FOLEY/SFX BRACKETS (e.g. do NOT write "[SFX: explosion]" or "*click*").
 - The Narrator must speak all physical actions, blocking, spatial movements, sensory details, and atmospheric shifts aloud so the listener can visualize the action.
 
-3. INLINE VOCAL EXPRESSION TAGS:
-- Weave inline emotion and cadence expression tags enclosed in parentheses directly into character dialogue and narrator delivery to steer vocal inflection, pitch, and timing.
-- CRITICAL: Expression tags are STRICTLY for VOCAL DELIVERY (emotion, volume, pacing). NEVER use them for physical actions (e.g., never use "(while walking)" or "(pointing)").
-- Narrator expression tags should set the mood and energy (e.g., (high energy), (ominous), (somber), (urgent), (hushed)).
-- Character expression tags should capture their emotional state and vocalization: (whisper), (sigh), (laughing), (gasp), (pause), (clears throat), (trembling), (urgent), (dry chuckle), (shouting), (bitter), (hesitant), (beat).
+3. INLINE VOCAL EXPRESSION TAGS (DIRECTING THE PERFORMANCE):
+- Weave inline emotion tags enclosed in square brackets directly into character dialogue and narrator delivery to steer vocal inflection, pitch, and timing.
+- CRITICAL: Expression tags are STRICTLY for VOCAL DELIVERY (emotion, volume, pacing). NEVER use them for physical actions (e.g., never use "[while walking]" or "[pointing]").
+- Manage Span-Scope Tags (Emotions): Tags like [serious] or [excited] alter the delivery of all subsequent text. Restate your intended emotion tag at paragraph boundaries to prevent the model from gradually drifting back to its baseline.
+- Insert Point-Scope Tags (Vocal Events): Tags like [sighing], [laughing], or [clears throat] insert a single event. Place them logically before or after a thought—never in the middle of a continuous phrase where they would disrupt natural prosody.
+- Avoid Over-Tagging: Limit yourself to one control tag per sentence or emotional beat to maintain natural flow.
+- Narrator expression tags should set the mood and energy (e.g., [serious], [excited], [somber], [very slowly]).
+- Character expression tags should capture their emotional state and vocalization: [sarcastic], [empathetic], [crying], [trembling], [mischievously], [reluctant], [scornful], [deep and loud shouting], [very fast].
 
 4. DIALOGUE & SUBTEXT:
 - Characters must actively react, converse, dispute stakes, and voice their motivations out loud. Use the Narrator to bridge exchanges, modulate tension, and provide acoustic texture.
@@ -10577,8 +10587,8 @@ CRITICAL INSTRUCTION: You are NOT generating standard prose paragraphs for this 
     Derek: Stop running away!
     Narrator: Derek yelled, sprinting after her.
   * CORRECT (Audio Drama style):
-    Derek: (yelling, breathless) Stop running away!
-    Narrator: (high energy) Derek sprinted down the alley.
+    Derek: [deep and loud shouting] Stop running away!
+    Narrator: [excited] Derek sprinted down the alley.
 
 5. OUTPUT SPECIFICATIONS:
 - Output the complete script enclosed strictly within <prose_text> and </prose_text> tags.
@@ -10589,7 +10599,7 @@ CRITICAL INSTRUCTION: You are NOT generating standard prose paragraphs for this 
                 return `${PROMPTS.writingAgent}\n\n${PROMPTS.audioDramaWritingModifier}`;
             },
 
-            audioDramaWritingReview: `You are a ruthless Audio Drama Script Editor and Continuity Auditor. Your primary task is to critically evaluate the generated audio drama script against the beat choreography blueprint, plot commitments, and strict Breeze TTS 2 text-to-speech formatting rules.
+            audioDramaWritingReview: `You are a ruthless Audio Drama Script Editor and Continuity Auditor. Your primary task is to critically evaluate the generated audio drama script against the beat choreography blueprint, plot commitments, and strict Qwen 3 TTS text-to-speech formatting rules.
 
 ## Input Schema Definition
 You will receive the same context blocks as the writing agent, plus:
@@ -10600,15 +10610,15 @@ EVALUATION CRITERIA (in order of severity):
 
 **CRITICAL (Grounds for Mandatory FAIL):**
 1. **Plot Point & Beat Fidelity:** Did the script alter, dilute, soften, generalize, or omit ANY specific plot commitment, wager, challenge, rule, condition, ultimatum, secret, factual revelation, or dialogue agreement established in the beats?
-2. **Formatting Violation (Breeze TTS 2):** Did the script include unvoiced stage directions or bracketed foley tags (e.g., [SFX: ...] or *sigh*)? The script MUST strictly follow the "SpeakerName: Spoken text (expression)." format. If it contains stage directions that are not assigned to a speaker (like the Narrator), it fails.
+2. **Formatting Violation (Qwen 3 TTS):** Did the script include unvoiced stage directions or bracketed foley tags (e.g., [SFX: ...] or *sigh*)? The script MUST strictly follow the "SpeakerName: [emotion] Spoken text." format. If it contains stage directions that are not assigned to a speaker (like the Narrator), it fails.
 3. **Multi-Voice Speaker Attribution:** Every single line must begin with a canonical character name or "Narrator:". Unattributed text blocks fail immediately.
-4. **Expression Tags Presence:** Are inline emotional and cadence expression tags (e.g. (whisper), (sigh), (pause)) integrated into dialogue and narration?
-5. **Excessive Improper Expression/Dialogue Tags:** Because each character has their own audible voice, traditional dialogue attributions (e.g., "he yelled", "she whispered") in the Narrator's lines are redundant. Similarly, expression tags must be strictly for vocal deliveries, not physical actions like "(while walking)". A single mistake here is a WARNING, but if you find MORE THAN THREE improper expression tags or redundant dialogue tags in the script, it is a FAIL.
+4. **Expression Tags (Span/Point):** Are inline emotional tags used correctly? Span-scope tags (emotions) must be restated at paragraph boundaries to prevent drift. Point-scope tags (events like [sighing]) must not interrupt continuous phrases.
+5. **Over-Tagging & Improper Tags:** Is there more than one control tag per sentence or emotional beat? Are there traditional dialogue attributions (e.g., "he yelled")? Are expression tags used for physical actions (e.g., "[while walking]")? A single mistake here is a WARNING, but if you find MORE THAN THREE improper expression tags, over-tagged sentences, or redundant dialogue tags in the script, it is a FAIL.
 6. **Continuity Break & Name Confusion:** Does the script contradict physical facts established earlier in the scene (character positions, held items, injuries) or misname characters?
 7. **Epistemic Boundary Violation:** Did the script (via the Narrator) state unobservable internal thoughts or motives of non-focal characters as objective facts?
 
 PASS/FAIL DECISION FRAMEWORK:
-- **PASS** if: The script faithfully executes the choreography, preserves all specific dialogue stakes/plot terms, strictly adheres to Breeze TTS 2 multi-voice formatting (no unvoiced stage directions or foley brackets), maintains physical continuity, and has 3 or fewer improper expression/dialogue tags.
+- **PASS** if: The script faithfully executes the choreography, preserves all specific dialogue stakes/plot terms, strictly adheres to Qwen 3 TTS multi-voice formatting (no unvoiced stage directions or foley brackets), maintains physical continuity, and has 3 or fewer over-tagged sentences or improper expression/dialogue tags.
 - **FAIL** if: There is ANY CRITICAL-severity violation (or more than 3 improper tags). You must cite the specific requirement that was corrupted/omitted or the formatting violation, quote the offending text, and state the exact required correction.
 
 FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
@@ -13378,130 +13388,6 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
           ----------------------------------------------------------------------
         */
 
-        const ThreadVisualizer = ({ scenes, threads }) => {
-            if (!scenes || !threads || threads.length === 0) return null;
-
-            const laneWidth = 120;
-            const rowHeight = 60;
-            const svgHeight = (scenes.length + 1) * rowHeight;
-            const svgWidth = Math.max(800, threads.length * laneWidth);
-
-            const getThreadX = (index) => index * laneWidth + laneWidth / 2;
-
-            return (
-                <div className="overflow-x-auto overflow-y-hidden border border-edge rounded-xl p-2 shadow-sm thread-vis-bg">
-                    <svg width={svgWidth} height={svgHeight} className="min-w-full">
-                        {/* 1. Draw Thread Lanes (Background) */}
-                        {threads.map((t, i) => (
-                            <g key={`lane-${t.id}`}>
-                                <line
-                                    x1={getThreadX(i)} y1={24}
-                                    x2={getThreadX(i)} y2={svgHeight}
-                                    stroke="#E5E0D8" strokeWidth="1.5" strokeDasharray="4"
-                                    className="thread-vis-lane-line"
-                                />
-                                <text
-                                    x={getThreadX(i)} y={16}
-                                    fill="#57534E"
-                                    fontSize="11"
-                                    textAnchor="middle"
-                                    fontWeight="600"
-                                    fontFamily="sans-serif"
-                                    className="thread-vis-lane-text"
-                                >
-                                    {t.name.length > 15 ? t.name.substring(0, 14) + '…' : t.name}
-                                </text>
-                            </g>
-                        ))}
-
-                        {/* 2. Draw Scene Connections & Knots */}
-                        {scenes.map((scene, sceneIdx) => {
-                            const y = (sceneIdx + 1) * rowHeight;
-                            let rawThreads = scene.threads_advanced || scene.active_thread_ids || scene.thread_ids || scene.threads;
-                            const activeThreadList = Array.isArray(rawThreads) ? rawThreads : (rawThreads ? [rawThreads] : []);
-                            let activeThreads = threads
-                                .map((t, i) => ({ ...t, index: i }))
-                                .filter(t =>
-                                    activeThreadList.includes(t.id) ||
-                                    activeThreadList.includes(t.name) ||
-                                    activeThreadList.some(tid =>
-                                        String(tid).toLowerCase() === String(t.id).toLowerCase() ||
-                                        String(tid).toLowerCase() === String(t.name).toLowerCase() ||
-                                        t.name.toLowerCase().includes(String(tid).toLowerCase()) ||
-                                        String(tid).toLowerCase().includes(t.id.toLowerCase())
-                                    )
-                                );
-
-                            if (activeThreads.length === 0 && threads.length > 0) {
-                                activeThreads = [{ ...threads[0], index: 0 }];
-                            }
-
-                            if (activeThreads.length === 0) return null;
-
-                            // Calculate Interaction Type Styling (Light warm palette / Dark palette)
-                            let interactionColor = "#8A847C"; // Isolation (Default)
-                            let interactionWidth = 2;
-
-                            if (scene.causality?.interaction_type === "Collision") {
-                                interactionColor = "#C97070"; // Terracotta / Red
-                                interactionWidth = 3;
-                            } else if (scene.causality?.interaction_type === "Resonance") {
-                                interactionColor = "#5B8A72"; // Sage / Green
-                                interactionWidth = 3;
-                            } else if (activeThreads.length > 1) {
-                                interactionColor = "#B8935A"; // Gold
-                                interactionWidth = 2.5;
-                            }
-
-                            const minX = Math.min(...activeThreads.map(t => getThreadX(t.index)));
-                            const maxX = Math.max(...activeThreads.map(t => getThreadX(t.index)));
-
-                            return (
-                                <g key={`scene-row-${sceneIdx}`}>
-                                    {/* Connection Line if multiple threads */}
-                                    {activeThreads.length > 1 && (
-                                        <line
-                                            x1={minX} y1={y}
-                                            x2={maxX} y2={y}
-                                            stroke={interactionColor} strokeWidth={interactionWidth} strokeOpacity="0.85"
-                                        />
-                                    )}
-
-                                    {/* Nodes */}
-                                    {activeThreads.map(t => (
-                                        <circle
-                                            key={`node-${sceneIdx}-${t.id}`}
-                                            cx={getThreadX(t.index)} cy={y} r="5.5"
-                                            fill="#FFFFFF" stroke={interactionColor} strokeWidth="2.5"
-                                            className="thread-vis-node"
-                                        />
-                                    ))}
-
-                                    {/* Label (Scene Title) - Adapts to dark theme */}
-                                    <text
-                                        x={minX + 10} y={y - 10}
-                                        fill="#1C1917"
-                                        fontSize="11"
-                                        fontWeight="600"
-                                        fontFamily="sans-serif"
-                                        className="thread-vis-scene-text"
-                                    >
-                                        Sc {scene.number}: {scene.title}
-                                    </text>
-
-                                    {/* Interaction Label */}
-                                    {scene.causality?.interaction_type && (
-                                        <text x={minX + 10} y={y + 14} fill={interactionColor} fontSize="9" fontStyle="italic" fontWeight="500">
-                                            {scene.causality.interaction_type}
-                                        </text>
-                                    )}
-                                </g>
-                            );
-                        })}
-                    </svg>
-                </div>
-            );
-        };
 
 
         const EditButton = ({ title, value, onSave, className = "" }) => {
@@ -19229,6 +19115,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
 
             const [inputTitle, setInputTitle] = useState("");
             const [inputConcept, setInputConcept] = useState("");
+            const [inputAuthorNote, setInputAuthorNote] = useState("");
             const [inputWritingMode, setInputWritingMode] = useState("novel");
             const [inputBookType, setInputBookType] = useState("popular");
             const [inputCustomWords, setInputCustomWords] = useState(80000);
@@ -24475,7 +24362,7 @@ Output Schema:
       <role>Protagonist. 1-2 sentences on their role in the world, ordinary life, and primary conflict.</role>
       <core_flaw>The emotionally messy lie or defense mechanism they believe (grounded in human fear or past experience, NOT clinical diagnosis).</core_flaw>
       <core_desire>The deep emotional yearning, quiet ache, or idiosyncratic passion that animates them (the human hunger beneath their choices, rather than a sterile plot objective or clinical goal).</core_desire>
-      <vocal_cadence>Rhythm, pitch, mannerisms, and natural conversational speech patterns.</vocal_cadence>
+      <vocal_cadence>Voice definition using the 7-Dimension Formula (Age + Gender + Pitch/Timbre + Speaking Rate + Emotional Baseline + Purpose). Target Objective Acoustic Qualities. Limit 30-80 words.</vocal_cadence>
     </brief>
     <brief>
       <id>C2</id>
@@ -24483,7 +24370,7 @@ Output Schema:
       <role>Key Supporting Figure / Foil / Love Interest. Challenges the protagonist's worldview and anchors the B-Story relationship arc.</role>
       <core_flaw>Their distinct emotional blind spot or defensive pretense.</core_flaw>
       <core_desire>Their visceral longing from life and from their relationship with C1.</core_desire>
-      <vocal_cadence>Contrasting speech rhythm, diction, and vocal warmth/edge compared to C1.</vocal_cadence>
+      <vocal_cadence>Voice definition using the 7-Dimension Formula (Age + Gender + Pitch/Timbre + Speaking Rate + Emotional Baseline + Purpose). Target Objective Acoustic Qualities. Limit 30-80 words.</vocal_cadence>
     </brief>
     <brief>
       <id>C3</id>
@@ -24491,7 +24378,7 @@ Output Schema:
       <role>Antagonist / Primary Pressure Agent / Catalyst. Embodies the opposing thematic argument and forces C1 into irreversible decisions.</role>
       <core_flaw>Their self-justifying worldview or uncompromising obsession.</core_flaw>
       <core_desire>Their driving ambition and why their victory directly jeopardizes C1's world.</core_desire>
-      <vocal_cadence>Sharp, commanding, persuasive, or disarming conversational cadence.</vocal_cadence>
+      <vocal_cadence>Voice definition using the 7-Dimension Formula (Age + Gender + Pitch/Timbre + Speaking Rate + Emotional Baseline + Purpose). Target Objective Acoustic Qualities. Limit 30-80 words.</vocal_cadence>
     </brief>
   </character_briefs>
   <relationship_matrix>
@@ -24735,7 +24622,7 @@ Output Schema:
     <id>C1</id>
     <name>Character Name</name>
     <first_person_interview>The complete dramatized interview: present tense prose responses to all interview questions, written in the character's unmistakable voice with behavioral subtext and self-rationalization throughout.</first_person_interview>
-    <vocal_cadence>Rhythm, pitch, mannerisms, and speech patterns.</vocal_cadence>
+    <vocal_cadence>Voice definition using the 7-Dimension Formula (Age + Gender + Pitch/Timbre + Speaking Rate + Emotional Baseline + Purpose). Limit 30-80 words. Target Objective Acoustic Qualities (e.g., "crisp diction," "warm energy," "rounded low timbre"). Avoid redundant synonyms or celebrity names.</vocal_cadence>
     <core_yearning>A rich, poetic 1-2 sentence distillation of what truly drives this character: blending their outward striving with their tender internal longing and the emotional stakes that make them human.</core_yearning>
   </character_registry>
 </response>
@@ -24893,6 +24780,7 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                         title: inputTitle || "My New Story",
                         writing_mode: inputWritingMode || "novel",
                         concept: conceptToUse,
+                        author_note: inputAuthorNote,
                         book_type: resolvedBookType,
                         target_word_count: resolvedTargetWords,
                         length_control: { sequences: {} },
@@ -25437,6 +25325,7 @@ ${(storyToUse.threads && storyToUse.threads.length > 0)
   </relationship_shifts>
 </response>
 </output_format_description>
+${getAuthorNoteXml(storyToUse)}
 
 BEGIN STRUCTURING ACTS
 `,
@@ -27576,7 +27465,7 @@ BEGIN GENERATING IMAGE PROMPT`;
                     let output = "";
                     output += `================================================================================\n`;
                     output += `${cleanTitle.toUpperCase()} - AUDIO DRAMA SCRIPT\n`;
-                    output += `Format: Multi-Voice TTS (Breeze TTS 2 Syntax)\n`;
+                    output += `Format: Multi-Voice TTS (Qwen 3 TTS Syntax)\n`;
                     if (story.concept) {
                         output += `Concept: ${story.concept.trim()}\n`;
                     }
@@ -29246,7 +29135,7 @@ Output Schema:
     <id>C1</id>
     <name>Character Name</name>
     <first_person_interview>The complete dramatized interview: present tense prose responses to all interview questions, written in the character's unmistakable voice with behavioral subtext and self-rationalization throughout.</first_person_interview>
-    <vocal_cadence>Rhythm, pitch, mannerisms, and speech patterns.</vocal_cadence>
+    <vocal_cadence>Voice definition using the 7-Dimension Formula (Age + Gender + Pitch/Timbre + Speaking Rate + Emotional Baseline + Purpose). Limit 30-80 words. Target Objective Acoustic Qualities (e.g., "crisp diction," "warm energy," "rounded low timbre"). Avoid redundant synonyms or celebrity names.</vocal_cadence>
     <core_yearning>A rich, poetic 1-2 sentence distillation of what truly drives this character: blending their outward striving with their tender internal longing and the emotional stakes that make them human.</core_yearning>
   </character_registry>
 </response>
@@ -29993,6 +29882,7 @@ Synthesized Authorial Persona: ${storyToUse.synthesized_authorial_persona || ""}
 Genre Pacing & Rules: ${storyToUse.genre_pacing_and_dialogue_rules || ""}
 Strict Anti-Patterns: ${storyToUse.strict_anti_patterns || ""}
 World Bible: ${storyToUse.status_quo || ""}
+${getAuthorNoteXml(storyToUse)}
 `;
                         if (attempts > 1) {
                             prompt += `\n\nCRITICAL RETRY MANDATE: Your previous response provided only ${newScenes.length} scene(s). A minimum of ${targetFloor} scenes is required for Sequence ${currentSequence.number} to ensure adequate narrative scope.
@@ -30330,7 +30220,9 @@ You MUST rewrite this scene's prose to satisfy the following instruction:
 "${dInst}"
 ${existingProseText ? 'Ground your revision in the <existing_scene_draft> provided in <current_scene_prior_draft_context>, retaining its working elements while enacting this directive.' : ''}
 </directive_requirement>
-` : ""}`;
+` : ""}
+${getAuthorNoteXml(storyToUse)}
+`;
             };
             window.buildProseContext = buildProseContext;
 
@@ -32539,7 +32431,7 @@ ${finalProseText}
                                         onChange={e => setInputTitle(e.target.value)}
                                     />
 
-                                    {/* Manuscript Format Selector: Standard Novel vs Audio Drama (Breeze TTS 2) */}
+                                    {/* Manuscript Format Selector: Standard Novel vs Audio Drama (Qwen 3 TTS) */}
                                     <div className="mb-4 text-left">
                                         <label className="text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono mb-2 block">Manuscript Format</label>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -32581,7 +32473,7 @@ ${finalProseText}
                                                         <span className="font-bold text-sm text-ink-900 font-serif">Audio Drama</span>
                                                     </div>
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="text-[9px] font-bold font-mono uppercase px-1.5 py-0.5 rounded bg-gold/15 text-gold-ink border border-gold/30">Breeze TTS 2</span>
+                                                        <span className="text-[9px] font-bold font-mono uppercase px-1.5 py-0.5 rounded bg-gold/15 text-gold-ink border border-gold/30">Qwen 3 TTS</span>
                                                         {inputWritingMode === 'audio_drama' && (
                                                             <span className="w-2 h-2 rounded-full bg-gold" />
                                                         )}
@@ -32668,6 +32560,13 @@ ${finalProseText}
                                         placeholder="Concept (e.g. A fantasy world where magic costs memories...)"
                                         value={inputConcept}
                                         onChange={e => setInputConcept(e.target.value)}
+                                    />
+
+                                    <textarea
+                                        className="w-full bg-surface border border-edge-strong rounded-xl p-4 h-24 mb-4 focus:ring-2 focus:ring-gold/40 focus:border-gold outline-none text-ink-900 shadow-2xs placeholder:text-ink-400 text-sm leading-relaxed"
+                                        placeholder="Author's Note (e.g. Focus heavily on atmospheric tension. Make the protagonist more sarcastic.)"
+                                        value={inputAuthorNote}
+                                        onChange={e => setInputAuthorNote(e.target.value)}
                                     />
 
                                     {/* Import Lore UI */}
@@ -32915,7 +32814,7 @@ ${finalProseText}
                                                             <button
                                                                 onClick={handleExportAudioDramaTxt}
                                                                 className="flex-1 py-2 px-3 rounded-xl bg-gold-tint hover:bg-gold/20 border border-gold-edge text-gold-ink hover:text-gold-ink-deep font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                                                                title="Export Full Audio Drama Script (.txt) formatted for Breeze TTS 2"
+                                                                title="Export Full Audio Drama Script (.txt) formatted for Qwen 3 TTS"
                                                             >
                                                                 <Headphones size={13} className="text-gold-ink" />
                                                                 <span>Export Drama (.txt)</span>
@@ -32967,7 +32866,7 @@ ${finalProseText}
                                                                 <span className="text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">Writing Mode</span>
                                                             </div>
                                                             <span className={`text-[9px] font-bold font-mono uppercase px-2 py-0.5 rounded-full ${story.writing_mode === 'audio_drama' ? 'bg-gold-tint text-gold-ink border border-gold-edge' : 'bg-mist-100 text-ink-500'}`}>
-                                                                {story.writing_mode === 'audio_drama' ? 'Breeze TTS 2' : 'Standard Novel'}
+                                                                {story.writing_mode === 'audio_drama' ? 'Qwen 3 TTS' : 'Standard Novel'}
                                                             </span>
                                                         </div>
                                                         <select
@@ -32981,16 +32880,16 @@ ${finalProseText}
                                                                     }
                                                                     return updated;
                                                                 });
-                                                                showToast(`Writing mode switched to ${nextMode === 'audio_drama' ? 'Audio Drama (Breeze TTS 2)' : 'Standard Novel'}`, 'info');
+                                                                showToast(`Writing mode switched to ${nextMode === 'audio_drama' ? 'Audio Drama (Qwen 3 TTS)' : 'Standard Novel'}`, 'info');
                                                             }}
                                                             className="w-full p-2.5 text-xs bg-inset border border-edge rounded-lg text-ink-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold font-medium cursor-pointer"
                                                         >
                                                             <option value="novel">Standard Novel (Narrative Prose)</option>
-                                                            <option value="audio_drama">Audio Drama (Breeze TTS 2 Multi-Voice Script)</option>
+                                                            <option value="audio_drama">Audio Drama (Qwen 3 TTS Multi-Voice Script)</option>
                                                         </select>
                                                         <p className="text-xs text-ink-500 italic font-serif">
                                                             {story.writing_mode === 'audio_drama'
-                                                                ? 'Generates multi-voice scripts formatted strictly for Breeze TTS 2: "Speaker: (expression) Text" with an automatic Narrator.'
+                                                                ? 'Generates multi-voice scripts formatted strictly for Qwen 3 TTS: "Speaker: [emotion] Text" with an automatic Narrator.'
                                                                 : 'Generates standard narrative prose with rich scene description, narrative pacing, and dialogue tags.'}
                                                         </p>
                                                     </div>
@@ -33003,6 +32902,15 @@ ${finalProseText}
                                                             <EditButton title="Concept" value={story.concept} onSave={() => openEditModal("Concept", story.concept, (val) => setStory(prev => ({ ...prev, concept: val })))} />
                                                         </div>
                                                         <div className="font-serif text-base text-ink-800 leading-relaxed prose max-w-none bg-inset p-4 sm:p-5 rounded-xl border border-edge-strong" dangerouslySetInnerHTML={{ __html: parseMarkdown(story.concept || "No concept generated yet.") }} />
+                                                    </div>
+
+                                                    {/* Author's Note */}
+                                                    <div className="pt-2 border-t border-edge-soft space-y-2">
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-[10px] font-bold text-gold-ink uppercase tracking-wider font-mono">Author's Note (Global Directive)</span>
+                                                            <EditButton title="Author's Note" value={story.author_note || ""} onSave={() => openEditModal("Author's Note", story.author_note || "", (val) => setStory(prev => ({ ...prev, author_note: val })))} />
+                                                        </div>
+                                                        <div className="font-serif text-base text-ink-800 leading-relaxed prose max-w-none bg-gold-tint border border-gold-edge p-4 sm:p-5 rounded-xl shadow-2xs" dangerouslySetInnerHTML={{ __html: parseMarkdown(story.author_note || "No author's note set. Click edit to add global directives that heavily influence generation.") }} />
                                                     </div>
 
                                                     {/* Status Quo */}
@@ -35398,9 +35306,9 @@ ${finalProseText}
                                                                 {/* Expanded Sequence View with Thread Visualizer & Numbered Scene Rows */}
                                                                 {isExpanded && seqScenes.length > 0 && (
                                                                     <div className="animate-fade-in border-t border-edge bg-surface">
-                                                                        <div className="p-5 bg-inset border-b border-edge space-y-3">
+                                                                        <div className="p-5 bg-inset border-b border-edge space-y-3 hidden">
                                                                             <div className="text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">Sequence Thread Interaction Map</div>
-                                                                            <ThreadVisualizer scenes={seqScenes} threads={story.threads} />
+                                                                            {/* Map was removed as thread extraction isn't currently supported by ScenePlannerAgent */}
                                                                         </div>
 
                                                                         {/* Numbered Scene Stack */}
@@ -35495,8 +35403,8 @@ ${finalProseText}
                                                 <div className="p-4 sm:p-5 bg-mist-50/60 border-b border-edge-strong flex items-center justify-between">
                                                     <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider font-mono">Scenes ({dashScenes.length})</h3>
                                                 </div>
-                                                <div className="p-5 bg-inset border-b border-edge-strong space-y-4">
-                                                    <ThreadVisualizer scenes={dashScenes} threads={story.threads} />
+                                                <div className="p-5 bg-inset border-b border-edge-strong space-y-4 hidden">
+                                                    {/* Map was removed as thread extraction isn't currently supported by ScenePlannerAgent */}
                                                 </div>
                                                 <div className="divide-y divide-edge-soft">
                                                     {dashScenes.map((s, si) => (
