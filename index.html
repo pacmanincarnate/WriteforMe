@@ -4067,16 +4067,15 @@
         window.computeChangeRatio = computeChangeRatio;
 
         const applyParsedEdits = (originalText, edits) => {
-            const report = { text: originalText, edits, applied: [], failed: [] };
-            // Retain the legacy edit-type order; each match is against the current text.
+            const report = { text: originalText, edits, applied: [], failed: [], summary: '' };
             const fields = {
                 rewrite_passage: ['original', 'rewritten'],
                 insert_after: ['anchor', 'content'],
                 delete_passage: ['target'],
                 search_replace: ['search', 'replace']
             };
-            const ordered = Object.keys(fields).flatMap(type => edits.filter(edit => edit.type === type));
-            ordered.push(...edits.filter(edit => !Object.prototype.hasOwnProperty.call(fields, edit.type)));
+            // Preserve the sequential order of edits to avoid applying out of narrative order.
+            const ordered = [...edits];
             for (const edit of ordered) {
                 const names = Object.prototype.hasOwnProperty.call(fields, edit.type) ? fields[edit.type] : null;
                 const needle = names ? edit[names[0]] : '';
@@ -4091,19 +4090,70 @@
                 let before = report.text.slice(start, end);
                 let after = edit.type === 'delete_passage' ? '' : edit[names[1]];
                 if (edit.type === 'insert_after') after = before + after;
-                // Retain nearby text in a deletion's splice so its nonempty after can be found for undo.
-                if (after === '' && (start > 0 || end < report.text.length)) {
-                    const contextStart = Math.max(0, start - 40);
-                    const contextEnd = Math.min(report.text.length, end + 40);
-                    after = report.text.slice(contextStart, start) + report.text.slice(end, contextEnd);
-                    start = contextStart;
-                    end = contextEnd;
-                    before = report.text.slice(start, end);
+
+                // Strip accidental XML newline/indentation wrapper artifacts if the needle itself didn't have leading/trailing newlines
+                if (typeof after === 'string' && after.length > 0) {
+                    if (!needle.startsWith('\n') && !needle.startsWith('\r\n') && /^\r?\n[ \t]*/.test(after)) {
+                        after = after.replace(/^\r?\n[ \t]*/, '');
+                    }
+                    if (!needle.endsWith('\n') && !needle.endsWith('\r\n') && /\r?\n[ \t]*$/.test(after)) {
+                        after = after.replace(/\r?\n[ \t]*$/, '');
+                    }
                 }
+
+                // Boundary spacing defense: prevent words or sentences from being glued together or severed
+                let pre = report.text.slice(0, start);
+                let post = report.text.slice(end);
+
+                if (after && after.length > 0) {
+                    // Left boundary spacing defense
+                    if (start > 0) {
+                        if (/\w$/.test(pre) && /^\w/.test(after)) {
+                            after = ' ' + after;
+                        } else if (/[.!?]["'”’]?$/.test(pre) && !/\s$/.test(pre) && /^[A-Za-z"'“‘]/.test(after)) {
+                            after = ' ' + after;
+                        } else if (/[,;:]$/.test(pre) && !/\s$/.test(pre) && /^[A-Za-z0-9"'“‘]/.test(after)) {
+                            after = ' ' + after;
+                        } else if (/\s$/.test(pre) && /^\s/.test(after)) {
+                            after = after.replace(/^\s+/, ' ');
+                            if (/\s$/.test(pre) && after.startsWith(' ')) {
+                                after = after.slice(1);
+                            }
+                        }
+                    }
+
+                    // Right boundary spacing defense
+                    if (end < report.text.length) {
+                        if (/\w$/.test(after) && /^\w/.test(post)) {
+                            after = after + ' ';
+                        } else if (/[.!?]["'”’]?$/.test(after) && !/^\s/.test(post) && /^[A-Za-z"'“‘]/.test(post)) {
+                            after = after + ' ';
+                        } else if (/[,;:]$/.test(after) && !/^\s/.test(post) && /^[A-Za-z0-9"'“‘]/.test(post)) {
+                            after = after + ' ';
+                        } else if (/\s$/.test(after) && /^\s/.test(post)) {
+                            after = after.replace(/\s+$/, '');
+                        }
+                    }
+                } else if (edit.type === 'delete_passage' || after === '') {
+                    // Deletion spacing defense
+                    if (start > 0 && end < report.text.length) {
+                        if (/\w$/.test(pre) && /^\w/.test(post)) {
+                            pre = pre + ' ';
+                        } else if (/\s$/.test(pre) && /^\s/.test(post)) {
+                            post = post.replace(/^\s+/, '');
+                        } else if (/[.!?]["'”’]?$/.test(pre) && !/\s$/.test(pre) && /^[A-Za-z"'“‘]/.test(post)) {
+                            pre = pre + ' ';
+                        } else if (/[,;:]$/.test(pre) && !/\s$/.test(pre) && /^[A-Za-z0-9"'“‘]/.test(post)) {
+                            pre = pre + ' ';
+                        }
+                    }
+                }
+
                 if (before === after) { fail('edit makes no change'); continue; }
-                report.text = report.text.slice(0, start) + after + report.text.slice(end);
+                report.text = pre + after + post;
                 report.applied.push({ index: edit.index, type: edit.type, matchedVia: match.via, before, after });
             }
+            report.summary = `Surgical edits: ${report.applied.length} applied, ${report.failed.length} failed.`;
             return report;
         };
 
@@ -4197,6 +4247,7 @@
             if (typeof blocksText !== 'string' || !blocksText) return applyParsedEdits(originalText, edits);
             // Slice raw blocks so encoded XML inside structural needles is decoded only once.
             let blocks = Array.from(blocksText.matchAll(/<edit>([\s\S]*?)<\/edit>/gi), match => match[1]);
+            blocks.push(...Array.from(blocksText.matchAll(/<surgical_patch[\s\S]*?>([\s\S]*?)<\/surgical_patch>/gi), match => match[1]));
             if (!blocks.length) {
                 blocks = Array.from(blocksText.matchAll(/<search_replace>([\s\S]*?)<\/search_replace>/gi), match => match[1]);
             }
@@ -5203,105 +5254,142 @@ PACING REGISTER: ${sceneTarget.register.name}. ${sceneTarget.register.directive}
             } else if (tierName === "Writing Agent") {
                 const prose = parsedData.prose || (typeof parsedData === 'string' ? parsedData : "");
                 if (prose.length > 50) {
-                    const words = prose.trim().split(/\s+/).length;
-                    
-                    // Unicode-safe quote detection (\u0022 = ", \u201C = “, \u201D = ”)
-                    let inQuote = false;
-                    let quoteWords = 0;
-                    const tokens = prose.trim().split(/\s+/);
-                    for (const token of tokens) {
-                        const count = (token.match(/[\u0022\u201C\u201D]/g) || []).length;
-                        if (count % 2 !== 0) {
-                            if (!inQuote) {
-                                inQuote = true;
-                                quoteWords++;
-                            } else {
-                                inQuote = false;
-                                quoteWords++;
-                            }
-                        } else if (inQuote || count > 0) {
-                            quoteWords++;
-                        }
-                    }
-                    
-                    // Determine if current scene is a solo scene or multi-character
-                    const rawPresent = [
-                        ...(Array.isArray(context?.characters_present) ? context.characters_present : (context?.characters_present ? [context.characters_present] : [])),
-                        ...(Array.isArray(context?.cast_names) ? context.cast_names : (context?.cast_names ? [context.cast_names] : [])),
-                        ...(Array.isArray(context?.activeCast) ? context.activeCast : (context?.activeCast ? [context.activeCast] : []))
-                    ];
-                    const presentChars = [];
-                    rawPresent.forEach(c => {
-                        if (!c) return;
-                        if (typeof c === 'string') {
-                            c.split(/[,;\n]+|(?:\band\b)/i).map(s => s.trim().replace(/^-\s*/, '')).filter(Boolean).forEach(x => {
-                                if (!presentChars.some(cn => cn.toLowerCase() === x.toLowerCase())) presentChars.push(x);
-                            });
-                        } else if (c.name && typeof c.name === 'string') {
-                            const cn = c.name.trim();
-                            if (cn && !presentChars.some(existing => existing.toLowerCase() === cn.toLowerCase())) {
-                                presentChars.push(cn);
-                            }
-                        }
-                    });
-                    const isSoloScene = presentChars.length <= 1;
+                    if (context && context.writing_mode === 'audio_drama') {
+                        // Audio Drama Structural Validation (Breeze TTS 2 syntax)
+                        const rawLines = prose.split('\n').map(l => l.trim()).filter(Boolean);
+                        let speakerLineCount = 0;
+                        let narratorLineCount = 0;
+                        let expressionCount = 0;
+                        let foleyOrStageViolations = 0;
 
-                    // Dialogue Presence Check (Cast-Aware) - Soft Reviewer Warning
-                    if (isSoloScene) {
-                        // Solo scenes should have grounded vocalization; soft warning if completely absent
-                        if (words > 100 && quoteWords === 0) {
-                            warnings.push("Writing Agent: Solo scene has zero spoken vocalization. Even when alone, characters benefit from muttering under their breath, cursing, whispering calculations, or vocalizing to externalize interiority.");
+                        for (const line of rawLines) {
+                            if (/^[A-Za-z0-9_'\s-]+:\s+.+/i.test(line)) {
+                                speakerLineCount++;
+                                if (/^Narrator:\s+/i.test(line)) {
+                                    narratorLineCount++;
+                                }
+                            }
+                            if (/\([^)]+\)/.test(line)) {
+                                expressionCount++;
+                            }
+                            if (/\[SFX:[^\]]*\]/i.test(line) || (/^\([^)]+\)$/.test(line) && !line.includes(':'))) {
+                                foleyOrStageViolations++;
+                            }
+                        }
+
+                        if (rawLines.length >= 3 && speakerLineCount < Math.floor(rawLines.length * 0.75)) {
+                            warnings.push("Writing Agent (Audio Drama): Inconsistent speaker formatting detected. Every line must begin with 'SpeakerName: ' or 'Narrator: '.");
+                        }
+                        if (narratorLineCount === 0 && rawLines.length > 3) {
+                            warnings.push("Writing Agent (Audio Drama): No lines attributed to 'Narrator'. The Narrator must speak all scene setting, physical movement, and staging aloud.");
+                        }
+                        if (expressionCount === 0 && rawLines.length > 3) {
+                            warnings.push("Writing Agent (Audio Drama): Zero inline expression tags detected (e.g. '(whisper)', '(sigh)', '(pause)'). Include expression tags to guide multi-voice TTS delivery.");
+                        }
+                        if (foleyOrStageViolations > 0) {
+                            warnings.push(`Writing Agent (Audio Drama): Detected ${foleyOrStageViolations} bracketed sound effect or standalone stage direction(s). Unspoken actions or [SFX: ...] tags must be spoken aloud by the Narrator.`);
                         }
                     } else {
-                        // Multi-character scenes: soft warning if spoken dialogue is completely absent
-                        if (words > 100 && quoteWords === 0) { 
-                            warnings.push("Writing Agent: Multi-character scene has zero spoken dialogue. In scenes with multiple characters, spoken interaction is the primary engine of interpersonal tension. Consider expanding spoken dialogue.");
-                        }
-
-                        // Dynamic Pacing Tuning Check (Advisory-Only - never fails generation pipeline)
-                        const currentDialogueDensity = words > 0 ? (quoteWords / words) : 0;
-                        if (context && context.targetPacingMode) {
-                            if (context.targetPacingMode === 'PHYSICAL_IMMEDIACY' && currentDialogueDensity > 0.25) {
-                                warnings.push(`Writing Agent (Advisory - Physical Immediacy Target): Dialogue density is ${(currentDialogueDensity * 100).toFixed(1)}% (target was 5%–15% due to high prior dialogue average). Logged variance for subsequent scene calibration.`);
-                            } else if (context.targetPacingMode === 'CONVERSATIONAL_COLLISION' && currentDialogueDensity < 0.25) {
-                                warnings.push(`Writing Agent (Advisory - Conversational Collision Target): Dialogue density is ${(currentDialogueDensity * 100).toFixed(1)}% (target was 35%–50% due to low prior dialogue average). Logged variance for subsequent scene calibration.`);
+                        const words = prose.trim().split(/\s+/).length;
+                        
+                        // Unicode-safe quote detection (\u0022 = ", \u201C = “, \u201D = ”)
+                        let inQuote = false;
+                        let quoteWords = 0;
+                        const tokens = prose.trim().split(/\s+/);
+                        for (const token of tokens) {
+                            const count = (token.match(/[\u0022\u201C\u201D]/g) || []).length;
+                            if (count % 2 !== 0) {
+                                if (!inQuote) {
+                                    inQuote = true;
+                                    quoteWords++;
+                                } else {
+                                    inQuote = false;
+                                    quoteWords++;
+                                }
+                            } else if (inQuote || count > 0) {
+                                quoteWords++;
                             }
                         }
-                    }
+                        
+                        // Determine if current scene is a solo scene or multi-character
+                        const rawPresent = [
+                            ...(Array.isArray(context?.characters_present) ? context.characters_present : (context?.characters_present ? [context.characters_present] : [])),
+                            ...(Array.isArray(context?.cast_names) ? context.cast_names : (context?.cast_names ? [context.cast_names] : [])),
+                            ...(Array.isArray(context?.activeCast) ? context.activeCast : (context?.activeCast ? [context.activeCast] : []))
+                        ];
+                        const presentChars = [];
+                        rawPresent.forEach(c => {
+                            if (!c) return;
+                            if (typeof c === 'string') {
+                                c.split(/[,;\n]+|(?:\band\b)/i).map(s => s.trim().replace(/^-\s*/, '')).filter(Boolean).forEach(x => {
+                                    if (!presentChars.some(cn => cn.toLowerCase() === x.toLowerCase())) presentChars.push(x);
+                                });
+                            } else if (c.name && typeof c.name === 'string') {
+                                const cn = c.name.trim();
+                                if (cn && !presentChars.some(existing => existing.toLowerCase() === cn.toLowerCase())) {
+                                    presentChars.push(cn);
+                                }
+                            }
+                        });
+                        const isSoloScene = presentChars.length <= 1;
 
-                    // Check for telegraphic sentence whiplash scaled to scene proportions (> 20% of all sentences under 4 words)
-                    // Strip quoted dialogue before analyzing narrative sentence length to prevent multi-sentence dialogue from triggering false positives
-                    const proseWithoutDialogue = prose.replace(/[\u0022\u201C][^\u0022\u201D]*[\u0022\u201D]/g, ' ');
+                        // Dialogue Presence Check (Cast-Aware) - Soft Reviewer Warning
+                        if (isSoloScene) {
+                            // Solo scenes should have grounded vocalization; soft warning if completely absent
+                            if (words > 100 && quoteWords === 0) {
+                                warnings.push("Writing Agent: Solo scene has zero spoken vocalization. Even when alone, characters benefit from muttering under their breath, cursing, whispering calculations, or vocalizing to externalize interiority.");
+                            }
+                        } else {
+                            // Multi-character scenes: soft warning if spoken dialogue is completely absent
+                            if (words > 100 && quoteWords === 0) { 
+                                warnings.push("Writing Agent: Multi-character scene has zero spoken dialogue. In scenes with multiple characters, spoken interaction is the primary engine of interpersonal tension. Consider expanding spoken dialogue.");
+                            }
 
-                    // Pre-process prose to mask periods in common titles/abbreviations, decimal numbers, and ellipses to avoid false splits
-                    const maskedProse = proseWithoutDialogue
-                        .replace(/\b(Dr|Mr|Mrs|Ms|Lt|Col|Capt|Sgt|Gen|Prof|Fig|No|Spec|Model|v|vs)\.\s+/gi, '$1_DOT_ ')
-                        .replace(/(\d+)\.(\d+)/g, '$1_DEC_$2')
-                        .replace(/\.{3}/g, '_ELLIPSIS_');
-
-                    const rawSentences = maskedProse.split(/(?<=[.!?])\s+/).filter(Boolean);
-                    let shortSentencesCount = 0;
-                    let totalSentencesCount = 0;
-                    for (const s of rawSentences) {
-                        const trimmed = s.trim();
-                        const unmasked = trimmed.replace(/_DOT_/g, '.').replace(/_DEC_/g, '.').replace(/_ELLIPSIS_/g, '...');
-                        const sWords = unmasked.split(/\s+/).filter(w => /[a-zA-Z0-9]/.test(w)).length;
-                        if (sWords > 0) {
-                            totalSentencesCount++;
-                            if (sWords < 4) {
-                                shortSentencesCount++;
+                            // Dynamic Pacing Tuning Check (Advisory-Only - never fails generation pipeline)
+                            const currentDialogueDensity = words > 0 ? (quoteWords / words) : 0;
+                            if (context && context.targetPacingMode) {
+                                if (context.targetPacingMode === 'PHYSICAL_IMMEDIACY' && currentDialogueDensity > 0.25) {
+                                    warnings.push(`Writing Agent (Advisory - Physical Immediacy Target): Dialogue density is ${(currentDialogueDensity * 100).toFixed(1)}% (target was 5%–15% due to high prior dialogue average). Logged variance for subsequent scene calibration.`);
+                                } else if (context.targetPacingMode === 'CONVERSATIONAL_COLLISION' && currentDialogueDensity < 0.25) {
+                                    warnings.push(`Writing Agent (Advisory - Conversational Collision Target): Dialogue density is ${(currentDialogueDensity * 100).toFixed(1)}% (target was 35%–50% due to low prior dialogue average). Logged variance for subsequent scene calibration.`);
+                                }
                             }
                         }
-                    }
-                    const shortRatio = totalSentencesCount > 0 ? (shortSentencesCount / totalSentencesCount) : 0;
-                    if (totalSentencesCount >= 10 && shortRatio > 0.20) {
-                        warnings.push(`Writing Agent: Excessive staccato cadence detected (${(shortRatio * 100).toFixed(1)}% of narrative sentences are under 4 words, threshold is 20.0%). Vary sentence lengths organically and combine short action fragments into compound, rhythmic sentences.`);
-                    }
 
-                    // Check for screenplay / cinematic meta-language artifacts
-                    const metaArtifactRegex = /\b(the camera|camera pulls back|camera pans|camera cuts|cut to black|fade to black|wide shot|close-up shot|exterior shot|interior shot)\b/i;
-                    if (metaArtifactRegex.test(prose)) {
-                        warnings.push(`Writing Agent: Screenplay/cinematic meta-language detected (e.g., "camera pulls back", "cut to"). Narrate through character sensory perception, never cinematic stage directions.`);
+                        // Check for telegraphic sentence whiplash scaled to scene proportions (> 20% of all sentences under 4 words)
+                        // Strip quoted dialogue before analyzing narrative sentence length to prevent multi-sentence dialogue from triggering false positives
+                        const proseWithoutDialogue = prose.replace(/[\u0022\u201C][^\u0022\u201D]*[\u0022\u201D]/g, ' ');
+
+                        // Pre-process prose to mask periods in common titles/abbreviations, decimal numbers, and ellipses to avoid false splits
+                        const maskedProse = proseWithoutDialogue
+                            .replace(/\b(Dr|Mr|Mrs|Ms|Lt|Col|Capt|Sgt|Gen|Prof|Fig|No|Spec|Model|v|vs)\.\s+/gi, '$1_DOT_ ')
+                            .replace(/(\d+)\.(\d+)/g, '$1_DEC_$2')
+                            .replace(/\.{3}/g, '_ELLIPSIS_');
+
+                        const rawSentences = maskedProse.split(/(?<=[.!?])\s+/).filter(Boolean);
+                        let shortSentencesCount = 0;
+                        let totalSentencesCount = 0;
+                        for (const s of rawSentences) {
+                            const trimmed = s.trim();
+                            const unmasked = trimmed.replace(/_DOT_/g, '.').replace(/_DEC_/g, '.').replace(/_ELLIPSIS_/g, '...');
+                            const sWords = unmasked.split(/\s+/).filter(w => /[a-zA-Z0-9]/.test(w)).length;
+                            if (sWords > 0) {
+                                totalSentencesCount++;
+                                if (sWords < 4) {
+                                    shortSentencesCount++;
+                                }
+                            }
+                        }
+                        const shortRatio = totalSentencesCount > 0 ? (shortSentencesCount / totalSentencesCount) : 0;
+                        if (totalSentencesCount >= 10 && shortRatio > 0.20) {
+                            warnings.push(`Writing Agent: Excessive staccato cadence detected (${(shortRatio * 100).toFixed(1)}% of narrative sentences are under 4 words, threshold is 20.0%). Vary sentence lengths organically and combine short action fragments into compound, rhythmic sentences.`);
+                        }
+
+                        // Check for screenplay / cinematic meta-language artifacts
+                        const metaArtifactRegex = /\b(the camera|camera pulls back|camera pans|camera cuts|cut to black|fade to black|wide shot|close-up shot|exterior shot|interior shot)\b/i;
+                        if (metaArtifactRegex.test(prose)) {
+                            warnings.push(`Writing Agent: Screenplay/cinematic meta-language detected (e.g., "camera pulls back", "cut to"). Narrate through character sensory perception, never cinematic stage directions.`);
+                        }
                     }
                 } else {
                      errors.push("Writing Agent: Prose is too short or missing.");
@@ -6844,7 +6932,7 @@ ${charFocus}
                     characters_present: normalizedCast,
                     cast_names: normalizedCast,
                     cast_ids: Array.isArray(scene.cast_ids) ? scene.cast_ids : normalizedCast,
-                    dominant_narrative_mode: scene.dominant_narrative_mode || "BASELINE_NEUTRAL",
+                    dominant_narrative_mode: scene.dominant_narrative_mode || (typeof inferNarrativeModeForScene === 'function' ? inferNarrativeModeForScene(scene) : "BASELINE_NEUTRAL"),
                     setting: scene.setting || "",
                     pov_character: scene.pov_character || "",
                     plot_commitments: scene.plot_commitments || []
@@ -8019,10 +8107,15 @@ Carefully audit the scene draft strictly against the <active_state> ground truth
 2. Entity relationship contradictions (e.g. treating an established enemy as an intimate ally without dramatic justification).
 3. Location/status contradictions.
 
+CRITICAL RULES FOR PATCHES:
+- FULL-SENTENCE BOUNDARY: Every <search> and <replace> MUST cover the entire, complete sentence (from initial capital letter or quote to terminal punctuation) or entire paragraph. NEVER replace partial clauses, mid-sentence phrases, or individual words, as doing so severs sentence syntax and corrupts prose flow.
+- PARAGRAPH-LEVEL REWRITES: If fixing a continuity issue involves dialogue exchanges or multiple actions in a single paragraph, target the entire paragraph.
+- Ensure replacements are grammatically complete and maintain natural sentence spacing.
+
 If physical or relational continuity is violated, output surgical replacement patches:
 <surgical_patch>
-<search>verbatim text from draft to replace</search>
-<replace>exact corrected text resolving the continuity violation</replace>
+<search>complete verbatim sentence or paragraph from draft</search>
+<replace>exact corrected sentence or paragraph resolving the continuity violation</replace>
 </surgical_patch>
 
 If continuity is flawless and no contradictions exist, output strictly:
@@ -8041,42 +8134,9 @@ If continuity is flawless and no contradictions exist, output strictly:
                 }
 
                 if (auditResponse && auditResponse.includes('<surgical_patch')) {
-                    const patchBlocks = auditResponse.matchAll(/<surgical_patch[\s\S]*?>([\s\S]*?)<\/surgical_patch>/gi);
-                    let patchedText = proseText;
-                    let patchCount = 0;
-                    for (const pb of patchBlocks) {
-                        const blockContent = pb[1];
-                        const searchMatch = /<search>([\s\S]*?)<\/search>/i.exec(blockContent);
-                        const replaceMatch = /<replace>([\s\S]*?)<\/replace>/i.exec(blockContent);
-                        if (!searchMatch || !replaceMatch) continue;
-
-                        let searchStr = searchMatch[1].trim();
-                        let replaceStr = replaceMatch[1].trim();
-                        searchStr = searchStr.replace(/^<!\[CDATA\[([\s\S]*?)\]\]>$/i, '$1').trim();
-                        replaceStr = replaceStr.replace(/^<!\[CDATA\[([\s\S]*?)\]\]>$/i, '$1').trim();
-
-                        if (!searchStr) continue;
-
-                        if (patchedText.includes(searchStr)) {
-                            patchedText = patchedText.replace(searchStr, replaceStr);
-                            patchCount++;
-                        } else {
-                            // Whitespace & CRLF resilient replacement
-                            const normSearch = searchStr.replace(/\r\n/g, '\n').replace(/\s+/g, ' ');
-                            const normProse = patchedText.replace(/\r\n/g, '\n');
-                            const proseWords = normProse.replace(/\s+/g, ' ');
-                            if (proseWords.includes(normSearch)) {
-                                const escapedTokens = normSearch.split(/\s+/).map(t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-                                const flexRegex = new RegExp(escapedTokens.join('\\s+'), 'm');
-                                if (flexRegex.test(patchedText)) {
-                                    patchedText = patchedText.replace(flexRegex, replaceStr);
-                                    patchCount++;
-                                }
-                            }
-                        }
-                    }
-                    if (patchCount > 0) {
-                        return { prose: patchedText, status: "PATCHED", patchesApplied: patchCount };
+                    const patchReport = applySurgicalEditsDetailed(proseText, auditResponse);
+                    if (patchReport && patchReport.applied && patchReport.applied.length > 0) {
+                        return { prose: patchReport.text, status: "PATCHED", patchesApplied: patchReport.applied.length };
                     }
                 }
             } catch (err) {
@@ -8643,6 +8703,77 @@ Knots: ${(a.knots || []).map(k => `${k.description} (${k.interaction})`).join(";
         };
         window.NARRATIVE_MODES = NARRATIVE_MODES;
 
+        function inferNarrativeModeForScene(scene, availableModes = null) {
+            if (!scene) return "BASELINE_NEUTRAL";
+            const modes = availableModes || (typeof window !== 'undefined' && window.NARRATIVE_MODES ? window.NARRATIVE_MODES : NARRATIVE_MODES);
+            const text = `${scene.title || ''} ${scene.goal || ''} ${scene.objective || ''} ${scene.description || ''} ${(Array.isArray(scene.modality_hand) ? scene.modality_hand : []).join(' ')}`.toLowerCase();
+
+            // Match custom modes first if any keywords match custom mode context, name, or id
+            if (modes) {
+                for (const [key, modeObj] of Object.entries(modes)) {
+                    if (key === 'BASELINE_NEUTRAL') continue;
+                    const keyClean = key.toLowerCase().replace(/_/g, ' ');
+                    if (keyClean.length > 3 && new RegExp(`\\b${keyClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text)) return key;
+                    if (modeObj && (modeObj.name || modeObj.title)) {
+                        const nameClean = String(modeObj.name || modeObj.title).toLowerCase();
+                        if (nameClean.length > 3 && new RegExp(`\\b${nameClean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text)) return key;
+                    }
+                }
+            }
+
+            if (/\b(?:action|actions|fight|fighting|combat|battle|flee|chase|pursuit|assault|strike|striking|shoot|shooting|gunfire|ambush|explosion|breach|accelerated physicality)\b/i.test(text)) {
+                return "KINETIC_ACTION";
+            }
+            if (/\b(?:romance|romantic|attraction|yearning|kiss|kissing|intimate|intimacy|slow burn|chemistry|tender|desire|longing|flirt|flirting)\b/i.test(text)) {
+                return "BUILDING_ROMANCE";
+            }
+            if (/\b(?:suspense|stealth|dread|stalk|paranoia|shadow|shadows|creeping|danger|hunt|hunting|lurk|lurking|hide|hiding|infiltrat\w*|silent|trap|trapped|suspended tension)\b/i.test(text)) {
+                return "ATMOSPHERIC_SUSPENSE";
+            }
+            if (/\b(?:sparring|argument|interrogat\w*|debate|negotiat\w*|confront|verbal|clash of words|inquiry|cross-examin\w*|accuse|accusation|standoff|bicker|direct engagement)\b/i.test(text)) {
+                return "VERBAL_SPARRING";
+            }
+            if (/\b(?:mystery|investigat\w*|clue|clues|evidence|deduct\w*|forensic|crime scene|anomaly|puzzle|unravel|autopsy|inspect)\b/i.test(text)) {
+                return "PROCEDURAL_MYSTERY";
+            }
+            if (/\b(?:grand scale|scale|fleet|army|troop|troops|invasion|crowd|spectacle|monumental|mass evacuation|siege|colossal|masses)\b/i.test(text)) {
+                return "GRAND_SCALE";
+            }
+            if (/\b(?:exposition|heist plan|briefing|strategy|explaining|tactical overview|council|debrief)\b/i.test(text)) {
+                return "ORGANIC_EXPOSITION";
+            }
+            if (/\b(?:revelation|twist|shatter|shock|truth revealed|anagnorisis|betrayal discovered|uncover the truth|epiphany)\b/i.test(text)) {
+                return "REVELATION";
+            }
+            if (/\b(?:uncertainty|alien|lost in the dark|disoriented|uncomprehend\w*|incomprehensible|void|bizarre|unknown|groping)\b/i.test(text)) {
+                return "UNCERTAINTY";
+            }
+            if (/\b(?:reflect|reflection|grief|mourn|mourning|aftermath|trauma|loss|quiet|contemplat\w*|coping|remorse|sorrow|solitary)\b/i.test(text)) {
+                return "REFLECTION";
+            }
+            if (/\b(?:relational|bond|friendship|platonic|allies|family|reunion|camaraderie|confide|trust|partner|partnering)\b/i.test(text)) {
+                return "RELATIONAL";
+            }
+            if (/\b(?:environment|immersion|landscape|explor\w*|ruins|arrival|wilderness|streets of|city|weather|terrain|travel|vista)\b/i.test(text)) {
+                return "ENVIRONMENTAL_IMMERSION";
+            }
+            if (/\b(?:dilemma|moral|agoniz\w*|sacrifice|impossible choice|divided loyalty|ethics|conscience|wager)\b/i.test(text)) {
+                return "MORAL_DILEMMA";
+            }
+            if (/\b(?:cathartic|vulnerab\w*|confession|surrender|boundaries dissolv\w*|raw intimacy|breakdown|weeping|vulnerability drop)\b/i.test(text)) {
+                return "CATHARTIC_INTIMACY";
+            }
+            if (/\b(?:comedy|humor|banter|lighthearted|whimsical|laughter|relief|playful|absurd|mischief)\b/i.test(text)) {
+                return "LIGHTHEARTED";
+            }
+            if (/\b(?:world-building|world building|lore|history|culture|tradition|ritual|mythology|ancient)\b/i.test(text)) {
+                return "WORLD_BUILDING";
+            }
+
+            return "BASELINE_NEUTRAL";
+        }
+        window.inferNarrativeModeForScene = inferNarrativeModeForScene;
+
         // ============================================================================
         // GENRE-AGNOSTIC NARRATIVE MODALITY PALETTE
         // Expanded palette of structural modalities avoiding action/thriller bias.
@@ -8758,17 +8889,19 @@ Do NOT under ANY circumstances generate or use any of the following overused cha
         const SURGICAL_EDIT_PROTOCOL = `Rules for all surgical edits:
 1. Identify the MINIMUM set of changes needed. Return edits only; do NOT rewrite the entire text or XML payload.
 2. Quote \`search\`/\`original\`/\`anchor\`/\`target\` character-for-character from <original_text>, including punctuation and quote marks; never paraphrase.
-3. Maintain strict tense consistency. Check the tense of the surrounding original text (e.g. present tense vs. past tense) and ensure all edit blocks match that exact tense.
-4. Choose the most surgical edit type and preserve all text outside the requested changes. Include any needed spacing in replacement or inserted content.
-5. If a field value must itself contain < or &, wrap that value in CDATA.
+3. FULL-SENTENCE BOUNDARY MANDATE (FOR PROSE): When editing narrative prose, every \`search\`/\`replace\` block MUST encompass COMPLETE, WHOLE SENTENCES (from the opening capital letter or quotation mark to the terminal period, question mark, exclamation point, or closing quote). NEVER replace mid-sentence phrases, partial clauses, or sub-sentence fragments, as doing so severs sentence syntax, drops prepositions, and corrupts grammatical flow.
+4. PARAGRAPH-LEVEL REWRITES: If multiple changes, dialogue adjustments, or continuity fixes occur within the same paragraph, replace the ENTIRE paragraph using <type>rewrite_passage</type> instead of multiple fragmented micro-edits.
+5. Maintain strict tense consistency. Check the tense of the surrounding original text (e.g. present tense vs. past tense) and ensure all edit blocks match that exact tense.
+6. Grammatical integrity: Ensure all replacement content is grammatically complete, properly capitalized, and maintains correct punctuation and sentence spacing.
+7. If a field value must itself contain < or &, wrap that value in CDATA.
 
 FORMATTING DIRECTIVE: Return ONLY XML enclosed in <edits>...</edits>. Do not use YAML, markdown blocks, commentary, or a full-prose response.
 Output Schema (four available edit types; emit only the edits needed):
 <edits>
   <edit>
     <type>search_replace</type>
-    <search>exact original text passage</search>
-    <replace>corrected text passage</replace>
+    <search>exact original complete sentence</search>
+    <replace>corrected complete sentence</replace>
   </edit>
   <edit>
     <type>rewrite_passage</type>
@@ -8782,7 +8915,7 @@ Output Schema (four available edit types; emit only the edits needed):
   </edit>
   <edit>
     <type>delete_passage</type>
-    <target>exact element or passage to remove</target>
+    <target>exact element, complete sentence, or passage to remove</target>
   </edit>
 </edits>`;
 
@@ -8852,6 +8985,13 @@ Output Schema (four available edit types; emit only the edits needed):
 
 4. Authentic Human Stakes Mandate:
    Scene objectives, value shifts, and character motives must emerge from authentic human needs—desire, fear, guilt, loyalty, pride, love, or survival. Strictly avoid framing scene goals as "testing a hypothesis", "gauging a subject's reaction", "running a social experiment", or executing a detached mastermind manipulation, unless the concept explicitly demands it. Characters must be living participants within the scene's emotional current, not detached observers or puppet masters.
+
+5. Narrative Style / Dominant Narrative Mode Mandate:
+   Every scene MUST be assigned an explicit <dominant_narrative_mode> chosen from the available narrative styles provided in <available_narrative_styles>.
+   - Evaluate each scene's dramatic core, stakes, and emotional tone, then select the style that best amplifies its narrative purpose.
+   - Purposefully vary narrative styles across the sequence (e.g., contrast high-tension styles like KINETIC_ACTION or ATMOSPHERIC_SUSPENSE with intimate or reflective styles like BUILDING_ROMANCE, RELATIONAL, or REFLECTION, or intellectual friction like VERBAL_SPARRING or PROCEDURAL_MYSTERY).
+   - NEVER assign BASELINE_NEUTRAL to all scenes. Only use BASELINE_NEUTRAL when a scene is an even-keeled transition without strong stylistic bias.
+   - You MUST output the exact style ID (e.g. KINETIC_ACTION, BUILDING_ROMANCE, etc.) inside <dominant_narrative_mode>...</dominant_narrative_mode> for each scene.
 </scene_development_mandates>
 
 <scene_blueprint_schema>
@@ -8864,6 +9004,7 @@ Provide between the required minimum and maximum scenes specified in <target_sce
   <title>A compelling chapter/scene title</title>
   <pov_character>Who holds the camera</pov_character>
   <setting>Concrete location name and time grounding</setting>
+  <dominant_narrative_mode>EXACT_STYLE_ID (Select from <available_narrative_styles>)</dominant_narrative_mode>
   <atmospheric_overview>A rich 2-3 paragraph Atmospheric Overview describing spatial layout, general mood, ambient activity, and physical details as an organic world-building reservoir.</atmospheric_overview>
   <modality_hand>Direct Engagement, Environmental Friction, Vulnerability Drop</modality_hand>
   <characters_present>Character A, Character B</characters_present>
@@ -9875,7 +10016,11 @@ BEGIN DIRECTIVE PLANNING`,
             // TIER 6.2: Surgical Writing Retry Editor
             surgicalEditorProse: `You are a Surgical Editor. Your task is to make targeted corrections to a generated text based on reviewer feedback.
 
-Choose the most surgical edit type. Use search_replace for style/word-choice/filter words. Use rewrite_passage for voice, emotional shifts or larger paragraph changes. Use insert_after for missing detail/actions. Use delete_passage to remove bloat.
+Choose the most surgical edit type:
+- Use search_replace for single-sentence corrections. The search and replace blocks MUST target the entire sentence (from initial capital letter or quote to terminal punctuation), never sub-sentence fragments.
+- Use rewrite_passage for voice, emotional shifts, dialogue revisions, or multi-sentence paragraph repairs.
+- Use insert_after to add missing details, actions, or dialogue after a designated sentence.
+- Use delete_passage to remove bloat, targeting whole sentences or paragraphs.
 
 ${SURGICAL_EDIT_PROTOCOL}`,
 
@@ -9903,9 +10048,11 @@ ${STRUCTURAL_EDIT_PROTOCOL}`,
 
 Your task is to surgically edit this prose to remove ALL occurrences of the detected banned words and phrases.
 Rules:
-1. Identify the sentences that contain any of the banned words/phrases.
-2. Formulate search-and-replace blocks targeting only the sentences that contain banned words, replacing them with new, high-quality, emotionally resonant sentences that do NOT contain any of the banned words/phrases.
-3. Do NOT modify the rest of the prose. Preserve the surrounding context, the narrative flow, and all other sentences exactly as they are.
+1. Identify each sentence that contains any of the banned words/phrases.
+2. Formulate search-and-replace blocks targeting the ENTIRE sentence containing the banned word/phrase (from the sentence's beginning capital letter or quote to its closing punctuation). Replace it with a new, complete, grammatically sound sentence that conveys the intended meaning without using any banned words.
+3. NEVER perform partial mid-sentence word swaps or clause replacements. Always replace the full sentence to maintain syntactic rhythm and grammatical flow.
+4. If a single paragraph contains multiple banned words, use <type>rewrite_passage</type> to rewrite the entire paragraph cleanly.
+5. Do NOT modify any other sentences or paragraphs. Preserve the surrounding context and flow exactly as they are.
 
 ${SURGICAL_EDIT_PROTOCOL}
 
@@ -10145,11 +10292,20 @@ You will receive the following structured context blocks:
 - <previous_context>: Synopsis and ending prose of the preceding scene for seamless narrative continuity.
 - <current_scene_prior_draft_context>: Prior draft text and editorial critique for the current scene (present during rewrites, steering directives, or second passes).
 - <draft_to_revise> / <critical_issues_to_fix> / <persistent_critical_issues> / <reviewer_critique>: Specific draft and reviewer critique provided during escalation passes.
-- <writing_lens>: Active narrative mode instructions and stylistic filter (when enabled).
+- <active_scene_narrative_style> / <writing_lens>: Governing scene-level narrative style instructions, rhythm, and sensory filter.
 - <directive_requirement>: Optional surgical user instruction that overrides standard defaults for this scene.
 
 ## 2. SCENE BLUEPRINT DRAMATIZATION & NARRATIVE MOMENTUM
 - **Holistic Blueprint Dramatization**: Ground the scene in its physical setting, drive relentlessly toward the focal character's dramatic goal, execute the vital Value Shift (beginning state -> turning point -> ending state), and conclude in an evocative exit hook.
+- **Dominant Narrative Style & Scene Lens Fidelity (PRIMARY STYLISTIC DIRECTIVE)**:
+  The scene's assigned narrative style (<active_scene_narrative_style> / <writing_lens>) is your PRIMARY stylistic mandate for this specific scene. It directly shapes your sentence length, rhythm, interiority depth, dialogue frequency, and sensory hierarchy. You MUST execute the scene through this designated lens:
+  * Kinetic/Urgent styles (e.g. KINETIC_ACTION) require paratactic syntax, high physical momentum, tactile friction, kinesthesia, and minimal interiority.
+  * Romantic/Intimate styles (e.g. BUILDING_ROMANCE, CATHARTIC_INTIMACY) require radical time dilation, hyper-awareness of proximity, breath, touch, micro-gestures, and subtextual hesitation.
+  * Suspense/Uncertainty styles (e.g. ATMOSPHERIC_SUSPENSE, UNCERTAINTY) require hypotactic sentence delays, micro-acoustics, negative space, and physiological vigilance.
+  * Dialogue-driven styles (e.g. VERBAL_SPARRING, ORGANIC_EXPOSITION) require sharp back-and-forth verbal collisions and active physical prop punctuation.
+  * Mystery/World-Building styles (e.g. PROCEDURAL_MYSTERY, WORLD_BUILDING) require sharp physical anomalies, tactile clues, and grounded deductive friction.
+  * Reflective/Dilemma styles (e.g. REFLECTION, MORAL_DILEMMA) require repetitive physical grounding, concrete symbolic anchors, and embodied emotional aftermath.
+  Do NOT smooth all scenes into a uniform cadence. The narrative style is what gives each individual scene its unique pulse and texture within the overarching novel.
 - **World-Building Reservoir Approach (<atmospheric_overview>)**: Treat the Atmospheric Overview strictly as an organic world-building reservoir. You are explicitly forbidden from artificially listing these details or obsessively repeating isolated sensory anchors. Characters must organically move through the space, interacting with the environment only when it naturally intersects with their dialogue, internal processing, or physical agency.
 - **Structural Modality Hand (<selected_modality_hand>)**: Weave the assigned modalities dynamically to sculpt the scene's dramatic rhythm without rigid beat checklists.
 - **Multi-Tiered Active State (<active_state>)**: Maintain strict physical and relational continuity with the established Knowledge Graph nodes, edges, and event chronology.
@@ -10245,6 +10401,9 @@ Your sole mission is to take a completed scene draft and elevate it to publicati
    - Excise repetitive physical tics (spinning taped rings, counting cracks, gazing out windows).
    - Transform any detached clinical diagnoses, social experiments, or mastermind calculations into immediate, visceral human reactions, tactile friction, and genuine dialogue subtext.
 
+6. HONOR DOMINANT NARRATIVE STYLE / LENS:
+   - When <active_scene_narrative_style> or a Dominant Narrative Style is provided, harmonize all syntactic rhythms, sentence lengths, sensory focus, and pacing dilation with the active lens (e.g. breathless parataxis for kinetic action; dilated, lingering proximity for romance; dragging dread and micro-acoustics for suspense; sharp rhetorical momentum for verbal sparring). Never flatten distinct narrative modes into generic neutral prose.
+
 Output ONLY the fully polished prose text enclosed in <polished_prose> and </polished_prose> tags. Do not include any explanations, notes, or preambles outside the tags.`,
 
             // TIER 5.5: Dedicated Continuity Auditor (Multi-Tiered GraphRAG)
@@ -10258,10 +10417,16 @@ You do NOT rewrite prose or critique style. You audit purely for factual, physic
 If continuity is intact, output:
 <audit_status>PASS</audit_status>
 
-If any continuity violation is detected, output surgical search-and-replace patches that resolve the contradiction with zero rewriting of surrounding prose:
+If any continuity violation is detected, output surgical search-and-replace patches that resolve the contradiction with zero rewriting of surrounding prose.
+CRITICAL RULES FOR PATCHES:
+1. FULL-SENTENCE BOUNDARY: Every <search> and <replace> MUST cover the ENTIRE sentence containing the error (from opening capital letter/quote to terminal punctuation) or entire paragraph. NEVER replace partial clauses, mid-sentence phrases, or individual words, as doing so severs sentence structure.
+2. PARAGRAPH-LEVEL CORRECTION: If a continuity correction alters dialogue exchanges, actions, or multiple sentences in a paragraph, target the entire paragraph.
+3. Ensure replacements are grammatically complete and maintain natural sentence spacing.
+
+Output schema:
 <surgical_patch>
-<search>exact verbatim text to replace</search>
-<replace>exact corrected text resolving the continuity violation</replace>
+<search>complete verbatim sentence or paragraph from draft</search>
+<replace>exact corrected sentence or paragraph resolving the continuity violation</replace>
 </surgical_patch>`,
 
             // TIER 5.4: Writing Review Agent (Continuity Reviewer) (SMALL)
@@ -10281,7 +10446,7 @@ You will receive the following context blocks:
 - <current_scene_prior_draft_context>: Optional prior draft and revision directives (when auditing a revision/second pass).
 - <dialogue_pacing_target>: Scene classification and dialogue pacing context.
 - <current_chunk_choreography_blueprint>: Optional dramatic milestones/beats.
-- <writing_lens>: Active narrative mode.
+- <active_scene_narrative_style> / <writing_lens>: Active narrative mode and stylistic instructions.
 - <directive_requirement>: Optional specific user instructions.
 - <generated_prose>: The full text of the generated scene prose under audit.
 - <output_format_description>: The required XML schema for your evaluation.
@@ -10319,7 +10484,7 @@ EVALUATION CRITERIA (in order of severity):
 18. **Filter Words & Passive Voice:** Flag instances of "felt," "saw," "heard," "seemed to," "began to" — but only fail if there are more than 5 instances in a single beat.
 19. **Somatic Clichés:** Flag overused body-reaction tropes ("breath caught", "breath hitched", "heart stuttered", "silence stretched").
 20. **Telling Over Showing:** Flag explanatory abstractions that spell out emotions instead of dramatizing them.
-21. **Generic AI Voice:** Flag prose that sounds like default ChatGPT/Gemini output — overly polished, uniformly rhythmic, lacking texture.
+21. **Generic AI Voice & Narrative Style Fidelity:** Flag prose that sounds like default ChatGPT/Gemini output — overly polished, uniformly rhythmic, lacking texture. Furthermore, flag prose that blatantly contradicts the active scene's <writing_lens> / <active_scene_narrative_style> directives (e.g., slowing down an urgent KINETIC_ACTION scene with sluggish interior introspection, or rushing a BUILDING_ROMANCE scene into flat objective summary without time dilation or proximity awareness). The prose must actively embody the designated stylistic rhythm of the scene.
 22. **Dialogue Presence & Voice Execution:** In scenes with 2+ characters present, verify spoken dialogue constitutes an active presence. Flag any multi-character scene that descends into silent pantomime or lacks dialogue (fewer than 3 spoken lines without narrative justification). In solo scenes, flag if the character fails to vocalize, mutter aloud, or speak to externalize their interiority. NOTE: Do not enforce or calculate any specific mathematical percentage or quota of dialogue words; evaluate dialogue presence based on dramatic necessity and character engagement.
 23. **Telegraphic Syntax & Binary Whiplash:** Flag repetitive strings of three or more consecutive sentences under four words (e.g., "He fires. Metal groans. The gate falls."), or jarring binary whiplash between ultra-short fragments and sprawling abstract run-on clauses.
 24. **Abrupt Memory Transitions:** Flag any memory or backstory moment that feels jarringly tacked on—starting abruptly with "He remembered...", freezing the scene for a detached info-dump, or using cliché snap-backs like "shaking his head" or "snapping back to reality."
@@ -10383,61 +10548,48 @@ You will receive the following context blocks:
 Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
 
-            audioDramaWritingAgent: `You are a master Audio Drama scriptwriter and director, specializing in full-cast, narrator-led audio productions.
-Your task is to translate the provided micro-beat choreography into a highly immersive audio drama script formatted for Breeze TTS.
+            audioDramaWritingModifier: `
 
-[DYNAMIC_STYLE_WARNINGS]
+=== MANDATORY FORMATTING OVERRIDE: AUDIO DRAMA SCRIPT (BREEZE TTS 2) ===
+CRITICAL INSTRUCTION: You are NOT generating standard prose paragraphs for this story. You are translating the scene blueprint and choreography into a full-cast, narrator-led audio drama script formatted strictly for multi-voice TTS (Breeze TTS 2 syntax).
 
-## 1. INPUT CONTEXT SCHEMA
-You will receive the following structured context blocks:
-- <genre_classification>: Global genre, primary narrative engine, and inviolable universe rules/constraints.
-- <tone_and_atmosphere>: Authorial triangulation blend, mood, and sensory directive lens.
-- <scene_blueprint>: Scene parameters, environment, objectives, active thread storylines, and entrance/exit conditions.
-- <continuity_ledger>: Active canon facts, held items, physical state, and tracked inventory.
-- <active_characters_profiles>: Psychological profiles, flaws, desires, and vocal cadences of participating characters. Includes the 'Narrator'.
-- <previous_context>: Synopsis and ending prose of the preceding scene.
-- <current_scene_prior_draft_context>: Prior script draft and editorial critique for the current scene (present during rewrites, steering directives, or second passes).
-- <draft_to_revise> / <critical_issues_to_fix> / <persistent_critical_issues> / <reviewer_critique>: Specific script draft and reviewer critique provided during escalation passes.
-- <current_chunk_choreography_blueprint>: The chronological sequence of choreographed beats to dramatize.
+1. MULTI-VOICE SPEAKER SYNTAX:
+- Every line in your response MUST start with a speaker identifier followed by a colon and a single space:
+  Format: SpeakerName: Spoken text here.
+- The ONLY permitted speakers are the active characters in this scene and the "Narrator".
+- Do not use markdown bolding, asterisks, italics, or indentation on speaker tags or dialogue. Output clean, unformatted plain text.
 
-## 2. CHOREOGRAPHY & NARRATIVE EXECUTION
-- **Sequential Execution**: Dramatize all beats in <current_chunk_choreography_blueprint> in chronological order.
-- **Dramatization**: Rely heavily on dialogue and the Narrator to convey action, environment, and physical movement. Since we cannot use unvoiced stage directions or foley tags, the Narrator must carry the descriptive weight of the scene, setting the stage, describing character actions, and bridging dialogue.
-- **Narrator-Led**: The Narrator is the anchor of this audio drama. Use the Narrator to describe the visceral sensory immersion, the physical environment, character blocking, and internal states (as allowed by the POV).
-- **Weaving Memories**: When handling a memory beat, never jump abruptly into a flashback. Anchor it naturally to a sound, a pause in speech, or an action in the room. Keep the scene moving and bring the character right back into the conversation or task without breaking stride.
+2. THE NARRATOR AS AN AUDIBLE VOICE:
+- The "Narrator" is a dedicated, audible voice actor in the production carrying the descriptive weight of the scene.
+- Because multi-voice TTS reads all text aloud, there are NO UNSPOKEN STAGE DIRECTIONS, NO SCREENPLAY PARENTHETICALS (e.g. do NOT write "(He turns toward the door)"), and NO FOLEY/SFX BRACKETS (e.g. do NOT write "[SFX: explosion]" or "*click*").
+- The Narrator must speak all physical actions, blocking, spatial movements, sensory details, and atmospheric shifts aloud so the listener can visualize the action.
 
-## 2.5. STRICT ANTI-PATTERNS (ZERO TOLERANCE MANDATE)
-- **NO CLINICAL OR NEUROCHEMICAL JARGON**: Banish references to "adrenaline", "cortisol", "dopamine", "synapses", or clinical diagnostics. Ground emotion in spoken voice and physical human stakes.
-- **NO EXPERIMENTAL / "TESTING" FRAMING**: Characters must NEVER treat conversations or interactions as "experiments", "tests", or "hypotheses." Characters speak from authentic human motives, not to gather behavioral data.
-- **NO MASTERMIND / 4D-CHESS OMNISCIENCE**: Characters are living participants inside the moment, not omniscient puppeteers three steps ahead. Banish smug narration treating people like pawns or predictable machines.
-- **NO CLINICAL / DIAGNOSTIC PSYCHOANALYSIS**: Characters and the Narrator must not catalog "micro-expressions" or psychoanalyze distress with detached clinical precision.
+3. INLINE VOCAL EXPRESSION TAGS:
+- Weave inline emotion and cadence expression tags enclosed in parentheses directly into character dialogue and narrator delivery to steer vocal inflection, pitch, and timing.
+- CRITICAL: Expression tags are STRICTLY for VOCAL DELIVERY (emotion, volume, pacing). NEVER use them for physical actions (e.g., never use "(while walking)" or "(pointing)").
+- Narrator expression tags should set the mood and energy (e.g., (high energy), (ominous), (somber), (urgent), (hushed)).
+- Character expression tags should capture their emotional state and vocalization: (whisper), (sigh), (laughing), (gasp), (pause), (clears throat), (trembling), (urgent), (dry chuckle), (shouting), (bitter), (hesitant), (beat).
 
-## 2.6. REVISION & RE-DRAFT PROTOCOL (SECOND PASS & ESCALATION MODES)
-When <draft_to_revise> or <existing_scene_draft> is present in your input context, you are operating in REVISION MODE, not drafting from a blank slate:
-- **Preserve Established Strengths**: Retain effective spoken dialogue exchanges, character vocal delivery, and audio drama cues that already work well in the prior draft.
-- **Surgically Resolve Cited Defects**: Directly overhaul every issue highlighted in <critical_issues_to_fix>, <persistent_critical_issues>, <reviewer_critique>, or <directive_requirement> (e.g. fixing continuity contradictions, missing lines, or character absence).
-- **Full Scene Delivery**: Output the COMPLETE script from the opening narrator line to the scene conclusion. Never truncate or output partial diffs.
+4. DIALOGUE & SUBTEXT:
+- Characters must actively react, converse, dispute stakes, and voice their motivations out loud. Use the Narrator to bridge exchanges, modulate tension, and provide acoustic texture.
+- Because each character in an audio drama has their own voice and expressiveness, traditional dialogue attributions (e.g., "he yelled," "she whispered") in the Narrator's lines are completely redundant. Stop narrating how a character is speaking.
+  * INCORRECT (Novel style):
+    Derek: Stop running away!
+    Narrator: Derek yelled, sprinting after her.
+  * CORRECT (Audio Drama style):
+    Derek: (yelling, breathless) Stop running away!
+    Narrator: (high energy) Derek sprinted down the alley.
 
-## 3. STRICT AUDIO DRAMA FORMATTING (BREEZE TTS)
-You must output pure text formatted exactly for Breeze TTS (or similar text-to-speech models). 
-- Every line must be spoken by a character or the Narrator.
-- **Format**: \SpeakerName: Spoken text here.\
-- **Expressions**: Use inline parentheses for expressions (e.g., \(laugh)\, \(sigh)\, \(gasp)\, \(whisper)\) within the spoken text.
-- **NO FOLEY/SFX**: Do not include bracketed sound effects like \[SFX: door opens]\. The TTS engine will try to read them aloud, ruining the audio.
-- **NO UNSPOKEN STAGE DIRECTIONS**: Do not include standard screenplay stage directions like \(He walks to the door.)\. If an action needs to be known, the Narrator must say it: \Narrator: He walks to the door.\
-- Do not use markdown bolding or italics. Just plain text with the SpeakerName prefix.
+5. OUTPUT SPECIFICATIONS:
+- Output the complete script enclosed strictly within <prose_text> and </prose_text> tags.
+- Output ONLY the formatted script lines. No scene headers, markdown formatting (no bold/italics), or meta-commentary inside or outside the tags.
+- Stop writing immediately after the final </prose_text> tag.`,
 
-## 4. DIALOGUE & SUBTEXT
-- Characters must react, interrupt, and converse dynamically. 
-- Use the Narrator to weave between the dialogue, managing pacing and ensuring the listener understands the physical reality of the scene.
-- Use expressions like \(pause)\, \(breath)\, or \(sigh)\ to give the dialogue natural, human texture.
+            get audioDramaWritingAgent() {
+                return `${PROMPTS.writingAgent}\n\n${PROMPTS.audioDramaWritingModifier}`;
+            },
 
-## 5. OUTPUT SPECIFICATIONS
-- **Tag Enclosure**: Enclose the final narrative prose strictly within <prose_text> and </prose_text> tags.
-- **Strict Prohibition on Meta-Commentary**: Absolutely no pre-draft outlines, thinking steps, planning scratchpads, or conversational commentary before the <prose_text> tag. Output only prose paragraphs within the tags. Do not include any internal self-notes, reviews, checklist evaluations, or reasoning after the prose.
-- **Immediate Termination**: Stop writing immediately after the final </prose_text> tag.`,
-
-            audioDramaWritingReview: `You are a ruthless Audio Drama Script Editor and Continuity Auditor. Your primary task is to critically evaluate the generated audio drama script against the beat choreography blueprint, plot commitments, and strict text-to-speech formatting rules.
+            audioDramaWritingReview: `You are a ruthless Audio Drama Script Editor and Continuity Auditor. Your primary task is to critically evaluate the generated audio drama script against the beat choreography blueprint, plot commitments, and strict Breeze TTS 2 text-to-speech formatting rules.
 
 ## Input Schema Definition
 You will receive the same context blocks as the writing agent, plus:
@@ -10448,13 +10600,16 @@ EVALUATION CRITERIA (in order of severity):
 
 **CRITICAL (Grounds for Mandatory FAIL):**
 1. **Plot Point & Beat Fidelity:** Did the script alter, dilute, soften, generalize, or omit ANY specific plot commitment, wager, challenge, rule, condition, ultimatum, secret, factual revelation, or dialogue agreement established in the beats?
-2. **Formatting Violation:** Did the script include unvoiced stage directions or bracketed foley tags (e.g., \[SFX: ...]\ or \*sigh*\)? The script MUST strictly follow the \SpeakerName: Spoken text (expression).\ format. If it contains stage directions that are not assigned to a speaker (like the Narrator), it fails.
-3. **Continuity Break & Name Confusion:** Does the script contradict physical facts established earlier in the scene (character positions, held items, injuries) or misname characters?
-4. **Epistemic Boundary Violation:** Did the script (via the Narrator) state unobservable internal thoughts or motives of non-focal characters as objective facts?
+2. **Formatting Violation (Breeze TTS 2):** Did the script include unvoiced stage directions or bracketed foley tags (e.g., [SFX: ...] or *sigh*)? The script MUST strictly follow the "SpeakerName: Spoken text (expression)." format. If it contains stage directions that are not assigned to a speaker (like the Narrator), it fails.
+3. **Multi-Voice Speaker Attribution:** Every single line must begin with a canonical character name or "Narrator:". Unattributed text blocks fail immediately.
+4. **Expression Tags Presence:** Are inline emotional and cadence expression tags (e.g. (whisper), (sigh), (pause)) integrated into dialogue and narration?
+5. **Excessive Improper Expression/Dialogue Tags:** Because each character has their own audible voice, traditional dialogue attributions (e.g., "he yelled", "she whispered") in the Narrator's lines are redundant. Similarly, expression tags must be strictly for vocal deliveries, not physical actions like "(while walking)". A single mistake here is a WARNING, but if you find MORE THAN THREE improper expression tags or redundant dialogue tags in the script, it is a FAIL.
+6. **Continuity Break & Name Confusion:** Does the script contradict physical facts established earlier in the scene (character positions, held items, injuries) or misname characters?
+7. **Epistemic Boundary Violation:** Did the script (via the Narrator) state unobservable internal thoughts or motives of non-focal characters as objective facts?
 
 PASS/FAIL DECISION FRAMEWORK:
-- **PASS** if: The script faithfully executes the choreography, preserves all specific dialogue stakes/plot terms, strictly adheres to the Breeze TTS formatting (no unvoiced stage directions), and maintains physical continuity.
-- **FAIL** if: There is ANY CRITICAL-severity violation. You must cite the specific requirement that was corrupted/omitted or the formatting violation, quote the offending text, and state the exact required correction.
+- **PASS** if: The script faithfully executes the choreography, preserves all specific dialogue stakes/plot terms, strictly adheres to Breeze TTS 2 multi-voice formatting (no unvoiced stage directions or foley brackets), maintains physical continuity, and has 3 or fewer improper expression/dialogue tags.
+- **FAIL** if: There is ANY CRITICAL-severity violation (or more than 3 improper tags). You must cite the specific requirement that was corrupted/omitted or the formatting violation, quote the offending text, and state the exact required correction.
 
 FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
@@ -16460,6 +16615,20 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
             { id: "surrealism", name: "Surrealist Dreamscape", description: "surrealist painting style, dreamlike atmosphere, melting geometries, strange lighting, rich symbolic details, vivid colors" }
         ];
 
+        const DEFAULT_GEMINI_IMAGE_MODELS = [
+            { id: "gemini-3.1-flash-image", name: "Nano Banana 2 (gemini-3.1-flash-image)", description: "Google Gemini 3.1 Flash Image model (recommended)" },
+            { id: "gemini-3.1-flash-lite-image", name: "Nano Banana 2 Lite (gemini-3.1-flash-lite-image)", description: "Google Gemini 3.1 Flash Lite Image model" },
+            { id: "gemini-3-pro-image", name: "Nano Banana Pro (gemini-3-pro-image)", description: "Google Gemini 3 Pro high-fidelity image model" },
+            { id: "gemini-2.5-flash-image", name: "Nano Banana (gemini-2.5-flash-image)", description: "Google Gemini 2.5 Flash Image model" }
+        ];
+
+        const DEFAULT_OPENROUTER_IMAGE_MODELS = [
+            { id: "stabilityai/stable-diffusion-xl", name: "Stable Diffusion XL (stabilityai/stable-diffusion-xl)", description: "Stability AI SDXL 1.0" },
+            { id: "black-forest-labs/flux-1-schnell", name: "FLUX.1 Schnell (black-forest-labs/flux-1-schnell)", description: "Black Forest Labs FLUX.1 Schnell" },
+            { id: "black-forest-labs/flux-1-dev", name: "FLUX.1 Dev (black-forest-labs/flux-1-dev)", description: "Black Forest Labs FLUX.1 Dev" },
+            { id: "recraft/recraft-v3", name: "Recraft V3 (recraft/recraft-v3)", description: "Recraft Vector and Graphic Design Model" }
+        ];
+
         /* ----------------------------------------------------------------------
           MODEL CATALOG & SEARCH HELPERS (Requirement R3)
           ----------------------------------------------------------------------
@@ -18219,6 +18388,12 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                             if (scene.valence === undefined) {
                                                 scene.valence = parseInt(scene.end_valence, 10) || 0;
                                             }
+                                            if (!scene.dominant_narrative_mode || scene.dominant_narrative_mode === "BASELINE_NEUTRAL") {
+                                                const inferred = inferNarrativeModeForScene(scene);
+                                                if (inferred && inferred !== "BASELINE_NEUTRAL") {
+                                                    scene.dominant_narrative_mode = inferred;
+                                                }
+                                            }
                                         });
                                     }
                                 });
@@ -18301,7 +18476,20 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                 };
             }, [activeStoryId]);
             const [imageProvider, setImageProvider] = useState(() => localStorage.getItem("ellipsisprose_image_provider") || 'gemini');
-            const [imageModel, setImageModel] = useState(() => localStorage.getItem("ellipsisprose_image_model") || 'imagen-3.0-generate-002');
+            const [imageModel, setImageModel] = useState(() => {
+                const saved = localStorage.getItem("ellipsisprose_image_model");
+                if (saved && saved !== 'imagen-3.0-generate-002') return saved;
+                return 'gemini-3.1-flash-image';
+            });
+            const [geminiImageModelsList, setGeminiImageModelsList] = useState(() => {
+                try {
+                    const cached = sessionStorage.getItem("ellipsisprose_gemini_image_models_cache");
+                    return cached ? JSON.parse(cached) : [];
+                } catch (_) {
+                    return [];
+                }
+            });
+            const [isFetchingImageModels, setIsFetchingImageModels] = useState(false);
             const [imageApiKey, setImageApiKey] = useState(() => localStorage.getItem("ellipsisprose_image_api_key") || '');
             const [comfyUrl, setComfyUrl] = useState(() => localStorage.getItem("ellipsisprose_comfy_url") || 'http://127.0.0.1:8188');
             const [comfyUnet, setComfyUnet] = useState(() => localStorage.getItem("ellipsisprose_comfy_unet") || '');
@@ -18822,10 +19010,11 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
             const [newModeIcon, setNewModeIcon] = useState("tag");
             const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
 
-            // Master Toggle for Narrative Lenses (default to false per user request to temporarily disable)
+            // Master Toggle for Narrative Lenses (defaults to true so narrative styles actively shape scene drafting)
             const [enableNarrativeLenses, setEnableNarrativeLenses] = useState(() => {
-                const stored = localStorage.getItem("ellipsisprose_enable_narrative_lenses");
-                return stored !== null ? stored === "true" : false;
+                const v2 = localStorage.getItem("ellipsisprose_enable_narrative_lenses_v2");
+                if (v2 !== null) return v2 === "true";
+                return true;
             });
 
 
@@ -19040,6 +19229,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
 
             const [inputTitle, setInputTitle] = useState("");
             const [inputConcept, setInputConcept] = useState("");
+            const [inputWritingMode, setInputWritingMode] = useState("novel");
             const [inputBookType, setInputBookType] = useState("popular");
             const [inputCustomWords, setInputCustomWords] = useState(80000);
             const [importedLoreFiles, setImportedLoreFiles] = useState([]);
@@ -24701,6 +24891,7 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                     let initialStoryState = {
                         id: newStoryId,
                         title: inputTitle || "My New Story",
+                        writing_mode: inputWritingMode || "novel",
                         concept: conceptToUse,
                         book_type: resolvedBookType,
                         target_word_count: resolvedTargetWords,
@@ -25943,7 +26134,10 @@ BEGIN SEQUENCE CRITIQUE REVIEW
             useEffect(() => { safeLocalStorageSet("ellipsisprose_openrouter_prose_model", openRouterProseModel); }, [openRouterProseModel]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_kobold_prose_model", koboldProseModel); }, [koboldProseModel]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_custom_modes", customModes); }, [customModes]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_enable_narrative_lenses", enableNarrativeLenses); }, [enableNarrativeLenses]);
+            useEffect(() => {
+                safeLocalStorageSet("ellipsisprose_enable_narrative_lenses_v2", enableNarrativeLenses);
+                safeLocalStorageSet("ellipsisprose_enable_narrative_lenses", enableNarrativeLenses);
+            }, [enableNarrativeLenses]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_banned_phrases", bannedPhrases); }, [bannedPhrases]);
 
             useEffect(() => { safeLocalStorageSet("ellipsisprose_enable_thinking_act", enableThinkingAct); }, [enableThinkingAct]);
@@ -26078,7 +26272,7 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 return () => { cancelled = true; };
             }, [story?.id, portraitCastIds, portraitReload, imageStore]);
 
-            // Load Beat Images for the active scene from IndexedDB
+            // Load Beat Images and Scene Illustration for the active scene from IndexedDB
             const activeBeatsKey = `${selectedSequence !== null && selectedSequence !== undefined ? selectedSequence : 0}-${selectedScene !== null && selectedScene !== undefined ? selectedScene : 0}`;
             const activeBeatsLength = Array.isArray(story?.beats?.[activeBeatsKey]) ? story.beats[activeBeatsKey].length : 0;
             useEffect(() => {
@@ -26088,24 +26282,36 @@ BEGIN SEQUENCE CRITIQUE REVIEW
 
                     const promises = beats.map((_, bi) => {
                         const imgKey = `beat_${story.id}_${sId}_${bi}`;
-                        return imageStore.getImage(imgKey).then(dataUrl => ({ idx: bi, dataUrl }));
+                        return imageStore.getImage(imgKey).then(dataUrl => ({ type: 'beat', idx: bi, dataUrl }));
                     });
+
+                    // Also fetch scene illustration
+                    const sceneImgPromise = imageStore.getImage(`scene_${story.id}_${sId}`).then(dataUrl => ({ type: 'scene', sId, dataUrl }));
+                    promises.push(sceneImgPromise);
 
                     Promise.all(promises).then(results => {
                         const newLoaded = {};
-                        results.forEach(({ idx, dataUrl }) => {
-                            if (dataUrl) {
-                                newLoaded[`${sId}-${idx}`] = dataUrl;
+                        results.forEach(res => {
+                            if (!res.dataUrl) return;
+                            if (res.type === 'beat') {
+                                newLoaded[`${sId}-${res.idx}`] = res.dataUrl;
+                            } else if (res.type === 'scene') {
+                                newLoaded[`scene_${res.sId}`] = res.dataUrl;
                             }
                         });
                         setLoadedImages(prev => {
                             const cleared = { cover: prev.cover, portraits: prev.portraits };
+                            Object.keys(prev).forEach(k => {
+                                if (k.startsWith('scene_') && k !== `scene_${sId}`) {
+                                    cleared[k] = prev[k];
+                                }
+                            });
                             Object.keys(newLoaded).forEach(key => {
                                 cleared[key] = newLoaded[key];
                             });
                             return cleared;
                         });
-                    }).catch(err => console.error("Error loading beat images:", err));
+                    }).catch(err => console.error("Error loading scene/beat images:", err));
                 }
             }, [story?.id, selectedSequence, selectedScene, activeBeatsLength]);
 
@@ -26828,34 +27034,93 @@ BEGIN EXTRACTING WORLD LORE
                 }
 
                 if (prov === 'gemini') {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateImages`;
-                    const payload = {
-                        prompt: prompt,
-                        numberOfImages: 1,
-                        outputMimeType: "image/jpeg",
-                        aspectRatio: aspectRatio
-                    };
-
-                    const response = await fetchWithTimeout(url, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'x-goog-api-key': key
-                        },
-                        body: JSON.stringify(payload)
-                    }, 60000);
-
-                    if (!response.ok) {
-                        const errText = await response.text();
-                        throw new Error(`Gemini Image API failed: ${response.status} - ${errText}`);
+                    let cleanModel = (model || 'gemini-3.1-flash-image').trim().replace(/:(predict|generateImages|generateContent)$/, '');
+                    if (cleanModel === 'imagen-3.0-generate-002') {
+                        cleanModel = 'gemini-3.1-flash-image';
+                        setImageModel('gemini-3.1-flash-image');
                     }
+                    const isLegacyImagen = cleanModel.startsWith('imagen-');
 
-                    const data = await response.json();
-                    const b64 = data.generatedImages?.[0]?.image?.imageBytes;
-                    if (!b64) {
-                        throw new Error(`No image returned from Gemini Imagen API. Response: ${JSON.stringify(data)}`);
+                    if (isLegacyImagen) {
+                        const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:predict?key=${encodeURIComponent(key)}`;
+                        const payload = {
+                            instances: [{ prompt: prompt }],
+                            parameters: { sampleCount: 1, aspectRatio: aspectRatio, outputMimeType: "image/jpeg" }
+                        };
+                        const response = await fetchWithTimeout(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+                            body: JSON.stringify(payload)
+                        }, 60000);
+
+                        if (!response.ok) {
+                            const errText = await response.text();
+                            let errMsg = `Gemini Image API failed: ${response.status} - ${errText}`;
+                            try {
+                                const parsed = JSON.parse(errText);
+                                if (parsed.error?.message) errMsg = `Gemini Image API failed: ${parsed.error.message}`;
+                            } catch (_) {}
+                            throw new Error(errMsg);
+                        }
+
+                        const data = await response.json();
+                        const b64 = data.predictions?.[0]?.bytesBase64Encoded ||
+                                    data.predictions?.[0]?.image?.imageBytes ||
+                                    data.predictions?.[0]?.imageBytes ||
+                                    data.generatedImages?.[0]?.image?.imageBytes;
+                        if (!b64) throw new Error(`No image returned from Gemini API. Response: ${JSON.stringify(data)}`);
+                        const mimeType = data.predictions?.[0]?.mimeType || data.generatedImages?.[0]?.image?.mimeType || "image/jpeg";
+                        return `data:${mimeType};base64,${b64}`;
+                    } else {
+                        const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(key)}`;
+                        const promptWithAspect = aspectRatio && !prompt.toLowerCase().includes('aspect ratio')
+                            ? `${prompt} (Aspect ratio: ${aspectRatio})`
+                            : prompt;
+                        const payload = {
+                            contents: [
+                                {
+                                    parts: [
+                                        { text: promptWithAspect }
+                                    ]
+                                }
+                            ],
+                            generationConfig: {
+                                responseModalities: ["IMAGE"]
+                            }
+                        };
+
+                        const response = await fetchWithTimeout(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+                            body: JSON.stringify(payload)
+                        }, 60000);
+
+                        if (!response.ok) {
+                            const errText = await response.text();
+                            let errMsg = `Gemini Image API failed: ${response.status} - ${errText}`;
+                            try {
+                                const parsed = JSON.parse(errText);
+                                if (parsed.error?.message) errMsg = `Gemini Image API failed: ${parsed.error.message}`;
+                            } catch (_) {}
+                            throw new Error(errMsg);
+                        }
+
+                        const data = await response.json();
+                        const imagePart = data.candidates?.[0]?.content?.parts?.find(p => p.inlineData?.data);
+                        if (imagePart) {
+                            const mimeType = imagePart.inlineData.mimeType || "image/jpeg";
+                            return `data:${mimeType};base64,${imagePart.inlineData.data}`;
+                        }
+
+                        const b64 = data.predictions?.[0]?.bytesBase64Encoded ||
+                                    data.predictions?.[0]?.image?.imageBytes ||
+                                    data.generatedImages?.[0]?.image?.imageBytes;
+                        if (b64) {
+                            const mimeType = data.predictions?.[0]?.mimeType || "image/jpeg";
+                            return `data:${mimeType};base64,${b64}`;
+                        }
+                        throw new Error(`No image returned from Gemini API. Response: ${JSON.stringify(data)}`);
                     }
-                    return `data:image/jpeg;base64,${b64}`;
                 } else if (prov === 'openrouter') {
                     const url = `https://openrouter.ai/api/v1/chat/completions`;
                     const payload = {
@@ -27184,6 +27449,110 @@ BEGIN GENERATING IMAGE PROMPT`;
                 }
             };
 
+            const generateSceneImage = async (seqIdx, sceneIdx) => {
+                let seq = seqIdx !== undefined && seqIdx !== null ? seqIdx : (selectedSequence !== null ? selectedSequence : 0);
+                let s = sceneIdx !== undefined && sceneIdx !== null ? sceneIdx : (selectedScene !== null ? selectedScene : 0);
+                const sId = `${seq}-${s}`;
+
+                if (!story?.id) {
+                    showToast("Please save your story project before generating illustrations.", "error");
+                    return;
+                }
+
+                const sceneProse = story.prose?.[sId];
+                const proseText = (sceneProse?.final || sceneProse?.draft || "").trim();
+                if (!proseText) {
+                    showToast("Scene narrative prose is required to generate an illustration. Draft or write the scene first.", "error");
+                    return;
+                }
+
+                const sceneKey = `scene_${sId}`;
+                setLoadingImages(prev => ({ ...prev, [sceneKey]: true }));
+
+                try {
+                    const sequence = story.sequences?.[seq];
+                    const scene = sequence?.scenes?.[s];
+                    const sceneTitle = scene?.title || `Scene ${s + 1}`;
+                    const sceneDesc = scene?.description || "No description provided";
+
+                    const sceneCast = (scene?.cast_ids || []).map(id => (story.cast || []).find(c => c.id === id)).filter(Boolean);
+                    const castInfo = sceneCast.length > 0
+                        ? sceneCast.map(c => `- ${c.name}: ${c.role || 'No role details'}. Visual traits: ${c.visual_description || c.appearance || 'Not specified'}.`).join('\n')
+                        : "No specific cast defined for this scene.";
+
+                    // Supply up to 3500 chars of narrative prose for rich visual grounding
+                    const proseExcerpt = proseText.length > 3500 ? proseText.slice(0, 3500) + "..." : proseText;
+
+                    const sysPrompt = `You are a master cinematic concept artist and visual design agent for publishing. Your task is to analyze the narrative prose of a scene, along with the scene setting and characters, and create a highly detailed, evocative, cinematic image generation prompt capturing the scene's key dramatic climax or most visually striking moment.
+Focus on describing the visual scene: composition, camera angle, character positioning, facial expressions, attire, environment/setting, atmosphere, dramatic lighting, color palette, and mood.
+Do not use buzzwords like "photorealistic", "ultra realistic", "8k", or "trending on artstation". Instead, write vivid descriptive sentences that establish cinematic texture, depth, and emotional gravity.
+Avoid long-winded meta-explanations.
+
+## Input Schema Definition
+You will receive:
+- SCENE CONTEXT: Title, sequence, and narrative purpose.
+- CHARACTERS PRESENT: Cast details and visual traits.
+- SCENE NARRATIVE PROSE: The actual prose text from the manuscript.
+
+Output ONLY the raw image generation prompt itself. Wrap the prompt text in standard envelope: <response><image_prompt>...</image_prompt></response>`;
+
+                    const userPrompt = `SCENE CONTEXT:
+Title: ${sceneTitle}
+Description: ${sceneDesc}
+
+CHARACTERS IN SCENE:
+${castInfo}
+
+SCENE NARRATIVE PROSE:
+${proseExcerpt}
+
+Please craft a single, highly evocative and descriptive widescreen (16:9) cinematic concept art prompt that captures the dramatic peak and visual atmosphere of this scene. Focus on concrete visuals, environment details, character actions/expressions, and lighting. Do not include style-specific instructions as a global art style will be appended. Return ONLY the prompt wrapped in <response><image_prompt>...</image_prompt></response>.
+
+BEGIN GENERATING IMAGE PROMPT`;
+
+                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Scene Image Prompt Agent", "dev");
+
+                    const selectedStyleId = story.imageStyle || 'none';
+                    const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
+                    const styleObj = combinedStyles.find(st => st.id === selectedStyleId);
+                    const styleDescription = styleObj ? styleObj.description : "";
+                    const finalPrompt = cleanImagePrompt(promptBase) + (styleDescription ? ", " + styleDescription : "");
+
+                    const dataUrl = await callImageAPI(finalPrompt, "16:9");
+                    await imageStore.saveImage(`scene_${story.id}_${sId}`, dataUrl);
+                    setLoadedImages(prev => ({ ...prev, [sceneKey]: dataUrl }));
+                    showToast(`${sceneTitle} illustration generated successfully!`);
+                } catch (err) {
+                    console.error(err);
+                    alert(`Scene Illustration Generation failed: ` + err.message);
+                } finally {
+                    setLoadingImages(prev => ({ ...prev, [sceneKey]: false }));
+                }
+            };
+
+            const deleteSceneImage = async (seqIdx, sceneIdx) => {
+                let seq = seqIdx !== undefined && seqIdx !== null ? seqIdx : (selectedSequence !== null ? selectedSequence : 0);
+                let s = sceneIdx !== undefined && sceneIdx !== null ? sceneIdx : (selectedScene !== null ? selectedScene : 0);
+                const sId = `${seq}-${s}`;
+                const sceneKey = `scene_${sId}`;
+
+                if (!window.confirm(`Are you sure you want to remove the illustration for this scene?`)) return;
+
+                try {
+                    await imageStore.deleteImage(`scene_${story.id}_${sId}`);
+                    setLoadedImages(prev => {
+                        const copy = { ...prev };
+                        delete copy[sceneKey];
+                        return copy;
+                    });
+                    showToast("Scene illustration removed.");
+                } catch (err) {
+                    console.error(err);
+                    alert("Failed to delete scene illustration: " + err.message);
+                }
+            };
+
+
             const handleExport = () => {
                 try {
                     const jsonString = JSON.stringify(story);
@@ -27197,6 +27566,118 @@ BEGIN GENERATING IMAGE PROMPT`;
                     document.body.removeChild(link);
                     URL.revokeObjectURL(url);
                 } catch (err) { alert("Export failed: " + err.message); }
+            };
+
+            const handleExportAudioDramaTxt = () => {
+                try {
+                    const cleanTitle = story.title ? story.title.trim() : "Untitled Audio Drama";
+                    const safeFilename = cleanTitle.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "audio_drama";
+
+                    let output = "";
+                    output += `================================================================================\n`;
+                    output += `${cleanTitle.toUpperCase()} - AUDIO DRAMA SCRIPT\n`;
+                    output += `Format: Multi-Voice TTS (Breeze TTS 2 Syntax)\n`;
+                    if (story.concept) {
+                        output += `Concept: ${story.concept.trim()}\n`;
+                    }
+                    if (story.style?.genre) {
+                        output += `Genre: ${story.style.genre}\n`;
+                    }
+                    if (story.style?.mood) {
+                        output += `Tone & Mood: ${story.style.mood}\n`;
+                    }
+                    output += `Exported from EllipsisProse on ${new Date().toLocaleDateString()}\n`;
+                    output += `================================================================================\n\n`;
+
+                    // Dramatis Personae & Voice Profiles
+                    output += `--- DRAMATIS PERSONAE & VOICE PROFILES ---\n`;
+                    output += `• Narrator: Omnipresent scene narrator; describes physical actions, setting, spatial blocking, and acoustic texture aloud.\n`;
+                    const castList = Array.isArray(story.cast) ? story.cast : [];
+                    castList.forEach(c => {
+                        if (!c || !c.name || c.name.toLowerCase() === 'narrator') return;
+                        const role = c.role || c.archetype || "Character";
+                        const voice = c.vocal_profile || c.details?.vocal_profile || c.details?.speech_rhythm || c.vocal_cadence || c.voice_sample || c.speech_rhythm || "Standard voice.";
+                        output += `• ${c.name} (${role}): ${voice}\n`;
+                    });
+                    output += `\n================================================================================\n\n`;
+
+                    let totalScenesExported = 0;
+                    const acts = Array.isArray(story.acts) && story.acts.length > 0 ? story.acts : [{ number: 1, title: "Act I" }];
+
+                    acts.forEach((act, actIdx) => {
+                        const actNum = typeof parseActNumber === 'function' ? parseActNumber(act.number, actIdx + 1) : (actIdx + 1);
+                        const actTitle = act.title ? act.title.trim() : "";
+                        const actHeading = actTitle ? `ACT ${actNum}: ${actTitle.toUpperCase()}` : `ACT ${actNum}`;
+
+                        const seqList = (story.sequences && story.sequences.length > 0)
+                            ? story.sequences
+                            : (story.chapters && story.chapters[actIdx]
+                                ? story.chapters[actIdx].map((ch, cIdx) => ({
+                                    number: ch.number || (cIdx + 1),
+                                    title: ch.title || `Sequence ${cIdx + 1}`,
+                                    parent_act: actNum
+                                }))
+                                : []);
+                        const actSequences = seqList.map((seq, sIdx) => ({ ...seq, origIdx: sIdx })).filter(seq => {
+                            const pAct = typeof parseActNumber === 'function'
+                                ? parseActNumber(seq.parent_act, typeof actForSequence === 'function' ? actForSequence(seq.number || (seq.origIdx + 1)) : 1)
+                                : 1;
+                            return pAct === actNum;
+                        });
+
+                        const sequencesToUse = actSequences.length > 0 ? actSequences : (story.sequences || []).map((seq, sIdx) => ({ ...seq, origIdx: sIdx }));
+
+                        sequencesToUse.forEach((sequence, seqInActIdx) => {
+                            const seqIdx = sequence.origIdx !== undefined ? sequence.origIdx : seqInActIdx;
+                            const rawSeqScenes = story.scenes[`${seqIdx}`] || story.scenes[`${actIdx}-${seqIdx}`] || story.scenes[`0-0`] || [];
+
+                            rawSeqScenes.forEach((scene, sceneIdx) => {
+                                const sId = `${seqIdx}-${sceneIdx}`;
+                                const proseObj = story.prose?.[sId] || story.prose?.[`${sId}-0`];
+                                const scriptText = proseObj?.final || proseObj?.draft || "";
+
+                                if (scriptText && scriptText.trim()) {
+                                    totalScenesExported++;
+                                    output += `\n################################################################################\n`;
+                                    output += `${actHeading} | SEQUENCE ${seqIdx + 1} | SCENE ${scene.number || (sceneIdx + 1)}: ${(scene.title || "UNTITLED").toUpperCase()}\n`;
+                                    output += `################################################################################\n\n`;
+                                    output += scriptText.trim() + "\n\n";
+                                }
+                            });
+                        });
+                    });
+
+                    // Fallback if structured act/sequence loops did not catch drafted prose
+                    if (totalScenesExported === 0 && story.prose && Object.keys(story.prose).length > 0) {
+                        Object.keys(story.prose).forEach((sKey) => {
+                            const p = story.prose[sKey];
+                            const text = p?.final || p?.draft;
+                            if (text && text.trim()) {
+                                totalScenesExported++;
+                                output += `\n--- SCENE ${sKey} ---\n\n${text.trim()}\n\n`;
+                            }
+                        });
+                    }
+
+                    if (totalScenesExported === 0) {
+                        showToast("No drafted scenes found to export yet.", "info");
+                        return;
+                    }
+
+                    const blob = new Blob([output], { type: "text/plain;charset=utf-8" });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement("a");
+                    link.href = url;
+                    link.download = `${safeFilename}_audio_drama.txt`;
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                    URL.revokeObjectURL(url);
+                    showToast(`Exported full audio drama script (${totalScenesExported} scenes).`, "success");
+                } catch (err) {
+                    console.error("Audio drama export error:", err);
+                    showToast("Export failed: " + err.message, "error");
+                }
             };
 
             const handleExportEpub = async () => {
@@ -27258,6 +27739,23 @@ BEGIN GENERATING IMAGE PROMPT`;
                             const promise = imageStore.getImage(portKey).then(dataUrl => {
                                 if (dataUrl) {
                                     imagesMap[portKey] = dataUrl;
+                                }
+                            });
+                            imagePromises.push(promise);
+                        });
+
+                        // 4. Scene Illustrations
+                        const sceneKeysSet = new Set(Object.keys(story.prose || {}));
+                        (story.sequences || []).forEach((seq, qi) => {
+                            (seq.scenes || []).forEach((_, si) => {
+                                sceneKeysSet.add(`${qi}-${si}`);
+                            });
+                        });
+                        sceneKeysSet.forEach(sId => {
+                            const sceneImgKey = `scene_${story.id}_${sId}`;
+                            const promise = imageStore.getImage(sceneImgKey).then(dataUrl => {
+                                if (dataUrl) {
+                                    imagesMap[sceneImgKey] = dataUrl;
                                 }
                             });
                             imagePromises.push(promise);
@@ -27660,6 +28158,25 @@ BEGIN GENERATING IMAGE PROMPT`;
                                         chapterBody += `\n<hr class="scene-divider" style="border: 0; border-top: 1px solid #ccc; margin: 2em auto; width: 50%;" />\n`;
                                     }
 
+                                    // Scene Illustration
+                                    const sceneImgKey = `scene_${story.id}_${item.sId}`;
+                                    const sceneImgData = imagesMap[sceneImgKey] || imagesMap[`scene_${story.id}_${actIdx}-${seqIdx}-${item.sceneIdx}`];
+                                    let sceneIllustrationHtml = "";
+                                    if (sceneImgData && typeof sceneImgData === 'string' && sceneImgData.includes(',')) {
+                                        try {
+                                            const { mime: sMime, ext: sExt } = getMimeAndExt(sceneImgData);
+                                            const sFilename = `scene_${seqIdx}_${item.sceneIdx}.${sExt}`;
+                                            const sImgId = `img_scene_${seqIdx}_${item.sceneIdx}`;
+                                            const sBlob = dataURLtoBlob(sceneImgData);
+                                            imagesFolder.file(sFilename, sBlob);
+                                            manifestItems.push(`<item id="${sImgId}" href="Images/${sFilename}" media-type="${sMime}"/>`);
+                                            const sTitle = (item.scene && item.scene.title) ? item.scene.title.trim() : `Scene ${item.sceneIdx + 1}`;
+                                            sceneIllustrationHtml = `\n<div class="scene-illustration" style="text-align: center; margin: 2em 0 1.5em 0;"><img src="../Images/${sFilename}" style="max-width: 100%; height: auto; border-radius: 6px;" alt="${escapeXml(sTitle)}" /></div>\n`;
+                                        } catch (e) {
+                                            console.warn("Failed to attach scene illustration to EPUB:", e);
+                                        }
+                                    }
+
                                     let sceneProseHtml = parseMarkdown(item.prose.final);
 
                                     item.beats.forEach((b, bi) => {
@@ -27682,7 +28199,7 @@ BEGIN GENERATING IMAGE PROMPT`;
                                         }
                                     });
 
-                                    chapterBody += sceneProseHtml;
+                                    chapterBody += sceneIllustrationHtml + sceneProseHtml;
                                 });
 
                                 // Apply first-use prose linking and XHTML void tag compliance
@@ -27700,6 +28217,8 @@ p { margin-bottom: 1em; text-indent: 0; }
 .beat p { text-indent: 1.5em; }
 h1 { text-align: center; margin-bottom: 2em; }
 .scene-divider { text-align: center; margin: 2em auto; border: 0; border-top: 1px solid #ccc; width: 50%; }
+.scene-illustration { text-align: center; margin: 2em auto; max-width: 100%; }
+.scene-illustration img { max-width: 100%; height: auto; border-radius: 6px; }
 a.appendix-ref { color: inherit; text-decoration: underline dotted #888; text-underline-offset: 2px; }
 a.appendix-ref:hover { text-decoration: underline; color: #8a6d3b; }
 </style>
@@ -28048,6 +28567,10 @@ h4 { font-size: 1.05em; margin: 0; font-family: serif; color: #111; }
                                     targetKey = `cover_${newId}`;
                                 } else if (key.startsWith(`beat_${oldId}_`)) {
                                     targetKey = key.replace(`beat_${oldId}_`, `beat_${newId}_`);
+                                } else if (key.startsWith(`portrait_${oldId}_`)) {
+                                    targetKey = key.replace(`portrait_${oldId}_`, `portrait_${newId}_`);
+                                } else if (key.startsWith(`scene_${oldId}_`)) {
+                                    targetKey = key.replace(`scene_${oldId}_`, `scene_${newId}_`);
                                 }
                             }
                             const dataUrl = importedImages[key];
@@ -29371,12 +29894,45 @@ BEGIN DEVELOPING STORY SEQUENCES
                         const valueShift = getField('value_shift', ['emotional shift', 'valence shift', 'pivot']) || "";
                         const exitHook = getField('exit_hook', ['hook', 'scene hook', 'ending hook']) || "";
 
+                        // Parse and canonicalize dominant narrative mode
+                        const rawDominantMode = getField('dominant_narrative_mode', ['dominant_mode', 'narrative_mode', 'narrative_style', 'scene_narrative_style', 'scene_mode', 'mode', 'style']) || "";
+                        let matchedModeId = null;
+                        if (rawDominantMode) {
+                            const cleanMode = String(rawDominantMode).trim().toUpperCase().replace(/[\s-]+/g, '_');
+                            if (allNarrativeModes[cleanMode]) {
+                                matchedModeId = cleanMode;
+                            } else {
+                                const found = Object.values(allNarrativeModes).find(m => 
+                                    m.id.toUpperCase() === cleanMode ||
+                                    (m.name && m.name.toLowerCase() === rawDominantMode.trim().toLowerCase()) ||
+                                    (m.title && m.title.toLowerCase() === rawDominantMode.trim().toLowerCase()) ||
+                                    cleanMode.includes(m.id.toUpperCase())
+                                );
+                                if (found) matchedModeId = found.id;
+                            }
+                        }
+
+                        // Intelligent fallback if omitted or unrecognised
+                        if (!matchedModeId) {
+                            matchedModeId = inferNarrativeModeForScene({
+                                title,
+                                setting,
+                                atmospheric_overview: atmosphericOverview,
+                                modality_hand: finalModalityHand,
+                                goal,
+                                value_shift: { start_state: valueShift, end_state: "" },
+                                exit_hook: exitHook,
+                                description: `**Setting:** ${setting}\n**Goal:** ${goal}\n**Value Shift:** ${valueShift}\n**Exit Hook:** ${exitHook}`
+                            }, allNarrativeModes);
+                        }
+
                         parsed.push({
                             id: `scene_${Date.now()}_${idx}`,
                             number: `${currentSequence.number}.${idx + 1}`,
                             title: title,
                             pov_character: pov,
                             setting: setting,
+                            dominant_narrative_mode: matchedModeId,
                             atmospheric_overview: atmosphericOverview,
                             modality_hand: finalModalityHand,
                             characters_present: charList,
@@ -29388,6 +29944,24 @@ BEGIN DEVELOPING STORY SEQUENCES
                             description: `**Setting:** ${setting}\n**Goal:** ${goal}\n**Value Shift:** ${valueShift}\n**Exit Hook:** ${exitHook}${atmosphericOverview ? `\n**Atmospheric Overview:** ${atmosphericOverview.slice(0, 160)}...` : ''}`
                         });
                     }
+
+                    // Sequence-level diversity safeguard: ensure not all scenes collapse to BASELINE_NEUTRAL
+                    if (parsed.length > 1 && parsed.every(s => s.dominant_narrative_mode === 'BASELINE_NEUTRAL')) {
+                        const nonNeutralKeys = Object.keys(allNarrativeModes).filter(k => k !== 'BASELINE_NEUTRAL');
+                        if (nonNeutralKeys.length > 0) {
+                            parsed.forEach((sc, i) => {
+                                if (i % 2 === 1) {
+                                    const inferred = inferNarrativeModeForScene(sc, allNarrativeModes);
+                                    if (inferred && inferred !== 'BASELINE_NEUTRAL') {
+                                        sc.dominant_narrative_mode = inferred;
+                                    } else {
+                                        sc.dominant_narrative_mode = nonNeutralKeys[i % nonNeutralKeys.length];
+                                    }
+                                }
+                            });
+                        }
+                    }
+
                     return parsed;
                 };
 
@@ -29396,6 +29970,11 @@ BEGIN DEVELOPING STORY SEQUENCES
                     const sceneTargetBlock = buildSceneCountTargetBlock(lengthPlan, seqIdx, currentSequence);
                     const targetFloor = lengthPlan.floor;
                     const targetIdeal = lengthPlan.idealScenes;
+
+                    const availableStylesXml = `<available_narrative_styles>\n` +
+                        Object.values(allNarrativeModes).map(m => 
+                            `  <style id="${m.id}" name="${m.name || m.title || m.id}">\n    <context>${m.context || ''}</context>\n  </style>`
+                        ).join('\n') + `\n</available_narrative_styles>`;
 
                     let newScenes = [];
                     let attempts = 0;
@@ -29408,6 +29987,8 @@ Sequence Objective: ${currentSequence.description}
 
 ${sceneTargetBlock}
 
+${availableStylesXml}
+
 Synthesized Authorial Persona: ${storyToUse.synthesized_authorial_persona || ""}
 Genre Pacing & Rules: ${storyToUse.genre_pacing_and_dialogue_rules || ""}
 Strict Anti-Patterns: ${storyToUse.strict_anti_patterns || ""}
@@ -29415,7 +29996,7 @@ World Bible: ${storyToUse.status_quo || ""}
 `;
                         if (attempts > 1) {
                             prompt += `\n\nCRITICAL RETRY MANDATE: Your previous response provided only ${newScenes.length} scene(s). A minimum of ${targetFloor} scenes is required for Sequence ${currentSequence.number} to ensure adequate narrative scope.
-You must expand the dramatic runway and plan at least ${targetFloor} distinct scenes. Each scene MUST be strictly enclosed inside <scene>...</scene> tags:\n<scene>\n  <title>...</title>\n  <pov_character>...</pov_character>\n  <setting>...</setting>\n  <atmospheric_overview>...</atmospheric_overview>\n  <modality_hand>...</modality_hand>\n  <characters_present>...</characters_present>\n  <goal>...</goal>\n  <value_shift>...</value_shift>\n  <exit_hook>...</exit_hook>\n</scene>`;
+You must expand the dramatic runway and plan at least ${targetFloor} distinct scenes. Each scene MUST be strictly enclosed inside <scene>...</scene> tags and MUST include an explicit <dominant_narrative_mode> selected from <available_narrative_styles>:\n<scene>\n  <title>...</title>\n  <dominant_narrative_mode>EXACT_STYLE_ID</dominant_narrative_mode>\n  <pov_character>...</pov_character>\n  <setting>...</setting>\n  <atmospheric_overview>...</atmospheric_overview>\n  <modality_hand>...</modality_hand>\n  <characters_present>...</characters_present>\n  <goal>...</goal>\n  <value_shift>...</value_shift>\n  <exit_hook>...</exit_hook>\n</scene>`;
                         }
 
                         const output = await callAI(prompt, PROMPTS.scenePlannerAgent, false, attempts === 1 ? "Scene Planner" : `Scene Planner (Retry ${attempts})`, "dev");
@@ -29595,6 +30176,15 @@ ${formatModalityHand(scene.modality_hand)}
                 const genreRulesBlock = `<genre_pacing_and_dialogue_rules>\n${genreRules}\n</genre_pacing_and_dialogue_rules>`;
                 const strictAntiPatternsBlock = `<strict_anti_patterns>\n${antiPatterns}\n</strict_anti_patterns>`;
 
+                const activeLensBlock = (enableNarrativeLenses && narrativeModeObj) ? `
+<active_scene_narrative_style>
+- Style Identifier: ${activeModeId}
+- Style Overview: ${narrativeModeObj.context || "Dynamic stylistic lens"}
+- Stylistic Cadence & Pacing Directives:
+${injectionPrompt || narrativeModeObj.prompt || "Balance pacing and interiority."}
+</active_scene_narrative_style>
+` : "";
+
                 return `${personaBlock}
 
 ${genreRulesBlock}
@@ -29602,12 +30192,12 @@ ${genreRulesBlock}
 ${strictAntiPatternsBlock}
 
 ${buildGenreToneStyleBlocks(storyToUse.style, { includeTechnicalSpecs: true, loreContext })}
-
+${activeLensBlock}
 <scene_blueprint>
 Scene ID: ${scene.number || `${sequenceData?.number || 1}.${s + 1}`}
 Title: ${scene.title}
 POV Character: ${scene.pov_character || activeCast[0]?.name || "Unspecified"}
-Scene Type: ${scene.scene_type || (s % 2 === 0 ? "PROACTIVE" : "REACTIVE")}
+${enableNarrativeLenses ? `Dominant Narrative Style: ${activeModeId}${narrativeModeObj?.name ? ` (${narrativeModeObj.name})` : ''}\n` : ''}Scene Type: ${scene.scene_type || (s % 2 === 0 ? "PROACTIVE" : "REACTIVE")}
 Transition Jump: ${scene.transition_jump || "Seamless temporal/spatial continuation"}
 Value Shift: ${scene.start_valence || scene.value_shift?.start_state || "Neutral"} -> ${scene.end_valence || scene.value_shift?.end_state || "Shifted"}
 Objective: ${scene.objective || ""}
@@ -30093,7 +30683,7 @@ ${storyToUse.story_so_far}
                 if (storyToUse.writing_mode === 'audio_drama') {
                     activeCast.push({
                         name: "Narrator",
-                        deep_profile: `The omnipresent Narrator of this audio drama. Voice profile suited to a ${storyToUse.style?.genre || 'fiction'} story with a ${storyToUse.style?.mood || 'neutral'} tone. Responsible for setting the scene, bridging dialogue, and conveying physical actions that characters cannot speak.`
+                        deep_profile: `The omnipresent Narrator of this audio drama. Voice profile suited to a ${storyToUse.style?.genre || 'fiction'} story with a ${storyToUse.style?.mood || 'neutral'} tone. Responsible for setting the scene, bridging dialogue, describing physical actions, and establishing atmosphere aloud.`
                     });
                 }
 
@@ -30113,8 +30703,10 @@ ${storyToUse.story_so_far}
                     const narrativeModeObj = allNarrativeModes[activeModeId] || allNarrativeModes.BASELINE_NEUTRAL;
                     const injectionPrompt = enableNarrativeLenses ? (narrativeModeObj.prompt || "") : "";
 
-                    let basePrompt = storyToUse.writing_mode === 'audio_drama' ? PROMPTS.audioDramaWritingAgent : PROMPTS.writingAgent;
-                    if (storyToUse.writing_mode !== 'audio_drama' && !enableNarrativeLenses) {
+                    let basePrompt = PROMPTS.writingAgent;
+                    if (storyToUse.writing_mode === 'audio_drama') {
+                        basePrompt = `${basePrompt}\n\n${PROMPTS.audioDramaWritingModifier}`;
+                    } else if (!enableNarrativeLenses) {
                         basePrompt = basePrompt.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n');
                     }
                     let dynamicStyleText = "";
@@ -30129,7 +30721,7 @@ ${storyToUse.story_so_far}
                     basePrompt = insertTargetWordCount(basePrompt, 1, targetSceneWords);
 
                     const finalWritingSystemPrompt = (enableNarrativeLenses && injectionPrompt && storyToUse.writing_mode !== 'audio_drama')
-                        ? `${basePrompt}\n\n=== ACTIVE SCENE LENS MANDATE: ${activeModeId} ===\n${injectionPrompt}`
+                        ? `=== PRIMARY SCENE STYLISTIC LENS: ${activeModeId} ===\n${injectionPrompt}\n\n${basePrompt}\n\n=== REITERATED ACTIVE SCENE LENS MANDATE: ${activeModeId} ===\n${injectionPrompt}`
                         : basePrompt;
 
                     const sceneQuery = `Scene Action: ${scene.description}.`;
@@ -30268,7 +30860,11 @@ ${dynamicBannedList.map(p => "- " + p).join('\n')}
                             prompt: `${getProseContext()}
 
 <output_format_description>
-SYNTACTIC CADENCE RULE: Write in flowing, varied, and musical sentences. Blend actions, sensory observations, and dialogue into rhythmic compound sentences, avoiding staccato fragment chains.
+${(enableNarrativeLenses && injectionPrompt) ? `<writing_lens>
+[ACTIVE SCENE LENS: ${activeModeId}]
+${injectionPrompt}
+</writing_lens>
+` : ''}SYNTACTIC CADENCE RULE: Write in flowing, varied, and musical sentences. Blend actions, sensory observations, and dialogue into rhythmic compound sentences, avoiding staccato fragment chains.
 ${lengthMandateBlock}
 AGENTIC TOOLS: Inspect character states, query world lore, query the historical archivist (query_archivist), roll the narrative oracle for lateral micro-frictions (roll_narrative_oracle), or verify previous scene exit state as needed. When satisfied with the scene draft, evaluate it against anti-patterns and call commit_scene_prose with final_prose, character_state_updates, and scene_exit_hook (or enclose prose in <prose_text>...</prose_text>).
 </output_format_description>
@@ -30304,7 +30900,11 @@ Begin writing current scene prose.
                             generatorPromptFn: () => `${getProseContext()}
 
 <output_format_description>
-SYNTACTIC CADENCE RULE: Write in flowing, varied, and musical sentences. Blend actions, sensory observations, and dialogue into rhythmic compound sentences, avoiding staccato fragment chains.
+${(enableNarrativeLenses && injectionPrompt) ? `<writing_lens>
+[ACTIVE SCENE LENS: ${activeModeId}]
+${injectionPrompt}
+</writing_lens>
+` : ''}SYNTACTIC CADENCE RULE: Write in flowing, varied, and musical sentences. Blend actions, sensory observations, and dialogue into rhythmic compound sentences, avoiding staccato fragment chains.
 ${lengthMandateBlock}
 
 FORMATTING DIRECTIVE: Output the final narrative prose enclosed strictly within <prose_text> and </prose_text> tags. Output only the story paragraphs within the tags. Stop writing immediately after the final </prose_text> tag.
@@ -30318,7 +30918,7 @@ Begin writing current scene prose.
                                 : (enableNarrativeLenses ? PROMPTS.writingReview : PROMPTS.writingReview.replace(/\n\s*-\s*<writing_lens>:.*?\n(?=\s*-|\n|$)/gs, '\n')),
                             reviewerPromptFn: (genOutput) => {
                                 const parsedOutput = parseWritingOutput(genOutput);
-                                const structuralVal = validateStructuralOutput("Writing Agent", parsedOutput, { ...scene, rollingDialogueStats, targetPacingMode });
+                                const structuralVal = validateStructuralOutput("Writing Agent", parsedOutput, { ...scene, rollingDialogueStats, targetPacingMode, writing_mode: storyToUse.writing_mode });
                                 const advisoryWarningsBlock = (structuralVal.warnings && structuralVal.warnings.length > 0) ? `
 <advisory_stylistic_observations>
 The automated structural analyzer noted the following stylistic observations:
@@ -30420,9 +31020,14 @@ ${directiveReviewOutputFormat}`;
 
                             setLoadingStep(`Style & Sensory Polish: Elevating sentence melody, texture & voice...`);
                             const polishPrompt = `
-<scene_blueprint>
+${(enableNarrativeLenses && narrativeModeObj) ? `<active_scene_narrative_style>
+- Style Identifier: ${activeModeId}
+- Style Overview: ${narrativeModeObj.context || "Dynamic stylistic lens"}
+- Stylistic Cadence & Pacing Directives:
+${injectionPrompt || narrativeModeObj.prompt || "Balance pacing and interiority."}
+</active_scene_narrative_style>\n\n` : ''}<scene_blueprint>
 Setting: ${scene.setting || scene.setting_anchor || "Established in scene"}
-${scene.atmospheric_overview ? `Atmospheric Overview (World-Building Reservoir): ${scene.atmospheric_overview}` : `Sensory Palette (3 Tangible Anchors): ${scene.sensory_palette || "Tangible acoustic, physical, and lighting textures"}`}
+${enableNarrativeLenses ? `Dominant Narrative Style: ${activeModeId}${narrativeModeObj?.name ? ` (${narrativeModeObj.name})` : ''}\n` : ''}${scene.atmospheric_overview ? `Atmospheric Overview (World-Building Reservoir): ${scene.atmospheric_overview}` : `Sensory Palette (3 Tangible Anchors): ${scene.sensory_palette || "Tangible acoustic, physical, and lighting textures"}`}
 Micro-Conflict & Tactic: ${scene.micro_conflict_and_tactic || "Immediate obstacle and character tactic"}
 Character Voice Directives: ${scene.character_voice_directives || "Distinct speech rhythm and psychological defenses"}
 Scene Pacing Tempo: ${scene.scene_pacing_tempo || "Melodic sentence rhythm alternating short clauses with rich complex sentences"}
@@ -30482,7 +31087,8 @@ Refine and elevate this scene draft according to your editorial mandates. Preser
                     // POST-WRITING SURGICAL BANNED-WORDS EDITOR
                     // ============================================================================
                     // STEP 3: Post-writing Banned-Words Check & Surgical Edit
-                    const activeNames = activeCast.flatMap(ch => (ch.name || "").trim().split(/\s+/)).filter(Boolean);
+                    const allStoryCharacters = [...(storyToUse?.characters || []), ...(activeCast || [])];
+                    const activeNames = allStoryCharacters.flatMap(ch => (ch.name || "").trim().split(/\s+/)).filter(Boolean);
                     const safeBannedPhrases = (bannedPhrases || []).filter(bp => !activeNames.some(an => an.toLowerCase() === bp.toLowerCase()));
                     const checkRes = window.countBannedPhrases(finalProseText, safeBannedPhrases);
                     if (enableReview && checkRes.count > 2) {
@@ -31234,16 +31840,81 @@ ${finalProseText}
             const fetchGeminiModels = async () => {
                 if (!apiKey) return;
                 try {
-                    const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models`, { headers: { 'x-goog-api-key': apiKey } }, 15000);
+                    const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models?pageSize=100`, { headers: { 'x-goog-api-key': apiKey } }, 15000);
                     if (!response.ok) throw new Error("Failed to fetch models");
                     const data = await response.json();
-                    const models = data.models
-                        .filter(m => m.supportedGenerationMethods.includes("generateContent"))
+                    const models = (data.models || [])
+                        .filter(m => (m.supportedGenerationMethods || []).includes("generateContent"))
                         .map(m => m.name.replace("models/", ""));
                     setGeminiModelsList(models);
+
+                    const imgModels = (data.models || [])
+                        .filter(m => {
+                            const id = (m.name || '').replace(/^models\//, '').toLowerCase();
+                            const display = (m.displayName || '').toLowerCase();
+                            const desc = (m.description || '').toLowerCase();
+                            return id.includes('image') || id.includes('banana') || id.includes('imagen') ||
+                                   display.includes('image') || display.includes('banana') || display.includes('imagen') ||
+                                   desc.includes('image') || desc.includes('imagen');
+                        })
+                        .map(m => {
+                            const cleanId = m.name.replace(/^models\//, '');
+                            const label = m.displayName ? `${m.displayName} (${cleanId})` : cleanId;
+                            return { id: cleanId, name: label, description: m.description || '' };
+                        });
+                    if (imgModels.length > 0) {
+                        setGeminiImageModelsList(imgModels);
+                        safeSessionStorageSet("ellipsisprose_gemini_image_models_cache", imgModels);
+                    }
                 } catch (e) {
                     console.error("Error fetching Gemini models:", e);
                 }
+            };
+
+            const fetchGeminiImageModels = async (showFeedback = false) => {
+                const keyToUse = (imageApiKey || apiKey || '').trim();
+                if (!keyToUse) {
+                    if (showFeedback) showToast("Please configure your Gemini API Key first.", "info");
+                    return [];
+                }
+                setIsFetchingImageModels(true);
+                try {
+                    const response = await fetchWithTimeout(
+                        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(keyToUse)}&pageSize=100`,
+                        { headers: { 'x-goog-api-key': keyToUse } },
+                        15000
+                    );
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const data = await response.json();
+                    const imgModels = (data.models || [])
+                        .filter(m => {
+                            const id = (m.name || '').replace(/^models\//, '').toLowerCase();
+                            const display = (m.displayName || '').toLowerCase();
+                            const desc = (m.description || '').toLowerCase();
+                            return id.includes('image') || id.includes('banana') || id.includes('imagen') ||
+                                   display.includes('image') || display.includes('banana') || display.includes('imagen') ||
+                                   desc.includes('image') || desc.includes('imagen');
+                        })
+                        .map(m => {
+                            const cleanId = m.name.replace(/^models\//, '');
+                            const label = m.displayName ? `${m.displayName} (${cleanId})` : cleanId;
+                            return { id: cleanId, name: label, description: m.description || '' };
+                        });
+                    if (imgModels.length > 0) {
+                        setGeminiImageModelsList(imgModels);
+                        safeSessionStorageSet("ellipsisprose_gemini_image_models_cache", imgModels);
+                        if (showFeedback) showToast(`Loaded ${imgModels.length} Gemini image models on the fly!`, "success");
+                        return imgModels;
+                    } else if (showFeedback) {
+                        showToast("No dedicated image models found for this API key.", "info");
+                    }
+                } catch (err) {
+                    console.error("Error fetching Gemini image models:", err);
+                    if (showFeedback) showToast(`Failed to fetch image models: ${err.message}`, "error");
+                } finally {
+                    setIsFetchingImageModels(false);
+                }
+                return [];
             };
 
             const refreshOpenRouterModels = async (force = false) => {
@@ -31366,6 +32037,7 @@ ${finalProseText}
                 const prov = targetProvider || devProvider || apiProvider;
                 if (prov === 'gemini') {
                     await fetchGeminiModels();
+                    await fetchGeminiImageModels(false);
                 } else if (prov === 'openrouter') {
                     await refreshOpenRouterModels(true);
                 } else if (prov === 'nanogpt') {
@@ -31389,6 +32061,9 @@ ${finalProseText}
                     if (activeProviders.has('gemini') && apiKey && geminiModelsList.length === 0) {
                         fetchGeminiModels();
                     }
+                    if (imageProvider === 'gemini' && (imageApiKey || apiKey) && geminiImageModelsList.length === 0) {
+                        fetchGeminiImageModels(false);
+                    }
                     if (activeProviders.has('openrouter') && openRouterModelsList.length === 0) {
                         refreshOpenRouterModels();
                     }
@@ -31402,7 +32077,7 @@ ${finalProseText}
                     if (imageProvider === 'comfyui') refreshComfyInfo();
                 }
                 return () => { codexRefreshId.current++; comfyRefreshId.current++; };
-            }, [view, devProvider, reviewProvider, proseProvider, apiProvider, embeddingProvider, apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl, imageProvider, comfyUrl]);
+            }, [view, devProvider, reviewProvider, proseProvider, apiProvider, embeddingProvider, apiKey, imageApiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl, imageProvider, comfyUrl]);
 
             return (
                 <div className={`flex h-screen overflow-hidden font-sans ${theme === 'dark' ? 'dark bg-[#141416] text-[#F5F0E8]' : 'bg-void text-ink-900'}`} data-theme={theme}>
@@ -31451,6 +32126,7 @@ ${finalProseText}
                                     setStory(createDefaultStoryTemplate(""));
                                     setInputTitle("");
                                     setInputConcept("");
+                                    setInputWritingMode("novel");
                                     clearImportedLore();
                                     setView('setup');
                                 }} className={`nav-btn ${view === 'setup' ? 'active' : ''}`} title="New Story Setup">
@@ -31657,8 +32333,8 @@ ${finalProseText}
                                 <Download size={13} /> <span className="nav-label">JSON</span>
                             </button>
                             {story?.writing_mode === 'audio_drama' ? (
-                                <button onClick={handleExportAudioDramaTxt} className="flex-1 bg-gold-tint hover:bg-gold-tint border border-gold-edge text-gold-ink hover:text-gold-ink-deep py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Export Formatted Drama TXT">
-                                    <Book size={13} /> <span className="nav-label">TXT</span>
+                                <button onClick={handleExportAudioDramaTxt} className="flex-1 bg-gold-tint hover:bg-gold-tint border border-gold-edge text-gold-ink hover:text-gold-ink-deep py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Export Full Audio Drama Script (.txt)">
+                                    <Headphones size={13} /> <span className="nav-label">Drama TXT</span>
                                 </button>
                             ) : (
                                 <button onClick={handleExportEpub} className="flex-1 bg-gold-tint hover:bg-gold-tint border border-gold-edge text-gold-ink hover:text-gold-ink-deep py-1.5 rounded-lg text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs" title="Export Formatted EPUB Novel">
@@ -31862,6 +32538,61 @@ ${finalProseText}
                                         value={inputTitle}
                                         onChange={e => setInputTitle(e.target.value)}
                                     />
+
+                                    {/* Manuscript Format Selector: Standard Novel vs Audio Drama (Breeze TTS 2) */}
+                                    <div className="mb-4 text-left">
+                                        <label className="text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono mb-2 block">Manuscript Format</label>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => setInputWritingMode('novel')}
+                                                className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                                                    inputWritingMode !== 'audio_drama'
+                                                        ? 'bg-surface border-gold ring-1 ring-gold/40 shadow-xs'
+                                                        : 'bg-surface/50 border-edge-strong hover:border-stone-400 hover:bg-lift'
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <div className="flex items-center gap-2">
+                                                        <Book size={16} className={inputWritingMode !== 'audio_drama' ? 'text-gold-ink' : 'text-ink-400'} />
+                                                        <span className="font-bold text-sm text-ink-900 font-serif">Standard Novel</span>
+                                                    </div>
+                                                    {inputWritingMode !== 'audio_drama' && (
+                                                        <span className="w-2 h-2 rounded-full bg-gold" />
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-ink-500 leading-snug">
+                                                    Traditional narrative prose with rich scene description, narrative pacing, and dialogue tags.
+                                                </p>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={() => setInputWritingMode('audio_drama')}
+                                                className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
+                                                    inputWritingMode === 'audio_drama'
+                                                        ? 'bg-surface border-gold ring-1 ring-gold/40 shadow-xs'
+                                                        : 'bg-surface/50 border-edge-strong hover:border-stone-400 hover:bg-lift'
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between mb-1.5">
+                                                    <div className="flex items-center gap-2">
+                                                        <Headphones size={16} className={inputWritingMode === 'audio_drama' ? 'text-gold-ink' : 'text-ink-400'} />
+                                                        <span className="font-bold text-sm text-ink-900 font-serif">Audio Drama</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="text-[9px] font-bold font-mono uppercase px-1.5 py-0.5 rounded bg-gold/15 text-gold-ink border border-gold/30">Breeze TTS 2</span>
+                                                        {inputWritingMode === 'audio_drama' && (
+                                                            <span className="w-2 h-2 rounded-full bg-gold" />
+                                                        )}
+                                                    </div>
+                                                </div>
+                                                <p className="text-xs text-ink-500 leading-snug">
+                                                    Multi-voice script formatted as <code className="text-[10px] bg-inset px-1 py-0.5 rounded text-ink-700 font-mono">Speaker: (expression) Text</code> with automatic Narrator.
+                                                </p>
+                                            </button>
+                                        </div>
+                                    </div>
 
                                     {/* Archetype Dropdown */}
                                     <div className="mb-4 relative group">
@@ -32177,6 +32908,37 @@ ${finalProseText}
                                                         <BookOpen size={14} className="text-btn-accent" />
                                                         <span>{readingProgress.sequenceIndex !== undefined ? 'Resume Reading' : 'Start Reading Mode'}</span>
                                                     </button>
+
+                                                    {/* Manuscript Export Actions */}
+                                                    <div className="pt-2 border-t border-edge-soft flex gap-2">
+                                                        {story.writing_mode === 'audio_drama' ? (
+                                                            <button
+                                                                onClick={handleExportAudioDramaTxt}
+                                                                className="flex-1 py-2 px-3 rounded-xl bg-gold-tint hover:bg-gold/20 border border-gold-edge text-gold-ink hover:text-gold-ink-deep font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                                                                title="Export Full Audio Drama Script (.txt) formatted for Breeze TTS 2"
+                                                            >
+                                                                <Headphones size={13} className="text-gold-ink" />
+                                                                <span>Export Drama (.txt)</span>
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={handleExportEpub}
+                                                                className="flex-1 py-2 px-3 rounded-xl bg-gold-tint hover:bg-gold/20 border border-gold-edge text-gold-ink hover:text-gold-ink-deep font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                                                                title="Export Formatted EPUB Novel"
+                                                            >
+                                                                <Book size={13} className="text-gold-ink" />
+                                                                <span>Export EPUB</span>
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={handleExport}
+                                                            className="py-2 px-3 rounded-xl bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                                                            title="Export Project JSON Database"
+                                                        >
+                                                            <Download size={13} />
+                                                            <span>JSON</span>
+                                                        </button>
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -32196,18 +32958,40 @@ ${finalProseText}
 
                                                     <div className="pt-2 border-t border-edge-soft space-y-2">
                                                         <div className="flex justify-between items-center">
-                                                            <span className="text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">Writing Mode</span>
+                                                            <div className="flex items-center gap-1.5">
+                                                                {story.writing_mode === 'audio_drama' ? (
+                                                                    <Headphones size={13} className="text-gold-ink" />
+                                                                ) : (
+                                                                    <Book size={13} className="text-gold-ink" />
+                                                                )}
+                                                                <span className="text-[10px] font-bold text-ink-400 uppercase tracking-wider font-mono">Writing Mode</span>
+                                                            </div>
+                                                            <span className={`text-[9px] font-bold font-mono uppercase px-2 py-0.5 rounded-full ${story.writing_mode === 'audio_drama' ? 'bg-gold-tint text-gold-ink border border-gold-edge' : 'bg-mist-100 text-ink-500'}`}>
+                                                                {story.writing_mode === 'audio_drama' ? 'Breeze TTS 2' : 'Standard Novel'}
+                                                            </span>
                                                         </div>
                                                         <select
                                                             value={story.writing_mode || "novel"}
-                                                            onChange={(e) => setStory(prev => ({ ...prev, writing_mode: e.target.value }))}
-                                                            className="w-full p-2 text-sm bg-inset border border-edge rounded-lg text-ink-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold"
+                                                            onChange={(e) => {
+                                                                const nextMode = e.target.value;
+                                                                setStory(prev => {
+                                                                    const updated = { ...prev, writing_mode: nextMode };
+                                                                    if (storyStore?.saveStory && updated.id) {
+                                                                        storyStore.saveStory(updated.id, updated).catch(err => console.warn("Failed saving writing mode change:", err));
+                                                                    }
+                                                                    return updated;
+                                                                });
+                                                                showToast(`Writing mode switched to ${nextMode === 'audio_drama' ? 'Audio Drama (Breeze TTS 2)' : 'Standard Novel'}`, 'info');
+                                                            }}
+                                                            className="w-full p-2.5 text-xs bg-inset border border-edge rounded-lg text-ink-800 outline-none focus:border-gold focus:ring-1 focus:ring-gold font-medium cursor-pointer"
                                                         >
-                                                            <option value="novel">Standard Novel (Default)</option>
-                                                            <option value="audio_drama">Audio Drama (Scripted TTS)</option>
+                                                            <option value="novel">Standard Novel (Narrative Prose)</option>
+                                                            <option value="audio_drama">Audio Drama (Breeze TTS 2 Multi-Voice Script)</option>
                                                         </select>
-                                                        <p className="text-xs text-ink-400 italic font-serif">
-                                                            {story.writing_mode === 'audio_drama' ? 'Generates prose formatted for text-to-speech rendering: "Speaker: Line (expression)" with an automatic Narrator.' : 'Generates standard narrative prose.'}
+                                                        <p className="text-xs text-ink-500 italic font-serif">
+                                                            {story.writing_mode === 'audio_drama'
+                                                                ? 'Generates multi-voice scripts formatted strictly for Breeze TTS 2: "Speaker: (expression) Text" with an automatic Narrator.'
+                                                                : 'Generates standard narrative prose with rich scene description, narrative pacing, and dialogue tags.'}
                                                         </p>
                                                     </div>
 
@@ -35575,6 +36359,19 @@ ${finalProseText}
                                                                     </div>
 
                                                                     <div className="flex items-center gap-2">
+                                                                        <button
+                                                                            onClick={() => generateSceneImage(selectedSequence, selectedScene)}
+                                                                            disabled={loadingImages[`scene_${sId}`] || loading}
+                                                                            className="bg-surface hover:bg-lift border border-edge-strong px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors shadow-2xs text-ink-800 cursor-pointer disabled:opacity-50"
+                                                                            title={loadedImages[`scene_${sId}`] ? "Regenerate Scene Illustration" : "Draft prompt from prose and generate AI illustration for this scene"}
+                                                                        >
+                                                                            {loadingImages[`scene_${sId}`] ? (
+                                                                                <Loader2 size={12} className="animate-spin text-gold-ink" />
+                                                                            ) : (
+                                                                                <Image size={12} className="text-gold-ink" />
+                                                                            )}
+                                                                            <span>{loadedImages[`scene_${sId}`] ? "Re-Illustrate" : "Illustrate Scene"}</span>
+                                                                        </button>
                                                                         <button onClick={() => enterReaderMode(selectedSequence, selectedScene)} className="bg-surface hover:bg-lift border border-edge-strong px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-colors shadow-2xs text-ink-800 cursor-pointer" title="Open in Ebook Reader Mode">
                                                                             <BookOpen size={12} className="text-gold-ink" /> Read
                                                                         </button>
@@ -35599,6 +36396,58 @@ ${finalProseText}
                                                                     >
                                                                         <AlertTriangle size={12} /> Review Validation Warning: View Objections
                                                                     </button>
+                                                                )}
+
+                                                                {/* Scene Illustration Preview Card */}
+                                                                {loadedImages[`scene_${sId}`] && (
+                                                                    <div className="mb-8 group relative rounded-2xl overflow-hidden border border-edge-strong shadow-md bg-surface/50 max-w-3xl mx-auto">
+                                                                        <div className="relative aspect-video w-full overflow-hidden bg-inset/40">
+                                                                            <img
+                                                                                src={loadedImages[`scene_${sId}`]}
+                                                                                alt="Scene Illustration"
+                                                                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.01]"
+                                                                            />
+                                                                            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-between p-4">
+                                                                                <span className="text-[11px] font-mono text-white/90 bg-black/50 backdrop-blur-xs px-2.5 py-1 rounded-md">
+                                                                                    Scene Illustration (16:9)
+                                                                                </span>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <button
+                                                                                        onClick={() => generateSceneImage(selectedSequence, selectedScene)}
+                                                                                        disabled={loadingImages[`scene_${sId}`] || loading}
+                                                                                        className="bg-black/60 hover:bg-black/80 text-white backdrop-blur-xs p-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                                                                                        title="Regenerate Illustration"
+                                                                                    >
+                                                                                        <RefreshCw size={13} className={loadingImages[`scene_${sId}`] ? "animate-spin" : ""} />
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => deleteSceneImage(selectedSequence, selectedScene)}
+                                                                                        className="bg-rose-950/70 hover:bg-rose-900 text-rose-200 backdrop-blur-xs p-2 rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+                                                                                        title="Delete Illustration"
+                                                                                    >
+                                                                                        <Trash2 size={13} />
+                                                                                    </button>
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="px-4 py-2 border-t border-edge-subtle bg-surface/80 flex items-center justify-between text-[11px] text-ink-500 font-serif italic">
+                                                                            <span>Embedded into EPUB chapter header</span>
+                                                                            <span className="font-mono text-[10px] text-ink-400">16:9 • High-Fidelity</span>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Illustration Generating Pulse Indicator */}
+                                                                {loadingImages[`scene_${sId}`] && !loadedImages[`scene_${sId}`] && (
+                                                                    <div className="mb-8 rounded-2xl border border-dashed border-gold-edge/60 bg-gold-tint/20 p-8 text-center max-w-3xl mx-auto animate-pulse flex flex-col items-center justify-center gap-3">
+                                                                        <Loader2 size={24} className="animate-spin text-gold-ink" />
+                                                                        <div className="text-xs font-serif font-medium text-ink-700">
+                                                                            Drafting image prompt from narrative prose &amp; rendering 16:9 scene illustration...
+                                                                        </div>
+                                                                        <div className="text-[10px] font-mono text-ink-400">
+                                                                            Scene Image Prompt Agent • Image Generation API
+                                                                        </div>
+                                                                    </div>
                                                                 )}
 
                                                                 {/* Publication-Grade Manuscript Canvas */}
@@ -36111,6 +36960,7 @@ ${finalProseText}
                                                             setStory(createDefaultStoryTemplate(""));
                                                             setInputTitle("");
                                                             setInputConcept("");
+                                                            setInputWritingMode("novel");
                                                             clearImportedLore();
                                                             setView('setup');
                                                         }}
@@ -36160,6 +37010,7 @@ ${finalProseText}
                                                             setStory(createDefaultStoryTemplate(""));
                                                             setInputTitle("");
                                                             setInputConcept("");
+                                                            setInputWritingMode("novel");
                                                             clearImportedLore();
                                                             setView('setup');
                                                         }}
@@ -37013,7 +37864,7 @@ ${finalProseText}
                                             </div>
                                             <p className="text-xs text-ink-500">Configure your image generation API, models, and story art style.</p>
 
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 <div>
                                                     <label className="block text-xs font-bold text-ink-700 mb-1 font-mono">Image API Provider</label>
                                                     <div className="relative">
@@ -37023,14 +37874,15 @@ ${finalProseText}
                                                                 const prov = e.target.value;
                                                                 setImageProvider(prov);
                                                                 if (prov === 'gemini') {
-                                                                    setImageModel('imagen-3.0-generate-002');
+                                                                    const geminiDefault = geminiImageModelsList[0]?.id || 'gemini-3.1-flash-image';
+                                                                    setImageModel(geminiDefault);
                                                                 } else if (prov === 'openrouter') {
                                                                     setImageModel('stabilityai/stable-diffusion-xl');
                                                                 }
                                                             }}
                                                             className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none appearance-none transition-colors cursor-pointer"
                                                         >
-                                                            <option value="gemini">Gemini (Imagen 3)</option>
+                                                            <option value="gemini">Gemini (Nano Banana / Native Image)</option>
                                                             <option value="openrouter">OpenRouter (SDXL/Flux/etc.)</option>
                                                             <option value="comfyui">ComfyUI (local, Krea 2)</option>
                                                         </select>
@@ -37038,16 +37890,102 @@ ${finalProseText}
                                                     </div>
                                                 </div>
 
-                                                {imageProvider !== 'comfyui' && <div>
-                                                    <label className="block text-xs font-bold text-ink-700 mb-1 font-mono">Image Model</label>
-                                                    <input
-                                                        type="text"
-                                                        value={imageModel}
-                                                        onChange={(e) => setImageModel(e.target.value)}
-                                                        className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
-                                                        placeholder={imageProvider === 'gemini' ? "imagen-3.0-generate-002" : "stabilityai/stable-diffusion-xl"}
-                                                    />
-                                                </div>}
+                                                {imageProvider !== 'comfyui' && (
+                                                    <div>
+                                                        <div className="flex items-center justify-between mb-1">
+                                                            <label className="block text-xs font-bold text-ink-700 font-mono">Image Model</label>
+                                                            {imageProvider === 'gemini' && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => fetchGeminiImageModels(true)}
+                                                                    disabled={isFetchingImageModels}
+                                                                    className="text-[10px] text-gold-ink hover:text-gold flex items-center gap-1 font-mono cursor-pointer transition-colors"
+                                                                    title="Fetch available image models on the fly from Gemini API"
+                                                                >
+                                                                    <RefreshCw size={11} className={isFetchingImageModels ? "animate-spin text-gold-ink" : ""} />
+                                                                    <span>{isFetchingImageModels ? "Fetching..." : "Fetch Models"}</span>
+                                                                </button>
+                                                            )}
+                                                        </div>
+
+                                                        {imageProvider === 'gemini' ? (
+                                                            (() => {
+                                                                const availableModels = geminiImageModelsList.length > 0 ? geminiImageModelsList : DEFAULT_GEMINI_IMAGE_MODELS;
+                                                                const isKnownModel = availableModels.some(m => m.id === imageModel);
+                                                                return (
+                                                                    <div className="space-y-2">
+                                                                        <div className="relative">
+                                                                            <select
+                                                                                value={isKnownModel ? imageModel : "__custom__"}
+                                                                                onChange={(e) => {
+                                                                                    const val = e.target.value;
+                                                                                    if (val !== "__custom__") {
+                                                                                        setImageModel(val);
+                                                                                    }
+                                                                                }}
+                                                                                className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none appearance-none transition-colors cursor-pointer"
+                                                                            >
+                                                                                {availableModels.map(m => (
+                                                                                    <option key={m.id} value={m.id}>
+                                                                                        {m.name || m.id}
+                                                                                    </option>
+                                                                                ))}
+                                                                                <option value="__custom__">Custom / Other Model ID...</option>
+                                                                            </select>
+                                                                            <ChevronDown className="absolute right-3 top-2.5 text-ink-400 pointer-events-none" size={14} />
+                                                                        </div>
+                                                                        {(!isKnownModel || imageModel === "__custom__") && (
+                                                                            <input
+                                                                                type="text"
+                                                                                value={imageModel === "__custom__" ? "" : imageModel}
+                                                                                onChange={(e) => setImageModel(e.target.value)}
+                                                                                placeholder="Enter custom Gemini model ID (e.g. gemini-3.1-flash-image)"
+                                                                                className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()
+                                                        ) : (
+                                                            (() => {
+                                                                const isKnownOpenRouter = DEFAULT_OPENROUTER_IMAGE_MODELS.some(m => m.id === imageModel);
+                                                                return (
+                                                                    <div className="space-y-2">
+                                                                        <div className="relative">
+                                                                            <select
+                                                                                value={isKnownOpenRouter ? imageModel : "__custom__"}
+                                                                                onChange={(e) => {
+                                                                                    const val = e.target.value;
+                                                                                    if (val !== "__custom__") {
+                                                                                        setImageModel(val);
+                                                                                    }
+                                                                                }}
+                                                                                className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none appearance-none transition-colors cursor-pointer"
+                                                                            >
+                                                                                {DEFAULT_OPENROUTER_IMAGE_MODELS.map(m => (
+                                                                                    <option key={m.id} value={m.id}>
+                                                                                        {m.name}
+                                                                                    </option>
+                                                                                ))}
+                                                                                <option value="__custom__">Custom / Other Model ID...</option>
+                                                                            </select>
+                                                                            <ChevronDown className="absolute right-3 top-2.5 text-ink-400 pointer-events-none" size={14} />
+                                                                        </div>
+                                                                        {(!isKnownOpenRouter || imageModel === "__custom__") && (
+                                                                            <input
+                                                                                type="text"
+                                                                                value={imageModel === "__custom__" ? "" : imageModel}
+                                                                                onChange={(e) => setImageModel(e.target.value)}
+                                                                                placeholder="e.g. stabilityai/stable-diffusion-xl"
+                                                                                className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
+                                                                            />
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })()
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {imageProvider !== 'comfyui' && <div>
