@@ -18050,8 +18050,11 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                     <Edit3 size={13} className="text-gold-ink" /> Write
                                 </button>
                             ) : (
-                            {!isStructure && (
-                                <button onClick={() => { setSelectedScene(si); setView('writer'); }} className="bg-surface hover:bg-lift border border-edge-strong text-ink-800 px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all flex items-center gap-1.5">
+                                <button
+                                    onClick={() => { setSelectedScene(si); setView('writer'); }}
+                                    className="bg-surface hover:bg-lift border border-edge-strong text-ink-800 px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all flex items-center gap-1.5"
+                                    title="Write Scene"
+                                >
                                     <Edit3 size={13} className="text-gold-ink" /> Write
                                 </button>
                             )}
