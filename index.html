@@ -4034,7 +4034,7 @@
          * Splits spoken text into sentence-aligned sub-chunks ONLY when a block exceeds maxWords (default 200 words).
          * Standard lines and paragraphs (<= 200 words) are kept intact as a single unit without artificial mutation.
          */
-        const splitSpokenTextIntoTtsSubchunks = (spokenText, maxWords = 200) => {
+        const splitSpokenTextIntoTtsSubchunks = (spokenText, maxWords = 120) => {
             const clean = String(spokenText || '').replace(/\s+/g, ' ').trim();
             if (!clean) return [];
 
@@ -4160,8 +4160,19 @@
 
             const pushSpokenAsChunks = (speakerName, emotionTag, spokenStr) => {
                 if (!spokenStr || !/[a-zA-Z0-9]/.test(spokenStr)) return;
-                const cleanEmotion = emotionTag ? emotionTag.replace(/^[\[\(\*]+|[\]\)\*]+$/g, '').trim() : null;
-                const subchunks = splitSpokenTextIntoTtsSubchunks(spokenStr, 200);
+                // Sanitize emotion: filter out non-vocal timing tags (pause, beat, silence, etc.)
+                // so they are never passed as "speaking style: pause", preventing autoregressive decoder lockup
+                let cleanEmotion = null;
+                if (emotionTag) {
+                    const stripped = emotionTag.replace(/^[[\[\(\*]+|[\]\)\*]+$/g, '').trim();
+                    const parts = stripped.split(/[,;/]+/)
+                        .map(p => p.trim())
+                        .filter(p => p && !/^(?:pause|beat|silence|long\s+pause|short\s+pause|brief\s+pause|hesitates?|hesitation|moment|waits?|after\s+a\s+beat|break|gap|breath|takes?\s+a\s+breath|deep\s+breath)$/i.test(p));
+                    if (parts.length > 0) {
+                        cleanEmotion = parts.join(', ');
+                    }
+                }
+                const subchunks = splitSpokenTextIntoTtsSubchunks(spokenStr, 120);
                 subchunks.forEach((subText, subIdx) => {
                     parsedChunks.push({
                         index: parsedChunks.length,
@@ -5059,6 +5070,11 @@
                     : 0.3;
                 const clampedTemperature = Math.max(0.05, Math.min(0.9, configuredTemp));
 
+                // Dynamic token limit: Budget ~35 tokens per word (at 25-50 tokens/sec speech codec rate)
+                // to hard-cap autoregressive decoding on missed EOS and prevent multi-minute static runs
+                const wordCount = (spokenTextOnly.match(/\b\w+\b/g) || []).length;
+                const tokenCap = Math.min(3072, Math.max(384, Math.ceil(wordCount * 35) + 128));
+
                 // Audio.cpp Base TTS requires preset; Qwen 3 VoiceDesign models read 'instructions'/'instruct'.
                 // Spoken text in 'input' MUST BE 100% CLEAN DIALOGUE — never prepend brackets or stage directions!
                 const payload = {
@@ -5067,11 +5083,15 @@
                     voice: mappedPreset,
                     instructions: promptInstruction,
                     instruction: promptInstruction,
+                    max_tokens: tokenCap,
+                    max_new_tokens: tokenCap,
                     ...(speakerSeed !== undefined ? { seed: speakerSeed } : {}),
                     temperature: clampedTemperature,
                     options: {
                         instruction: promptInstruction,
                         instructions: promptInstruction,
+                        max_tokens: tokenCap,
+                        max_new_tokens: tokenCap,
                         ...(speakerSeed !== undefined ? { seed: speakerSeed } : {}),
                         temperature: clampedTemperature
                     },
@@ -5086,13 +5106,14 @@
                     }
 
                     console.log(
-                        `[Audio Drama TTS] Dispatching ${lineTag} to Audio.cpp (${targetUrl}/v1/audio/speech) | Speaker: "${speakerLabel}" (Seed #${speakerSeed ?? 'none'}, Temp ${clampedTemperature})${expressionText ? ` | Delivery: [${expressionText}]` : ''}\n` +
+                        `[Audio Drama TTS] Dispatching ${lineTag} to Audio.cpp (${targetUrl}/v1/audio/speech) | Speaker: "${speakerLabel}" (Seed #${speakerSeed ?? 'none'}, Temp ${clampedTemperature}, MaxTokens ${tokenCap})${expressionText ? ` | Delivery: [${expressionText}]` : ''}\n` +
                         `  -> Voice Profile: "${promptInstruction}"\n` +
-                        `  -> Spoken Input (${spokenTextOnly.length} chars): "${spokenTextOnly.substring(0, 120)}${spokenTextOnly.length > 120 ? '...' : ''}"`
+                        `  -> Spoken Input (${spokenTextOnly.length} chars, ${wordCount} words): "${spokenTextOnly.substring(0, 120)}${spokenTextOnly.length > 120 ? '...' : ''}"`
                     );
 
                     let res = null;
                     const maxBusyRetries = 25;
+                    const dynamicTimeoutMs = Math.min(90000, Math.max(30000, wordCount * 1200 + 10000));
                     for (let attempt = 0; attempt <= maxBusyRetries; attempt++) {
                         if (signal?.aborted) {
                             const abortErr = new Error("Aborted");
@@ -5105,7 +5126,7 @@
                                 headers: { 'Content-Type': 'application/json' },
                                 body: JSON.stringify(payload),
                                 signal
-                            }, 180000);
+                            }, dynamicTimeoutMs);
                         } catch (fetchErr) {
                             if (signal?.aborted || fetchErr?.name === 'AbortError') {
                                 throw fetchErr;
@@ -5140,6 +5161,14 @@
 
                     const blob = await res.blob();
                     const elapsedMs = Math.round(performance.now() - synthStartTime);
+
+                    // Client-Side Runaway Guard: Check for pathological blob size/duration
+                    const maxAllowedSec = Math.max(16, (wordCount / 1.1) + 12);
+                    const maxAllowedBytes = maxAllowedSec * 96000 + 8192;
+                    if (blob.size > maxAllowedBytes * 3 && blob.size > 2 * 1024 * 1024) {
+                        console.warn(`[Audio Drama TTS] Warning: Received anomalous audio blob (${(blob.size / 1024).toFixed(1)} KB) for ${lineTag} (${wordCount} words). Runaway static guard will trim during stitching.`);
+                    }
+
                     console.log(`[Audio Drama TTS] Completed ${lineTag} (${speakerLabel}) in ${elapsedMs}ms — received ${(blob.size / 1024).toFixed(1)} KB WAV.`);
                     return URL.createObjectURL(blob);
                 });
@@ -5502,6 +5531,80 @@
          * Stitches an array of synthesized audio chunks (Blobs / URLs) with dramatic cadence pauses
          * and encodes the combined master audio stream into a clean MP3 file via lamejs.
          */
+        /**
+         * Scans an AudioBuffer for trailing silence or low-energy static noise floor (typical of
+         * autoregressive speech models that fail to terminate at EOS) and trims the tail cleanly
+         * with a soft cosine fade-out.
+         */
+        const trimTrailingAudioStatic = (audioBuf, audioCtx = null) => {
+            if (!audioBuf || audioBuf.duration <= 1.0) return audioBuf;
+            const channelCount = audioBuf.numberOfChannels;
+            const sampleRate = audioBuf.sampleRate;
+            const totalSamples = audioBuf.length;
+
+            const data = audioBuf.getChannelData(0);
+            const windowSize = Math.floor(sampleRate * 0.04); // 40ms analysis window
+            const hopSize = Math.floor(sampleRate * 0.02); // 20ms hop
+            const speechThreshold = 0.006; // ~ -44.4 dBFS
+
+            let lastSpeechSample = 0;
+            for (let i = 0; i <= totalSamples - windowSize; i += hopSize) {
+                let sumSq = 0;
+                for (let j = 0; j < windowSize; j++) {
+                    const val = data[i + j];
+                    sumSq += val * val;
+                }
+                const rms = Math.sqrt(sumSq / windowSize);
+                if (rms >= speechThreshold) {
+                    lastSpeechSample = i + windowSize;
+                }
+            }
+
+            const marginSamples = Math.floor(sampleRate * 0.18); // 180ms natural room padding
+            const targetEndSample = Math.min(totalSamples, lastSpeechSample + marginSamples);
+            const trailingSilenceSamples = totalSamples - targetEndSample;
+            const trailingSilenceSec = trailingSilenceSamples / sampleRate;
+
+            // If no speech detected at all and buffer is abnormally long (> 5s), clamp to 0.4s clean silence
+            if (lastSpeechSample <= marginSamples && audioBuf.duration > 5.0) {
+                console.warn(`[Audio Drama] Pure static/silent runaway chunk detected (${audioBuf.duration.toFixed(2)}s). Clamping to 0.4s room tone.`);
+                const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+                const silenceLength = Math.floor(sampleRate * 0.4);
+                return ctx.createBuffer(channelCount, silenceLength, sampleRate);
+            }
+
+            // Only trim if there is meaningful trailing silence/static (> 0.45s)
+            if (trailingSilenceSec < 0.45 || targetEndSample <= marginSamples) {
+                return audioBuf;
+            }
+
+            const trimmedLength = Math.max(marginSamples * 2, targetEndSample);
+            if (trimmedLength >= totalSamples) return audioBuf;
+
+            const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+            const trimmedBuf = ctx.createBuffer(channelCount, trimmedLength, sampleRate);
+
+            // 50ms cosine fade-out curve at the trimmed boundary to prevent audio click
+            const fadeLength = Math.min(Math.floor(sampleRate * 0.05), trimmedLength);
+            const fadeStart = trimmedLength - fadeLength;
+
+            for (let c = 0; c < channelCount; c++) {
+                const srcData = audioBuf.getChannelData(c);
+                const dstData = trimmedBuf.getChannelData(c);
+                dstData.set(srcData.subarray(0, trimmedLength));
+
+                for (let f = 0; f < fadeLength; f++) {
+                    const gain = 0.5 * (1 + Math.cos((Math.PI * f) / fadeLength));
+                    dstData[fadeStart + f] *= gain;
+                }
+            }
+
+            console.log(`[Audio Drama] Trimmed ${trailingSilenceSec.toFixed(2)}s trailing static/silence tail (${audioBuf.duration.toFixed(2)}s -> ${trimmedBuf.duration.toFixed(2)}s).`);
+            return trimmedBuf;
+        };
+
+        window.trimTrailingAudioStatic = trimTrailingAudioStatic;
+
         const stitchAndEncodeChunksToMp3 = async (chunks, options = {}) => {
             const lamejs = await ensureLameJs();
             if (!lamejs || !lamejs.Mp3Encoder) {
@@ -5517,7 +5620,7 @@
             const narratorPauseMs = options.narratorPauseMs ?? 440;
             const kbps = options.kbps || 128;
 
-            // 1. Decode all chunk audio blobs into uncompressed AudioBuffers
+            // 1. Decode all chunk audio blobs into uncompressed AudioBuffers and trim runaway trailing static/silence
             const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
             const decodedItems = [];
 
@@ -5526,7 +5629,8 @@
                     const ch = validChunks[i];
                     const resp = await fetch(ch.audioUrl);
                     const ab = await resp.arrayBuffer();
-                    const audioBuf = await tempCtx.decodeAudioData(ab);
+                    const rawAudioBuf = await tempCtx.decodeAudioData(ab);
+                    const audioBuf = trimTrailingAudioStatic(rawAudioBuf, tempCtx);
                     decodedItems.push({
                         audioBuf,
                         speaker: ch.speaker || "Narrator",
@@ -5632,19 +5736,28 @@
                 throw new Error("No drafted prose or script found for this scene.");
             }
 
-            // Reuse active queue chunks if already loaded in memory to avoid re-synthesis
-            let workingChunks = [];
-            if (Array.isArray(activeQueue) && activeQueue.length > 0) {
-                workingChunks = activeQueue.map(c => ({ ...c }));
-            } else {
-                const dramaChunks = parseAudioDramaScript(proseText);
-                const hasExplicitDialogue = dramaChunks && dramaChunks.some(c => c.speaker && c.speaker.toLowerCase() !== 'narrator');
-                const isDrama = (story?.writing_mode === 'audio_drama') || (hasExplicitDialogue && dramaChunks.length >= 2);
-                workingChunks = isDrama ? dramaChunks : chunkProseForTts(proseText);
-            }
+            // Always build structured, guideline-compliant audio drama chunks (120-word bound)
+            const dramaChunks = parseAudioDramaScript(proseText);
+            const hasExplicitDialogue = dramaChunks && dramaChunks.some(c => c.speaker && c.speaker.toLowerCase() !== 'narrator');
+            const isDrama = (story?.writing_mode === 'audio_drama') || (hasExplicitDialogue && dramaChunks.length >= 2);
+            let workingChunks = isDrama ? dramaChunks : chunkProseForTts(proseText);
 
             if (!workingChunks || workingChunks.length === 0) {
                 throw new Error("No dialogue or narration lines found in this scene to export.");
+            }
+
+            // If active queue is provided from memory, safely reuse synthesized audio blobs for identical chunks
+            if (Array.isArray(activeQueue) && activeQueue.length > 0) {
+                workingChunks.forEach(targetChunk => {
+                    const match = activeQueue.find(qChunk =>
+                        qChunk && qChunk.audioUrl &&
+                        (qChunk.spokenText || qChunk.text) === (targetChunk.spokenText || targetChunk.text) &&
+                        qChunk.speaker === targetChunk.speaker
+                    );
+                    if (match && match.audioUrl) {
+                        targetChunk.audioUrl = match.audioUrl;
+                    }
+                });
             }
 
             const total = workingChunks.length;
