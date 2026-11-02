@@ -4137,6 +4137,100 @@
         };
 
         /**
+         * Combines adjacent narrator segments when their combined length does not exceed maxWords (default 120 words).
+         * Reduces vocal variation during exposition while strictly preserving character dialogue boundaries.
+         * If two or more adjacent narrator segments are merged, the emotional tags from the FIRST segment are retained.
+         */
+        const combineAdjacentNarratorSegments = (chunks, maxWords = 120) => {
+            if (!Array.isArray(chunks) || chunks.length === 0) return [];
+
+            const isNarrator = (speaker) => !speaker || String(speaker).trim().toLowerCase() === 'narrator';
+            const countWords = (str) => (String(str || '').match(/\b\w+\b/g) || []).length;
+
+            const formatFullLine = (speaker, emotion, text) => {
+                const spk = speaker || 'Narrator';
+                return emotion ? `${spk}: [${emotion}] ${text}` : `${spk}: ${text}`;
+            };
+
+            const joinSpoken = (a, b) => {
+                const cleanA = String(a || '').trim();
+                const cleanB = String(b || '').trim();
+                if (!cleanA) return cleanB;
+                if (!cleanB) return cleanA;
+                const needsPunct = !/[.?!:;—–"']$/.test(cleanA);
+                return cleanA + (needsPunct ? '. ' : ' ') + cleanB;
+            };
+
+            const combined = [];
+            let currentNarrator = null;
+            let currentNarratorFollowsPriorNarrator = false;
+
+            const flushNarrator = () => {
+                if (!currentNarrator) return;
+                combined.push(currentNarrator);
+                currentNarrator = null;
+            };
+
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                if (!chunk) continue;
+
+                if (isNarrator(chunk.speaker)) {
+                    const chunkSpoken = chunk.spokenText || chunk.text || "";
+                    const chunkWords = countWords(chunkSpoken);
+
+                    if (!currentNarrator) {
+                        currentNarrator = {
+                            ...chunk,
+                            speaker: chunk.speaker || 'Narrator',
+                            emotion: chunk.emotion || null,
+                            text: chunk.text || chunkSpoken,
+                            spokenText: chunkSpoken,
+                            isContinuation: currentNarratorFollowsPriorNarrator || !!chunk.isContinuation,
+                            wordCount: chunkWords
+                        };
+                        currentNarrator.fullLine = formatFullLine(currentNarrator.speaker, currentNarrator.emotion, currentNarrator.text);
+                    } else {
+                        const combinedSpoken = joinSpoken(currentNarrator.spokenText, chunkSpoken);
+                        const combinedText = joinSpoken(currentNarrator.text, chunk.text || chunkSpoken);
+                        const combinedWords = countWords(combinedSpoken);
+
+                        if (combinedWords <= maxWords) {
+                            currentNarrator.text = combinedText;
+                            currentNarrator.spokenText = combinedSpoken;
+                            currentNarrator.wordCount = combinedWords;
+                            currentNarrator.fullLine = formatFullLine(currentNarrator.speaker, currentNarrator.emotion, currentNarrator.text);
+                        } else {
+                            flushNarrator();
+                            currentNarratorFollowsPriorNarrator = true;
+                            currentNarrator = {
+                                ...chunk,
+                                speaker: chunk.speaker || 'Narrator',
+                                emotion: chunk.emotion || null,
+                                text: chunk.text || chunkSpoken,
+                                spokenText: chunkSpoken,
+                                isContinuation: true,
+                                wordCount: chunkWords
+                            };
+                            currentNarrator.fullLine = formatFullLine(currentNarrator.speaker, currentNarrator.emotion, currentNarrator.text);
+                        }
+                    }
+                } else {
+                    flushNarrator();
+                    currentNarratorFollowsPriorNarrator = false;
+                    combined.push({ ...chunk });
+                }
+            }
+
+            flushNarrator();
+
+            return combined.map((c, idx) => ({
+                ...c,
+                index: idx
+            }));
+        };
+
+        /**
          * Deterministically parses an Audio Drama script into structured multi-voice lines.
          * Extracts speaker attribution, optional inline vocal emotion tag(s), and spoken text.
          */
@@ -4305,7 +4399,7 @@
                 }
             });
 
-            return parsedChunks;
+            return combineAdjacentNarratorSegments(parsedChunks, 120);
         };
 
         /**
@@ -5519,6 +5613,7 @@
         window.ELEVENLABS_VOICES = ELEVENLABS_VOICES;
         window.GEMINI_PREBUILT_VOICES = GEMINI_PREBUILT_VOICES;
         window.parseAudioDramaScript = parseAudioDramaScript;
+        window.combineAdjacentNarratorSegments = combineAdjacentNarratorSegments;
         window.cleanDialogueSpokenText = cleanDialogueSpokenText;
         window.getVoiceDescriptionForCharacter = getVoiceDescriptionForCharacter;
         window.mapCharacterToElevenLabsVoice = mapCharacterToElevenLabsVoice;
@@ -5634,7 +5729,8 @@
                     decodedItems.push({
                         audioBuf,
                         speaker: ch.speaker || "Narrator",
-                        isNarrator: !ch.speaker || String(ch.speaker).toLowerCase() === 'narrator'
+                        isNarrator: !ch.speaker || String(ch.speaker).toLowerCase() === 'narrator',
+                        pauseAfterMs: ch.pauseAfterMs
                     });
                 }
             } finally {
@@ -5654,9 +5750,12 @@
             for (let i = 0; i < decodedItems.length; i++) {
                 totalDurationSec += decodedItems[i].audioBuf.duration;
                 if (i < decodedItems.length - 1) {
-                    const currentIsNarrator = decodedItems[i].isNarrator;
+                    const item = decodedItems[i];
+                    const currentIsNarrator = item.isNarrator;
                     const nextIsNarrator = decodedItems[i + 1].isNarrator;
-                    const pauseMs = (currentIsNarrator || nextIsNarrator) ? narratorPauseMs : dialoguePauseMs;
+                    const pauseMs = (item.pauseAfterMs !== undefined && item.pauseAfterMs !== null)
+                        ? item.pauseAfterMs
+                        : ((currentIsNarrator || nextIsNarrator) ? narratorPauseMs : dialoguePauseMs);
                     totalDurationSec += (pauseMs / 1000);
                 }
             }
@@ -5679,7 +5778,9 @@
                 if (i < decodedItems.length - 1) {
                     const currentIsNarrator = item.isNarrator;
                     const nextIsNarrator = decodedItems[i + 1].isNarrator;
-                    const pauseMs = (currentIsNarrator || nextIsNarrator) ? narratorPauseMs : dialoguePauseMs;
+                    const pauseMs = (item.pauseAfterMs !== undefined && item.pauseAfterMs !== null)
+                        ? item.pauseAfterMs
+                        : ((currentIsNarrator || nextIsNarrator) ? narratorPauseMs : dialoguePauseMs);
                     currentTime += (pauseMs / 1000);
                 }
             }
@@ -5812,8 +5913,181 @@
             return { fileName, blob: mp3Blob };
         };
 
+        /**
+         * Downloads an entire sequence as an audio drama MP3 file.
+         * Includes sequence name and number spoken as an intro by Narrator (no scene names),
+         * inserts a clean 2-second silence pause between scenes,
+         * synthesizes any missing chunks across all scenes in the sequence,
+         * and stitches the master audio for download.
+         */
+        const exportSequenceAudioMp3 = async ({
+            story,
+            seqIdx,
+            settings,
+            mainApiKey,
+            mainOpenRouterKey,
+            kokoroWorkerRef,
+            activeQueue,
+            onProgress
+        }) => {
+            const safeSeq = parseInt(seqIdx, 10);
+            if (isNaN(safeSeq) || safeSeq < 0) {
+                throw new Error("Invalid sequence specified for export.");
+            }
+
+            const sequence = (story?.sequences || [])[safeSeq] || {};
+            const seqNum = sequence.number || (safeSeq + 1);
+            const rawTitle = String(sequence.title || `Sequence ${seqNum}`).trim();
+            const seqTitle = rawTitle.replace(/^Sequence\s+\d+[:\s\-]*/i, '').trim() || rawTitle;
+
+            const rawSceneList = (story?.scenes && (story.scenes[safeSeq] || story.scenes[String(safeSeq)])) || [];
+            const sceneList = Array.isArray(rawSceneList) ? rawSceneList : [];
+
+            if (sceneList.length === 0) {
+                throw new Error(`No scenes found in Sequence ${seqNum} to export.`);
+            }
+
+            // Identify all scenes with valid drafted prose
+            const validScenes = [];
+            sceneList.forEach((sceneItem, sIdx) => {
+                const sId = `${safeSeq}-${sIdx}`;
+                const proseObj = story?.prose?.[sId];
+                const proseText = (typeof proseObj === 'object' && proseObj !== null)
+                    ? (proseObj.final || proseObj.draft || "")
+                    : String(proseObj || "");
+                if (proseText && proseText.trim()) {
+                    validScenes.push({
+                        sceneItem,
+                        sceneIdx: sIdx,
+                        proseText: proseText.trim()
+                    });
+                }
+            });
+
+            if (validScenes.length === 0) {
+                throw new Error(`No drafted prose found in any scene of Sequence ${seqNum} to export.`);
+            }
+
+            // Assemble all sequence chunks:
+            // 1. Spoken sequence introduction chunk (Narrator announces sequence name & number, followed by 1.5s breath)
+            const introSpoken = seqTitle ? `Sequence ${seqNum}: ${seqTitle}.` : `Sequence ${seqNum}.`;
+            const allChunks = [
+                {
+                    speaker: "Narrator",
+                    spokenText: introSpoken,
+                    text: introSpoken,
+                    isSequenceIntro: true,
+                    pauseAfterMs: 1500
+                }
+            ];
+
+            // 2. Iterate through each scene with drafted prose
+            // IMPORTANT: Per user specification, scene names are NOT included.
+            // A 2-second pause (pauseAfterMs: 2000) is placed between scenes for a clean transition.
+            validScenes.forEach((vs, idx) => {
+                const isLastScene = (idx === validScenes.length - 1);
+                const dramaChunks = parseAudioDramaScript(vs.proseText);
+                const hasExplicitDialogue = dramaChunks && dramaChunks.some(c => c.speaker && c.speaker.toLowerCase() !== 'narrator');
+                const isDrama = (story?.writing_mode === 'audio_drama') || (hasExplicitDialogue && dramaChunks.length >= 2);
+                let sceneChunks = isDrama ? dramaChunks : chunkProseForTts(vs.proseText);
+
+                if (Array.isArray(sceneChunks) && sceneChunks.length > 0) {
+                    sceneChunks.forEach((c) => {
+                        c._sceneNumber = `${seqNum}.${vs.sceneIdx + 1}`;
+                    });
+
+                    // Add a clean 2-second pause on the last chunk of each scene (except the very last scene of the sequence)
+                    if (!isLastScene) {
+                        sceneChunks[sceneChunks.length - 1].pauseAfterMs = 2000;
+                    }
+
+                    allChunks.push(...sceneChunks);
+                }
+            });
+
+            if (allChunks.length <= 1) {
+                throw new Error(`No speakable dialogue or narration found in Sequence ${seqNum} to export.`);
+            }
+
+            // Reuse in-memory synthesized audio if available
+            if (Array.isArray(activeQueue) && activeQueue.length > 0) {
+                allChunks.forEach(targetChunk => {
+                    if (targetChunk.audioUrl) return;
+                    const match = activeQueue.find(qChunk =>
+                        qChunk && qChunk.audioUrl &&
+                        (qChunk.spokenText || qChunk.text) === (targetChunk.spokenText || targetChunk.text) &&
+                        qChunk.speaker === targetChunk.speaker
+                    );
+                    if (match && match.audioUrl) {
+                        targetChunk.audioUrl = match.audioUrl;
+                    }
+                });
+            }
+
+            const total = allChunks.length;
+            const backend = settings?.backend || 'audiocpp';
+
+            // Synthesize any missing chunk audio
+            for (let i = 0; i < total; i++) {
+                const chunk = allChunks[i];
+                if (!chunk.audioUrl) {
+                    if (onProgress) {
+                        onProgress({
+                            current: i + 1,
+                            total,
+                            stage: 'synthesizing',
+                            speaker: chunk.speaker || 'Narrator',
+                            sceneNumber: chunk._sceneNumber || null,
+                            isIntro: !!chunk.isSequenceIntro,
+                            spokenText: chunk.spokenText || chunk.text,
+                            pauseAfterMs: chunk.pauseAfterMs
+                        });
+                    }
+                    const audioUrl = await synthesizeAudioDramaChunk({
+                        chunk,
+                        backend,
+                        story,
+                        settings: settings || DEFAULT_AUDIO_DRAMA_SETTINGS,
+                        mainApiKey,
+                        mainOpenRouterKey,
+                        kokoroWorkerRef
+                    });
+                    chunk.audioUrl = audioUrl;
+                }
+            }
+
+            if (onProgress) onProgress({ current: total, total, stage: 'encoding' });
+
+            // Stitch and encode master MP3 with sample-accurate pauses
+            const mp3Blob = await stitchAndEncodeChunksToMp3(allChunks, {
+                dialoguePauseMs: settings?.dialoguePauseMs ?? 240,
+                narratorPauseMs: settings?.narratorPauseMs ?? 440,
+                kbps: 128
+            });
+
+            // Format clean, descriptive sequence filename (e.g. Story_Sequence_1_The_Departure.mp3)
+            const cleanStory = String(story?.title || "Story").replace(/[^a-zA-Z0-9_\-\s]/g, '').trim() || "Story";
+            const cleanSeqTitle = String(seqTitle).replace(/[^a-zA-Z0-9_\-\s]/g, '').trim() || `Sequence_${seqNum}`;
+            const fileName = `${cleanStory}_Sequence_${seqNum}_${cleanSeqTitle}.mp3`.replace(/\s+/g, '_');
+
+            // Trigger browser download
+            const blobUrl = URL.createObjectURL(mp3Blob);
+            const anchor = document.createElement('a');
+            anchor.href = blobUrl;
+            anchor.download = fileName;
+            document.body.appendChild(anchor);
+            anchor.click();
+            setTimeout(() => {
+                anchor.remove();
+                URL.revokeObjectURL(blobUrl);
+            }, 2000);
+
+            return { fileName, blob: mp3Blob, totalChunks: total };
+        };
+
         window.stitchAndEncodeChunksToMp3 = stitchAndEncodeChunksToMp3;
         window.exportSceneAudioMp3 = exportSceneAudioMp3;
+        window.exportSequenceAudioMp3 = exportSequenceAudioMp3;
 
         const ARCH_GENRES = [
             "Space Opera", "Cyberpunk", "High Fantasy", "Urban Fantasy", "Post-Apocalyptic",
@@ -17439,610 +17713,6 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                         </h4>
                                     )}
 
-                                    {settingsTab === 'audio_drama' && (
-                                        <div className="bg-surface p-6 md:p-8 rounded-2xl border border-edge space-y-6 shadow-sm animate-fade-in">
-                                            {/* Header */}
-                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-edge pb-4">
-                                                <div>
-                                                    <div className="flex items-center gap-2">
-                                                        <h3 className="text-sm font-bold text-ink-900 font-serif tracking-tight">Audio Drama Multi-Voice Production</h3>
-                                                        <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-semibold">
-                                                            Multi-Voice Ensemble
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-xs text-ink-500 mt-1">
-                                                        Direct full-cast audio performances with automatic character voice casting, expressive emotion tags, and broadcast cadence.
-                                                    </p>
-                                                </div>
-                                                {/* Enable toggle */}
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-semibold text-ink-700 font-mono">Audio Drama Engine</span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => updateAudioDramaSetting('enabled', !audioDramaSettings.enabled)}
-                                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${audioDramaSettings.enabled ? 'bg-gold' : 'bg-mist-300'}`}
-                                                        aria-label="Toggle Audio Drama Engine"
-                                                    >
-                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${audioDramaSettings.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* Auto-Recovery Safeguard Card */}
-                                            <div className="p-4 rounded-xl border border-edge-strong bg-wash flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                                <div className="flex items-start gap-3">
-                                                    <div className="w-8 h-8 rounded-lg bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink shrink-0 mt-0.5">
-                                                        <Volume2 size={16} />
-                                                    </div>
-                                                    <div>
-                                                        <div className="flex items-center gap-2">
-                                                            <h4 className="text-xs font-bold text-ink-900 font-mono uppercase tracking-wider">Seamless Built-in Voice Safeguard</h4>
-                                                            <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-sage-tint text-sage-800 border border-sage-edge font-semibold">Recommended</span>
-                                                        </div>
-                                                        <p className="text-xs text-ink-600 mt-0.5 max-w-xl">
-                                                            If your local Audio.cpp server or cloud speech API encounters an issue or network delay, listening automatically continues with the built-in free voice without halting playback.
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                                                    <span className="text-xs font-semibold text-ink-700 font-mono">
-                                                        {audioDramaSettings.autoFallbackToBrowser !== false ? 'Enabled' : 'Disabled'}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => updateAudioDramaSetting('autoFallbackToBrowser', audioDramaSettings.autoFallbackToBrowser === false ? true : false)}
-                                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${audioDramaSettings.autoFallbackToBrowser !== false ? 'bg-gold' : 'bg-mist-300'}`}
-                                                        aria-label="Toggle Auto-Fallback Safeguard"
-                                                    >
-                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${audioDramaSettings.autoFallbackToBrowser !== false ? 'translate-x-6' : 'translate-x-1'}`} />
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* 4 First-Class Backends Selector */}
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <label className="block text-xs font-bold text-ink-700 uppercase tracking-wider font-mono">Audio Drama Synthesis Backend</label>
-                                                    <p className="text-xs text-ink-500 mt-0.5">Select the synthesis backend for producing multi-speaker audio dramas. Each engine receives the automated 7-dimension character voice profile and emotion tags.</p>
-                                                </div>
-
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                                                    {[
-                                                        {
-                                                            id: 'audiocpp',
-                                                            title: 'Audio.cpp (Local)',
-                                                            badge: 'Qwen 3 TTS',
-                                                            desc: 'Local high-fidelity Voice Design with Qwen 3 large model via audio.cpp server.'
-                                                        },
-                                                        {
-                                                            id: 'gemini',
-                                                            title: 'Gemini TTS (API)',
-                                                            badge: 'Voice Design & Presets',
-                                                            desc: 'Google Gemini 3.8 Flash TTS with prompt-driven character voices and 30 studio presets.'
-                                                        },
-                                                        {
-                                                            id: 'openrouter',
-                                                            title: 'OpenRouter (API)',
-                                                            badge: 'ElevenLabs v4',
-                                                            desc: 'ElevenLabs v4 multi-voice ensemble with automated timbre mapping and [emotion] tags.'
-                                                        },
-                                                        {
-                                                            id: 'browser',
-                                                            title: 'Browser (In-App)',
-                                                            badge: 'Kokoro-82M Ensemble',
-                                                            desc: 'Client-side neural speech synthesis. Zero configuration, completely offline and free.'
-                                                        }
-                                                    ].map(opt => {
-                                                        const isSelected = (audioDramaSettings.backend || 'audiocpp') === opt.id;
-                                                        return (
-                                                            <button
-                                                                key={opt.id}
-                                                                type="button"
-                                                                onClick={() => updateAudioDramaSetting('backend', opt.id)}
-                                                                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative flex flex-col justify-between ${
-                                                                    isSelected
-                                                                        ? 'bg-gold-tint/40 border-gold shadow-xs'
-                                                                        : 'bg-surface hover:bg-wash border-edge hover:border-edge-strong'
-                                                                }`}
-                                                            >
-                                                                <div>
-                                                                    <div className="flex items-center justify-between gap-1 mb-1">
-                                                                        <span className={`text-xs font-bold ${isSelected ? 'text-gold-ink' : 'text-ink-800'}`}>
-                                                                            {opt.title}
-                                                                        </span>
-                                                                        {isSelected && <span className="w-2 h-2 rounded-full bg-gold" />}
-                                                                    </div>
-                                                                    <span className="inline-block text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-mist-200 text-ink-600 mb-1.5 font-semibold">
-                                                                        {opt.badge}
-                                                                    </span>
-                                                                    <p className="text-[11px] text-ink-500 leading-tight">
-                                                                        {opt.desc}
-                                                                    </p>
-                                                                </div>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-
-                                            {/* Backend Specific Configuration Panels */}
-                                            {/* PANEL 1: Audio.cpp (Local Qwen 3 TTS) */}
-                                            {(audioDramaSettings.backend || 'audiocpp') === 'audiocpp' && (
-                                                <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-4">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <Radio size={16} className="text-gold-ink" />
-                                                            <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">Audio.cpp (Local Qwen 3 TTS) Configuration</h4>
-                                                        </div>
-                                                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-semibold">
-                                                            Natural Language Voice Design
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-xs text-ink-500">
-                                                        Connects to your local <strong>audio.cpp</strong> server hosting Qwen 3 TTS large. Audio drama scenes pass detailed 7-dimension vocal profiles (gender, age, timbre, accent, pitch, pace, texture) directly into Qwen's Voice Design prompt along with inline emotion directives like <code className="text-gold-ink font-mono">[whispering]</code> and <code className="text-gold-ink font-mono">[angry]</code>.
-                                                    </p>
-
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                        <div>
-                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">Server URL</label>
-                                                            <input
-                                                                type="text"
-                                                                value={audioDramaSettings.audioCppUrl || 'http://127.0.0.1:8080'}
-                                                                onChange={e => updateAudioDramaSetting('audioCppUrl', e.target.value)}
-                                                                placeholder="http://127.0.0.1:8080"
-                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
-                                                            />
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">Model Name</label>
-                                                            <input
-                                                                type="text"
-                                                                value={audioDramaSettings.audioCppModel || 'qwen3-tts'}
-                                                                onChange={e => updateAudioDramaSetting('audioCppModel', e.target.value)}
-                                                                placeholder="qwen3-tts"
-                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
-                                                            />
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Voice Consistency & Drift Prevention Controls */}
-                                                    <div className="pt-2 border-t border-edge-soft space-y-3">
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <ShieldCheck size={14} className="text-gold-ink" />
-                                                                <span className="text-[11px] font-bold text-ink-900 font-mono uppercase tracking-wider">Voice Consistency & Drift Prevention</span>
-                                                            </div>
-                                                            <span className="text-[10px] font-mono text-gold-ink font-semibold">Qwen 3 Voice Design</span>
-                                                        </div>
-
-                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                            {/* Temperature Clamping */}
-                                                            <div className="bg-surface/80 p-3 rounded-xl border border-edge">
-                                                                <div className="flex items-center justify-between text-xs mb-1">
-                                                                    <span className="font-semibold text-ink-800">Voice Stability Temperature</span>
-                                                                    <span className="font-mono text-gold-ink font-bold">
-                                                                        {(audioDramaSettings.audioCppTemperature ?? 0.3).toFixed(2)}
-                                                                        <span className="text-[10px] text-ink-400 font-normal ml-1">
-                                                                            {(audioDramaSettings.audioCppTemperature ?? 0.3) <= 0.35 ? '(Locked)' : (audioDramaSettings.audioCppTemperature ?? 0.3) <= 0.55 ? '(Balanced)' : '(High Variance)'}
-                                                                        </span>
-                                                                    </span>
-                                                                </div>
-                                                                <input
-                                                                    type="range"
-                                                                    min="0.1"
-                                                                    max="0.8"
-                                                                    step="0.05"
-                                                                    value={audioDramaSettings.audioCppTemperature ?? 0.3}
-                                                                    onChange={e => updateAudioDramaSetting('audioCppTemperature', parseFloat(e.target.value))}
-                                                                    className="w-full accent-[#C9A96E] cursor-pointer"
-                                                                />
-                                                                <span className="text-[10px] text-ink-400 block mt-1">
-                                                                    Clamps sampling variance to 0.2–0.35, locking character vocal timbre and pitch between sections.
-                                                                </span>
-                                                            </div>
-
-                                                            {/* Deterministic Seed Anchoring */}
-                                                            <div className="bg-surface/80 p-3 rounded-xl border border-edge flex flex-col justify-between">
-                                                                <div className="flex items-center justify-between gap-2">
-                                                                    <div>
-                                                                        <span className="text-xs font-semibold text-ink-800 block">Deterministic Seed Anchoring</span>
-                                                                        <span className="text-[10px] text-ink-400 block mt-0.5">
-                                                                            Binds each speaker to a consistent mathematical seed across all scenes.
-                                                                        </span>
-                                                                    </div>
-                                                                    <button
-                                                                        type="button"
-                                                                        role="switch"
-                                                                        aria-checked={audioDramaSettings.enableDeterministicSeed !== false}
-                                                                        onClick={() => updateAudioDramaSetting('enableDeterministicSeed', audioDramaSettings.enableDeterministicSeed === false ? true : false)}
-                                                                        className={`w-9 h-5 rounded-full transition-colors relative cursor-pointer shrink-0 ${audioDramaSettings.enableDeterministicSeed !== false ? 'bg-gold' : 'bg-mist-300'}`}
-                                                                    >
-                                                                        <span className={`w-3.5 h-3.5 rounded-full bg-white absolute top-0.75 transition-transform ${audioDramaSettings.enableDeterministicSeed !== false ? 'left-4.5' : 'left-1'}`} />
-                                                                    </button>
-                                                                </div>
-                                                                <span className="text-[10px] text-gold-ink font-mono mt-2">
-                                                                    Status: {audioDramaSettings.enableDeterministicSeed !== false ? 'Active (Seeds Anchored)' : 'Off (Random Seeds)'}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <div className="flex items-center justify-between pt-1">
-                                                        <span className="text-[11px] text-ink-500 italic font-serif">
-                                                            Runs on your local PC or GPU workstation. Fast, uncensored, zero cloud latency.
-                                                        </span>
-                                                        <button
-                                                            type="button"
-                                                            onClick={async () => {
-                                                                const targetUrl = (audioDramaSettings.audioCppUrl || 'http://127.0.0.1:8080').replace(/\/+$/, '');
-                                                                showToast(`Checking Audio.cpp connection at ${targetUrl}...`, "info");
-                                                                try {
-                                                                    const res = await fetchWithTimeout(`${targetUrl}/v1/models`, { method: 'GET' }, 4000)
-                                                                        .catch(() => fetchWithTimeout(`${targetUrl}/health`, { method: 'GET' }, 4000))
-                                                                        .catch(() => fetchWithTimeout(`${targetUrl}/`, { method: 'GET' }, 4000));
-                                                                    if (res && res.ok) {
-                                                                        showToast(`Connected to Audio.cpp! Ready to synthesize audio drama.`, "success");
-                                                                    } else if (res) {
-                                                                        showToast(`Audio.cpp server is reachable and active.`, "info");
-                                                                    } else {
-                                                                        showToast(`Could not reach Audio.cpp. Please make sure your local server is running.`, "warning");
-                                                                    }
-                                                                } catch (err) {
-                                                                    showToast(`Could not reach Audio.cpp. Make sure your local audio.cpp window is running.`, "error");
-                                                                }
-                                                            }}
-                                                            className="px-3.5 py-1.5 rounded-xl border border-edge-strong bg-surface hover:bg-wash text-ink-800 text-xs font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
-                                                        >
-                                                            <Radio size={12} className="text-gold-ink" /> Test Audio.cpp Connection
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* PANEL 2: Gemini API (Google Voice Design & 30 Studio Presets) */}
-                                            {(audioDramaSettings.backend || 'audiocpp') === 'gemini' && (
-                                                <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-4">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <Sparkles size={16} className="text-gold-ink" />
-                                                            <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">Gemini 3.8 Flash TTS Configuration</h4>
-                                                        </div>
-                                                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sage-tint border border-sage-edge text-sage-800 font-semibold">
-                                                            Google Voice Design & Presets
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-xs text-ink-500">
-                                                        Google Gemini 3.8 Flash TTS synthesizes multi-speaker drama using natural language Voice Design descriptions and 30 curated studio voice presets with style metadata and expressive prosody.
-                                                    </p>
-
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                        <div>
-                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">Gemini Dedicated API Key (Optional)</label>
-                                                            <input
-                                                                type="password"
-                                                                value={audioDramaSettings.geminiApiKey || ''}
-                                                                onChange={e => updateAudioDramaSetting('geminiApiKey', e.target.value)}
-                                                                placeholder={apiKey ? "Inheriting master Gemini API key" : "Paste Gemini API Key..."}
-                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
-                                                            />
-                                                            <span className="text-[10px] text-ink-400 mt-1 block">
-                                                                {apiKey ? "Using main Gemini API key by default." : "Requires a Gemini API key."}
-                                                            </span>
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">Gemini TTS Model</label>
-                                                            <select
-                                                                value={audioDramaSettings.geminiModel || 'gemini-3.8-flash-tts'}
-                                                                onChange={e => updateAudioDramaSetting('geminiModel', e.target.value)}
-                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold cursor-pointer"
-                                                            >
-                                                                <option value="gemini-3.8-flash-tts">gemini-3.8-flash-tts (High Fidelity Studio)</option>
-                                                                <option value="gemini-3.8-flash-lite-tts">gemini-3.8-flash-lite-tts (Ultra-Fast Flash Lite)</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* PANEL 3: OpenRouter (ElevenLabs v4 Multi-Voice) */}
-                                            {(audioDramaSettings.backend || 'audiocpp') === 'openrouter' && (
-                                                <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-4">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <Volume2 size={16} className="text-gold-ink" />
-                                                            <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">OpenRouter ElevenLabs v4 Configuration</h4>
-                                                        </div>
-                                                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-300 font-semibold">
-                                                            Automated 21-Voice Mapping
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-xs text-ink-500">
-                                                        Uses OpenRouter's speech endpoint running <strong>ElevenLabs v4</strong>. Character voice descriptions are automatically mapped to the 21 ElevenLabs studio voices (George, Sarah, Adam, Alice, Bella, etc.) based on gender, age, and timbre, with inline square bracket emotion tags passed automatically.
-                                                    </p>
-
-                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                                        <div>
-                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">OpenRouter Dedicated API Key (Optional)</label>
-                                                            <input
-                                                                type="password"
-                                                                value={audioDramaSettings.openRouterApiKey || ''}
-                                                                onChange={e => updateAudioDramaSetting('openRouterApiKey', e.target.value)}
-                                                                placeholder={openRouterKey ? "Inheriting master OpenRouter API key" : "Paste OpenRouter API Key..."}
-                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
-                                                            />
-                                                            <span className="text-[10px] text-ink-400 mt-1 block">
-                                                                {openRouterKey ? "Using main OpenRouter API key by default." : "Requires an OpenRouter API key."}
-                                                            </span>
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">Model</label>
-                                                            <input
-                                                                type="text"
-                                                                value={audioDramaSettings.openRouterModel || 'elevenlabs/eleven-v4'}
-                                                                onChange={e => updateAudioDramaSetting('openRouterModel', e.target.value)}
-                                                                placeholder="elevenlabs/eleven-v4"
-                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
-                                                            />
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* PANEL 4: Browser (Kokoro-82M Ensemble) */}
-                                            {(audioDramaSettings.backend || 'audiocpp') === 'browser' && (
-                                                <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-3">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-2">
-                                                            <Cpu size={16} className="text-gold-ink" />
-                                                            <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">In-Browser Neural Ensemble (Kokoro-82M)</h4>
-                                                        </div>
-                                                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 border border-slate-300 text-slate-800 dark:bg-stone-800 dark:border-stone-700 dark:text-stone-200 font-semibold">
-                                                            Offline & Free
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-xs text-ink-500">
-                                                        Runs client-side in your browser using Kokoro-82M with WebAssembly / WebGPU acceleration. The cast is automatically distributed across the Kokoro voice ensemble (Heart, Nicole, Sarah, Sky, Adam, Michael, George, Lewis, Emma, Isabella). No API keys or server setup needed.
-                                                    </p>
-                                                    <div className="text-[11px] font-mono text-ink-600 bg-surface p-2.5 rounded-lg border border-edge">
-                                                        Device acceleration: <span className="uppercase text-gold-ink font-bold">{ttsActiveDevice || 'Auto-Detect (WebGPU / WASM)'}</span>
-                                                    </div>
-                                                </div>
-                                            )}
-
-                                            {/* Dramatic Cadence & Pause Timing */}
-                                            <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-surface space-y-4">
-                                                <div className="flex items-center justify-between">
-                                                    <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">Dramatic Cadence & Pause Timing</h4>
-                                                    <span className="text-[10px] font-mono text-ink-500">Pacing between speakers</span>
-                                                </div>
-                                                <p className="text-xs text-ink-500">
-                                                    Control the natural pauses between alternating dialogue lines and descriptive narrative beats to preserve authentic dramatic pacing.
-                                                </p>
-
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                                    <div>
-                                                        <div className="flex items-center justify-between text-xs mb-1">
-                                                            <span className="font-semibold text-ink-700">Dialogue Turn Pause</span>
-                                                            <span className="font-mono text-gold-ink font-bold">{audioDramaSettings.dialoguePauseMs || 240} ms</span>
-                                                        </div>
-                                                        <input
-                                                            type="range"
-                                                            min="50"
-                                                            max="800"
-                                                            step="10"
-                                                            value={audioDramaSettings.dialoguePauseMs || 240}
-                                                            onChange={e => updateAudioDramaSetting('dialoguePauseMs', parseInt(e.target.value, 10))}
-                                                            className="w-full accent-[#C9A96E] cursor-pointer"
-                                                        />
-                                                        <span className="text-[10px] text-ink-400 block mt-0.5">Cadence pause between rapid character dialogue exchanges.</span>
-                                                    </div>
-
-                                                    <div>
-                                                        <div className="flex items-center justify-between text-xs mb-1">
-                                                            <span className="font-semibold text-ink-700">Narrator Scene Beat Pause</span>
-                                                            <span className="font-mono text-gold-ink font-bold">{audioDramaSettings.narratorPauseMs || 440} ms</span>
-                                                        </div>
-                                                        <input
-                                                            type="range"
-                                                            min="100"
-                                                            max="1500"
-                                                            step="20"
-                                                            value={audioDramaSettings.narratorPauseMs || 440}
-                                                            onChange={e => updateAudioDramaSetting('narratorPauseMs', parseInt(e.target.value, 10))}
-                                                            className="w-full accent-[#C9A96E] cursor-pointer"
-                                                        />
-                                                        <span className="text-[10px] text-ink-400 block mt-0.5">Atmospheric pause between narrative descriptions and character lines.</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            {/* Cast Voice Roster & Automated Voice Profiles with Auditioning */}
-                                            <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-surface space-y-4">
-                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-edge pb-3">
-                                                    <div>
-                                                        <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">Cast Voice Roster & Auditions</h4>
-                                                        <p className="text-xs text-ink-500 mt-0.5">
-                                                            Voices are automatically generated from character traits and mapped directly to the selected audio backend.
-                                                        </p>
-                                                    </div>
-                                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-semibold self-start sm:self-auto">
-                                                        Zero Manual Casting Needed
-                                                    </span>
-                                                </div>
-
-                                                {/* List Cast Members */}
-                                                <div className="space-y-3">
-                                                    {/* 1. Narrator Entry */}
-                                                    {(() => {
-                                                        const narratorDesc = getVoiceDescriptionForCharacter('Narrator', story);
-                                                        const narratorSeed = getDeterministicVoiceSeed('Narrator', story);
-                                                        const currentBackend = audioDramaSettings.backend || 'audiocpp';
-                                                        const isDeterministic = audioDramaSettings.enableDeterministicSeed !== false;
-                                                        let mappedVoiceBadge = "";
-                                                        if (currentBackend === 'audiocpp') {
-                                                            mappedVoiceBadge = "Qwen 3 Voice Design Prompt";
-                                                        } else if (currentBackend === 'openrouter') {
-                                                            mappedVoiceBadge = `ElevenLabs: ${mapCharacterToElevenLabsVoice(narratorDesc, 'Narrator')}`;
-                                                        } else if (currentBackend === 'gemini') {
-                                                            mappedVoiceBadge = `Gemini: ${mapCharacterToGeminiVoice(narratorDesc, 'Narrator')}`;
-                                                        } else {
-                                                            mappedVoiceBadge = `Kokoro: ${(KOKORO_VOICES.find(v => v.id === mapCharacterToKokoroVoice(narratorDesc, 'Narrator')) || {}).name || 'Heart'}`;
-                                                        }
-
-                                                        return (
-                                                            <div className="p-3.5 rounded-xl border border-edge-strong bg-inset/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                                                                <div className="space-y-1 flex-1 min-w-0">
-                                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                                        <span className="text-xs font-bold text-ink-900 font-serif">Narrator</span>
-                                                                        <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-gold-tint text-gold-ink font-semibold">
-                                                                            Dramatic Storyteller
-                                                                        </span>
-                                                                        <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-mist-200 text-ink-600 font-semibold">
-                                                                            {mappedVoiceBadge}
-                                                                        </span>
-                                                                        {currentBackend === 'audiocpp' && (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={handleEditNarratorSeed}
-                                                                                className={`text-[9px] font-mono px-1.5 py-0.5 rounded border font-semibold cursor-pointer ${
-                                                                                    isDeterministic 
-                                                                                        ? 'bg-gold-tint border-gold-edge text-gold-ink hover:bg-gold-tint/80' 
-                                                                                        : 'bg-mist-200 border-edge text-ink-400 line-through'
-                                                                                }`}
-                                                                                title={isDeterministic ? `Deterministic seed anchor: #${narratorSeed} (Click to edit seed number)` : 'Deterministic seed anchoring disabled in settings'}
-                                                                            >
-                                                                                Seed: #{narratorSeed}
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                    <p className="text-[11px] text-ink-600 italic font-serif leading-relaxed">
-                                                                        "{narratorDesc}"
-                                                                    </p>
-                                                                </div>
-                                                                <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
-                                                                    {currentBackend === 'audiocpp' && (
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={handleRerollNarratorSeed}
-                                                                            className="px-2.5 py-1.5 rounded-xl border border-edge-strong bg-surface hover:bg-wash text-ink-700 hover:text-ink-900 text-xs font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer flex items-center gap-1.5"
-                                                                            title="Re-roll Narrator Seed"
-                                                                        >
-                                                                            <RotateCcw size={12} className="text-gold-ink" /> Re-roll Seed
-                                                                        </button>
-                                                                    )}
-                                                                    <button
-                                                                        type="button"
-                                                                        disabled={isAuditioningVoice}
-                                                                        onClick={() => testAuditionCharacterVoice('Narrator')}
-                                                                        className="px-3 py-1.5 rounded-xl border border-gold-edge bg-gold-tint hover:bg-gold-tint/80 text-gold-ink text-xs font-bold transition-all shadow-2xs active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
-                                                                    >
-                                                                        <Volume2 size={13} /> {isAuditioningVoice ? 'Auditioning...' : 'Audition Narrator'}
-                                                                    </button>
-                                                                    <EditButton
-                                                                        className="p-1.5 min-w-7 min-h-7 shrink-0"
-                                                                        title="Edit Narrator Voice Profile (Qwen 3 TTS 7-Dimension Prompt)"
-                                                                        value={narratorDesc}
-                                                                        onSave={handleEditNarratorVoiceProfile}
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        );
-                                                    })()}
-
-                                                    {/* 2. Story Characters */}
-                                                    {(() => {
-                                                        const activeCast = (Array.isArray(story.cast) && story.cast.length > 0)
-                                                            ? story.cast
-                                                            : (Array.isArray(story.characters) && story.characters.length > 0 ? story.characters : []);
-                                                        return activeCast.length > 0 ? (
-                                                            activeCast.map((char, cIdx) => {
-                                                                const charName = char.name || `Character ${cIdx + 1}`;
-                                                                const voiceDesc = getVoiceDescriptionForCharacter(char, story);
-                                                                const charSeed = getDeterministicVoiceSeed(char, story);
-                                                                const currentBackend = audioDramaSettings.backend || 'audiocpp';
-                                                                const isDeterministic = audioDramaSettings.enableDeterministicSeed !== false;
-                                                                let mappedVoiceBadge = "";
-                                                                if (currentBackend === 'audiocpp') {
-                                                                    mappedVoiceBadge = "Qwen 3 Voice Design Prompt";
-                                                                } else if (currentBackend === 'openrouter') {
-                                                                    mappedVoiceBadge = `ElevenLabs: ${mapCharacterToElevenLabsVoice(voiceDesc, charName)}`;
-                                                                } else if (currentBackend === 'gemini') {
-                                                                    mappedVoiceBadge = `Gemini: ${mapCharacterToGeminiVoice(voiceDesc, charName)}`;
-                                                                } else {
-                                                                    mappedVoiceBadge = `Kokoro: ${(KOKORO_VOICES.find(v => v.id === mapCharacterToKokoroVoice(voiceDesc, charName)) || {}).name || 'Heart'}`;
-                                                                }
-
-                                                                return (
-                                                                    <div key={char.id || cIdx} className="p-3.5 rounded-xl border border-edge-strong bg-inset/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                                                                        <div className="space-y-1 flex-1 min-w-0">
-                                                                            <div className="flex items-center gap-2 flex-wrap">
-                                                                                <span className="text-xs font-bold text-ink-900 font-serif">{charName}</span>
-                                                                                {char.role && (
-                                                                                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-mist-200 text-ink-600 font-semibold">
-                                                                                        {char.role}
-                                                                                    </span>
-                                                                                )}
-                                                                                <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-gold-tint text-gold-ink font-semibold">
-                                                                                    {mappedVoiceBadge}
-                                                                                </span>
-                                                                                {currentBackend === 'audiocpp' && (
-                                                                                    <button
-                                                                                        type="button"
-                                                                                        onClick={() => handleEditCharacterSeed(char)}
-                                                                                        className={`text-[9px] font-mono px-1.5 py-0.5 rounded border font-semibold cursor-pointer ${
-                                                                                            isDeterministic 
-                                                                                                ? 'bg-gold-tint border-gold-edge text-gold-ink hover:bg-gold-tint/80' 
-                                                                                                : 'bg-mist-200 border-edge text-ink-400 line-through'
-                                                                                        }`}
-                                                                                        title={isDeterministic ? `Deterministic seed anchor: #${charSeed} (Click to edit seed number)` : 'Deterministic seed anchoring disabled in settings'}
-                                                                                    >
-                                                                                        Seed: #{charSeed}
-                                                                                    </button>
-                                                                                )}
-                                                                            </div>
-                                                                            <p className="text-[11px] text-ink-600 italic font-serif leading-relaxed">
-                                                                                "{voiceDesc}"
-                                                                            </p>
-                                                                        </div>
-                                                                        <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
-                                                                            {currentBackend === 'audiocpp' && (
-                                                                                <button
-                                                                                    type="button"
-                                                                                    onClick={() => handleRerollCharacterSeed(char)}
-                                                                                    className="px-2.5 py-1.5 rounded-xl border border-edge-strong bg-surface hover:bg-wash text-ink-700 hover:text-ink-900 text-xs font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer flex items-center gap-1.5"
-                                                                                    title={`Re-roll Seed for ${charName}`}
-                                                                                >
-                                                                                    <RotateCcw size={12} className="text-gold-ink" /> Re-roll Seed
-                                                                                </button>
-                                                                            )}
-                                                                            <button
-                                                                                type="button"
-                                                                                disabled={isAuditioningVoice}
-                                                                                onClick={() => testAuditionCharacterVoice(char)}
-                                                                                className="px-3 py-1.5 rounded-xl border border-edge-strong bg-surface hover:bg-wash text-ink-800 text-xs font-bold transition-all shadow-2xs active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
-                                                                            >
-                                                                                <Volume2 size={13} className="text-gold-ink" /> {isAuditioningVoice ? 'Auditioning...' : 'Audition Voice'}
-                                                                            </button>
-                                                                            <EditButton
-                                                                                className="p-1.5 min-w-7 min-h-7 shrink-0"
-                                                                                title={`Edit Voice Profile for ${charName} (Qwen 3 TTS 7-Dimension Prompt)`}
-                                                                                value={voiceDesc}
-                                                                                onSave={() => handleEditCharacterVoiceProfile(char)}
-                                                                            />
-                                                                        </div>
-                                                                    </div>
-                                                                );
-                                                            })
-                                                        ) : (
-                                                            <div className="text-center py-6 text-xs text-ink-400 italic font-serif bg-inset/30 rounded-xl border border-edge">
-                                                                No characters created in this story yet. Characters added to your cast will automatically populate here with their unique voice profiles.
-                                                            </div>
-                                                        );
-                                                    })()}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
                                     {proseStale && (
                                         <span title={proseStale.reason} className="text-xs font-bold px-2.5 py-0.5 rounded-full border bg-tangerine-tint text-tangerine-800 border-tangerine-edge">Prose out of date</span>
                                     )}
@@ -18214,7 +17884,8 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
             scrollReaderToElement,
             audioDramaSettings, updateAudioDramaSetting, audioDramaActiveSpeaker, audioDramaActiveEmotion, isAudioDramaModeActive,
             startTtsFromProse, requestChunkAudio, setSettingsTab,
-            handleDownloadSceneAudio, isExportingSceneAudio
+            handleDownloadSceneAudio, isExportingSceneAudio,
+            handleDownloadSequenceAudio, isExportingSequenceAudio
         }) => {
             const activeChapter = currentChapter || storyChapters[currentChapterIndex] || storyChapters[0] || null;
             const activeChapterIdx = activeChapter ? activeChapter.chapterIndex : (selectedSequence || 0);
@@ -19378,34 +19049,54 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
 
                                         return (
                                             <div key={ch.seqIdx} className="space-y-1">
-                                                <button
-                                                    onClick={() => {
-                                                        setIsTocOpen(false);
-                                                        if (readerSettings.readingMode === 'scroll') {
-                                                            const targetEl = document.getElementById(`reader-chapter-${ch.seqIdx}`);
-                                                            if (targetEl) {
-                                                                scrollToElement(targetEl, true);
+                                                <div className={`w-full px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${isCurrentChapter ? 'bg-gold-tint text-gold-ink border border-gold-edge' : 'hover:bg-wash opacity-90'}`}>
+                                                    <button
+                                                        onClick={() => {
+                                                            setIsTocOpen(false);
+                                                            if (readerSettings.readingMode === 'scroll') {
+                                                                const targetEl = document.getElementById(`reader-chapter-${ch.seqIdx}`);
+                                                                if (targetEl) {
+                                                                    scrollToElement(targetEl, true);
+                                                                }
+                                                                if (setVisibleScrollChapter) setVisibleScrollChapter(ch.seqIdx);
+                                                                if (saveReadingProgress) saveReadingProgress(ch.seqIdx, 0, 0);
+                                                            } else {
+                                                                jumpToReaderChapter(ch.seqIdx, 0);
                                                             }
-                                                            if (setVisibleScrollChapter) setVisibleScrollChapter(ch.seqIdx);
-                                                            if (saveReadingProgress) saveReadingProgress(ch.seqIdx, 0, 0);
-                                                        } else {
-                                                            jumpToReaderChapter(ch.seqIdx, 0);
-                                                        }
-                                                    }}
-                                                    className={`w-full text-left px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center justify-between ${isCurrentChapter ? 'bg-gold-tint text-gold-ink border border-gold-edge' : 'hover:bg-wash opacity-90'}`}
-                                                >
-                                                    <div className="flex items-center gap-2 truncate">
+                                                        }}
+                                                        className="flex items-center gap-2 truncate flex-1 min-w-0 cursor-pointer text-left"
+                                                    >
                                                         <BookOpen size={13} className="text-gold shrink-0" />
                                                         <span className="truncate">
                                                             Chapter {ch.chapterNumber}: {ch.title}
                                                         </span>
+                                                    </button>
+                                                    <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                                        {ch.hasAnyProse && handleDownloadSequenceAudio && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDownloadSequenceAudio(ch.seqIdx);
+                                                                }}
+                                                                disabled={isExportingSequenceAudio || isExportingSceneAudio}
+                                                                className="p-1 rounded-md hover:bg-wash-strong text-gold-ink hover:text-gold transition-colors opacity-70 hover:opacity-100 disabled:opacity-30 cursor-pointer"
+                                                                title={`Download Chapter ${ch.chapterNumber} (Sequence ${ch.chapterNumber}) MP3 Audio Drama`}
+                                                            >
+                                                                {isExportingSequenceAudio ? (
+                                                                    <Loader2 size={11} className="animate-spin text-gold" />
+                                                                ) : (
+                                                                    <Download size={11} />
+                                                                )}
+                                                            </button>
+                                                        )}
+                                                        {ch.totalWords > 0 && (
+                                                            <span className="text-[10px] font-mono opacity-60">
+                                                                {ch.totalWords.toLocaleString()}w
+                                                            </span>
+                                                        )}
                                                     </div>
-                                                    {ch.totalWords > 0 && (
-                                                        <span className="text-[10px] font-mono opacity-60 shrink-0 ml-2">
-                                                            {ch.totalWords.toLocaleString()}w
-                                                        </span>
-                                                    )}
-                                                </button>
+                                                </div>
 
                                                 <div className="space-y-0.5 pl-4">
                                                     {ch.scenes.map((sc, scIdx) => {
@@ -19749,7 +19440,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                                 type="button"
                                                 onClick={() => {
                                                     if (setView) setView('settings');
-                                                    if (setSettingsTab) setSettingsTab('audiodrama');
+                                                    if (setSettingsTab) setSettingsTab('audio_drama');
                                                     setIsAppearanceOpen(false);
                                                 }}
                                                 className="w-full py-2 px-3 rounded-xl bg-gold-tint hover:bg-gold-tint/80 border border-gold-edge text-gold-ink text-xs font-bold shadow-2xs transition-all cursor-pointer flex items-center justify-center gap-1.5"
@@ -25115,6 +24806,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
             const [ttsDuration, setTtsDuration] = useState(0);
             const [ttsGeneratingElapsedSec, setTtsGeneratingElapsedSec] = useState(0);
             const [isExportingSceneAudio, setIsExportingSceneAudio] = useState(false);
+            const [isExportingSequenceAudio, setIsExportingSequenceAudio] = useState(false);
 
             const ttsWorkerRef = useRef(null);
             const ttsAudioRef = useRef(null);
@@ -26619,6 +26311,78 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                     showToast(`Audio export failed: ${err.message || 'Unknown error'}`, "error");
                 } finally {
                     setIsExportingSceneAudio(false);
+                }
+            };
+
+            const handleDownloadSequenceAudio = async (seqIdx = selectedSequence) => {
+                if (isExportingSequenceAudio || isExportingSceneAudio) return;
+
+                const targetSeq = (seqIdx !== undefined && seqIdx !== null) ? Number(seqIdx) : Number(selectedSequence);
+                const seq = (story?.sequences || [])[targetSeq];
+                const seqNum = seq?.number || (targetSeq + 1);
+                const rawScenes = (story?.scenes && (story.scenes[targetSeq] || story.scenes[String(targetSeq)])) || [];
+                const sceneList = Array.isArray(rawScenes) ? rawScenes : [];
+
+                // Check if sequence has any drafted prose
+                const hasProse = sceneList.some((_, sIdx) => {
+                    const proseObj = story?.prose?.[[`${targetSeq}-${sIdx}`]];
+                    return Boolean(proseObj && (proseObj.final || proseObj.draft || (typeof proseObj === 'string' && proseObj.trim())));
+                });
+
+                if (!hasProse) {
+                    showToast(`No prose drafted in Sequence ${seqNum} to generate audio drama.`, "warning");
+                    return;
+                }
+
+                setIsExportingSequenceAudio(true);
+                showToast(`Preparing Sequence ${seqNum} audio drama export...`, "info");
+
+                try {
+                    // Collect all drafted chunks to ensure character voice registration across all sequence scenes
+                    const allChunksForVoices = [];
+                    sceneList.forEach((_, sIdx) => {
+                        const proseObj = story?.prose?.[[`${targetSeq}-${sIdx}`]];
+                        const text = (typeof proseObj === 'object' && proseObj !== null)
+                            ? (proseObj.final || proseObj.draft || "")
+                            : String(proseObj || "");
+                        if (text && text.trim()) {
+                            const parsed = parseAudioDramaScript(text);
+                            allChunksForVoices.push(...parsed);
+                        }
+                    });
+
+                    const storyForExport = ensureAudioDramaVoicesRegistered(allChunksForVoices, storyRef.current || story, setStory);
+                    if (storyForExport) {
+                        storyRef.current = storyForExport;
+                    }
+
+                    const result = await exportSequenceAudioMp3({
+                        story: storyForExport || story,
+                        seqIdx: targetSeq,
+                        settings: audioDramaSettings,
+                        mainApiKey: apiKey,
+                        mainOpenRouterKey: openRouterKey,
+                        kokoroWorkerRef: ttsWorkerRef,
+                        activeQueue: ttsQueueRef.current,
+                        onProgress: ({ current, total, stage, speaker, sceneNumber, isIntro }) => {
+                            if (stage === 'synthesizing') {
+                                if (isIntro) {
+                                    showToast(`Synthesizing Sequence Intro announcement (${current}/${total})...`, "info");
+                                } else {
+                                    const scenePrefix = sceneNumber ? `[Scene ${sceneNumber}] ` : '';
+                                    showToast(`${scenePrefix}Synthesizing ${speaker || 'audio'} (${current}/${total})...`, "info");
+                                }
+                            } else if (stage === 'encoding') {
+                                showToast(`Sequence ${seqNum}: Stitching scenes & encoding master MP3...`, "info");
+                            }
+                        }
+                    });
+                    showToast(`Sequence MP3 downloaded: ${result.fileName}`, "success");
+                } catch (err) {
+                    console.error("Failed to export sequence MP3:", err);
+                    showToast(`Sequence audio export failed: ${err.message || 'Unknown error'}`, "error");
+                } finally {
+                    setIsExportingSequenceAudio(false);
                 }
             };
 
@@ -39314,6 +39078,8 @@ ${finalProseText}
                                     isAudioDramaModeActive={isAudioDramaModeActive}
                                     handleDownloadSceneAudio={handleDownloadSceneAudio}
                                     isExportingSceneAudio={isExportingSceneAudio}
+                                    handleDownloadSequenceAudio={handleDownloadSequenceAudio}
+                                    isExportingSequenceAudio={isExportingSequenceAudio}
                                     ttsGeneratingElapsedSec={ttsGeneratingElapsedSec}
                                 />
                             )}
@@ -42424,6 +42190,24 @@ ${finalProseText}
                                                                         </div>
                                                                     </div>
                                                                     <div className="flex items-center gap-2 shrink-0 self-end md:self-auto" onClick={(e) => e.stopPropagation()}>
+                                                                        {seqScenes.some((_, sIdx) => {
+                                                                            const p = story.prose?.[[`${seqIdx}-${sIdx}`]];
+                                                                            return Boolean(p && (p.final || p.draft || (typeof p === 'string' && p.trim())));
+                                                                        }) && (
+                                                                            <button
+                                                                                onClick={() => handleDownloadSequenceAudio(seqIdx)}
+                                                                                disabled={isExportingSequenceAudio || isExportingSceneAudio}
+                                                                                className="text-ink-600 hover:text-ink-900 flex items-center gap-1 bg-surface border border-edge-strong hover:border-edge-300 px-2.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all disabled:opacity-40 cursor-pointer"
+                                                                                title={`Download Sequence ${sequence.number || seqIdx + 1} MP3 Audio Drama`}
+                                                                            >
+                                                                                {isExportingSequenceAudio ? (
+                                                                                    <Loader2 size={12} className="animate-spin text-gold" />
+                                                                                ) : (
+                                                                                    <Volume2 size={12} className="text-gold" />
+                                                                                )}
+                                                                                <span>MP3</span>
+                                                                            </button>
+                                                                        )}
                                                                         <button
                                                                             onClick={() => { setSelectedSequence(seqIdx); setView('sequence_dashboard'); }}
                                                                             className="bg-surface hover:bg-wash border border-edge-strong text-ink-700 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all shadow-2xs cursor-pointer"
@@ -42533,6 +42317,24 @@ ${finalProseText}
                                                     <button onClick={() => enterReaderMode(selectedSequence, 0)} className="bg-surface hover:bg-lift text-ink-800 border border-edge-strong px-3.5 py-2.5 rounded-xl font-bold text-xs shadow-2xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer">
                                                         <BookOpen size={13} className="text-gold-ink" /> Read Sequence
                                                     </button>
+                                                    {dashScenes.some((_, sIdx) => {
+                                                        const p = story.prose?.[[`${selectedSequence}-${sIdx}`]];
+                                                        return Boolean(p && (p.final || p.draft || (typeof p === 'string' && p.trim())));
+                                                    }) && (
+                                                        <button
+                                                            onClick={() => handleDownloadSequenceAudio(selectedSequence)}
+                                                            disabled={isExportingSequenceAudio || isExportingSceneAudio}
+                                                            className="bg-surface hover:bg-lift text-ink-800 border border-edge-strong px-3.5 py-2.5 rounded-xl font-bold text-xs shadow-2xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-40"
+                                                            title="Export entire sequence as an MP3 audio drama"
+                                                        >
+                                                            {isExportingSequenceAudio ? (
+                                                                <Loader2 size={13} className="animate-spin text-gold" />
+                                                            ) : (
+                                                                <Volume2 size={13} className="text-gold" />
+                                                            )}
+                                                            <span>{isExportingSequenceAudio ? 'Exporting MP3...' : 'Sequence MP3'}</span>
+                                                        </button>
+                                                    )}
                                                     <button onClick={() => requestSceneWeaving(selectedSequence)} disabled={loading} className="shrink-0 bg-btn hover:bg-btn-hover text-btn-ink px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed self-start">
                                                         <Sparkles size={13} className="text-btn-accent" /> {dashScenes.length > 0 ? 'Re-Weave Scenes' : 'Weave Scenes'}
                                                     </button>
@@ -45598,6 +45400,611 @@ ${finalProseText}
                                                     >
                                                         <Plus size={14} /> Add
                                                     </button>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {settingsTab === 'audio_drama' && (
+                                        <div className="bg-surface p-6 md:p-8 rounded-2xl border border-edge space-y-6 shadow-sm animate-fade-in">
+                                            {/* Header */}
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-edge pb-4">
+                                                <div>
+                                                    <div className="flex items-center gap-2">
+                                                        <h3 className="text-sm font-bold text-ink-900 font-serif tracking-tight">Audio Drama Multi-Voice Production</h3>
+                                                        <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-semibold">
+                                                            Multi-Voice Ensemble
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-ink-500 mt-1">
+                                                        Direct full-cast audio performances with automatic character voice casting, expressive emotion tags, and broadcast cadence.
+                                                    </p>
+                                                </div>
+                                                {/* Enable toggle */}
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-semibold text-ink-700 font-mono">Audio Drama Engine</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => updateAudioDramaSetting('enabled', !audioDramaSettings.enabled)}
+                                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${audioDramaSettings.enabled ? 'bg-gold' : 'bg-mist-300'}`}
+                                                        aria-label="Toggle Audio Drama Engine"
+                                                    >
+                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${audioDramaSettings.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Auto-Recovery Safeguard Card */}
+                                            <div className="p-4 rounded-xl border border-edge-strong bg-wash flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                <div className="flex items-start gap-3">
+                                                    <div className="w-8 h-8 rounded-lg bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink shrink-0 mt-0.5">
+                                                        <Volume2 size={16} />
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <h4 className="text-xs font-bold text-ink-900 font-mono uppercase tracking-wider">Seamless Built-in Voice Safeguard</h4>
+                                                            <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-sage-tint text-sage-800 border border-sage-edge font-semibold">Recommended</span>
+                                                        </div>
+                                                        <p className="text-xs text-ink-600 mt-0.5 max-w-xl">
+                                                            If your local Audio.cpp server or cloud speech API encounters an issue or network delay, listening automatically continues with the built-in free voice without halting playback.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                                                    <span className="text-xs font-semibold text-ink-700 font-mono">
+                                                        {audioDramaSettings.autoFallbackToBrowser !== false ? 'Enabled' : 'Disabled'}
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => updateAudioDramaSetting('autoFallbackToBrowser', audioDramaSettings.autoFallbackToBrowser === false ? true : false)}
+                                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${audioDramaSettings.autoFallbackToBrowser !== false ? 'bg-gold' : 'bg-mist-300'}`}
+                                                        aria-label="Toggle Auto-Fallback Safeguard"
+                                                    >
+                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${audioDramaSettings.autoFallbackToBrowser !== false ? 'translate-x-6' : 'translate-x-1'}`} />
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* 4 First-Class Backends Selector */}
+                                            <div className="space-y-3">
+                                                <div>
+                                                    <label className="block text-xs font-bold text-ink-700 uppercase tracking-wider font-mono">Audio Drama Synthesis Backend</label>
+                                                    <p className="text-xs text-ink-500 mt-0.5">Select the synthesis backend for producing multi-speaker audio dramas. Each engine receives the automated 7-dimension character voice profile and emotion tags.</p>
+                                                </div>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                                                    {[
+                                                        {
+                                                            id: 'audiocpp',
+                                                            title: 'Audio.cpp (Local)',
+                                                            badge: 'Qwen 3 TTS',
+                                                            desc: 'Local high-fidelity Voice Design with Qwen 3 large model via audio.cpp server.'
+                                                        },
+                                                        {
+                                                            id: 'gemini',
+                                                            title: 'Gemini TTS (API)',
+                                                            badge: 'Voice Design & Presets',
+                                                            desc: 'Google Gemini 3.8 Flash TTS with prompt-driven character voices and 30 studio presets.'
+                                                        },
+                                                        {
+                                                            id: 'openrouter',
+                                                            title: 'OpenRouter (API)',
+                                                            badge: 'ElevenLabs v4',
+                                                            desc: 'ElevenLabs v4 multi-voice ensemble with automated timbre mapping and [emotion] tags.'
+                                                        },
+                                                        {
+                                                            id: 'browser',
+                                                            title: 'Browser (In-App)',
+                                                            badge: 'Kokoro-82M Ensemble',
+                                                            desc: 'Client-side neural speech synthesis. Zero configuration, completely offline and free.'
+                                                        }
+                                                    ].map(opt => {
+                                                        const isSelected = (audioDramaSettings.backend || 'audiocpp') === opt.id;
+                                                        return (
+                                                            <button
+                                                                key={opt.id}
+                                                                type="button"
+                                                                onClick={() => updateAudioDramaSetting('backend', opt.id)}
+                                                                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative flex flex-col justify-between ${
+                                                                    isSelected
+                                                                        ? 'bg-gold-tint/40 border-gold shadow-xs'
+                                                                        : 'bg-surface hover:bg-wash border-edge hover:border-edge-strong'
+                                                                }`}
+                                                            >
+                                                                <div>
+                                                                    <div className="flex items-center justify-between gap-1 mb-1">
+                                                                        <span className={`text-xs font-bold ${isSelected ? 'text-gold-ink' : 'text-ink-800'}`}>
+                                                                            {opt.title}
+                                                                        </span>
+                                                                        {isSelected && <span className="w-2 h-2 rounded-full bg-gold" />}
+                                                                    </div>
+                                                                    <span className="inline-block text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-mist-200 text-ink-600 mb-1.5 font-semibold">
+                                                                        {opt.badge}
+                                                                    </span>
+                                                                    <p className="text-[11px] text-ink-500 leading-tight">
+                                                                        {opt.desc}
+                                                                    </p>
+                                                                </div>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+
+                                            {/* Backend Specific Configuration Panels */}
+                                            {/* PANEL 1: Audio.cpp (Local Qwen 3 TTS) */}
+                                            {(audioDramaSettings.backend || 'audiocpp') === 'audiocpp' && (
+                                                <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Radio size={16} className="text-gold-ink" />
+                                                            <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">Audio.cpp (Local Qwen 3 TTS) Configuration</h4>
+                                                        </div>
+                                                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-semibold">
+                                                            Natural Language Voice Design
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-ink-500">
+                                                        Connects to your local <strong>audio.cpp</strong> server hosting Qwen 3 TTS large. Audio drama scenes pass detailed 7-dimension vocal profiles (gender, age, timbre, accent, pitch, pace, texture) directly into Qwen's Voice Design prompt along with inline emotion directives like <code className="text-gold-ink font-mono">[whispering]</code> and <code className="text-gold-ink font-mono">[angry]</code>.
+                                                    </p>
+
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">Server URL</label>
+                                                            <input
+                                                                type="text"
+                                                                value={audioDramaSettings.audioCppUrl || 'http://127.0.0.1:8080'}
+                                                                onChange={e => updateAudioDramaSetting('audioCppUrl', e.target.value)}
+                                                                placeholder="http://127.0.0.1:8080"
+                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">Model Name</label>
+                                                            <input
+                                                                type="text"
+                                                                value={audioDramaSettings.audioCppModel || 'qwen3-tts'}
+                                                                onChange={e => updateAudioDramaSetting('audioCppModel', e.target.value)}
+                                                                placeholder="qwen3-tts"
+                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Voice Consistency & Drift Prevention Controls */}
+                                                    <div className="pt-2 border-t border-edge-soft space-y-3">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <ShieldCheck size={14} className="text-gold-ink" />
+                                                                <span className="text-[11px] font-bold text-ink-900 font-mono uppercase tracking-wider">Voice Consistency & Drift Prevention</span>
+                                                            </div>
+                                                            <span className="text-[10px] font-mono text-gold-ink font-semibold">Qwen 3 Voice Design</span>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                            {/* Temperature Clamping */}
+                                                            <div className="bg-surface/80 p-3 rounded-xl border border-edge">
+                                                                <div className="flex items-center justify-between text-xs mb-1">
+                                                                    <span className="font-semibold text-ink-800">Voice Stability Temperature</span>
+                                                                    <span className="font-mono text-gold-ink font-bold">
+                                                                        {(audioDramaSettings.audioCppTemperature ?? 0.3).toFixed(2)}
+                                                                        <span className="text-[10px] text-ink-400 font-normal ml-1">
+                                                                            {(audioDramaSettings.audioCppTemperature ?? 0.3) <= 0.35 ? '(Locked)' : (audioDramaSettings.audioCppTemperature ?? 0.3) <= 0.55 ? '(Balanced)' : '(High Variance)'}
+                                                                        </span>
+                                                                    </span>
+                                                                </div>
+                                                                <input
+                                                                    type="range"
+                                                                    min="0.1"
+                                                                    max="0.8"
+                                                                    step="0.05"
+                                                                    value={audioDramaSettings.audioCppTemperature ?? 0.3}
+                                                                    onChange={e => updateAudioDramaSetting('audioCppTemperature', parseFloat(e.target.value))}
+                                                                    className="w-full accent-[#C9A96E] cursor-pointer"
+                                                                />
+                                                                <span className="text-[10px] text-ink-400 block mt-1">
+                                                                    Clamps sampling variance to 0.2–0.35, locking character vocal timbre and pitch between sections.
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Deterministic Seed Anchoring */}
+                                                            <div className="bg-surface/80 p-3 rounded-xl border border-edge flex flex-col justify-between">
+                                                                <div className="flex items-center justify-between gap-2">
+                                                                    <div>
+                                                                        <span className="text-xs font-semibold text-ink-800 block">Deterministic Seed Anchoring</span>
+                                                                        <span className="text-[10px] text-ink-400 block mt-0.5">
+                                                                            Binds each speaker to a consistent mathematical seed across all scenes.
+                                                                        </span>
+                                                                    </div>
+                                                                    <button
+                                                                        type="button"
+                                                                        role="switch"
+                                                                        aria-checked={audioDramaSettings.enableDeterministicSeed !== false}
+                                                                        onClick={() => updateAudioDramaSetting('enableDeterministicSeed', audioDramaSettings.enableDeterministicSeed === false ? true : false)}
+                                                                        className={`w-9 h-5 rounded-full transition-colors relative cursor-pointer shrink-0 ${audioDramaSettings.enableDeterministicSeed !== false ? 'bg-gold' : 'bg-mist-300'}`}
+                                                                    >
+                                                                        <span className={`w-3.5 h-3.5 rounded-full bg-white absolute top-0.75 transition-transform ${audioDramaSettings.enableDeterministicSeed !== false ? 'left-4.5' : 'left-1'}`} />
+                                                                    </button>
+                                                                </div>
+                                                                <span className="text-[10px] text-gold-ink font-mono mt-2">
+                                                                    Status: {audioDramaSettings.enableDeterministicSeed !== false ? 'Active (Seeds Anchored)' : 'Off (Random Seeds)'}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center justify-between pt-1">
+                                                        <span className="text-[11px] text-ink-500 italic font-serif">
+                                                            Runs on your local PC or GPU workstation. Fast, uncensored, zero cloud latency.
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={async () => {
+                                                                const targetUrl = (audioDramaSettings.audioCppUrl || 'http://127.0.0.1:8080').replace(/\/+$/, '');
+                                                                showToast(`Checking Audio.cpp connection at ${targetUrl}...`, "info");
+                                                                try {
+                                                                    const res = await fetchWithTimeout(`${targetUrl}/v1/models`, { method: 'GET' }, 4000)
+                                                                        .catch(() => fetchWithTimeout(`${targetUrl}/health`, { method: 'GET' }, 4000))
+                                                                        .catch(() => fetchWithTimeout(`${targetUrl}/`, { method: 'GET' }, 4000));
+                                                                    if (res && res.ok) {
+                                                                        showToast(`Connected to Audio.cpp! Ready to synthesize audio drama.`, "success");
+                                                                    } else if (res) {
+                                                                        showToast(`Audio.cpp server is reachable and active.`, "info");
+                                                                    } else {
+                                                                        showToast(`Could not reach Audio.cpp. Please make sure your local server is running.`, "warning");
+                                                                    }
+                                                                } catch (err) {
+                                                                    showToast(`Could not reach Audio.cpp. Make sure your local audio.cpp window is running.`, "error");
+                                                                }
+                                                            }}
+                                                            className="px-3.5 py-1.5 rounded-xl border border-edge-strong bg-surface hover:bg-wash text-ink-800 text-xs font-semibold shadow-2xs transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+                                                        >
+                                                            <Radio size={12} className="text-gold-ink" /> Test Audio.cpp Connection
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* PANEL 2: Gemini API (Google Voice Design & 30 Studio Presets) */}
+                                            {(audioDramaSettings.backend || 'audiocpp') === 'gemini' && (
+                                                <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Sparkles size={16} className="text-gold-ink" />
+                                                            <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">Gemini 3.8 Flash TTS Configuration</h4>
+                                                        </div>
+                                                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sage-tint border border-sage-edge text-sage-800 font-semibold">
+                                                            Google Voice Design & Presets
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-ink-500">
+                                                        Google Gemini 3.8 Flash TTS synthesizes multi-speaker drama using natural language Voice Design descriptions and 30 curated studio voice presets with style metadata and expressive prosody.
+                                                    </p>
+
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">Gemini Dedicated API Key (Optional)</label>
+                                                            <input
+                                                                type="password"
+                                                                value={audioDramaSettings.geminiApiKey || ''}
+                                                                onChange={e => updateAudioDramaSetting('geminiApiKey', e.target.value)}
+                                                                placeholder={apiKey ? "Inheriting master Gemini API key" : "Paste Gemini API Key..."}
+                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
+                                                            />
+                                                            <span className="text-[10px] text-ink-400 mt-1 block">
+                                                                {apiKey ? "Using main Gemini API key by default." : "Requires a Gemini API key."}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">Gemini TTS Model</label>
+                                                            <select
+                                                                value={audioDramaSettings.geminiModel || 'gemini-3.8-flash-tts'}
+                                                                onChange={e => updateAudioDramaSetting('geminiModel', e.target.value)}
+                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold cursor-pointer"
+                                                            >
+                                                                <option value="gemini-3.8-flash-tts">gemini-3.8-flash-tts (High Fidelity Studio)</option>
+                                                                <option value="gemini-3.8-flash-lite-tts">gemini-3.8-flash-lite-tts (Ultra-Fast Flash Lite)</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* PANEL 3: OpenRouter (ElevenLabs v4 Multi-Voice) */}
+                                            {(audioDramaSettings.backend || 'audiocpp') === 'openrouter' && (
+                                                <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-4">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Volume2 size={16} className="text-gold-ink" />
+                                                            <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">OpenRouter ElevenLabs v4 Configuration</h4>
+                                                        </div>
+                                                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-300 font-semibold">
+                                                            Automated 21-Voice Mapping
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-ink-500">
+                                                        Uses OpenRouter's speech endpoint running <strong>ElevenLabs v4</strong>. Character voice descriptions are automatically mapped to the 21 ElevenLabs studio voices (George, Sarah, Adam, Alice, Bella, etc.) based on gender, age, and timbre, with inline square bracket emotion tags passed automatically.
+                                                    </p>
+
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">OpenRouter Dedicated API Key (Optional)</label>
+                                                            <input
+                                                                type="password"
+                                                                value={audioDramaSettings.openRouterApiKey || ''}
+                                                                onChange={e => updateAudioDramaSetting('openRouterApiKey', e.target.value)}
+                                                                placeholder={openRouterKey ? "Inheriting master OpenRouter API key" : "Paste OpenRouter API Key..."}
+                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
+                                                            />
+                                                            <span className="text-[10px] text-ink-400 mt-1 block">
+                                                                {openRouterKey ? "Using main OpenRouter API key by default." : "Requires an OpenRouter API key."}
+                                                            </span>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-1 font-mono">Model</label>
+                                                            <input
+                                                                type="text"
+                                                                value={audioDramaSettings.openRouterModel || 'elevenlabs/eleven-v4'}
+                                                                onChange={e => updateAudioDramaSetting('openRouterModel', e.target.value)}
+                                                                placeholder="elevenlabs/eleven-v4"
+                                                                className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* PANEL 4: Browser (Kokoro-82M Ensemble) */}
+                                            {(audioDramaSettings.backend || 'audiocpp') === 'browser' && (
+                                                <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Cpu size={16} className="text-gold-ink" />
+                                                            <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">In-Browser Neural Ensemble (Kokoro-82M)</h4>
+                                                        </div>
+                                                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 border border-slate-300 text-slate-800 dark:bg-stone-800 dark:border-stone-700 dark:text-stone-200 font-semibold">
+                                                            Offline & Free
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-ink-500">
+                                                        Runs client-side in your browser using Kokoro-82M with WebAssembly / WebGPU acceleration. The cast is automatically distributed across the Kokoro voice ensemble (Heart, Nicole, Sarah, Sky, Adam, Michael, George, Lewis, Emma, Isabella). No API keys or server setup needed.
+                                                    </p>
+                                                    <div className="text-[11px] font-mono text-ink-600 bg-surface p-2.5 rounded-lg border border-edge">
+                                                        Device acceleration: <span className="uppercase text-gold-ink font-bold">{ttsActiveDevice || 'Auto-Detect (WebGPU / WASM)'}</span>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Dramatic Cadence & Pause Timing */}
+                                            <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-surface space-y-4">
+                                                <div className="flex items-center justify-between">
+                                                    <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">Dramatic Cadence & Pause Timing</h4>
+                                                    <span className="text-[10px] font-mono text-ink-500">Pacing between speakers</span>
+                                                </div>
+                                                <p className="text-xs text-ink-500">
+                                                    Control the natural pauses between alternating dialogue lines and descriptive narrative beats to preserve authentic dramatic pacing.
+                                                </p>
+
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                                    <div>
+                                                        <div className="flex items-center justify-between text-xs mb-1">
+                                                            <span className="font-semibold text-ink-700">Dialogue Turn Pause</span>
+                                                            <span className="font-mono text-gold-ink font-bold">{audioDramaSettings.dialoguePauseMs || 240} ms</span>
+                                                        </div>
+                                                        <input
+                                                            type="range"
+                                                            min="50"
+                                                            max="800"
+                                                            step="10"
+                                                            value={audioDramaSettings.dialoguePauseMs || 240}
+                                                            onChange={e => updateAudioDramaSetting('dialoguePauseMs', parseInt(e.target.value, 10))}
+                                                            className="w-full accent-[#C9A96E] cursor-pointer"
+                                                        />
+                                                        <span className="text-[10px] text-ink-400 block mt-0.5">Cadence pause between rapid character dialogue exchanges.</span>
+                                                    </div>
+
+                                                    <div>
+                                                        <div className="flex items-center justify-between text-xs mb-1">
+                                                            <span className="font-semibold text-ink-700">Narrator Scene Beat Pause</span>
+                                                            <span className="font-mono text-gold-ink font-bold">{audioDramaSettings.narratorPauseMs || 440} ms</span>
+                                                        </div>
+                                                        <input
+                                                            type="range"
+                                                            min="100"
+                                                            max="1500"
+                                                            step="20"
+                                                            value={audioDramaSettings.narratorPauseMs || 440}
+                                                            onChange={e => updateAudioDramaSetting('narratorPauseMs', parseInt(e.target.value, 10))}
+                                                            className="w-full accent-[#C9A96E] cursor-pointer"
+                                                        />
+                                                        <span className="text-[10px] text-ink-400 block mt-0.5">Atmospheric pause between narrative descriptions and character lines.</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Cast Voice Roster & Automated Voice Profiles with Auditioning */}
+                                            <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-surface space-y-4">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-edge pb-3">
+                                                    <div>
+                                                        <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">Cast Voice Roster & Auditions</h4>
+                                                        <p className="text-xs text-ink-500 mt-0.5">
+                                                            Voices are automatically generated from character traits and mapped directly to the selected audio backend.
+                                                        </p>
+                                                    </div>
+                                                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-semibold self-start sm:self-auto">
+                                                        Zero Manual Casting Needed
+                                                    </span>
+                                                </div>
+
+                                                {/* List Cast Members */}
+                                                <div className="space-y-3">
+                                                    {/* 1. Narrator Entry */}
+                                                    {(() => {
+                                                        const narratorDesc = getVoiceDescriptionForCharacter('Narrator', story);
+                                                        const narratorSeed = getDeterministicVoiceSeed('Narrator', story);
+                                                        const currentBackend = audioDramaSettings.backend || 'audiocpp';
+                                                        const isDeterministic = audioDramaSettings.enableDeterministicSeed !== false;
+                                                        let mappedVoiceBadge = "";
+                                                        if (currentBackend === 'audiocpp') {
+                                                            mappedVoiceBadge = "Qwen 3 Voice Design Prompt";
+                                                        } else if (currentBackend === 'openrouter') {
+                                                            mappedVoiceBadge = `ElevenLabs: ${mapCharacterToElevenLabsVoice(narratorDesc, 'Narrator')}`;
+                                                        } else if (currentBackend === 'gemini') {
+                                                            mappedVoiceBadge = `Gemini: ${mapCharacterToGeminiVoice(narratorDesc, 'Narrator')}`;
+                                                        } else {
+                                                            mappedVoiceBadge = `Kokoro: ${(KOKORO_VOICES.find(v => v.id === mapCharacterToKokoroVoice(narratorDesc, 'Narrator')) || {}).name || 'Heart'}`;
+                                                        }
+
+                                                        return (
+                                                            <div className="p-3.5 rounded-xl border border-edge-strong bg-inset/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                                                <div className="space-y-1 flex-1 min-w-0">
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <span className="text-xs font-bold text-ink-900 font-serif">Narrator</span>
+                                                                        <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-gold-tint text-gold-ink font-semibold">
+                                                                            Dramatic Storyteller
+                                                                        </span>
+                                                                        <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-mist-200 text-ink-600 font-semibold">
+                                                                            {mappedVoiceBadge}
+                                                                        </span>
+                                                                        {currentBackend === 'audiocpp' && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={handleEditNarratorSeed}
+                                                                                className={`text-[9px] font-mono px-1.5 py-0.5 rounded border font-semibold cursor-pointer ${
+                                                                                    isDeterministic 
+                                                                                        ? 'bg-gold-tint border-gold-edge text-gold-ink hover:bg-gold-tint/80' 
+                                                                                        : 'bg-mist-200 border-edge text-ink-400 line-through'
+                                                                                }`}
+                                                                                title={isDeterministic ? `Deterministic seed anchor: #${narratorSeed} (Click to edit seed number)` : 'Deterministic seed anchoring disabled in settings'}
+                                                                            >
+                                                                                Seed: #{narratorSeed}
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+                                                                    <p className="text-[11px] text-ink-600 italic font-serif leading-relaxed">
+                                                                        "{narratorDesc}"
+                                                                    </p>
+                                                                </div>
+                                                                <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
+                                                                    {currentBackend === 'audiocpp' && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={handleRerollNarratorSeed}
+                                                                            className="px-2.5 py-1.5 rounded-xl border border-edge-strong bg-surface hover:bg-wash text-ink-700 hover:text-ink-900 text-xs font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer flex items-center gap-1.5"
+                                                                            title="Re-roll Narrator Seed"
+                                                                        >
+                                                                            <RotateCcw size={12} className="text-gold-ink" /> Re-roll Seed
+                                                                        </button>
+                                                                    )}
+                                                                    <button
+                                                                        type="button"
+                                                                        disabled={isAuditioningVoice}
+                                                                        onClick={() => testAuditionCharacterVoice('Narrator')}
+                                                                        className="px-3 py-1.5 rounded-xl border border-gold-edge bg-gold-tint hover:bg-gold-tint/80 text-gold-ink text-xs font-bold transition-all shadow-2xs active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+                                                                    >
+                                                                        <Volume2 size={13} /> {isAuditioningVoice ? 'Auditioning...' : 'Audition Narrator'}
+                                                                    </button>
+                                                                    <EditButton
+                                                                        className="p-1.5 min-w-7 min-h-7 shrink-0"
+                                                                        title="Edit Narrator Voice Profile (Qwen 3 TTS 7-Dimension Prompt)"
+                                                                        value={narratorDesc}
+                                                                        onSave={handleEditNarratorVoiceProfile}
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })()}
+
+                                                    {/* 2. Story Characters */}
+                                                    {(() => {
+                                                        const activeCast = (Array.isArray(story.cast) && story.cast.length > 0)
+                                                            ? story.cast
+                                                            : (Array.isArray(story.characters) && story.characters.length > 0 ? story.characters : []);
+                                                        return activeCast.length > 0 ? (
+                                                            activeCast.map((char, cIdx) => {
+                                                                const charName = char.name || `Character ${cIdx + 1}`;
+                                                                const voiceDesc = getVoiceDescriptionForCharacter(char, story);
+                                                                const charSeed = getDeterministicVoiceSeed(char, story);
+                                                                const currentBackend = audioDramaSettings.backend || 'audiocpp';
+                                                                const isDeterministic = audioDramaSettings.enableDeterministicSeed !== false;
+                                                                let mappedVoiceBadge = "";
+                                                                if (currentBackend === 'audiocpp') {
+                                                                    mappedVoiceBadge = "Qwen 3 Voice Design Prompt";
+                                                                } else if (currentBackend === 'openrouter') {
+                                                                    mappedVoiceBadge = `ElevenLabs: ${mapCharacterToElevenLabsVoice(voiceDesc, charName)}`;
+                                                                } else if (currentBackend === 'gemini') {
+                                                                    mappedVoiceBadge = `Gemini: ${mapCharacterToGeminiVoice(voiceDesc, charName)}`;
+                                                                } else {
+                                                                    mappedVoiceBadge = `Kokoro: ${(KOKORO_VOICES.find(v => v.id === mapCharacterToKokoroVoice(voiceDesc, charName)) || {}).name || 'Heart'}`;
+                                                                }
+
+                                                                return (
+                                                                    <div key={char.id || cIdx} className="p-3.5 rounded-xl border border-edge-strong bg-inset/60 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                                                                        <div className="space-y-1 flex-1 min-w-0">
+                                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                                <span className="text-xs font-bold text-ink-900 font-serif">{charName}</span>
+                                                                                {char.role && (
+                                                                                    <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-mist-200 text-ink-600 font-semibold">
+                                                                                        {char.role}
+                                                                                    </span>
+                                                                                )}
+                                                                                <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-gold-tint text-gold-ink font-semibold">
+                                                                                    {mappedVoiceBadge}
+                                                                                </span>
+                                                                                {currentBackend === 'audiocpp' && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleEditCharacterSeed(char)}
+                                                                                        className={`text-[9px] font-mono px-1.5 py-0.5 rounded border font-semibold cursor-pointer ${
+                                                                                            isDeterministic 
+                                                                                                ? 'bg-gold-tint border-gold-edge text-gold-ink hover:bg-gold-tint/80' 
+                                                                                                : 'bg-mist-200 border-edge text-ink-400 line-through'
+                                                                                        }`}
+                                                                                        title={isDeterministic ? `Deterministic seed anchor: #${charSeed} (Click to edit seed number)` : 'Deterministic seed anchoring disabled in settings'}
+                                                                                    >
+                                                                                        Seed: #{charSeed}
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+                                                                            <p className="text-[11px] text-ink-600 italic font-serif leading-relaxed">
+                                                                                "{voiceDesc}"
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
+                                                                            {currentBackend === 'audiocpp' && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleRerollCharacterSeed(char)}
+                                                                                    className="px-2.5 py-1.5 rounded-xl border border-edge-strong bg-surface hover:bg-wash text-ink-700 hover:text-ink-900 text-xs font-semibold transition-all shadow-2xs active:scale-95 cursor-pointer flex items-center gap-1.5"
+                                                                                    title={`Re-roll Seed for ${charName}`}
+                                                                                >
+                                                                                    <RotateCcw size={12} className="text-gold-ink" /> Re-roll Seed
+                                                                                </button>
+                                                                            )}
+                                                                            <button
+                                                                                type="button"
+                                                                                disabled={isAuditioningVoice}
+                                                                                onClick={() => testAuditionCharacterVoice(char)}
+                                                                                className="px-3 py-1.5 rounded-xl border border-edge-strong bg-surface hover:bg-wash text-ink-800 text-xs font-bold transition-all shadow-2xs active:scale-95 disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5"
+                                                                            >
+                                                                                <Volume2 size={13} className="text-gold-ink" /> {isAuditioningVoice ? 'Auditioning...' : 'Audition Voice'}
+                                                                            </button>
+                                                                            <EditButton
+                                                                                className="p-1.5 min-w-7 min-h-7 shrink-0"
+                                                                                title={`Edit Voice Profile for ${charName} (Qwen 3 TTS 7-Dimension Prompt)`}
+                                                                                value={voiceDesc}
+                                                                                onSave={() => handleEditCharacterVoiceProfile(char)}
+                                                                            />
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })
+                                                        ) : (
+                                                            <div className="text-center py-6 text-xs text-ink-400 italic font-serif bg-inset/30 rounded-xl border border-edge">
+                                                                No characters created in this story yet. Characters added to your cast will automatically populate here with their unique voice profiles.
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </div>
                                         </div>
