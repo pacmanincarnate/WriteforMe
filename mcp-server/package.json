@@ -1,0 +1,15 @@
+{
+  "name": "ellipsisprose-mcp-server",
+  "version": "1.0.0",
+  "description": "Antigravity Model Context Protocol (MCP) server for live communication with EllipsisProse",
+  "main": "index.mjs",
+  "type": "module",
+  "scripts": {
+    "start": "node index.mjs"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "ws": "^8.22.1",
+    "zod": "^3.25.76"
+  }
+}
