@@ -5095,6 +5095,248 @@
             return new Blob([new Uint8Array(byteNumbers)], { type: mimeType });
         };
 
+        /**
+         * Fast, pure-JavaScript PCM 16-bit WAV encoder for AudioBuffers.
+         * Generates standard 44-byte RIFF header and clamped Int16 PCM samples.
+         */
+        const encodeAudioBufferToWavBlob = (audioBuf) => {
+            const numChannels = audioBuf.numberOfChannels;
+            const sampleRate = audioBuf.sampleRate;
+            const numSamples = audioBuf.length;
+            const bytesPerSample = 2; // 16-bit PCM
+            const blockAlign = numChannels * bytesPerSample;
+            const byteRate = sampleRate * blockAlign;
+            const dataSize = numSamples * blockAlign;
+            const buffer = new ArrayBuffer(44 + dataSize);
+            const view = new DataView(buffer);
+
+            const writeString = (offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            /* RIFF identifier */
+            writeString(0, 'RIFF');
+            /* file length minus RIFF identifier and length */
+            view.setUint32(4, 36 + dataSize, true);
+            /* RIFF type */
+            writeString(8, 'WAVE');
+            /* format chunk identifier */
+            writeString(12, 'fmt ');
+            /* format chunk length */
+            view.setUint32(16, 16, true);
+            /* sample format (raw PCM = 1) */
+            view.setUint16(20, 1, true);
+            /* channel count */
+            view.setUint16(22, numChannels, true);
+            /* sample rate */
+            view.setUint32(24, sampleRate, true);
+            /* byte rate (sample rate * block align) */
+            view.setUint32(28, byteRate, true);
+            /* block align (channel count * bytes per sample) */
+            view.setUint16(32, blockAlign, true);
+            /* bits per sample */
+            view.setUint16(34, 16, true);
+            /* data chunk identifier */
+            writeString(36, 'data');
+            /* data chunk length */
+            view.setUint32(40, dataSize, true);
+
+            let offset = 44;
+            if (numChannels === 1) {
+                const data = audioBuf.getChannelData(0);
+                for (let i = 0; i < numSamples; i++) {
+                    const s = Math.max(-1, Math.min(1, data[i]));
+                    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                    offset += 2;
+                }
+            } else {
+                const channels = [];
+                for (let c = 0; c < numChannels; c++) {
+                    channels.push(audioBuf.getChannelData(c));
+                }
+                for (let i = 0; i < numSamples; i++) {
+                    for (let c = 0; c < numChannels; c++) {
+                        const s = Math.max(-1, Math.min(1, channels[c][i]));
+                        view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+                        offset += 2;
+                    }
+                }
+            }
+
+            return new Blob([buffer], { type: 'audio/wav' });
+        };
+
+        /**
+         * Comprehensive Speech & Noise VAD Trimmer for Audio Drama Synthesis.
+         * Distinguishes human speech from autoregressive decoder static / white noise / dead air
+         * by evaluating joint RMS energy, Zero-Crossing Rate (ZCR), and word-count duration bounds.
+         * Trims both leading and trailing silence/static with smooth cosine fades.
+         */
+        const cleanAndTrimAudioBuffer = (audioBuf, audioCtx = null, wordCount = 10) => {
+            if (!audioBuf || audioBuf.duration <= 0.2) return audioBuf;
+
+            const channelCount = audioBuf.numberOfChannels;
+            const sampleRate = audioBuf.sampleRate;
+            const totalSamples = audioBuf.length;
+            const data = audioBuf.getChannelData(0);
+
+            // 25ms window, 10ms hop for high-precision phoneme boundary detection
+            const windowSize = Math.floor(sampleRate * 0.025);
+            const hopSize = Math.floor(sampleRate * 0.010);
+            if (totalSamples <= windowSize) return audioBuf;
+
+            const safeWords = Math.max(1, wordCount || 1);
+            // Plausible maximum speech duration: 1 word/sec + 2.5s initial phrase breath/pause allowance
+            const maxSpeechDurationSec = Math.max(2.5, (safeWords / 1.0) + 2.5);
+            const maxSpeechSampleLimit = Math.min(totalSamples, Math.floor(maxSpeechDurationSec * sampleRate));
+
+            // Classify windows into SPEECH vs STATIC/NOISE vs SILENCE
+            // Speech has solid RMS (>= 0.007) and low-to-moderate ZCR (voiced vowels ~ 0.02-0.20, consonants ~ 0.20-0.38).
+            // Neural decoder static/white noise has high continuous ZCR (> 0.40) or high noise past expected word duration.
+            const isSpeechWindow = (startIdx) => {
+                let sumSq = 0;
+                let zeroCrossings = 0;
+                let prevVal = data[startIdx];
+
+                for (let j = 0; j < windowSize; j++) {
+                    const val = data[startIdx + j];
+                    sumSq += val * val;
+                    if (j > 0 && ((val >= 0 && prevVal < 0) || (val < 0 && prevVal >= 0))) {
+                        zeroCrossings++;
+                    }
+                    prevVal = val;
+                }
+
+                const rms = Math.sqrt(sumSq / windowSize);
+                const zcr = zeroCrossings / (windowSize - 1);
+
+                // Pure digital silence or low-level room noise floor
+                if (rms < 0.006) return false;
+
+                // High-frequency white noise / autoregressive decoder static
+                if (zcr > 0.42) return false;
+
+                // Borderline high-ZCR noise (e.g. continuous hiss) without voiced vowel resonance
+                if (zcr > 0.35 && rms < 0.04) return false;
+
+                // Valid voiced speech or unvoiced consonant adjacent to speech
+                return true;
+            };
+
+            let firstSpeechSample = -1;
+            let lastSpeechSample = -1;
+
+            for (let i = 0; i <= totalSamples - windowSize; i += hopSize) {
+                // If past the maximum plausible duration for this line's word count,
+                // stop treating subsequent sound as valid speech (it is runaway static/tail)
+                if (i > maxSpeechSampleLimit) break;
+
+                if (isSpeechWindow(i)) {
+                    if (firstSpeechSample === -1) {
+                        firstSpeechSample = i;
+                    }
+                    lastSpeechSample = i + windowSize;
+                }
+            }
+
+            // Case A: Pure static or completely silent runaway chunk
+            if (firstSpeechSample === -1 || lastSpeechSample <= firstSpeechSample) {
+                console.warn(`[Audio Drama] Pure static or silent runaway chunk detected (${audioBuf.duration.toFixed(2)}s for ${safeWords} words).`);
+                const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+                // Return a clean 0.25s room tone buffer flagged for retry / clamping
+                const silenceSamples = Math.floor(sampleRate * 0.25);
+                const silenceBuf = ctx.createBuffer(channelCount, silenceSamples, sampleRate);
+                silenceBuf._isInvalidSpeech = true;
+                return silenceBuf;
+            }
+
+            // 60ms natural room padding before speech onset (prevent clipped initial consonants)
+            const prePadSamples = Math.floor(sampleRate * 0.06);
+            const targetStartSample = Math.max(0, firstSpeechSample - prePadSamples);
+
+            // 150ms natural room padding after speech finishes
+            const postPadSamples = Math.floor(sampleRate * 0.15);
+            const targetEndSample = Math.min(totalSamples, lastSpeechSample + postPadSamples);
+
+            const leadingSilenceSec = targetStartSample / sampleRate;
+            const trailingSilenceSec = (totalSamples - targetEndSample) / sampleRate;
+
+            // If neither leading dead air nor trailing static/silence is meaningful, preserve original buffer
+            if (leadingSilenceSec < 0.12 && trailingSilenceSec < 0.25) {
+                return audioBuf;
+            }
+
+            const trimmedLength = Math.max(Math.floor(sampleRate * 0.2), targetEndSample - targetStartSample);
+            const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+            const trimmedBuf = ctx.createBuffer(channelCount, trimmedLength, sampleRate);
+
+            // 30ms cosine fade-in and 40ms cosine fade-out to prevent boundary pops/clicks
+            const fadeInLength = Math.min(Math.floor(sampleRate * 0.03), Math.floor(trimmedLength / 4));
+            const fadeOutLength = Math.min(Math.floor(sampleRate * 0.04), Math.floor(trimmedLength / 4));
+            const fadeOutStart = trimmedLength - fadeOutLength;
+
+            for (let c = 0; c < channelCount; c++) {
+                const src = audioBuf.getChannelData(c);
+                const dst = trimmedBuf.getChannelData(c);
+
+                const copyLen = Math.min(trimmedLength, totalSamples - targetStartSample);
+                dst.set(src.subarray(targetStartSample, targetStartSample + copyLen));
+
+                // Fade in
+                for (let f = 0; f < fadeInLength; f++) {
+                    const gain = 0.5 * (1 - Math.cos((Math.PI * f) / fadeInLength));
+                    dst[f] *= gain;
+                }
+
+                // Fade out
+                for (let f = 0; f < fadeOutLength; f++) {
+                    const gain = 0.5 * (1 + Math.cos((Math.PI * f) / fadeOutLength));
+                    dst[fadeOutStart + f] *= gain;
+                }
+            }
+
+            if (leadingSilenceSec >= 0.15 || trailingSilenceSec >= 0.25) {
+                console.log(`[Audio Drama] Cleaned & trimmed chunk (${audioBuf.duration.toFixed(2)}s -> ${trimmedBuf.duration.toFixed(2)}s | -${leadingSilenceSec.toFixed(2)}s lead, -${trailingSilenceSec.toFixed(2)}s tail).`);
+            }
+
+            return trimmedBuf;
+        };
+
+        const trimTrailingAudioStatic = (audioBuf, audioCtx = null, wordCount = 10) => {
+            return cleanAndTrimAudioBuffer(audioBuf, audioCtx, wordCount);
+        };
+
+        /**
+         * Decodes an arbitrary audio Blob, removes leading silence, trailing silence,
+         * and autoregressive decoder static, then re-encodes to a clean WAV Blob.
+         */
+        const sanitizeAudioBlob = async (blob, wordCount = 10) => {
+            if (!blob || blob.size === 0) return { blob, isInvalid: false };
+            const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
+            try {
+                const ab = await blob.arrayBuffer();
+                const rawBuf = await tempCtx.decodeAudioData(ab);
+                const cleanedBuf = cleanAndTrimAudioBuffer(rawBuf, tempCtx, wordCount);
+                if (cleanedBuf._isInvalidSpeech) {
+                    return { blob: encodeAudioBufferToWavBlob(cleanedBuf), isInvalid: true };
+                }
+                const cleanWavBlob = encodeAudioBufferToWavBlob(cleanedBuf);
+                return { blob: cleanWavBlob, isInvalid: false };
+            } catch (err) {
+                console.warn("[Audio Drama] Could not decode/clean audio blob, using raw blob:", err);
+                return { blob, isInvalid: false };
+            } finally {
+                try { tempCtx.close(); } catch (e) { }
+            }
+        };
+
+        window.encodeAudioBufferToWavBlob = encodeAudioBufferToWavBlob;
+        window.cleanAndTrimAudioBuffer = cleanAndTrimAudioBuffer;
+        window.trimTrailingAudioStatic = trimTrailingAudioStatic;
+        window.sanitizeAudioBlob = sanitizeAudioBlob;
+
         // Serializes requests to local Audio.cpp server so concurrent callers never collide with Audio.cpp's single-slot BusyGuard
         let _audioCppRequestChain = Promise.resolve();
         const enqueueAudioCppTask = (taskFn) => {
@@ -5172,10 +5414,11 @@
                     : 0.3;
                 const clampedTemperature = Math.max(0.05, Math.min(0.9, configuredTemp));
 
-                // Dynamic token limit: Budget ~35 tokens per word (at 25-50 tokens/sec speech codec rate)
-                // to hard-cap autoregressive decoding on missed EOS and prevent multi-minute static runs
+                // Calibrated token limit: Human speech averages ~2.5 words/sec (~10-15 speech codec frames/sec).
+                // Budget 20 tokens per word plus 48 tokens baseline cushion (min 64 tokens, max 2400) to hard-cap
+                // runaway autoregressive decoding on missed EOS without clipping slow dramatic cadence.
                 const wordCount = (spokenTextOnly.match(/\b\w+\b/g) || []).length;
-                const tokenCap = Math.min(3072, Math.max(384, Math.ceil(wordCount * 35) + 128));
+                const tokenCap = Math.min(2400, Math.max(64, Math.ceil(wordCount * 20) + 48));
 
                 // Audio.cpp Base TTS requires preset; Qwen 3 VoiceDesign models read 'instructions'/'instruct'.
                 // Spoken text in 'input' MUST BE 100% CLEAN DIALOGUE — never prepend brackets or stage directions!
@@ -5213,66 +5456,93 @@
                         `  -> Spoken Input (${spokenTextOnly.length} chars, ${wordCount} words): "${spokenTextOnly.substring(0, 120)}${spokenTextOnly.length > 120 ? '...' : ''}"`
                     );
 
-                    let res = null;
-                    const maxBusyRetries = 25;
-                    const dynamicTimeoutMs = Math.min(90000, Math.max(30000, wordCount * 1200 + 10000));
-                    for (let attempt = 0; attempt <= maxBusyRetries; attempt++) {
+                    let finalBlob = null;
+                    const maxDecodeAttempts = 3;
+
+                    for (let synthAttempt = 0; synthAttempt < maxDecodeAttempts; synthAttempt++) {
                         if (signal?.aborted) {
                             const abortErr = new Error("Aborted");
                             abortErr.name = "AbortError";
                             throw abortErr;
                         }
-                        try {
-                            res = await fetchWithTimeout(`${targetUrl}/v1/audio/speech`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify(payload),
-                                signal
-                            }, dynamicTimeoutMs);
-                        } catch (fetchErr) {
-                            if (signal?.aborted || fetchErr?.name === 'AbortError') {
-                                throw fetchErr;
+
+                        // Jitter seed and bump temperature slightly if prior attempt returned pure static or silence
+                        if (synthAttempt > 0) {
+                            payload.temperature = Math.min(0.85, clampedTemperature + 0.12 * synthAttempt);
+                            if (payload.seed !== undefined) payload.seed = (speakerSeed + 137 * synthAttempt);
+                            if (payload.options) {
+                                payload.options.temperature = payload.temperature;
+                                if (payload.options.seed !== undefined) payload.options.seed = payload.seed;
                             }
-                            let errMsg = fetchErr.message || String(fetchErr);
-                            console.error(`[Audio Drama TTS] Fetch failed on ${lineTag} (${speakerLabel}) after ${Math.round(performance.now() - synthStartTime)}ms:`, errMsg);
-                            if (/failed to fetch|networkerror/i.test(errMsg)) {
-                                if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
-                                    errMsg = `Local Server Error or CORS block: Opening EllipsisProse directly from a file:// URL causes the browser to send origin 'null'. When the local Audio.cpp server encounters an issue or omits CORS headers on errors, the browser blocks the connection. Please serve EllipsisProse over HTTP (e.g., run 'node server.js' and visit http://localhost:3000) or check Audio.cpp.`;
-                                } else if (typeof window !== 'undefined' && window.location.protocol === 'https:' && targetUrl.startsWith('http:')) {
-                                    errMsg = `Mixed Content Blocked: Browser cannot connect to HTTP server (${targetUrl}) from an HTTPS page. Please open EllipsisProse locally over HTTP or configure an HTTPS tunnel for audio.cpp.`;
-                                } else {
-                                    errMsg = `Could not reach Audio.cpp at ${targetUrl}. Ensure audio.cpp is running on this port and CORS is allowed.`;
-                                }
-                            }
-                            throw new Error(errMsg);
                         }
 
-                        // If Audio.cpp's single-slot BusyGuard is still finishing a prior aborted GPU kernel, wait briefly and retry
-                        if (res.status === 503 && attempt < maxBusyRetries) {
-                            await new Promise(r => setTimeout(r, 600));
-                            continue;
+                        let res = null;
+                        const maxBusyRetries = 25;
+                        const dynamicTimeoutMs = Math.min(90000, Math.max(30000, wordCount * 1200 + 10000));
+                        for (let attempt = 0; attempt <= maxBusyRetries; attempt++) {
+                            if (signal?.aborted) {
+                                const abortErr = new Error("Aborted");
+                                abortErr.name = "AbortError";
+                                throw abortErr;
+                            }
+                            try {
+                                res = await fetchWithTimeout(`${targetUrl}/v1/audio/speech`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify(payload),
+                                    signal
+                                }, dynamicTimeoutMs);
+                            } catch (fetchErr) {
+                                if (signal?.aborted || fetchErr?.name === 'AbortError') {
+                                    throw fetchErr;
+                                }
+                                let errMsg = fetchErr.message || String(fetchErr);
+                                console.error(`[Audio Drama TTS] Fetch failed on ${lineTag} (${speakerLabel}) after ${Math.round(performance.now() - synthStartTime)}ms:`, errMsg);
+                                if (/failed to fetch|networkerror/i.test(errMsg)) {
+                                    if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+                                        errMsg = `Local Server Error or CORS block: Opening EllipsisProse directly from a file:// URL causes the browser to send origin 'null'. When the local Audio.cpp server encounters an issue or omits CORS headers on errors, the browser blocks the connection. Please serve EllipsisProse over HTTP (e.g., run 'node server.js' and visit http://localhost:3000) or check Audio.cpp.`;
+                                    } else if (typeof window !== 'undefined' && window.location.protocol === 'https:' && targetUrl.startsWith('http:')) {
+                                        errMsg = `Mixed Content Blocked: Browser cannot connect to HTTP server (${targetUrl}) from an HTTPS page. Please open EllipsisProse locally over HTTP or configure an HTTPS tunnel for audio.cpp.`;
+                                    } else {
+                                        errMsg = `Could not reach Audio.cpp at ${targetUrl}. Ensure audio.cpp is running on this port and CORS is allowed.`;
+                                    }
+                                }
+                                throw new Error(errMsg);
+                            }
+
+                            // If Audio.cpp's single-slot BusyGuard is still finishing a prior aborted GPU kernel, wait briefly and retry
+                            if (res.status === 503 && attempt < maxBusyRetries) {
+                                await new Promise(r => setTimeout(r, 600));
+                                continue;
+                            }
+                            break;
                         }
+
+                        if (!res.ok) {
+                            const errText = await res.text().catch(() => '');
+                            console.error(`[Audio Drama TTS] HTTP ${res.status} from Audio.cpp on ${lineTag}:`, errText || res.statusText);
+                            throw new Error(`Audio.cpp TTS error (${res.status}): ${errText || res.statusText}`);
+                        }
+
+                        const rawBlob = await res.blob();
+                        const sanitized = await sanitizeAudioBlob(rawBlob, wordCount);
+
+                        if (sanitized.isInvalid) {
+                            if (synthAttempt < maxDecodeAttempts - 1) {
+                                console.warn(`[Audio Drama TTS] Detected pure static or silent decode on ${lineTag} (${speakerLabel}). Retrying attempt ${synthAttempt + 2}/${maxDecodeAttempts} with jittered seed & temperature...`);
+                                continue;
+                            } else {
+                                console.warn(`[Audio Drama TTS] Line ${lineTag} consistently returned empty/static audio across all retries. Clamping to short room tone.`);
+                            }
+                        }
+
+                        finalBlob = sanitized.blob;
                         break;
                     }
 
-                    if (!res.ok) {
-                        const errText = await res.text().catch(() => '');
-                        console.error(`[Audio Drama TTS] HTTP ${res.status} from Audio.cpp on ${lineTag}:`, errText || res.statusText);
-                        throw new Error(`Audio.cpp TTS error (${res.status}): ${errText || res.statusText}`);
-                    }
-
-                    const blob = await res.blob();
                     const elapsedMs = Math.round(performance.now() - synthStartTime);
-
-                    // Client-Side Runaway Guard: Check for pathological blob size/duration
-                    const maxAllowedSec = Math.max(16, (wordCount / 1.1) + 12);
-                    const maxAllowedBytes = maxAllowedSec * 96000 + 8192;
-                    if (blob.size > maxAllowedBytes * 3 && blob.size > 2 * 1024 * 1024) {
-                        console.warn(`[Audio Drama TTS] Warning: Received anomalous audio blob (${(blob.size / 1024).toFixed(1)} KB) for ${lineTag} (${wordCount} words). Runaway static guard will trim during stitching.`);
-                    }
-
-                    console.log(`[Audio Drama TTS] Completed ${lineTag} (${speakerLabel}) in ${elapsedMs}ms — received ${(blob.size / 1024).toFixed(1)} KB WAV.`);
-                    return URL.createObjectURL(blob);
+                    console.log(`[Audio Drama TTS] Completed ${lineTag} (${speakerLabel}) in ${elapsedMs}ms — ready (${(finalBlob.size / 1024).toFixed(1)} KB WAV).`);
+                    return URL.createObjectURL(finalBlob);
                 });
             }
 
@@ -5327,7 +5597,8 @@
                 }
 
                 const blob = await res.blob();
-                return URL.createObjectURL(blob);
+                const cleanBlob = (await sanitizeAudioBlob(blob, wordCount)).blob;
+                return URL.createObjectURL(cleanBlob);
             }
 
             // Backend 3: Gemini API (Google 3.8 Flash TTS / Interactions endpoint)
@@ -5414,7 +5685,8 @@
                 }
 
                 const blob = base64AudioToBlob(b64Audio, 'audio/wav');
-                return URL.createObjectURL(blob);
+                const cleanBlob = (await sanitizeAudioBlob(blob, wordCount)).blob;
+                return URL.createObjectURL(cleanBlob);
             }
 
             // Backend 4: In-Browser (Kokoro Neural Worker with Character Voice Mapping)
@@ -5449,7 +5721,11 @@
                             const wavBuf = msg.payload?.wavBuffer || msg.audioData || msg.wavBuffer;
                             if (wavBuf) {
                                 const wavBlob = new Blob([wavBuf], { type: 'audio/wav' });
-                                resolve(URL.createObjectURL(wavBlob));
+                                sanitizeAudioBlob(wavBlob, wordCount).then(res => {
+                                    resolve(URL.createObjectURL(res.blob));
+                                }).catch(() => {
+                                    resolve(URL.createObjectURL(wavBlob));
+                                });
                             } else if (msg.audioUrl) {
                                 resolve(msg.audioUrl);
                             } else {
@@ -5632,82 +5908,11 @@
 
         /**
          * Stitches an array of synthesized audio chunks (Blobs / URLs) with dramatic cadence pauses
-         * and encodes the combined master audio stream into a clean MP3 file via lamejs.
+         * and encodes the combined master audio stream into a broadcast-quality MP3 file via lamejs.
+         * Uses direct sample-accurate Float32 PCM concatenation (bypassing OfflineAudioContext)
+         * to completely eliminate WebAudio graph node exhaustion, dropped buffer sources, silent gaps,
+         * and buffer boundary static/clicks across long multi-scene sequences.
          */
-        /**
-         * Scans an AudioBuffer for trailing silence or low-energy static noise floor (typical of
-         * autoregressive speech models that fail to terminate at EOS) and trims the tail cleanly
-         * with a soft cosine fade-out.
-         */
-        const trimTrailingAudioStatic = (audioBuf, audioCtx = null) => {
-            if (!audioBuf || audioBuf.duration <= 1.0) return audioBuf;
-            const channelCount = audioBuf.numberOfChannels;
-            const sampleRate = audioBuf.sampleRate;
-            const totalSamples = audioBuf.length;
-
-            const data = audioBuf.getChannelData(0);
-            const windowSize = Math.floor(sampleRate * 0.04); // 40ms analysis window
-            const hopSize = Math.floor(sampleRate * 0.02); // 20ms hop
-            const speechThreshold = 0.006; // ~ -44.4 dBFS
-
-            let lastSpeechSample = 0;
-            for (let i = 0; i <= totalSamples - windowSize; i += hopSize) {
-                let sumSq = 0;
-                for (let j = 0; j < windowSize; j++) {
-                    const val = data[i + j];
-                    sumSq += val * val;
-                }
-                const rms = Math.sqrt(sumSq / windowSize);
-                if (rms >= speechThreshold) {
-                    lastSpeechSample = i + windowSize;
-                }
-            }
-
-            const marginSamples = Math.floor(sampleRate * 0.18); // 180ms natural room padding
-            const targetEndSample = Math.min(totalSamples, lastSpeechSample + marginSamples);
-            const trailingSilenceSamples = totalSamples - targetEndSample;
-            const trailingSilenceSec = trailingSilenceSamples / sampleRate;
-
-            // If no speech detected at all and buffer is abnormally long (> 5s), clamp to 0.4s clean silence
-            if (lastSpeechSample <= marginSamples && audioBuf.duration > 5.0) {
-                console.warn(`[Audio Drama] Pure static/silent runaway chunk detected (${audioBuf.duration.toFixed(2)}s). Clamping to 0.4s room tone.`);
-                const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-                const silenceLength = Math.floor(sampleRate * 0.4);
-                return ctx.createBuffer(channelCount, silenceLength, sampleRate);
-            }
-
-            // Only trim if there is meaningful trailing silence/static (> 0.45s)
-            if (trailingSilenceSec < 0.45 || targetEndSample <= marginSamples) {
-                return audioBuf;
-            }
-
-            const trimmedLength = Math.max(marginSamples * 2, targetEndSample);
-            if (trimmedLength >= totalSamples) return audioBuf;
-
-            const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-            const trimmedBuf = ctx.createBuffer(channelCount, trimmedLength, sampleRate);
-
-            // 50ms cosine fade-out curve at the trimmed boundary to prevent audio click
-            const fadeLength = Math.min(Math.floor(sampleRate * 0.05), trimmedLength);
-            const fadeStart = trimmedLength - fadeLength;
-
-            for (let c = 0; c < channelCount; c++) {
-                const srcData = audioBuf.getChannelData(c);
-                const dstData = trimmedBuf.getChannelData(c);
-                dstData.set(srcData.subarray(0, trimmedLength));
-
-                for (let f = 0; f < fadeLength; f++) {
-                    const gain = 0.5 * (1 + Math.cos((Math.PI * f) / fadeLength));
-                    dstData[fadeStart + f] *= gain;
-                }
-            }
-
-            console.log(`[Audio Drama] Trimmed ${trailingSilenceSec.toFixed(2)}s trailing static/silence tail (${audioBuf.duration.toFixed(2)}s -> ${trimmedBuf.duration.toFixed(2)}s).`);
-            return trimmedBuf;
-        };
-
-        window.trimTrailingAudioStatic = trimTrailingAudioStatic;
-
         const stitchAndEncodeChunksToMp3 = async (chunks, options = {}) => {
             const lamejs = await ensureLameJs();
             if (!lamejs || !lamejs.Mp3Encoder) {
@@ -5723,17 +5928,28 @@
             const narratorPauseMs = options.narratorPauseMs ?? 440;
             const kbps = options.kbps || 128;
 
-            // 1. Decode all chunk audio blobs into uncompressed AudioBuffers and trim runaway trailing static/silence
+            // 1. Decode all chunk audio blobs into uncompressed AudioBuffers and clean trailing/leading static and silence
             const tempCtx = new (window.AudioContext || window.webkitAudioContext)();
             const decodedItems = [];
 
             try {
                 for (let i = 0; i < validChunks.length; i++) {
                     const ch = validChunks[i];
-                    const resp = await fetch(ch.audioUrl);
-                    const ab = await resp.arrayBuffer();
+                    let ab = null;
+                    try {
+                        const resp = await fetch(ch.audioUrl);
+                        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                        ab = await resp.arrayBuffer();
+                    } catch (fetchErr) {
+                        console.warn(`[Audio Drama] Could not fetch audio blob for line ${i + 1} (${ch.speaker || 'Narrator'}):`, fetchErr);
+                        continue;
+                    }
+                    if (!ab || ab.byteLength === 0) continue;
+
                     const rawAudioBuf = await tempCtx.decodeAudioData(ab);
-                    const audioBuf = trimTrailingAudioStatic(rawAudioBuf, tempCtx);
+                    const wordCount = ch.wordCount || (ch.spokenText ? (ch.spokenText.match(/\b\w+\b/g) || []).length : (ch.text ? (ch.text.match(/\b\w+\b/g) || []).length : 10));
+                    const audioBuf = cleanAndTrimAudioBuffer(rawAudioBuf, tempCtx, wordCount);
+
                     decodedItems.push({
                         audioBuf,
                         speaker: ch.speaker || "Narrator",
@@ -5749,68 +5965,86 @@
                 throw new Error("Failed to decode audio chunks.");
             }
 
-            // Determine sample rate: use native rate of first chunk (clamped to standard LAME rates)
+            // Determine sample rate: clamp to standard LAME MP3 rates (24000, 44100, 48000)
             const rawSampleRate = decodedItems[0].audioBuf.sampleRate || 24000;
             const targetSampleRate = (rawSampleRate >= 16000 && rawSampleRate <= 48000) ? rawSampleRate : 24000;
 
-            // 2. Calculate total timeline duration with dramatic pauses between turns
-            let totalDurationSec = 0;
-            for (let i = 0; i < decodedItems.length; i++) {
-                totalDurationSec += decodedItems[i].audioBuf.duration;
-                if (i < decodedItems.length - 1) {
-                    const item = decodedItems[i];
-                    const currentIsNarrator = item.isNarrator;
-                    const nextIsNarrator = decodedItems[i + 1].isNarrator;
-                    const pauseMs = (item.pauseAfterMs !== undefined && item.pauseAfterMs !== null)
-                        ? item.pauseAfterMs
-                        : ((currentIsNarrator || nextIsNarrator) ? narratorPauseMs : dialoguePauseMs);
-                    totalDurationSec += (pauseMs / 1000);
-                }
-            }
-            totalDurationSec += 0.2; // 200ms room padding
+            // 2. Direct Sample-Accurate Float32 PCM Assembly
+            // Replaces OfflineAudioContext to guarantee 100% deterministic timeline placement
+            // and pure digital silence during pauses with 0 dropped nodes or buffer underflows.
+            let totalLengthSamples = 0;
+            const itemLayouts = [];
 
-            // 3. Render seamless composite audio via OfflineAudioContext
-            const totalLengthSamples = Math.ceil(totalDurationSec * targetSampleRate);
-            const OfflineCtxClass = window.OfflineAudioContext || window.webkitOfflineAudioContext;
-            const offlineCtx = new OfflineCtxClass(1, totalLengthSamples, targetSampleRate);
-
-            let currentTime = 0;
             for (let i = 0; i < decodedItems.length; i++) {
                 const item = decodedItems[i];
-                const source = offlineCtx.createBufferSource();
-                source.buffer = item.audioBuf;
-                source.connect(offlineCtx.destination);
-                source.start(currentTime);
-
-                currentTime += item.audioBuf.duration;
+                const buf = item.audioBuf;
+                const chunkSamples = Math.round(buf.duration * targetSampleRate);
+                let pauseSamples = 0;
                 if (i < decodedItems.length - 1) {
                     const currentIsNarrator = item.isNarrator;
                     const nextIsNarrator = decodedItems[i + 1].isNarrator;
                     const pauseMs = (item.pauseAfterMs !== undefined && item.pauseAfterMs !== null)
                         ? item.pauseAfterMs
                         : ((currentIsNarrator || nextIsNarrator) ? narratorPauseMs : dialoguePauseMs);
-                    currentTime += (pauseMs / 1000);
+                    pauseSamples = Math.round((Math.max(0, pauseMs) / 1000) * targetSampleRate);
                 }
+                itemLayouts.push({
+                    item,
+                    chunkSamples,
+                    pauseSamples
+                });
+                totalLengthSamples += chunkSamples + pauseSamples;
             }
 
-            const renderedBuffer = await offlineCtx.startRendering();
-            const channelData = renderedBuffer.getChannelData(0);
+            // 200ms room padding at the very end of the master track
+            const endPaddingSamples = Math.round(0.20 * targetSampleRate);
+            totalLengthSamples += endPaddingSamples;
 
-            // 4. Encode Float32 PCM samples to genuine MP3 frames via lamejs
+            const masterPcm = new Float32Array(totalLengthSamples);
+            let writePos = 0;
+
+            for (let i = 0; i < itemLayouts.length; i++) {
+                const { item, chunkSamples, pauseSamples } = itemLayouts[i];
+                const srcChannel = item.audioBuf.getChannelData(0);
+                const srcRate = item.audioBuf.sampleRate;
+
+                if (srcRate === targetSampleRate) {
+                    const copyLen = Math.min(srcChannel.length, masterPcm.length - writePos);
+                    masterPcm.set(srcChannel.subarray(0, copyLen), writePos);
+                    writePos += copyLen;
+                } else {
+                    // Linear interpolation resampler for sample rate alignment
+                    const ratio = srcRate / targetSampleRate;
+                    for (let s = 0; s < chunkSamples && (writePos + s) < masterPcm.length; s++) {
+                        const srcIdx = s * ratio;
+                        const idxFloor = Math.floor(srcIdx);
+                        const idxCeil = Math.min(srcChannel.length - 1, idxFloor + 1);
+                        const frac = srcIdx - idxFloor;
+                        masterPcm[writePos + s] = srcChannel[idxFloor] * (1 - frac) + srcChannel[idxCeil] * frac;
+                    }
+                    writePos += chunkSamples;
+                }
+
+                // Pause regions remain 0.0 (Float32Array is zero-initialized by default)
+                writePos += pauseSamples;
+            }
+
+            // 3. Encode Float32 PCM samples to genuine MP3 frames via lamejs using chunked memory streaming
             const mp3encoder = new lamejs.Mp3Encoder(1, targetSampleRate, kbps);
             const mp3Data = [];
             const sampleBlockSize = 1152;
-            const totalSamples = channelData.length;
-            const pcmInt16 = new Int16Array(totalSamples);
-
-            for (let i = 0; i < totalSamples; i++) {
-                const s = Math.max(-1, Math.min(1, channelData[i]));
-                pcmInt16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
+            const pcmBlock = new Int16Array(sampleBlockSize);
+            const totalSamples = masterPcm.length;
 
             for (let i = 0; i < totalSamples; i += sampleBlockSize) {
-                const sampleChunk = pcmInt16.subarray(i, i + sampleBlockSize);
-                const mp3buf = mp3encoder.encodeBuffer(sampleChunk);
+                const end = Math.min(i + sampleBlockSize, totalSamples);
+                const blockLen = end - i;
+                for (let j = 0; j < blockLen; j++) {
+                    const s = Math.max(-1, Math.min(1, masterPcm[i + j]));
+                    pcmBlock[j] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                const chunkToEncode = (blockLen === sampleBlockSize) ? pcmBlock : pcmBlock.subarray(0, blockLen);
+                const mp3buf = mp3encoder.encodeBuffer(chunkToEncode);
                 if (mp3buf.length > 0) mp3Data.push(mp3buf);
             }
 
@@ -5861,7 +6095,7 @@
                     const match = activeQueue.find(qChunk =>
                         qChunk && qChunk.audioUrl &&
                         (qChunk.spokenText || qChunk.text) === (targetChunk.spokenText || targetChunk.text) &&
-                        qChunk.speaker === targetChunk.speaker
+                        (qChunk.speaker || 'Narrator').toLowerCase() === (targetChunk.speaker || 'Narrator').toLowerCase()
                     );
                     if (match && match.audioUrl) {
                         targetChunk.audioUrl = match.audioUrl;
@@ -5879,6 +6113,8 @@
                     if (onProgress) onProgress({ current: i + 1, total, stage: 'synthesizing', speaker: chunk.speaker || 'Narrator' });
                     const audioUrl = await synthesizeAudioDramaChunk({
                         chunk,
+                        chunkIndex: i,
+                        totalChunks: total,
                         backend,
                         story,
                         settings: settings || DEFAULT_AUDIO_DRAMA_SETTINGS,
@@ -6024,7 +6260,7 @@
                     const match = activeQueue.find(qChunk =>
                         qChunk && qChunk.audioUrl &&
                         (qChunk.spokenText || qChunk.text) === (targetChunk.spokenText || targetChunk.text) &&
-                        qChunk.speaker === targetChunk.speaker
+                        (qChunk.speaker || 'Narrator').toLowerCase() === (targetChunk.speaker || 'Narrator').toLowerCase()
                     );
                     if (match && match.audioUrl) {
                         targetChunk.audioUrl = match.audioUrl;
@@ -6053,6 +6289,8 @@
                     }
                     const audioUrl = await synthesizeAudioDramaChunk({
                         chunk,
+                        chunkIndex: i,
+                        totalChunks: total,
                         backend,
                         story,
                         settings: settings || DEFAULT_AUDIO_DRAMA_SETTINGS,
