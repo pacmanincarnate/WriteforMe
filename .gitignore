@@ -13,3 +13,7 @@ mcp-server/node_modules/
 package-lock.json
 backends.local.cmd
 scratch/
+cache/
+audiocpp/models/
+*.gguf
+

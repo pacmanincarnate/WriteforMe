@@ -1,0 +1,30 @@
+{
+  "_comment": "Audio.cpp Pattern B: Unified registry with max_loaded_models=1 and idle_unload_seconds=5 for single-server dynamic LRU model swap.",
+  "host": "127.0.0.1",
+  "port": 8081,
+  "max_loaded_models": 1,
+  "idle_unload_seconds": 5,
+  "models": [
+    {
+      "id": "breeze_director",
+      "family": "breeze_tts",
+      "weights": "./models/breeze2/breeze-tts-2-q8_0.gguf",
+      "codec_weights": "./models/breeze2/breeze-codec-f16.gguf",
+      "device": "CUDA0"
+    },
+    {
+      "id": "moss_ensemble",
+      "family": "moss_ttsd",
+      "weights": "./models/moss_ttsd/moss-ttsd-v1.0-q8_0.gguf",
+      "audio_tokenizer_weights": "./models/moss_ttsd/moss-audio-tokenizer-f16.gguf",
+      "device": "CUDA0"
+    },
+    {
+      "id": "whisper_verifier",
+      "family": "whisper",
+      "weights": "./models/whisper/whisper-base.en-q8_0.gguf",
+      "vad_weights": "./models/vad/earshot-vad-f16.gguf",
+      "device": "CUDA0"
+    }
+  ]
+}

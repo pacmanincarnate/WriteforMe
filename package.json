@@ -1,11 +1,12 @@
 {
   "name": "ellipsisprose",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "EllipsisProse AI-Powered Novel Writing Web Application",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "serve": "node server.js",
+    "audio-bridge": "node audio-studio-bridge.js",
     "codex-bridge": "node codex-bridge.js",
     "mcp-server": "node mcp-server/index.mjs"
   },

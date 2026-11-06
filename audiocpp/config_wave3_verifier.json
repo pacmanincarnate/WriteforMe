@@ -1,0 +1,15 @@
+{
+  "_comment": "Audio.cpp Wave 3 Verifier Daemon: Whisper transcript verification and VAD boundary detection.",
+  "host": "127.0.0.1",
+  "port": 8081,
+  "models": [
+    {
+      "id": "whisper_verifier",
+      "family": "whisper",
+      "weights": "./models/whisper/whisper-base.en-q8_0.gguf",
+      "vad_weights": "./models/vad/earshot-vad-f16.gguf",
+      "device": "CUDA0",
+      "keep_warm": true
+    }
+  ]
+}

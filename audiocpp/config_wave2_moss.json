@@ -1,0 +1,20 @@
+{
+  "_comment": "MOSS-TTSD multi-speaker dialogue engine",
+  "host": "127.0.0.1",
+  "port": 8080,
+  "backend": "cuda",
+  "device": 0,
+  "lazy_load": true,
+  "max_loaded_models": 1,
+  "cors_origins": "*",
+  "models": [
+    {
+      "id": "moss_ensemble",
+      "display_name": "MOSS-TTSD Ensemble",
+      "family": "moss_ttsd",
+      "path": "D:/AI_Projects/Audiocpp/audio.cpp/models/moss_ttsd",
+      "task": "clone",
+      "mode": "offline"
+    }
+  ]
+}

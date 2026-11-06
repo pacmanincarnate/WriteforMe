@@ -1,0 +1,27 @@
+{
+  "host": "127.0.0.1",
+  "port": 8080,
+  "backend": "cuda",
+  "device": 0,
+  "lazy_load": true,
+  "max_loaded_models": 1,
+  "cors_origins": "*",
+  "models": [
+    {
+      "id": "breeze-tts",
+      "display_name": "BreezeTTS 2 VoiceDesign",
+      "family": "breeze_tts",
+      "path": "D:/AI_Projects/Audiocpp/audio.cpp/models/Breeze-TTS-2-GGUF/breeze-tts-2-q8_0.gguf",
+      "task": "vdes",
+      "mode": "offline"
+    },
+    {
+      "id": "breeze_director",
+      "display_name": "BreezeTTS 2 Director",
+      "family": "breeze_tts",
+      "path": "D:/AI_Projects/Audiocpp/audio.cpp/models/Breeze-TTS-2-GGUF/breeze-tts-2-q8_0.gguf",
+      "task": "vdes",
+      "mode": "offline"
+    }
+  ]
+}
