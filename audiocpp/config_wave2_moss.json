@@ -12,9 +12,19 @@
       "id": "moss_ensemble",
       "display_name": "MOSS-TTSD Ensemble",
       "family": "moss_ttsd",
-      "path": "D:/AI_Projects/Audiocpp/audio.cpp/models/moss_ttsd",
-      "task": "clone",
-      "mode": "offline"
+      "path": "D:/AI_Projects/Audiocpp/audio.cpp/models/MOSS-TTSD-GGUF",
+      "task": "clon",
+      "mode": "offline",
+      "default_request_options": {
+        "audio_temperature": "1.1",
+        "audio_top_p": "0.9",
+        "audio_top_k": "50",
+        "audio_repetition_penalty": "1.1",
+        "temperature": "1.1",
+        "top_p": "0.9",
+        "top_k": "50",
+        "repetition_penalty": "1.1"
+      }
     }
   ]
 }

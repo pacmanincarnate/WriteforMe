@@ -328,6 +328,7 @@ function setCorsHeaders(res) {
 }
 
 function sendJson(res, statusCode, data) {
+    if (res.headersSent || res.writableEnded) return;
     setCorsHeaders(res);
     res.writeHead(statusCode, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(data, null, 2));
@@ -432,12 +433,15 @@ function handleProxyV1(req, res) {
     delete headers.host;
     delete headers.connection;
 
+    let finished = false;
     const proxyReq = http.request(targetUrl, {
         method: req.method,
         headers,
         agent: proxyAgent,
-        timeout: 180000
+        timeout: 900000 // 15 minutes for large multi-speaker MOSS-TTSD chunks + model load
     }, proxyRes => {
+        if (finished || res.headersSent || res.writableEnded) return;
+        finished = true;
         setCorsHeaders(res);
         for (const [k, v] of Object.entries(proxyRes.headers)) {
             if (k.toLowerCase() !== 'access-control-allow-origin') {
@@ -449,11 +453,16 @@ function handleProxyV1(req, res) {
     });
 
     proxyReq.on('timeout', () => {
+        if (finished) return;
+        finished = true;
+        pushLog(`Proxy timeout (900s) waiting for ${targetUrl}`);
         proxyReq.destroy();
         sendJson(res, 504, { error: 'Audio.cpp proxy request timed out' });
     });
 
     proxyReq.on('error', err => {
+        if (finished) return;
+        finished = true;
         pushLog(`Proxy error to ${targetUrl}: ${err.message}`);
         sendJson(res, 502, {
             error: `Audio.cpp server on port ${settings.daemonPort} is not reachable`,
@@ -518,6 +527,10 @@ function shutdown() {
 
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
+
+server.timeout = 0;
+server.keepAliveTimeout = 910000;
+server.requestTimeout = 910000;
 
 server.listen(settings.port, settings.bind, () => {
     pushLog(`=== EllipsisProse Audio Studio Bridge running on http://${settings.bind}:${settings.port} ===`);

@@ -17,7 +17,17 @@
       "family": "moss_ttsd",
       "weights": "./models/moss_ttsd/moss-ttsd-v1.0-q8_0.gguf",
       "audio_tokenizer_weights": "./models/moss_ttsd/moss-audio-tokenizer-f16.gguf",
-      "device": "CUDA0"
+      "device": "CUDA0",
+      "default_request_options": {
+        "audio_temperature": "1.1",
+        "audio_top_p": "0.9",
+        "audio_top_k": "50",
+        "audio_repetition_penalty": "1.1",
+        "temperature": "1.1",
+        "top_p": "0.9",
+        "top_k": "50",
+        "repetition_penalty": "1.1"
+      }
     },
     {
       "id": "whisper_verifier",
