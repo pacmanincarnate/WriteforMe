@@ -10,9 +10,9 @@
   "models": [
     {
       "id": "moss_ensemble",
-      "display_name": "MOSS-TTSD Ensemble",
+      "display_name": "MOSS-TTSD Ensemble (Q4_K)",
       "family": "moss_ttsd",
-      "path": "D:/AI_Projects/Audiocpp/audio.cpp/models/MOSS-TTSD-GGUF",
+      "path": "D:/AI_Projects/Audiocpp/audio.cpp/models/MOSS-TTSD-Q4_K",
       "task": "clon",
       "mode": "offline",
       "default_request_options": {
