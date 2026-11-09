@@ -34338,6 +34338,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
             const [ttsGeneratingElapsedSec, setTtsGeneratingElapsedSec] = useState(0);
             const [isExportingSceneAudio, setIsExportingSceneAudio] = useState(false);
             const [isExportingSequenceAudio, setIsExportingSequenceAudio] = useState(false);
+            const [isRegeneratingSceneAudio, setIsRegeneratingSceneAudio] = useState(false);
 
             const ttsWorkerRef = useRef(null);
             const ttsAudioRef = useRef(null);
@@ -35961,7 +35962,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                 // Check if current target scene matches active TTS queue in memory to reuse synthesized audio
                 const isCurrentActiveScene = (targetSeq === Number(selectedSequence) && targetScene === Number(selectedScene));
                 let activeQueueToReuse = null;
-                if (isCurrentActiveScene && Array.isArray(ttsQueueRef.current) && ttsQueueRef.current.length > 0) {
+                if (!forceRegenerate && isCurrentActiveScene && Array.isArray(ttsQueueRef.current) && ttsQueueRef.current.length > 0) {
                     const firstQueueText = ttsQueueRef.current[0]?.spokenText || ttsQueueRef.current[0]?.text || "";
                     if (firstQueueText && proseText.includes(firstQueueText.slice(0, 20))) {
                         activeQueueToReuse = ttsQueueRef.current;
@@ -36066,6 +36067,48 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                     showToast(`Audio export failed: ${err.message || 'Unknown error'}`, "error");
                 } finally {
                     setIsExportingSceneAudio(false);
+                }
+            };
+
+            const handleRegenerateSceneAudio = async (seqIdx = selectedSequence, sceneIdx = selectedScene) => {
+                if (isExportingSceneAudio || isRegeneratingSceneAudio) return;
+
+                const targetSeq = (seqIdx !== undefined && seqIdx !== null) ? Number(seqIdx) : Number(selectedSequence);
+                const targetScene = (sceneIdx !== undefined && sceneIdx !== null) ? Number(sceneIdx) : Number(selectedScene);
+                const currentStory = storyRef.current || story;
+                const sId = `${targetSeq}-${targetScene}`;
+                const proseObj = currentStory?.prose?.[sId];
+                const proseText = (typeof proseObj === "object" && proseObj !== null)
+                    ? (proseObj.final || proseObj.draft || "")
+                    : String(proseObj || "");
+
+                if (!proseText || !proseText.trim()) {
+                    showToast("No prose drafted for this scene to regenerate audio.", "warning");
+                    return;
+                }
+
+                setIsRegeneratingSceneAudio(true);
+                const tierName = audioDramaSettings?.backend || "selected";
+                showToast(`Regenerating audio for Scene ${targetSeq + 1}.${targetScene + 1} (${tierName} pipeline)...`, "info");
+
+                try {
+                    const result = await generateAndStoreSceneAudio(targetSeq, targetScene, {
+                        triggerDownload: false,
+                        forceRegenerate: true,
+                        onProgress: ({ current, total, stage, speaker }) => {
+                            if (stage === "synthesizing") {
+                                showToast(`Synthesizing ${speaker || "audio"} (${current}/${total})...`, "info");
+                            } else if (stage === "encoding") {
+                                showToast("Encoding regenerated master MP3...", "info");
+                            }
+                        }
+                    });
+                    showToast(`Audio regenerated & saved for Scene ${targetSeq + 1}.${targetScene + 1}!`, "success");
+                } catch (err) {
+                    console.error("Failed to regenerate scene audio:", err);
+                    showToast(`Audio regeneration failed: ${err.message || "Unknown error"}`, "error");
+                } finally {
+                    setIsRegeneratingSceneAudio(false);
                 }
             };
 
@@ -56791,7 +56834,7 @@ ${finalProseText}
                                                     {Boolean(story?.prose?.[writerBeatKey]) && (
                                                         <button
                                                             onClick={() => handleDownloadSceneAudio(selectedSequence, selectedScene)}
-                                                            disabled={isExportingSceneAudio}
+                                                            disabled={isExportingSceneAudio || isRegeneratingSceneAudio}
                                                             className={hasSavedAudio
                                                                 ? "bg-sage-tint hover:bg-sage-tint-strong border border-sage-edge px-3 py-2 rounded-xl text-sage-900 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-40"
                                                                 : "bg-surface hover:bg-lift border border-edge-strong px-3 py-2 rounded-xl text-ink-800 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-40"
@@ -56807,6 +56850,23 @@ ${finalProseText}
                                                                 <Headphones size={14} className={hasSavedAudio ? "text-sage-800" : "text-gold-ink"} />
                                                             )}
                                                             <span>Export MP3</span>
+                                                        </button>
+                                                    )}
+
+                                                    {/* 4b. Regenerate Audio (Only visible when audio has already been generated) */}
+                                                    {Boolean(story?.prose?.[writerBeatKey]) && hasSavedAudio && (
+                                                        <button
+                                                            onClick={() => handleRegenerateSceneAudio(selectedSequence, selectedScene)}
+                                                            disabled={isExportingSceneAudio || isRegeneratingSceneAudio}
+                                                            className="bg-surface hover:bg-lift border border-edge-strong px-3 py-2 rounded-xl text-ink-800 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-40"
+                                                            title="Regenerate audio for this scene using the configured TTS pipeline in settings"
+                                                        >
+                                                            {isRegeneratingSceneAudio ? (
+                                                                <Loader2 size={14} className="animate-spin text-gold-ink" />
+                                                            ) : (
+                                                                <RefreshCw size={14} className="text-gold-ink" />
+                                                            )}
+                                                            <span>Regenerate Audio</span>
                                                         </button>
                                                     )}
 
