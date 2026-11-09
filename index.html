@@ -3949,9 +3949,53 @@
           ----------------------------------------------------------------------
         */
 
+        const TTS_PIPELINE_TIERS = [
+            {
+                id: 'system',
+                tier: 0,
+                label: 'Lightweight: System Voices',
+                shortLabel: 'System Voices',
+                category: 'Lightweight',
+                badge: 'Device Native',
+                desc: 'Instant playback using your device\'s built-in speech synthesis. 0MB download, 0ms latency, zero server required.',
+                fallbackTo: null
+            },
+            {
+                id: 'kokoro',
+                tier: 1,
+                label: 'CPU-based: Kokoro TTS',
+                shortLabel: 'Kokoro TTS',
+                category: 'CPU-based',
+                badge: 'Neural Ensemble',
+                desc: 'Client-side neural speech synthesis running in-browser via WebAssembly / WebGPU with multi-voice character casting.',
+                fallbackTo: 'system'
+            },
+            {
+                id: 'breeze',
+                tier: 2,
+                label: 'Expressive: Breeze 2 TTS',
+                shortLabel: 'Breeze 2 TTS',
+                category: 'Expressive',
+                badge: 'Acoustic Anchoring',
+                desc: 'Local high-fidelity Breeze 2 speech model via Audio.cpp with prompt-driven voice design and emotion conditioning.',
+                fallbackTo: 'kokoro'
+            },
+            {
+                id: 'hybrid',
+                tier: 3,
+                label: 'Dramatic Reading: Hybrid Breeze 2 and MOSS-TTSD',
+                shortLabel: 'Hybrid Breeze 2 & MOSS-TTSD',
+                category: 'Dramatic Reading',
+                badge: 'Full Cast Production',
+                desc: 'Dual-engine local studio: Breeze 2 crafts acoustic master identities and narration, while MOSS-TTSD synthesizes multi-speaker dialogue.',
+                fallbackTo: 'breeze'
+            }
+        ];
+
         const DEFAULT_AUDIO_DRAMA_SETTINGS = {
             enabled: true,
-            backend: 'audiocpp', // 'audiocpp' | 'gemini' | 'openrouter' | 'browser'
+            pipelineTier: 3,
+            backend: 'hybrid', // 'system' (Stop 0) | 'kokoro' (Stop 1) | 'breeze' (Stop 2) | 'hybrid' (Stop 3)
             // Audio.cpp Hybrid Studio (Breeze 2 + MOSS-TTSD)
             audioCppUrl: 'http://127.0.0.1:8080',
             studioBridgeUrl: 'http://127.0.0.1:5020',
@@ -3985,6 +4029,30 @@
         function migrateAudioDramaSettings(saved) {
             if (!saved || typeof saved !== 'object') return { ...DEFAULT_AUDIO_DRAMA_SETTINGS };
             const migrated = { ...DEFAULT_AUDIO_DRAMA_SETTINGS, ...saved };
+
+            // Normalize pipelineTier (0..3) and backend string consistently
+            if (typeof saved.pipelineTier === 'number' && saved.pipelineTier >= 0 && saved.pipelineTier <= 3) {
+                migrated.pipelineTier = Math.round(saved.pipelineTier);
+                migrated.backend = ['system', 'kokoro', 'breeze', 'hybrid'][migrated.pipelineTier];
+            } else if (saved.backend === 'audiocpp' || saved.backend === 'hybrid') {
+                migrated.pipelineTier = 3;
+                migrated.backend = 'hybrid';
+            } else if (saved.backend === 'breeze') {
+                migrated.pipelineTier = 2;
+                migrated.backend = 'breeze';
+            } else if (saved.backend === 'browser' || saved.backend === 'kokoro') {
+                migrated.pipelineTier = 1;
+                migrated.backend = 'kokoro';
+            } else if (saved.backend === 'system') {
+                migrated.pipelineTier = 0;
+                migrated.backend = 'system';
+            } else if (typeof migrated.pipelineTier === 'number' && migrated.pipelineTier >= 0 && migrated.pipelineTier <= 3) {
+                migrated.backend = ['system', 'kokoro', 'breeze', 'hybrid'][migrated.pipelineTier];
+            } else {
+                migrated.pipelineTier = 3;
+                migrated.backend = 'hybrid';
+            }
+
             if (!migrated.studioBridgeUrl) migrated.studioBridgeUrl = 'http://127.0.0.1:5020';
             if (!migrated.audioCppUrl || migrated.audioCppUrl === 'http://127.0.0.1:8081') migrated.audioCppUrl = 'http://127.0.0.1:8080';
             if (!migrated.breezeModelId || migrated.breezeModelId === 'breeze_director') migrated.breezeModelId = 'breeze-tts';
@@ -8101,8 +8169,8 @@
             const voiceDescription = getVoiceDescriptionForCharacter(speakerLabel, story);
             const lineTag = `Line ${chunkIndex + 1}/${totalChunks}`;
 
-            // Backend 1: Audio.cpp (Hybrid Studio: Breeze 2 Instruct + MOSS-TTSD)
-            if (backend === 'audiocpp') {
+            // Backend 1: Audio.cpp (Hybrid Studio: Breeze 2 Instruct + MOSS-TTSD or Expressive Breeze 2)
+            if (backend === 'hybrid' || backend === 'audiocpp' || backend === 'breeze') {
                 const effectiveSettings = migrateAudioDramaSettings(settings);
                 let targetUrl = (effectiveSettings.studioBridgeUrl || effectiveSettings.audioCppUrl || 'http://127.0.0.1:5020').trim();
                 if (!/^https?:\/\//i.test(targetUrl)) {
@@ -8110,7 +8178,9 @@
                 }
                 targetUrl = targetUrl.replace(/\/+$/, '');
 
-                const modelId = chunk.model || chunk.modelId || ((effectiveSettings.breezeModelId && effectiveSettings.breezeModelId !== 'breeze_director') ? effectiveSettings.breezeModelId : 'breeze-tts');
+                const modelId = (backend === 'breeze')
+                    ? ((effectiveSettings.breezeModelId && effectiveSettings.breezeModelId !== 'breeze_director') ? effectiveSettings.breezeModelId : 'breeze-tts')
+                    : (chunk.model || chunk.modelId || ((effectiveSettings.breezeModelId && effectiveSettings.breezeModelId !== 'breeze_director') ? effectiveSettings.breezeModelId : 'breeze-tts'));
                 const castList = Array.isArray(story?.cast) ? story.cast : [];
                 const matchedChar = (typeof resolveCharacter === 'function')
                     ? resolveCharacter(speakerLabel, castList)
@@ -8398,7 +8468,7 @@
             }
 
             // Backend 4: In-Browser (Kokoro Neural Worker with Character Voice Mapping)
-            if (backend === 'browser') {
+            if (backend === 'kokoro' || backend === 'browser') {
                 const mappedVoice = mapCharacterToKokoroVoice(voiceDescription, chunk.speaker);
                 if (!kokoroWorkerRef || !kokoroWorkerRef.current) {
                     if (typeof window !== 'undefined' && window._ellipsisGetOrCreateTtsWorker) {
@@ -8460,6 +8530,11 @@
                         speed: 1.0
                     });
                 });
+            }
+
+            // Backend 0: System Voices (Direct Web Speech API playback)
+            if (backend === 'system') {
+                throw new Error("System Voices use device speech synthesis directly for playback.");
             }
 
             throw new Error(`Unsupported Audio Drama TTS backend: "${backend}"`);
@@ -8647,6 +8722,7 @@
             }
         };
 
+        window.TTS_PIPELINE_TIERS = TTS_PIPELINE_TIERS;
         window.DEFAULT_AUDIO_DRAMA_SETTINGS = DEFAULT_AUDIO_DRAMA_SETTINGS;
         window.ELEVENLABS_VOICES = ELEVENLABS_VOICES;
         window.GEMINI_PREBUILT_VOICES = GEMINI_PREBUILT_VOICES;
@@ -8886,7 +8962,7 @@
             const backend = settings?.backend || 'audiocpp';
 
             // Audio.cpp Hybrid Studio: delegate to 4-Wave Studio Render Job for Scene Audio Drama
-            if (backend === 'audiocpp' && window.StudioPipeline?.runStudioRenderJob) {
+            if ((backend === 'hybrid' || backend === 'audiocpp') && window.StudioPipeline?.runStudioRenderJob) {
                 if (onProgress) onProgress({ current: 0, total: 100, stage: 'rendering', message: 'Starting Scene Audio Studio render job...' });
                 try {
                     const renderRes = await window.StudioPipeline.runStudioRenderJob({
@@ -8991,6 +9067,8 @@
                 if (!chunk.audioUrl) {
                     if (onProgress) onProgress({ current: i + 1, total, stage: 'synthesizing', speaker: chunk.speaker || 'Narrator' });
                     try {
+                        // If selected backend is system, export uses Kokoro neural audio for file generation
+                        if (effectiveBackend === 'system') effectiveBackend = 'kokoro';
                         const audioUrl = await synthesizeAudioDramaChunk({
                             chunk,
                             chunkIndex: i,
@@ -9004,24 +9082,32 @@
                         });
                         chunk.audioUrl = audioUrl;
                     } catch (synthErr) {
-                        if (effectiveBackend !== 'browser' && settings?.autoFallbackToBrowser !== false) {
-                            console.warn(`[Audio Drama] ${effectiveBackend} export failed on chunk ${i + 1}, falling back to In-Browser Kokoro Neural:`, synthErr);
-                            effectiveBackend = 'browser';
-                            const fallbackUrl = await synthesizeAudioDramaChunk({
-                                chunk,
-                                chunkIndex: i,
-                                totalChunks: total,
-                                backend: 'browser',
-                                story,
-                                settings: settings || DEFAULT_AUDIO_DRAMA_SETTINGS,
-                                mainApiKey,
-                                mainOpenRouterKey,
-                                kokoroWorkerRef
-                            });
-                            chunk.audioUrl = fallbackUrl;
-                        } else {
-                            throw synthErr;
+                        // Cascading smart fallback: hybrid -> breeze -> kokoro
+                        let fallbackSucceeded = false;
+                        const exportFallbackChain = { 'hybrid': 'breeze', 'audiocpp': 'breeze', 'breeze': 'kokoro' };
+                        let nextFb = exportFallbackChain[effectiveBackend];
+                        while (nextFb && !fallbackSucceeded) {
+                            try {
+                                console.warn(`[Audio Drama] ${effectiveBackend} export failed on chunk ${i + 1}, falling back to ${nextFb}:`, synthErr);
+                                effectiveBackend = nextFb;
+                                const fallbackUrl = await synthesizeAudioDramaChunk({
+                                    chunk,
+                                    chunkIndex: i,
+                                    totalChunks: total,
+                                    backend: effectiveBackend,
+                                    story,
+                                    settings: settings || DEFAULT_AUDIO_DRAMA_SETTINGS,
+                                    mainApiKey,
+                                    mainOpenRouterKey,
+                                    kokoroWorkerRef
+                                });
+                                chunk.audioUrl = fallbackUrl;
+                                fallbackSucceeded = true;
+                            } catch (fbErr) {
+                                nextFb = exportFallbackChain[nextFb];
+                            }
                         }
+                        if (!fallbackSucceeded) throw synthErr;
                     }
                 }
             }
@@ -9239,7 +9325,7 @@
             }
 
             // Audio.cpp Hybrid Studio: delegate to 4-Wave Studio Render Job across sequence scenes
-            if (backend === 'audiocpp' && window.StudioPipeline?.runStudioRenderJob) {
+            if ((backend === 'hybrid' || backend === 'audiocpp') && window.StudioPipeline?.runStudioRenderJob) {
                 if (onProgress) onProgress({ current: 0, total: 100, stage: 'rendering', message: 'Starting Sequence Audio Studio render job...' });
                 try {
                     const renderRes = await window.StudioPipeline.runStudioRenderJob({
@@ -9303,6 +9389,8 @@
                         });
                     }
                     try {
+                        // If selected backend is system, export uses Kokoro neural audio for file generation
+                        if (effectiveSeqBackend === 'system') effectiveSeqBackend = 'kokoro';
                         const audioUrl = await synthesizeAudioDramaChunk({
                             chunk,
                             chunkIndex: i,
@@ -9316,24 +9404,32 @@
                         });
                         chunk.audioUrl = audioUrl;
                     } catch (synthErr) {
-                        if (effectiveSeqBackend !== 'browser' && settings?.autoFallbackToBrowser !== false) {
-                            console.warn(`[Audio Drama] ${effectiveSeqBackend} sequence export failed on chunk ${i + 1}, falling back to In-Browser Kokoro Neural:`, synthErr);
-                            effectiveSeqBackend = 'browser';
-                            const fallbackUrl = await synthesizeAudioDramaChunk({
-                                chunk,
-                                chunkIndex: i,
-                                totalChunks: total,
-                                backend: 'browser',
-                                story,
-                                settings: settings || DEFAULT_AUDIO_DRAMA_SETTINGS,
-                                mainApiKey,
-                                mainOpenRouterKey,
-                                kokoroWorkerRef
-                            });
-                            chunk.audioUrl = fallbackUrl;
-                        } else {
-                            throw synthErr;
+                        // Cascading smart fallback: hybrid -> breeze -> kokoro
+                        let fallbackSucceeded = false;
+                        const exportFallbackChain = { 'hybrid': 'breeze', 'audiocpp': 'breeze', 'breeze': 'kokoro' };
+                        let nextFb = exportFallbackChain[effectiveSeqBackend];
+                        while (nextFb && !fallbackSucceeded) {
+                            try {
+                                console.warn(`[Audio Drama] ${effectiveSeqBackend} sequence export failed on chunk ${i + 1}, falling back to ${nextFb}:`, synthErr);
+                                effectiveSeqBackend = nextFb;
+                                const fallbackUrl = await synthesizeAudioDramaChunk({
+                                    chunk,
+                                    chunkIndex: i,
+                                    totalChunks: total,
+                                    backend: effectiveSeqBackend,
+                                    story,
+                                    settings: settings || DEFAULT_AUDIO_DRAMA_SETTINGS,
+                                    mainApiKey,
+                                    mainOpenRouterKey,
+                                    kokoroWorkerRef
+                                });
+                                chunk.audioUrl = fallbackUrl;
+                                fallbackSucceeded = true;
+                            } catch (fbErr) {
+                                nextFb = exportFallbackChain[nextFb];
+                            }
                         }
+                        if (!fallbackSucceeded) throw synthErr;
                     }
                 }
             }
@@ -25791,10 +25887,10 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                         <button
                                             type="button"
                                             onClick={() => playStoredOrLiveSceneAudio ? playStoredOrLiveSceneAudio(seqIdx, si, 'scene') : (handleDownloadSceneAudio && handleDownloadSceneAudio(seqIdx, si))}
-                                            className="text-gold-ink hover:text-gold flex items-center gap-1.5 bg-gold-tint/50 border border-gold-edge hover:border-gold px-2.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all cursor-pointer"
+                                            className="text-sage-800 hover:text-sage-900 flex items-center gap-1.5 bg-sage-tint border border-sage-edge hover:border-sage-600 px-2.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all cursor-pointer"
                                             title="Play mastered MP3 performance for this scene"
                                         >
-                                            <Play size={12} className="fill-current text-gold-ink ml-0.5" />
+                                            <Play size={12} className="fill-current text-sage-800 ml-0.5" />
                                             <span className="text-[11px] font-mono">MP3 &#10003;</span>
                                         </button>
                                     ) : handleDownloadSceneAudio && (
@@ -27071,21 +27167,28 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                                 </button>
                                             </div>
 
-                                            {handleDownloadSceneAudio && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleDownloadSceneAudio(selectedSequence, selectedScene)}
-                                                    disabled={isExportingSceneAudio}
-                                                    className="px-2.5 py-1 rounded-lg bg-gold-tint hover:bg-gold-tint/80 border border-gold-edge text-[11px] font-bold text-gold-ink flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-40"
-                                                >
-                                                    {isExportingSceneAudio ? (
-                                                        <Loader2 size={11} className="animate-spin text-gold-ink" />
-                                                    ) : (
-                                                        <Download size={11} className="text-gold-ink" />
-                                                    )}
-                                                    <span>Export Scene MP3</span>
-                                                </button>
-                                            )}
+                                            {handleDownloadSceneAudio && (() => {
+                                                const hasCurrentSceneAudio = Boolean(availableSceneAudioMap?.[`${selectedSequence}-${selectedScene}`]);
+                                                return (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDownloadSceneAudio(selectedSequence, selectedScene)}
+                                                        disabled={isExportingSceneAudio}
+                                                        className={hasCurrentSceneAudio
+                                                            ? "px-2.5 py-1 rounded-lg bg-sage-tint hover:bg-sage-tint-strong border border-sage-edge text-[11px] font-bold text-sage-800 flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-40"
+                                                            : "px-2.5 py-1 rounded-lg bg-gold-tint hover:bg-gold-tint/80 border border-gold-edge text-[11px] font-bold text-gold-ink flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-40"
+                                                        }
+                                                        title={hasCurrentSceneAudio ? "Download saved scene MP3 audio file" : "Generate & download scene MP3 audio"}
+                                                    >
+                                                        {isExportingSceneAudio ? (
+                                                            <Loader2 size={11} className={hasCurrentSceneAudio ? "animate-spin text-sage-800" : "animate-spin text-gold-ink"} />
+                                                        ) : (
+                                                            <Download size={11} className={hasCurrentSceneAudio ? "text-sage-800" : "text-gold-ink"} />
+                                                        )}
+                                                        <span>Export Scene MP3</span>
+                                                    </button>
+                                                );
+                                            })()}
                                         </div>
                                     </div>
                                 )}
@@ -27506,10 +27609,10 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                                                                 setIsTocOpen(false);
                                                                                 playStoredOrLiveSceneAudio(ch.seqIdx, sc.sceneIdx, 'scene');
                                                                             }}
-                                                                            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gold-tint text-gold-ink border border-gold-edge text-[9.5px] font-mono font-bold hover:bg-gold-tint/80 transition-all cursor-pointer shadow-2xs"
+                                                                            className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-sage-tint text-sage-800 border border-sage-edge text-[9.5px] font-mono font-bold hover:bg-sage-tint-strong transition-all cursor-pointer shadow-2xs"
                                                                             title="Play mastered MP3 performance for this scene"
                                                                         >
-                                                                            <Play size={9} className="fill-current text-gold-ink" />
+                                                                            <Play size={9} className="fill-current text-sage-800" />
                                                                             <span>MP3</span>
                                                                         </button>
                                                                     ) : sc.hasProse && handleDownloadSceneAudio ? (
@@ -34766,6 +34869,14 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
 
                 // --- AUDIO DRAMA MULTI-VOICE SYNTHESIS PATH ---
                 if (targetChunk.speaker || isAudioDramaModeActiveRef.current) {
+                    const activeBackend = audioDramaSettings.backend || 'hybrid';
+
+                    // Stop 0: Lightweight System Voices (Direct Web Speech API playback)
+                    if (activeBackend === 'system') {
+                        speakChunkWithSpeechSynthesis(chunkIdx);
+                        return;
+                    }
+
                     const abortCtrl = new AbortController();
                     ttsAbortControllersRef.current.set(chunkIdx, abortCtrl);
                     ttsPendingRequestsRef.current.add(chunkIdx);
@@ -34786,7 +34897,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                         chunk: targetChunk,
                         chunkIndex: chunkIdx,
                         totalChunks: q.length,
-                        backend: audioDramaSettings.backend || 'audiocpp',
+                        backend: activeBackend,
                         story: activeStoryForTts,
                         settings: audioDramaSettings,
                         mainApiKey: apiKey,
@@ -34809,8 +34920,6 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                         });
 
                         // If this is the currently awaited chunk and we're ready to play (not mid-cadence pause), play now!
-                        // (If a cadence pause timer IS active, when the timer expires it will call playAudioChunk(chunkIdx)
-                        // which will pick up targetChunk.audioUrl from ttsQueueRef.current!)
                         if (chunkIdx === ttsCurrentChunkIndexRef.current &&
                             (ttsAutoPlayNextRef.current || ttsStatusRef.current === 'generating') &&
                             !ttsCadenceTimerRef.current) {
@@ -34823,18 +34932,40 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                             ttsPendingRequestsRef.current.delete(chunkIdx);
                             return;
                         }
-                        const curBackend = audioDramaSettings.backend || 'audiocpp';
+                        const curBackend = audioDramaSettings.backend || 'hybrid';
                         console.warn(`[Audio Drama] ${curBackend} failed on chunk ${chunkIdx}:`, err.message || err);
 
-                        // 1. Auto-Fallback Safeguard: Seamlessly switch to In-Browser Kokoro Neural voice if remote backend failed
-                        if (curBackend !== 'browser' && audioDramaSettings.autoFallbackToBrowser !== false) {
+                        // Smart cascading fallback: Hybrid (3) -> Breeze 2 (2) -> Kokoro (1) -> System Voices (0)
+                        const FALLBACK_CHAIN = {
+                            'hybrid': 'breeze',
+                            'audiocpp': 'breeze',
+                            'breeze': 'kokoro',
+                            'kokoro': 'system',
+                            'browser': 'system'
+                        };
+
+                        let fallbackBackend = FALLBACK_CHAIN[curBackend];
+                        let fallbackSuccess = false;
+                        let fallbackUrl = null;
+
+                        while (fallbackBackend && !fallbackSuccess) {
+                            if (fallbackBackend === 'system') {
+                                showToast("Speech server unavailable \u2014 switched to System Voice so playback continues.", "info");
+                                clearTtsWatchdog(chunkIdx);
+                                ttsAbortControllersRef.current.delete(chunkIdx);
+                                ttsPendingRequestsRef.current.delete(chunkIdx);
+                                speakChunkWithSpeechSynthesis(chunkIdx);
+                                return; // Graceful auto-recovery succeeded via system voice!
+                            }
+
                             try {
-                                showToast("Speech server unavailable \u2014 switched to built-in voice so playback continues.", "info");
-                                const fallbackUrl = await synthesizeAudioDramaChunk({
+                                const tierObj = (typeof TTS_PIPELINE_TIERS !== 'undefined') ? TTS_PIPELINE_TIERS.find(t => t.id === fallbackBackend) : null;
+                                showToast(`Falling back to ${tierObj ? tierObj.shortLabel : fallbackBackend}...`, "info");
+                                fallbackUrl = await synthesizeAudioDramaChunk({
                                     chunk: targetChunk,
                                     chunkIndex: chunkIdx,
                                     totalChunks: q.length,
-                                    backend: 'browser',
+                                    backend: fallbackBackend,
                                     story: storyRef.current || story,
                                     settings: audioDramaSettings,
                                     mainApiKey: apiKey,
@@ -34842,31 +34973,39 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                     kokoroWorkerRef: ttsWorkerRef,
                                     signal: abortCtrl.signal
                                 });
-                                if (reqSessionId !== ttsSessionIdRef.current || abortCtrl.signal.aborted) {
-                                    if (fallbackUrl) { try { URL.revokeObjectURL(fallbackUrl); } catch (e) { } }
-                                    return;
+                                if (fallbackUrl) {
+                                    fallbackSuccess = true;
+                                    break;
                                 }
-                                clearTtsWatchdog(chunkIdx);
-                                ttsAbortControllersRef.current.delete(chunkIdx);
-                                ttsPendingRequestsRef.current.delete(chunkIdx);
-                                setTtsQueueAndRef(prev => {
-                                    const nextQ = [...prev];
-                                    if (nextQ[chunkIdx]) nextQ[chunkIdx] = { ...nextQ[chunkIdx], status: 'ready', audioUrl: fallbackUrl };
-                                    return nextQ;
-                                });
-                                if (chunkIdx === ttsCurrentChunkIndexRef.current &&
-                                    (ttsAutoPlayNextRef.current || ttsStatusRef.current === 'generating') &&
-                                    !ttsCadenceTimerRef.current) {
-                                    ttsAutoPlayNextRef.current = false;
-                                    playAudioChunk(chunkIdx, fallbackUrl);
-                                }
-                                return; // Graceful auto-recovery succeeded!
-                            } catch (fallbackErr) {
-                                console.error("[Audio Drama] Auto-fallback to in-browser voice also failed:", fallbackErr);
+                            } catch (fbErr) {
+                                console.warn(`[Audio Drama] Fallback to ${fallbackBackend} failed:`, fbErr);
+                                fallbackBackend = FALLBACK_CHAIN[fallbackBackend];
                             }
                         }
 
-                        // 2. Graceful human-readable error reporting
+                        if (fallbackSuccess && fallbackUrl) {
+                            if (reqSessionId !== ttsSessionIdRef.current || abortCtrl.signal.aborted) {
+                                if (fallbackUrl) { try { URL.revokeObjectURL(fallbackUrl); } catch (e) { } }
+                                return;
+                            }
+                            clearTtsWatchdog(chunkIdx);
+                            ttsAbortControllersRef.current.delete(chunkIdx);
+                            ttsPendingRequestsRef.current.delete(chunkIdx);
+                            setTtsQueueAndRef(prev => {
+                                const nextQ = [...prev];
+                                if (nextQ[chunkIdx]) nextQ[chunkIdx] = { ...nextQ[chunkIdx], status: 'ready', audioUrl: fallbackUrl };
+                                return nextQ;
+                            });
+                            if (chunkIdx === ttsCurrentChunkIndexRef.current &&
+                                (ttsAutoPlayNextRef.current || ttsStatusRef.current === 'generating') &&
+                                !ttsCadenceTimerRef.current) {
+                                ttsAutoPlayNextRef.current = false;
+                                playAudioChunk(chunkIdx, fallbackUrl);
+                            }
+                            return; // Graceful auto-recovery succeeded!
+                        }
+
+                        // If all cascade options failed, report human-readable error gracefully
                         clearTtsWatchdog(chunkIdx);
                         ttsAbortControllersRef.current.delete(chunkIdx);
                         ttsPendingRequestsRef.current.delete(chunkIdx);
@@ -35436,8 +35575,32 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                 const charName = typeof charOrName === 'object' ? (charOrName.name || "Character") : String(charOrName);
                 if (isAuditioningVoice) return;
 
-                const backend = audioDramaSettings.backend || 'audiocpp';
-                if (backend === 'browser') {
+                const backend = audioDramaSettings.backend || 'hybrid';
+                if (backend === 'system') {
+                    setIsAuditioningVoice(true);
+                    showToast(`Auditioning ${charName} via System Voice...`, "info");
+                    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                        try { window.speechSynthesis.cancel(); } catch (e) { }
+                        const u = new SpeechSynthesisUtterance(`This is the voice profile of ${charName}, performing for the audio drama.`);
+                        try {
+                            const voices = window.speechSynthesis.getVoices();
+                            if (voices && voices.length > 0) {
+                                const pref = voices.find(v => (v.lang.startsWith('en') || v.lang.startsWith('en-US')) && (v.name.includes('Natural') || v.name.includes('Siri') || v.name.includes('Enhanced') || v.name.includes('Google')))
+                                    || voices.find(v => v.lang.startsWith('en'))
+                                    || voices[0];
+                                if (pref) u.voice = pref;
+                            }
+                        } catch (vErr) { }
+                        u.onend = () => setIsAuditioningVoice(false);
+                        u.onerror = () => setIsAuditioningVoice(false);
+                        window.speechSynthesis.speak(u);
+                        return;
+                    }
+                    setIsAuditioningVoice(false);
+                    return;
+                }
+
+                if (backend === 'kokoro' || backend === 'browser') {
                     getOrCreateTtsWorker();
                     if (ttsStatusRef.current !== 'ready' && ttsStatusRef.current !== 'playing' && ttsStatusRef.current !== 'paused') {
                         initTtsEngine();
@@ -35846,7 +36009,31 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
 
                 const targetSeq = (seqIdx !== undefined && seqIdx !== null) ? Number(seqIdx) : Number(selectedSequence);
                 const targetScene = (sceneIdx !== undefined && sceneIdx !== null) ? Number(sceneIdx) : Number(selectedScene);
+                const currentStory = storyRef.current || story;
 
+                // Check if stored MP3 already exists in AudioStore for instant download without regeneration
+                if (window.audioStore && currentStory?.id) {
+                    try {
+                        const storedRecord = await window.audioStore.getSceneAudio(currentStory.id, targetSeq, targetScene);
+                        if (storedRecord && storedRecord.blob) {
+                            setIsExportingSceneAudio(true);
+                            try {
+                                const cleanStory = String(currentStory?.title || "Novel").replace(/[^a-zA-Z0-9_\-]/g, '_');
+                                const scenesForSeq = (currentStory.scenes && (currentStory.scenes[targetSeq] || currentStory.scenes[String(targetSeq)])) || [];
+                                const sceneItem = Array.isArray(scenesForSeq) ? scenesForSeq[targetScene] : null;
+                                const cleanSceneTitle = String(sceneItem?.title || `Scene_${targetScene + 1}`).replace(/[^a-zA-Z0-9_\-]/g, '_');
+                                const fileName = `${cleanStory}_Scene_${targetSeq + 1}.${targetScene + 1}_${cleanSceneTitle}.mp3`.replace(/\s+/g, '_');
+                                downloadBlob(storedRecord.blob, fileName);
+                                showToast(`Downloaded saved MP3: ${fileName}`, "success");
+                                return;
+                            } finally {
+                                setIsExportingSceneAudio(false);
+                            }
+                        }
+                    } catch (storeErr) {
+                        console.warn("Failed checking AudioStore for saved MP3 download:", storeErr);
+                    }
+                }
                 const sId = `${targetSeq}-${targetScene}`;
                 const proseObj = story?.prose?.[sId];
                 const proseText = (typeof proseObj === 'object' && proseObj !== null)
@@ -56316,6 +56503,7 @@ ${finalProseText}
                             {view === 'writer' && selectedSequence !== null && selectedScene !== null && (() => {
                                 const writerSceneKey = `${selectedSequence}`;
                                 const writerBeatKey = `${selectedSequence}-${selectedScene}`;
+                                const hasSavedAudio = Boolean(availableSceneAudioMap?.[writerBeatKey]);
                                 const currentScene = story.scenes?.[writerSceneKey]?.[selectedScene];
                                 const currentSequence = (story.sequences || [])[selectedSequence];
                                 if (!currentScene) return null;
@@ -56578,16 +56766,24 @@ ${finalProseText}
                                                                     ? rawProse
                                                                     : (rawProse?.final || rawProse?.draft || rawProse?.text || rawProse?.content || "");
                                                                 enterReaderMode(seq, sc);
-                                                                if (proseText && proseText.trim() && startTtsFromProse) {
+                                                                if (hasSavedAudio && playStoredOrLiveSceneAudio) {
+                                                                    playStoredOrLiveSceneAudio(seq, sc, 'scene');
+                                                                } else if (proseText && proseText.trim() && startTtsFromProse) {
                                                                     startTtsFromProse(proseText, 0);
                                                                 } else {
                                                                     showToast("Write or draft the scene script first to play the audio drama.", "info");
                                                                 }
                                                             }}
-                                                            className="bg-gold-tint hover:bg-gold-tint/80 border border-gold-edge px-3 py-2 rounded-xl text-gold-ink font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
-                                                            title="Listen to full multi-voice audio drama performance for this scene"
+                                                            className={hasSavedAudio
+                                                                ? "bg-sage-tint hover:bg-sage-tint-strong border border-sage-edge px-3 py-2 rounded-xl text-sage-900 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                                                                : "bg-gold-tint hover:bg-gold-tint/80 border border-gold-edge px-3 py-2 rounded-xl text-gold-ink font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+                                                            }
+                                                            title={hasSavedAudio
+                                                                ? "Listen to saved multi-voice audio drama performance for this scene"
+                                                                : "Listen to full multi-voice audio drama performance for this scene"
+                                                            }
                                                         >
-                                                            <Radio size={14} className="text-gold-ink animate-pulse" /> <span>Play Drama</span>
+                                                            <Radio size={14} className={hasSavedAudio ? "text-sage-800 animate-pulse" : "text-gold-ink animate-pulse"} /> <span>Play Drama</span>
                                                         </button>
                                                     )}
 
@@ -56596,13 +56792,19 @@ ${finalProseText}
                                                         <button
                                                             onClick={() => handleDownloadSceneAudio(selectedSequence, selectedScene)}
                                                             disabled={isExportingSceneAudio}
-                                                            className="bg-surface hover:bg-lift border border-edge-strong px-3 py-2 rounded-xl text-ink-800 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-40"
-                                                            title="Download this scene's synthesized audio as an MP3 file"
+                                                            className={hasSavedAudio
+                                                                ? "bg-sage-tint hover:bg-sage-tint-strong border border-sage-edge px-3 py-2 rounded-xl text-sage-900 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-40"
+                                                                : "bg-surface hover:bg-lift border border-edge-strong px-3 py-2 rounded-xl text-ink-800 font-bold text-xs shadow-2xs flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 disabled:opacity-40"
+                                                            }
+                                                            title={hasSavedAudio
+                                                                ? "Download saved scene MP3 audio file"
+                                                                : "Download this scene's synthesized audio as an MP3 file"
+                                                            }
                                                         >
                                                             {isExportingSceneAudio ? (
-                                                                <Loader2 size={14} className="animate-spin text-gold-ink" />
+                                                                <Loader2 size={14} className={hasSavedAudio ? "animate-spin text-sage-800" : "animate-spin text-gold-ink"} />
                                                             ) : (
-                                                                <Headphones size={14} className="text-gold-ink" />
+                                                                <Headphones size={14} className={hasSavedAudio ? "text-sage-800" : "text-gold-ink"} />
                                                             )}
                                                             <span>Export MP3</span>
                                                         </button>
@@ -60108,120 +60310,112 @@ ${finalProseText}
                                                         Direct full-cast audio performances with automatic character voice casting, expressive emotion tags, and broadcast cadence.
                                                     </p>
                                                 </div>
-                                                {/* Enable toggle */}
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-xs font-semibold text-ink-700 font-mono">Audio Drama Engine</span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => updateAudioDramaSetting('enabled', !audioDramaSettings.enabled)}
-                                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${audioDramaSettings.enabled ? 'bg-gold' : 'bg-mist-300'}`}
-                                                        aria-label="Toggle Audio Drama Engine"
-                                                    >
-                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${audioDramaSettings.enabled ? 'translate-x-6' : 'translate-x-1'}`} />
-                                                    </button>
-                                                </div>
                                             </div>
 
-                                            {/* Auto-Recovery Safeguard Card */}
-                                            <div className="p-4 rounded-xl border border-edge-strong bg-wash flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                                <div className="flex items-start gap-3">
-                                                    <div className="w-8 h-8 rounded-lg bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink shrink-0 mt-0.5">
-                                                        <Volume2 size={16} />
-                                                    </div>
+                                            {/* TTS Generation Pipeline Slider */}
+                                            <div className="p-4 sm:p-5 rounded-2xl border border-edge-strong bg-wash space-y-4">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-edge pb-3">
                                                     <div>
                                                         <div className="flex items-center gap-2">
-                                                            <h4 className="text-xs font-bold text-ink-900 font-mono uppercase tracking-wider">Seamless Built-in Voice Safeguard</h4>
-                                                            <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-sage-tint text-sage-800 border border-sage-edge font-semibold">Recommended</span>
+                                                            <Sliders size={16} className="text-gold-ink" />
+                                                            <h4 className="text-xs font-bold text-ink-900 font-mono uppercase tracking-wider">TTS Generation Pipeline</h4>
                                                         </div>
-                                                        <p className="text-xs text-ink-600 mt-0.5 max-w-xl">
-                                                            If your local Audio.cpp server or cloud speech API encounters an issue or network delay, listening automatically continues with the built-in free voice without halting playback.
+                                                        <p className="text-xs text-ink-500 mt-0.5">
+                                                            Select your preferred speech synthesis pipeline. The engine will synthesize using this tier and automatically cascade to lighter options if unavailable.
                                                         </p>
                                                     </div>
-                                                </div>
-                                                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                                                    <span className="text-xs font-semibold text-ink-700 font-mono">
-                                                        {audioDramaSettings.autoFallbackToBrowser !== false ? 'Enabled' : 'Disabled'}
-                                                    </span>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => updateAudioDramaSetting('autoFallbackToBrowser', audioDramaSettings.autoFallbackToBrowser === false ? true : false)}
-                                                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors cursor-pointer ${audioDramaSettings.autoFallbackToBrowser !== false ? 'bg-gold' : 'bg-mist-300'}`}
-                                                        aria-label="Toggle Auto-Fallback Safeguard"
-                                                    >
-                                                        <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${audioDramaSettings.autoFallbackToBrowser !== false ? 'translate-x-6' : 'translate-x-1'}`} />
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* 4 First-Class Backends Selector */}
-                                            <div className="space-y-3">
-                                                <div>
-                                                    <label className="block text-xs font-bold text-ink-700 uppercase tracking-wider font-mono">Audio Drama Synthesis Backend</label>
-                                                    <p className="text-xs text-ink-500 mt-0.5">Select the synthesis backend for producing multi-speaker audio dramas. Each engine receives the automated 7-dimension character voice profile and emotion tags.</p>
-                                                </div>
-
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                                                    {[
-                                                        {
-                                                            id: 'audiocpp',
-                                                            title: 'Audio.cpp (Local)',
-                                                            badge: 'Hybrid Studio',
-                                                            desc: 'Local high-fidelity Breeze 2 + MOSS-TTSD studio pipeline via audio.cpp'
-                                                        },
-                                                        {
-                                                            id: 'gemini',
-                                                            title: 'Gemini TTS (API)',
-                                                            badge: 'Voice Design & Presets',
-                                                            desc: 'Google Gemini 3.8 Flash TTS with prompt-driven character voices and 30 studio presets.'
-                                                        },
-                                                        {
-                                                            id: 'openrouter',
-                                                            title: 'OpenRouter (API)',
-                                                            badge: 'ElevenLabs v4',
-                                                            desc: 'ElevenLabs v4 multi-voice ensemble with automated timbre mapping and [emotion] tags.'
-                                                        },
-                                                        {
-                                                            id: 'browser',
-                                                            title: 'Browser (In-App)',
-                                                            badge: 'Kokoro-82M Ensemble',
-                                                            desc: 'Client-side neural speech synthesis. Zero configuration, completely offline and free.'
-                                                        }
-                                                    ].map(opt => {
-                                                        const isSelected = (audioDramaSettings.backend || 'audiocpp') === opt.id;
+                                                    {(() => {
+                                                        const currentTierIndex = typeof audioDramaSettings.pipelineTier === 'number'
+                                                            ? audioDramaSettings.pipelineTier
+                                                            : (audioDramaSettings.backend === 'system' ? 0 : audioDramaSettings.backend === 'breeze' ? 2 : (audioDramaSettings.backend === 'browser' || audioDramaSettings.backend === 'kokoro') ? 1 : 3);
+                                                        const activeTier = TTS_PIPELINE_TIERS[currentTierIndex] || TTS_PIPELINE_TIERS[3];
                                                         return (
-                                                            <button
-                                                                key={opt.id}
-                                                                type="button"
-                                                                onClick={() => updateAudioDramaSetting('backend', opt.id)}
-                                                                className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer relative flex flex-col justify-between ${
-                                                                    isSelected
-                                                                        ? 'bg-gold-tint/40 border-gold shadow-xs'
-                                                                        : 'bg-surface hover:bg-wash border-edge hover:border-edge-strong'
-                                                                }`}
-                                                            >
-                                                                <div>
-                                                                    <div className="flex items-center justify-between gap-1 mb-1">
-                                                                        <span className={`text-xs font-bold ${isSelected ? 'text-gold-ink' : 'text-ink-800'}`}>
-                                                                            {opt.title}
+                                                            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-semibold shrink-0 self-start sm:self-auto">
+                                                                {activeTier.badge}
+                                                            </span>
+                                                        );
+                                                    })()}
+                                                </div>
+
+                                                {/* Slider Track and Discrete Stops */}
+                                                {(() => {
+                                                    const currentTierIndex = typeof audioDramaSettings.pipelineTier === 'number'
+                                                        ? audioDramaSettings.pipelineTier
+                                                        : (audioDramaSettings.backend === 'system' ? 0 : audioDramaSettings.backend === 'breeze' ? 2 : (audioDramaSettings.backend === 'browser' || audioDramaSettings.backend === 'kokoro') ? 1 : 3);
+                                                    const activeTier = TTS_PIPELINE_TIERS[currentTierIndex] || TTS_PIPELINE_TIERS[3];
+
+                                                    return (
+                                                        <div className="space-y-4 pt-1">
+                                                            <div className="relative px-2">
+                                                                <input
+                                                                    type="range"
+                                                                    min="0"
+                                                                    max="3"
+                                                                    step="1"
+                                                                    value={currentTierIndex}
+                                                                    onChange={e => {
+                                                                        const val = parseInt(e.target.value, 10);
+                                                                        const tierObj = TTS_PIPELINE_TIERS[val] || TTS_PIPELINE_TIERS[3];
+                                                                        setAudioDramaSettings(prev => ({
+                                                                            ...prev,
+                                                                            pipelineTier: val,
+                                                                            backend: tierObj.id
+                                                                        }));
+                                                                    }}
+                                                                    className="w-full accent-[#C9A96E] cursor-pointer h-2 bg-mist-200 rounded-lg appearance-none"
+                                                                    aria-label="TTS Generation Pipeline Slider"
+                                                                />
+                                                                {/* Tick markers and stop labels */}
+                                                                <div className="flex justify-between items-center text-[10px] font-mono font-semibold text-ink-500 mt-2 px-1">
+                                                                    {TTS_PIPELINE_TIERS.map(t => (
+                                                                        <button
+                                                                            key={t.id}
+                                                                            type="button"
+                                                                            onClick={() => {
+                                                                                setAudioDramaSettings(prev => ({
+                                                                                    ...prev,
+                                                                                    pipelineTier: t.tier,
+                                                                                    backend: t.id
+                                                                                }));
+                                                                            }}
+                                                                            className={`flex flex-col items-center transition-colors cursor-pointer text-center max-w-[85px] sm:max-w-[140px] ${
+                                                                                t.tier === currentTierIndex ? 'text-gold-ink font-bold' : 'text-ink-500 hover:text-ink-800'
+                                                                            }`}
+                                                                        >
+                                                                            <span className="text-[11px] font-sans font-bold">{t.label.split(':')[0]}</span>
+                                                                            <span className="text-[9px] text-ink-400 font-mono hidden sm:inline">{t.shortLabel}</span>
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+
+                                                            {/* Active Tier Summary Card */}
+                                                            <div className="p-3.5 rounded-xl border border-gold-edge bg-gold-tint/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                                                <div className="space-y-0.5">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-xs font-bold text-ink-900 font-serif">{activeTier.label}</span>
+                                                                        <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-surface border border-edge text-ink-600 font-semibold">
+                                                                            {activeTier.badge}
                                                                         </span>
-                                                                        {isSelected && <span className="w-2 h-2 rounded-full bg-gold" />}
                                                                     </div>
-                                                                    <span className="inline-block text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-mist-200 text-ink-600 mb-1.5 font-semibold">
-                                                                        {opt.badge}
-                                                                    </span>
-                                                                    <p className="text-[11px] text-ink-500 leading-tight">
-                                                                        {opt.desc}
+                                                                    <p className="text-[11px] text-ink-600">
+                                                                        {activeTier.desc}
                                                                     </p>
                                                                 </div>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
+                                                                <div className="text-[10px] font-mono text-gold-ink shrink-0 bg-surface/80 px-2 py-1 rounded-md border border-gold-edge/60">
+                                                                    {activeTier.tier === 0
+                                                                        ? "Zero setup required"
+                                                                        : `Smart fallback \u2192 ${TTS_PIPELINE_TIERS[activeTier.tier - 1]?.shortLabel || 'System'}`}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
 
                                             {/* Backend Specific Configuration Panels */}
                                             {/* PANEL 1: Audio.cpp (Local Qwen 3 TTS) */}
-                                            {(audioDramaSettings.backend || 'audiocpp') === 'audiocpp' && (
+                                            {(audioDramaSettings.backend === 'hybrid' || audioDramaSettings.backend === 'breeze' || audioDramaSettings.backend === 'audiocpp' || (audioDramaSettings.pipelineTier !== undefined && audioDramaSettings.pipelineTier >= 2)) && (
                                                 <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-4">
                                                     <div className="flex items-center justify-between">
                                                         <div className="flex items-center gap-2">
@@ -60492,7 +60686,25 @@ ${finalProseText}
                                             )}
 
                                             {/* PANEL 4: Browser (Kokoro-82M Ensemble) */}
-                                            {(audioDramaSettings.backend || 'audiocpp') === 'browser' && (
+                                                                                        {/* PANEL 0: Lightweight System Voices */}
+                                            {(audioDramaSettings.backend === 'system' || audioDramaSettings.pipelineTier === 0) && (
+                                                <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-3">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-2">
+                                                            <Volume2 size={16} className="text-gold-ink" />
+                                                            <h4 className="text-xs font-bold text-ink-900 uppercase font-mono tracking-wider">Device Native System Voices</h4>
+                                                        </div>
+                                                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sage-tint border border-sage-edge text-sage-800 font-semibold">
+                                                            Zero Download • Instant
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-ink-500">
+                                                        Plays multi-character audio directly using your operating system's built-in speech synthesis (Web Speech API). Works instantly without downloading any model weights or running a local server.
+                                                    </p>
+                                                </div>
+                                            )}
+
+                                            {(audioDramaSettings.backend === 'kokoro' || audioDramaSettings.backend === 'browser' || audioDramaSettings.pipelineTier === 1) && (
                                                 <div className="p-4 sm:p-5 rounded-xl border border-edge-strong bg-inset space-y-3">
                                                     <div className="flex items-center justify-between">
                                                         <div className="flex items-center gap-2">
@@ -60582,8 +60794,12 @@ ${finalProseText}
                                                         const currentBackend = audioDramaSettings.backend || 'audiocpp';
                                                         const isDeterministic = audioDramaSettings.enableDeterministicSeed !== false;
                                                         let mappedVoiceBadge = "";
-                                                        if (currentBackend === 'audiocpp') {
+                                                        if (currentBackend === 'hybrid' || currentBackend === 'audiocpp') {
+                                                            mappedVoiceBadge = "Hybrid Studio (Breeze 2 + MOSS-TTSD)";
+                                                        } else if (currentBackend === 'breeze') {
                                                             mappedVoiceBadge = "Breeze 2 Instruct Profile";
+                                                        } else if (currentBackend === 'system') {
+                                                            mappedVoiceBadge = "Device System Voice";
                                                         } else if (currentBackend === 'openrouter') {
                                                             mappedVoiceBadge = `ElevenLabs: ${mapCharacterToElevenLabsVoice(narratorDesc, 'Narrator')}`;
                                                         } else if (currentBackend === 'gemini') {
@@ -60603,7 +60819,7 @@ ${finalProseText}
                                                                         <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-mist-200 text-ink-600 font-semibold">
                                                                             {mappedVoiceBadge}
                                                                         </span>
-                                                                        {currentBackend === 'audiocpp' && (
+                                                                        {(currentBackend === 'hybrid' || currentBackend === 'breeze' || currentBackend === 'audiocpp') && (
                                                                             <button
                                                                                 type="button"
                                                                                 onClick={handleEditNarratorSeed}
@@ -60623,7 +60839,7 @@ ${finalProseText}
                                                                     </p>
                                                                 </div>
                                                                 <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
-                                                                    {currentBackend === 'audiocpp' && (
+                                                                    {(currentBackend === 'hybrid' || currentBackend === 'breeze' || currentBackend === 'audiocpp') && (
                                                                         <button
                                                                             type="button"
                                                                             onClick={handleRerollNarratorSeed}
@@ -60665,8 +60881,12 @@ ${finalProseText}
                                                                 const currentBackend = audioDramaSettings.backend || 'audiocpp';
                                                                 const isDeterministic = audioDramaSettings.enableDeterministicSeed !== false;
                                                                 let mappedVoiceBadge = "";
-                                                                if (currentBackend === 'audiocpp') {
+                                                                if (currentBackend === 'hybrid' || currentBackend === 'audiocpp') {
+                                                                    mappedVoiceBadge = "Hybrid Studio (Breeze 2 + MOSS-TTSD)";
+                                                                } else if (currentBackend === 'breeze') {
                                                                     mappedVoiceBadge = "Breeze 2 Instruct Profile";
+                                                                } else if (currentBackend === 'system') {
+                                                                    mappedVoiceBadge = "Device System Voice";
                                                                 } else if (currentBackend === 'openrouter') {
                                                                     mappedVoiceBadge = `ElevenLabs: ${mapCharacterToElevenLabsVoice(voiceDesc, charName)}`;
                                                                 } else if (currentBackend === 'gemini') {
@@ -60688,7 +60908,7 @@ ${finalProseText}
                                                                                 <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-gold-tint text-gold-ink font-semibold">
                                                                                     {mappedVoiceBadge}
                                                                                 </span>
-                                                                                {currentBackend === 'audiocpp' && (
+                                                                                {(currentBackend === 'hybrid' || currentBackend === 'breeze' || currentBackend === 'audiocpp') && (
                                                                                     <button
                                                                                         type="button"
                                                                                         onClick={() => handleEditCharacterSeed(char)}
@@ -60708,7 +60928,7 @@ ${finalProseText}
                                                                             </p>
                                                                         </div>
                                                                         <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
-                                                                            {currentBackend === 'audiocpp' && (
+                                                                            {(currentBackend === 'hybrid' || currentBackend === 'breeze' || currentBackend === 'audiocpp') && (
                                                                                 <button
                                                                                     type="button"
                                                                                     onClick={() => handleRerollCharacterSeed(char)}
