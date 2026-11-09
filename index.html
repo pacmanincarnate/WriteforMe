@@ -4137,10 +4137,10 @@
         const cleanDialogueSpokenText = (text) => {
             if (!text) return "";
             return String(text)
-                // Remove [bracketed stage directions] e.g. [pause], [whispering], [clears throat]
+                // Remove [bracketed voice directions and emotional instructions] e.g. [whispering], [Combine high-stakes necessity...]
                 .replace(/\[[^\]]+\]/g, ' ')
-                // Remove explicit parenthetical stage directions: (whispering), (sighs), (pause), etc.
-                .replace(/\((?:whisper(?:ing|s)?|sighs?|gasps?|shouts?|cries|sobs?|laughs?|groans?|chuckles?|pauses?|clears\s+throat|mutters?|softly|quietly|loudly|gently|firmly|grimly|coldly|warmly|tiredly|wearily|aside|internal|o\.s\.|v\.o\.)\)/gi, ' ')
+                // Remove explicit parenthetical stage directions and localized vocal events: (whispers), (sighs), (laughs), (pause), etc.
+                .replace(/\((?:whisper(?:ing|s)?|sighs?|gasps?|shouts?|screams?|singing|humming|stutters?|crying|sobs?|whimpers?|groans?|moans?|laughs?|chuckles?|giggles?|inhales?|exhales?|breathing\s+heavily|clears?\s+throat|coughs?|sniffs?|smacks?\s+lips|clicks?\s+tongue|yawns?|sneezes?|hiccups?|burps?|gulps?|gags?|grunts?|scoffs?|snorts?|pauses?|mutters?|softly|quietly|loudly|gently|firmly|grimly|coldly|warmly|tiredly|wearily|aside|internal|o\.s\.|v\.o\.)\)/gi, ' ')
                 // Remove <angle bracket notes> e.g. <whisper>
                 .replace(/<[^>]+>/g, ' ')
                 // Remove explicit standalone *stage directions* e.g. *sighs* or *whispers* (leaving italicized dialogue intact)
@@ -4458,6 +4458,9 @@
                             emotion: chunk.emotion || null,
                             text: chunk.text || chunkSpoken,
                             spokenText: chunkSpoken,
+                            rawSpoken: chunk.rawSpoken || chunkSpoken,
+                            breezeText: chunk.breezeText || chunkSpoken,
+                            mossText: chunk.mossText || chunkSpoken,
                             isContinuation: currentNarratorFollowsPriorNarrator || !!chunk.isContinuation,
                             wordCount: chunkWords
                         };
@@ -4465,11 +4468,17 @@
                     } else {
                         const combinedSpoken = joinSpoken(currentNarrator.spokenText, chunkSpoken);
                         const combinedText = joinSpoken(currentNarrator.text, chunk.text || chunkSpoken);
+                        const combinedRaw = joinSpoken(currentNarrator.rawSpoken || currentNarrator.spokenText, chunk.rawSpoken || chunkSpoken);
+                        const combinedBreeze = joinSpoken(currentNarrator.breezeText || currentNarrator.spokenText, chunk.breezeText || chunkSpoken);
+                        const combinedMoss = joinSpoken(currentNarrator.mossText || currentNarrator.spokenText, chunk.mossText || chunkSpoken);
                         const combinedWords = countWords(combinedSpoken);
 
                         if (maxWords === Infinity || !maxWords || combinedWords <= maxWords) {
                             currentNarrator.text = combinedText;
                             currentNarrator.spokenText = combinedSpoken;
+                            currentNarrator.rawSpoken = combinedRaw;
+                            currentNarrator.breezeText = combinedBreeze;
+                            currentNarrator.mossText = combinedMoss;
                             currentNarrator.wordCount = combinedWords;
                             if (!currentNarrator.emotion && chunk.emotion) {
                                 currentNarrator.emotion = chunk.emotion;
@@ -4484,6 +4493,9 @@
                                 emotion: chunk.emotion || null,
                                 text: chunk.text || chunkSpoken,
                                 spokenText: chunkSpoken,
+                                rawSpoken: chunk.rawSpoken || chunkSpoken,
+                                breezeText: chunk.breezeText || chunkSpoken,
+                                mossText: chunk.mossText || chunkSpoken,
                                 isContinuation: true,
                                 wordCount: chunkWords
                             };
@@ -4536,17 +4548,29 @@
 
             const pushSpokenAsChunks = (speakerName, emotionTag, spokenStr, pIdx = 0, lIdx = 0, rawSpokenText = null) => {
                 if (!spokenStr || !/[a-zA-Z0-9]/.test(spokenStr)) return;
-                // Sanitize emotion: filter out non-vocal timing tags (pause, beat, silence, etc.)
+                // Sanitize emotion: filter out standalone non-vocal timing tags (pause, beat, silence, etc.)
                 let cleanEmotion = null;
                 if (emotionTag) {
                     const stripped = emotionTag.replace(/^[\[\(\*]+|[\]\)\*]+$/g, '').trim();
-                    const parts = stripped.split(/[,;/]+/)
-                        .map(p => p.trim())
-                        .filter(p => p && !/^(?:pause|beat|silence|long\s+pause|short\s+pause|brief\s+pause|hesitates?|hesitation|moment|waits?|after\s+a\s+beat|break|gap|breath|takes?\s+a\s+breath|deep\s+breath)$/i.test(p));
-                    if (parts.length > 0) {
-                        cleanEmotion = parts.join(', ');
+                    if (/^(?:pause|beat|silence|long\s+pause|short\s+pause|brief\s+pause|hesitates?|hesitation|moment|waits?|after\s+a\s+beat|break|gap|breath|takes?\s+a\s+breath|deep\s+breath)$/i.test(stripped)) {
+                        cleanEmotion = null;
+                    } else if (stripped.length > 25 || /\.\s+/.test(stripped)) {
+                        // Natural-language voice instruction (e.g. 1-2 sentences for Breeze 2 vocal direction)
+                        cleanEmotion = stripped;
+                    } else {
+                        const parts = stripped.split(/[,;/]+/)
+                            .map(p => p.trim())
+                            .filter(p => p && !/^(?:pause|beat|silence|long\s+pause|short\s+pause|brief\s+pause|hesitates?|hesitation|moment|waits?|after\s+a\s+beat|break|gap|breath|takes?\s+a\s+breath|deep\s+breath)$/i.test(p));
+                        if (parts.length > 0) {
+                            cleanEmotion = parts.join(', ');
+                        }
                     }
                 }
+
+                const sourceRaw = rawSpokenText || spokenStr;
+                const tagInfo = typeof extractSpokenAndTags === 'function' ? extractSpokenAndTags(sourceRaw) : null;
+                const breezeStr = tagInfo?.breezeText || sourceRaw;
+                const mossStr = tagInfo?.mossText || spokenStr;
 
                 if (isRawMode || (speakerName && speakerName.toLowerCase() === 'narrator')) {
                     parsedChunks.push({
@@ -4555,10 +4579,12 @@
                         emotion: cleanEmotion || null,
                         text: spokenStr,
                         spokenText: spokenStr,
-                        rawSpoken: rawSpokenText || spokenStr,
+                        rawSpoken: sourceRaw,
+                        breezeText: breezeStr,
+                        mossText: mossStr,
                         isContinuation: false,
-                        fullLine: `${speakerName}: ${cleanEmotion ? `(${cleanEmotion}) ` : ''}${spokenStr}`,
-                        wordCount: (spokenStr.match(/\b\w+\b/g) || []).length,
+                        fullLine: `${speakerName}: ${cleanEmotion ? `[${cleanEmotion}] ` : ''}${sourceRaw}`,
+                        wordCount: (spokenStr.match(/\b\w+\b/g) || breezeStr.match(/\b\w+\b/g) || []).length || 1,
                         paragraphIndex: pIdx,
                         sourceLineIndex: lIdx
                     });
@@ -4567,16 +4593,25 @@
 
                 const subchunks = splitSpokenTextIntoTtsSubchunks(spokenStr, 120);
                 subchunks.forEach((subText, subIdx) => {
+                    const subRaw = (subchunks.length === 1) ? sourceRaw : subText;
+                    const subTagInfo = (subchunks.length === 1 && tagInfo)
+                        ? tagInfo
+                        : (typeof extractSpokenAndTags === 'function' ? extractSpokenAndTags(subRaw) : null);
+                    const subBreeze = subTagInfo?.breezeText || subRaw;
+                    const subMoss = subTagInfo?.mossText || subText;
+
                     parsedChunks.push({
                         index: parsedChunks.length,
                         speaker: speakerName,
                         emotion: cleanEmotion || null,
                         text: subText,
                         spokenText: subText,
-                        rawSpoken: rawSpokenText || subText,
+                        rawSpoken: subRaw,
+                        breezeText: subBreeze,
+                        mossText: subMoss,
                         isContinuation: subIdx > 0,
                         fullLine: `${speakerName}: ${cleanEmotion ? `[${cleanEmotion}] ` : ''}${subText}`,
-                        wordCount: (subText.match(/\b\w+\b/g) || []).length,
+                        wordCount: (subText.match(/\b\w+\b/g) || subBreeze.match(/\b\w+\b/g) || []).length || 1,
                         paragraphIndex: pIdx,
                         sourceLineIndex: lIdx
                     });
@@ -4663,6 +4698,13 @@
                             if (!postEmotion) break;
                             const tagContent = (postEmotion[1] || postEmotion[2] || "").trim();
                             const rest = (postEmotion[3] || "").trim();
+
+                            // If it's a localized vocal event like (laughs) or (sighs), do NOT swallow it into emotion!
+                            const isVocal = typeof classifyParentheticalTag === 'function' && postEmotion[2]
+                                ? classifyParentheticalTag(`(${tagContent})`)?.kind === 'vocal_event'
+                                : false;
+                            if (isVocal) break;
+
                             // If the parenthetical is the ONLY text on the line, don't swallow it as an emotion!
                             if (!rest && postEmotion[2]) break;
                             if (tagContent) {
@@ -4672,8 +4714,10 @@
                         }
 
                         const cleanedSpoken = cleanDialogueSpokenText(remainingSpoken);
-                        if (cleanedSpoken && /[a-zA-Z0-9]/.test(cleanedSpoken)) {
-                            pushSpokenAsChunks(speaker, emotion, cleanedSpoken, paragraphIdx, lineIdx, remainingSpoken);
+                        const hasSpeakable = (cleanedSpoken && /[a-zA-Z0-9]/.test(cleanedSpoken)) ||
+                                             (remainingSpoken && /[a-zA-Z0-9]/.test(remainingSpoken));
+                        if (hasSpeakable) {
+                            pushSpokenAsChunks(speaker, emotion, cleanedSpoken || remainingSpoken, paragraphIdx, lineIdx, remainingSpoken);
                         }
                     }
                 }
@@ -4688,6 +4732,12 @@
                         const bracketMatch = remainingSpoken.match(/^(?:\[([^\]]+)\]|\(([^)]+)\))\s*(.*)$/);
                         if (!bracketMatch) break;
                         const rest = (bracketMatch[3] || "").trim();
+
+                        const isVocal = typeof classifyParentheticalTag === 'function' && bracketMatch[2]
+                            ? classifyParentheticalTag(`(${bracketMatch[2].trim()})`)?.kind === 'vocal_event'
+                            : false;
+                        if (isVocal) break;
+
                         if (!rest && bracketMatch[2]) break;
                         hadLeadingTag = true;
                         const extractedEmo = (bracketMatch[1] || bracketMatch[2] || "").trim();
@@ -4698,8 +4748,10 @@
                     }
                     const speaker = hadLeadingTag ? lastSpeaker : "Narrator";
                     const cleanedSpoken = cleanDialogueSpokenText(remainingSpoken);
-                    if (cleanedSpoken && /[a-zA-Z0-9]/.test(cleanedSpoken)) {
-                        pushSpokenAsChunks(speaker, emotion, cleanedSpoken, paragraphIdx, lineIdx, remainingSpoken);
+                    const hasSpeakable = (cleanedSpoken && /[a-zA-Z0-9]/.test(cleanedSpoken)) ||
+                                         (remainingSpoken && /[a-zA-Z0-9]/.test(remainingSpoken));
+                    if (hasSpeakable) {
+                        pushSpokenAsChunks(speaker, emotion, cleanedSpoken || remainingSpoken, paragraphIdx, lineIdx, remainingSpoken);
                     }
                 }
             });
@@ -4876,33 +4928,175 @@
         // =====================================================================
 
         const CANONICAL_VOCAL_EVENTS = new Set([
+            // Laughter
+            '(laughs)',
+            '(chuckles)',
+            '(giggles)',
+            // Crying and pain
+            '(crying)',
+            '(sobs)',
+            '(whimpers)',
+            '(groans)',
+            '(moans)',
+            // Breathing
+            '(sighs)',
+            '(gasps)',
+            '(inhales)',
+            '(exhales)',
+            '(breathing heavily)',
+            // Vocal delivery
+            '(whispers)',
+            '(shouts)',
+            '(screams)',
+            '(singing)',
+            '(humming)',
+            '(stutters)',
+            '(pause)',
+            // Throat and nose
+            '(clears throat)',
+            '(coughs)',
+            '(sniffs)',
+            // Mouth sounds
+            '(smacks lips)',
+            '(clicks tongue)',
+            // Body reflexes
+            '(yawns)',
+            '(sneezes)',
+            '(hiccups)',
+            '(burps)',
+            '(gulps)',
+            '(gags)',
+            // Reaction sounds
+            '(grunts)',
+            '(scoffs)',
+            '(snorts)',
+            // Legacy / singular aliases
             '(sigh)',
             '(laugh)',
             '(cough)',
-            '(clears throat)',
             '(gasp)',
             '(yawn)'
         ]);
 
         const VOCAL_EVENT_SYNONYMS = {
-            'sighing': '(sigh)',
-            'sighs': '(sigh)',
-            'sighed': '(sigh)',
-            'laughing': '(laugh)',
-            'laughs': '(laugh)',
-            'chuckling': '(laugh)',
-            'chuckles': '(laugh)',
-            'giggling': '(laugh)',
-            'giggles': '(laugh)',
-            'coughing': '(cough)',
-            'coughs': '(cough)',
-            'throat clearing': '(clears throat)',
-            'clearing throat': '(clears throat)',
+            // Laughter
+            'laugh': '(laughs)',
+            'laughs': '(laughs)',
+            'laughing': '(laughs)',
+            'laughed': '(laughs)',
+            'chuckle': '(chuckles)',
+            'chuckles': '(chuckles)',
+            'chuckling': '(chuckles)',
+            'chuckled': '(chuckles)',
+            'giggle': '(giggles)',
+            'giggles': '(giggles)',
+            'giggling': '(giggles)',
+            'giggled': '(giggles)',
+            // Crying and pain
+            'cry': '(crying)',
+            'crying': '(crying)',
+            'cries': '(crying)',
+            'sob': '(sobs)',
+            'sobs': '(sobs)',
+            'sobbing': '(sobs)',
+            'sobbed': '(sobs)',
+            'whimper': '(whimpers)',
+            'whimpers': '(whimpers)',
+            'whimpering': '(whimpers)',
+            'groan': '(groans)',
+            'groans': '(groans)',
+            'groaning': '(groans)',
+            'moan': '(moans)',
+            'moans': '(moans)',
+            'moaning': '(moans)',
+            // Breathing
+            'sigh': '(sighs)',
+            'sighs': '(sighs)',
+            'sighing': '(sighs)',
+            'sighed': '(sighs)',
+            'gasp': '(gasps)',
+            'gasps': '(gasps)',
+            'gasping': '(gasps)',
+            'inhale': '(inhales)',
+            'inhales': '(inhales)',
+            'inhaling': '(inhales)',
+            'exhale': '(exhales)',
+            'exhales': '(exhales)',
+            'exhaling': '(exhales)',
+            'breathing heavily': '(breathing heavily)',
+            'heavy breathing': '(breathing heavily)',
+            'breathes heavily': '(breathing heavily)',
+            // Vocal delivery
+            'whisper': '(whispers)',
+            'whispers': '(whispers)',
+            'whispering': '(whispers)',
+            'whispered': '(whispers)',
+            'shout': '(shouts)',
+            'shouts': '(shouts)',
+            'shouting': '(shouts)',
+            'scream': '(screams)',
+            'screams': '(screams)',
+            'screaming': '(screams)',
+            'sing': '(singing)',
+            'singing': '(singing)',
+            'sings': '(singing)',
+            'hum': '(humming)',
+            'humming': '(humming)',
+            'hums': '(humming)',
+            'stutter': '(stutters)',
+            'stutters': '(stutters)',
+            'stuttering': '(stutters)',
+            'pause': '(pause)',
+            'pauses': '(pause)',
+            // Throat and nose
             'clear throat': '(clears throat)',
-            'gasping': '(gasp)',
-            'gasps': '(gasp)',
-            'yawning': '(yawn)',
-            'yawns': '(yawn)'
+            'clears throat': '(clears throat)',
+            'clearing throat': '(clears throat)',
+            'throat clearing': '(clears throat)',
+            'cough': '(coughs)',
+            'coughs': '(coughs)',
+            'coughing': '(coughs)',
+            'sniff': '(sniffs)',
+            'sniffs': '(sniffs)',
+            'sniffing': '(sniffs)',
+            // Mouth sounds
+            'smack lips': '(smacks lips)',
+            'smacks lips': '(smacks lips)',
+            'smacking lips': '(smacks lips)',
+            'lip smack': '(smacks lips)',
+            'click tongue': '(clicks tongue)',
+            'clicks tongue': '(clicks tongue)',
+            'clicking tongue': '(clicks tongue)',
+            'tongue click': '(clicks tongue)',
+            // Body reflexes
+            'yawn': '(yawns)',
+            'yawns': '(yawns)',
+            'yawning': '(yawns)',
+            'sneeze': '(sneezes)',
+            'sneezes': '(sneezes)',
+            'sneezing': '(sneezes)',
+            'hiccup': '(hiccups)',
+            'hiccups': '(hiccups)',
+            'hiccuping': '(hiccups)',
+            'burp': '(burps)',
+            'burps': '(burps)',
+            'burping': '(burps)',
+            'gulp': '(gulps)',
+            'gulps': '(gulps)',
+            'gulping': '(gulps)',
+            'gag': '(gags)',
+            'gags': '(gags)',
+            'gagging': '(gags)',
+            // Reaction sounds
+            'grunt': '(grunts)',
+            'grunts': '(grunts)',
+            'grunting': '(grunts)',
+            'scoff': '(scoffs)',
+            'scoffs': '(scoffs)',
+            'scoffing': '(scoffs)',
+            'snort': '(snorts)',
+            'snorts': '(snorts)',
+            'snorting': '(snorts)'
         };
 
         const NUM_WORDS_ONES = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
@@ -5015,22 +5209,52 @@
 
         function classifyParentheticalTag(rawTag) {
             if (!rawTag) return null;
-            const inner = rawTag.replace(/^[\[\(]+|[\]\)]+$/g, '').trim().toLowerCase();
+            const isBracket = rawTag.startsWith('[');
+            const rawInner = rawTag.replace(/^[\[\(]+|[\]\)]+$/g, '').trim();
+            const inner = rawInner.toLowerCase();
             if (!inner) return null;
 
-            if (VOCAL_EVENT_SYNONYMS[inner]) {
-                return {
-                    kind: 'vocal_event',
-                    canonical: VOCAL_EVENT_SYNONYMS[inner],
-                    raw: rawTag
-                };
+            // Brackets [...] are reserved strictly for voice instructions / acting directions, never inline vocal events
+            if (!isBracket) {
+                if (VOCAL_EVENT_SYNONYMS[inner]) {
+                    return {
+                        kind: 'vocal_event',
+                        canonical: VOCAL_EVENT_SYNONYMS[inner],
+                        raw: rawTag
+                    };
+                }
+
+                const parenForm = `(${inner})`;
+                if (CANONICAL_VOCAL_EVENTS.has(parenForm)) {
+                    return {
+                        kind: 'vocal_event',
+                        canonical: parenForm,
+                        raw: rawTag
+                    };
+                }
+
+                // Check for compound vocal events in parentheses like "(laughs softly)" or "(quiet chuckle)"
+                const sortedSynWords = Object.keys(VOCAL_EVENT_SYNONYMS).sort((a, b) => b.length - a.length);
+                for (const synWord of sortedSynWords) {
+                    const re = new RegExp(`\\b${synWord}\\b`, 'i');
+                    if (re.test(inner)) {
+                        const canon = VOCAL_EVENT_SYNONYMS[synWord];
+                        const remainingWords = inner.replace(re, '').replace(/\s{2,}/g, ' ').trim();
+                        return {
+                            kind: 'vocal_event',
+                            canonical: canon,
+                            direction: remainingWords || null,
+                            raw: rawTag
+                        };
+                    }
+                }
             }
 
-            const parenForm = `(${inner})`;
-            if (CANONICAL_VOCAL_EVENTS.has(parenForm)) {
+            // Natural-language voice instruction in brackets (1-2 sentences for Breeze 2)
+            if (rawInner.length > 25 || /\.\s+/.test(rawInner)) {
                 return {
-                    kind: 'vocal_event',
-                    canonical: parenForm,
+                    kind: 'acting_direction',
+                    direction: rawInner,
                     raw: rawTag
                 };
             }
@@ -5086,7 +5310,7 @@
 
             return {
                 kind: 'acting_direction',
-                direction: inner,
+                direction: rawInner || inner,
                 raw: rawTag
             };
         }
@@ -5103,6 +5327,7 @@
                 if (!classified) return "";
                 if (classified.kind === 'vocal_event') {
                     vocalEvents.push(classified.canonical);
+                    if (classified.direction) actingDirections.push(classified.direction);
                     return ` ${classified.canonical} `;
                 }
                 actingDirections.push(classified.direction);
@@ -8161,7 +8386,15 @@
             const synthStartTime = performance.now();
             const cleanText = String(chunk.spokenText || chunk.text || "").trim();
             const spokenTextOnly = cleanDialogueSpokenText(cleanText);
-            if (!spokenTextOnly || !/[a-zA-Z0-9]/.test(spokenTextOnly)) {
+            const rawSourceText = String(chunk.rawSpoken || chunk.text || chunk.spokenText || cleanText);
+            const tagData = (typeof extractSpokenAndTags === 'function') ? extractSpokenAndTags(rawSourceText) : null;
+            const breezeSpokenText = (chunk.breezeText || tagData?.breezeText || cleanText).trim();
+
+            const isAudioCppOrBreeze = (backend === 'hybrid' || backend === 'audiocpp' || backend === 'breeze');
+            const hasSpeakableWords = Boolean(spokenTextOnly && /[a-zA-Z0-9]/.test(spokenTextOnly));
+            const hasVocalEvents = Boolean(breezeSpokenText && /\([a-z\s]+\)/i.test(breezeSpokenText));
+
+            if (!hasSpeakableWords && (!isAudioCppOrBreeze || !hasVocalEvents)) {
                 throw new Error("Chunk contains no speakable words after stripping stage directions.");
             }
 
@@ -8204,6 +8437,8 @@
                 const enableSeed = settings?.enableDeterministicSeed !== false;
                 const speakerSeed = enableSeed ? getDeterministicVoiceSeed(speakerLabel, story) : undefined;
                 const isMossModel = String(modelId).toLowerCase().includes('moss');
+                const isBreeze = (backend === 'breeze') || ((backend === 'hybrid' || backend === 'audiocpp') && !isMossModel);
+                const finalInput = (isBreeze && breezeSpokenText) ? breezeSpokenText : spokenTextOnly;
 
                 const effectiveTemp = isMossModel
                     ? (typeof effectiveSettings.mossAudioTemperature === 'number' ? effectiveSettings.mossAudioTemperature : 1.1)
@@ -8213,7 +8448,7 @@
                             ? Math.max(0.1, Math.min(1.0, settings.audioCppTemperature))
                             : 0.35));
 
-                const wordCount = (spokenTextOnly.match(/\b\w+\b/g) || []).length;
+                const wordCount = (finalInput.match(/\b\w+\b/g) || []).length || 1;
                 const tokenCap = Math.min(2400, Math.max(64, Math.ceil(wordCount * 20) + 48));
 
                 return enqueueAudioCppTask(async () => {
@@ -8252,7 +8487,7 @@
                     const payload = {
                         model: modelId,
                         task: isAnchored ? 'clone' : 'tts',
-                        input: spokenTextOnly,
+                        input: finalInput,
                         ...(isAnchored ? {
                             voice_ref: anchorRecord.refPath,
                             reference_text: refText
@@ -8288,7 +8523,7 @@
 
                     console.log(
                         `[Audio Drama TTS] Dispatching ${lineTag} to Audio.cpp Hybrid Studio [${modelId}] (${targetUrl}/v1/audio/speech) | Speaker: "${speakerLabel}" (Seed #${speakerSeed ?? 'none'}, Temp ${effectiveTemp}) [Acoustic Anchor: ${isAnchored ? `LOCKED (Bucket ${arousalBucket})` : 'UNLOCKED'}]${expressionText ? ` | Delivery: [${expressionText}]` : ''}\n` +
-                        `  -> Spoken Input (${spokenTextOnly.length} chars, ${wordCount} words): "${spokenTextOnly.substring(0, 120)}${spokenTextOnly.length > 120 ? '...' : ''}"`
+                        `  -> Spoken Input (${finalInput.length} chars, ${wordCount} words): "${finalInput.substring(0, 120)}${finalInput.length > 120 ? '...' : ''}"`
                     );
 
                     let res = null;
@@ -8683,6 +8918,8 @@
             const speakerLabel = chunk?.speaker || "Narrator";
             const cleanText = String(chunk?.spokenText || chunk?.text || "").trim();
             const spokenTextOnly = typeof cleanDialogueSpokenText === 'function' ? cleanDialogueSpokenText(cleanText) : cleanText;
+            const isBreezeTarget = (backend === 'breeze' || backend === 'audiocpp' || backend === 'hybrid');
+            const displayPreview = (isBreezeTarget && chunk?.breezeText) ? chunk.breezeText : spokenTextOnly;
 
             if (typeof window.logAudioDramaPipelineStageStart === 'function') {
                 window.logAudioDramaPipelineStageStart('chunk_synthesis', `[Running] Synthesizing Chunk ${chunkIndex + 1}/${totalChunks} (${speakerLabel}) via ${backend}`, {
@@ -8690,7 +8927,7 @@
                     totalChunks,
                     speaker: speakerLabel,
                     backend,
-                    preview: spokenTextOnly.slice(0, 70) + (spokenTextOnly.length > 70 ? '...' : '')
+                    preview: displayPreview.slice(0, 70) + (displayPreview.length > 70 ? '...' : '')
                 });
             }
 
@@ -21631,93 +21868,112 @@ An audio listener processes dialogue linearly in real time with zero ability to 
 
 <mandatory_formatting_specifications>
 =============================================================================
-CRITICAL LAW: BRACKETED TAGS [...] ARE EXCLUSIVELY "VOCAL DELIVERY DIRECTIONS"
-STRICTLY 1 TO 3 WORDS — NEVER PHYSICAL ACTIONS OR SMUGGLED PARTICIPLE CLAUSES
+CRITICAL LAW: VOCAL DIRECTION & LOCALIZED VOCAL EVENTS (BREEZE 2 TTS SYNTAX)
+BRACKETS [...] FOR NATURAL-LANGUAGE EMOTIONAL EXPRESSION & PERFORMANCE CONTROL
+PARENTHESES (...) FOR EXACT LOCALIZED VOCAL EVENTS
+NEVER SMUGGLE PHYSICAL ACTIONS OR VISUAL CHOREOGRAPHY INTO VOCAL DIRECTIONS
 =============================================================================
-The Text-To-Speech (TTS) synthesis engine reads bracketed tags SOLELY to determine HOW a line is delivered acoustically into the microphone (pitch, pace, volume, breath, vocal tension, and emotional timbre). An audio listener has NO screen, and the TTS engine CANNOT act out visual choreography.
+The Text-To-Speech (TTS) synthesis engine reads bracketed instructions and parenthetical vocal tags SOLELY to steer acoustic vocal performance into the microphone. An audio listener has NO screen, and the TTS engine CANNOT act out visual choreography.
+
+### 1. EMOTIONAL EXPRESSION & PERFORMANCE CONTROL (BRACKETED INSTRUCTIONS)
+For emotional expression, provide a one- or two-sentence natural-language voice instruction describing the intended emotion, pace, energy, tone, and delivery. This is the primary way to control the overall performance of a sentence or passage.
+- PLACEMENT: This instruction goes strictly at the beginning of the character's speech and is in brackets, like so:
+  [Combine high-stakes necessity with tactical composure. The pace is rapid but highly articulate, projecting focused, steady energy that mobilizes others without tipping into panic.]
+- SCOPE: The bracketed instruction sets the acoustic performance baseline for the speech that follows.
+
+### 2. LOCALIZED VOCAL EVENTS (PARENTHETICAL TAGS)
+For localized vocal events, use the exact language-specific input tags documented for the language being spoken. The canonical event IDs used to identify the underlying events are not always the same as the text that should be entered into TTS.
+The exact English input tags are:
+- Laughter: (laughs), (chuckles), (giggles)
+- Crying and pain: (crying), (sobs), (whimpers), (groans), (moans)
+- Breathing: (sighs), (gasps), (inhales), (exhales), (breathing heavily)
+- Vocal delivery: (whispers), (shouts), (screams), (singing), (humming), (stutters), (pause)
+- Throat and nose: (clears throat), (coughs), (sniffs)
+- Mouth sounds: (smacks lips), (clicks tongue)
+- Body reflexes: (yawns), (sneezes), (hiccups), (burps), (gulps), (gags)
+- Reaction sounds: (grunts), (scoffs), (snorts)
+
+- PLACEMENT & INLINE USAGE: Insert these exact tags in parentheses (...) directly in-line where the physical vocalization occurs (e.g., between clauses, after a realization, or before speaking).
+- STRICT TAG FIDELITY: Use ONLY the exact documented English input tags listed above. Do not alter verb tenses, combine words, or create descriptive compounds (e.g., do NOT write (heavy sigh), (starts crying), or (chuckles softly); use (sighs), (crying), or (chuckles)).
+- BRACKETS VS. PARENTHESES DIVISION:
+  * Brackets [...] are reserved exclusively for leading one- or two-sentence natural-language voice instructions.
+  * Parentheses (...) are reserved exclusively for localized in-line vocal events.
 
 ### THE RECORDING BOOTH PRINCIPLE
 Picture each voice actor standing completely still before a studio microphone inside a dark, soundproof recording booth. They have no physical props, no chair to sit in, no door to walk to, and no window to gaze out of.
 - Can a voice actor "settle into a chair" with their vocal cords? NO.
 - Can a voice actor "look up at the window" with their vocal cords? NO.
-- Can a voice actor speak "[low, urgent]" into the microphone? YES.
-- Can a voice actor speak "[breathless whisper]" into the microphone? YES.
-Any physical movement, posture change, or physical setting must be voiced as spoken words by the NARRATOR, never written into a vocal delivery direction!
+- Can a voice actor execute "[Combine high-stakes necessity with tactical composure. The pace is rapid but highly articulate...]" into the microphone? YES.
+- Can a voice actor vocalize "(sighs)" or "(clears throat)" into the microphone? YES.
+Any physical movement, posture change, or physical setting must be voiced as spoken words by the NARRATOR, never written into a bracketed voice instruction or parenthetical tag!
 
 ### NO SMUGGLED ACTIONS (COMPOUND ACTION + TONE TRAP)
-Appending a vocal adjective (like "low", "softly", "tense", "hurried") to a physical action clause is STRICTLY FORBIDDEN:
-- ❌ FORBIDDEN: Speaker: [settling into the chair beside her, low] Text...
-- ❌ FORBIDDEN: Speaker: [Looking up at the window, nervous] Text...
-- ❌ FORBIDDEN: Speaker: [Standing up and crossing her arms, defensive] Text...
-- ❌ FORBIDDEN: Speaker: [Walking over to the counter, flatly] Text...
-- ❌ FORBIDDEN: Speaker: [Leaning forward with hands on desk, urgent] Text...
-- ❌ FORBIDDEN: Speaker: [Checking his watch, hurried] Text...
-WHY THIS FAILS: Appending a vocal word to an action clause does NOT make it a vocal delivery direction. The TTS model cannot parse physical clauses, and the engine strips these tags—so the listener NEVER learns that the character sat in a chair or looked at a window!
+Appending or prepending physical action clauses to vocal directions is STRICTLY FORBIDDEN:
+- ❌ FORBIDDEN: Speaker: [Settling into the chair beside her, combine urgency with tactical composure. The pace is rapid.] Text...
+- ❌ FORBIDDEN: Speaker: [Looking up at the window, speak with nervous dread.] Text...
+- ❌ FORBIDDEN: Speaker: [Standing up and crossing her arms, defensive and sharp.] Text...
+- ❌ FORBIDDEN: Speaker: [Walking over to the counter, deliver flatly.] Text...
+- ❌ FORBIDDEN: Speaker: [Leaning forward with hands on desk, urgent pace.] Text...
+- ❌ FORBIDDEN: Speaker: [Checking his watch, hurried cadence.] Text...
+WHY THIS FAILS: Appending a vocal instruction to an action clause does NOT make it a vocal delivery direction. The TTS model cannot parse physical clauses, and the engine strips bracketed instructions from spoken audio—so the listener NEVER learns that the character sat in a chair, crossed their arms, or looked at a window! All physical reality must be spoken aloud by the NARRATOR.
 
 ### THE 2-STEP SPLIT: HOW TO CONVEY PHYSICAL ACTIONS PROPERLY
 Whenever physical blocking, movement, gestures, gazes, or prop manipulation occur, use the 2-step split:
 1. STEP 1 (Audible Staging): The NARRATOR speaks the physical action aloud for the listener.
-2. STEP 2 (Acoustic Direction): The speaker line receives a pure 1-to-3 word vocal delivery direction.
+2. STEP 2 (Acoustic Direction): The speaker line receives a natural-language voice instruction in brackets [...] describing emotion, pace, energy, tone, and delivery.
 
 - CONTRASTIVE EXAMPLE 1 (Sitting in a chair):
   * ❌ INCORRECT:
-    Tomas: [settling into the chair beside her, low] Did you find the ledger?
+    Tomas: [settling into the chair beside her, low conspiratorial tone] Did you find the ledger?
   * ✅ CORRECT (Audio Drama 2-Step Split):
     Narrator: Tomas crossed the room, settling into the wooden chair beside her.
-    Tomas: [low, intimate whisper] Did you find the ledger?
+    Tomas: [A low, conspiratorial murmur. The pace is tight and cautious, keeping vocal energy contained so words do not carry beyond the table.] Did you find the ledger?
 
 - CONTRASTIVE EXAMPLE 2 (Looking at a window):
   * ❌ INCORRECT:
-    Corso: [looking up at the second-floor window, tense] Someone is watching us.
+    Corso: [looking up at the second-floor window, tense with alarm] Someone is watching us.
   * ✅ CORRECT (Audio Drama 2-Step Split):
     Narrator: Corso stopped under the streetlight, looking up toward the dark second-floor window.
-    Corso: [strained, calling upward] Someone is watching us.
+    Corso: [A tense, strained call projected upward. The tone carries urgent dread with sharp, clipped diction.] (whispers) Someone is watching us.
 
 - CONTRASTIVE EXAMPLE 3 (Standing up / Posture shift):
   * ❌ INCORRECT:
-    Elena: [standing up abruptly, defensive] That deal is over.
+    Elena: [standing up abruptly, speak with icy finality] That deal is over.
   * ✅ CORRECT (Audio Drama 2-Step Split):
     Narrator: Elena stood abruptly, pushing her chair back from the table.
-    Elena: [sharp, defensive cadence] That deal is over.
+    Elena: [Icy finality with sharp, defensive cadence. The delivery is cold and unwavering, cutting through any room for argument.] That deal is over.
 
-### STRICT GRAMMATICAL RULES FOR VOCAL DELIVERY DIRECTIONS:
-1. LENGTH CONSTRAINT: Exactly 1 to 3 words maximum per bracket (e.g. [low], [urgent whisper], [breathless, strained]). Never write a phrase or sentence longer than 3 words.
-2. NO PARTICIPLES OR VERBS (-ing): Never use physical verbs or action participles (settling, sitting, standing, walking, running, looking, glancing, turning, reaching, holding, leaning, stepping, closing, opening, smiling, nodding, shrugging).
-3. NO PREPOSITIONAL PHRASES: Never use prepositions describing physical space, furniture, or props (into, beside, at, to, toward, across, over, behind, with, from).
-4. PERMITTED VOCAL PALETTE ONLY:
-   - Volume & Projection: [whispering], [softly], [quiet murmur], [calling out], [shouting], [muffled]
-   - Pacing & Cadence: [rapid, hurried], [measured, deliberate], [hesitant, halting], [slow drawl], [staccato], [trailing off]
-   - Breath & Vocal Timbre: [breathless], [out of breath], [sharp inhale], [voice cracking], [raspy whisper], [tight throat], [strained exertion]
-   - Emotional Acoustic Color: [low, close], [deadpan, flat], [wearily], [seething through teeth], [dry sarcasm], [trembling voice], [tender, gentle], [grim, resolute]
+### STRICT RULES FOR VOCAL DIRECTION & LOCALIZED VOCAL EVENTS:
+1. BRACKETED INSTRUCTIONS [...]:
+   - Provide a one- or two-sentence natural-language voice instruction describing the intended emotion, pace, energy, tone, and delivery.
+   - Always placed at the beginning of the character's speech.
+   - NEVER contain physical body movements, verbs/participles (-ing), or prepositional phrases describing physical space or props.
+2. LOCALIZED VOCAL EVENTS IN PARENTHESES (...):
+   - Limited strictly to the documented English input tags: (laughs), (chuckles), (giggles), (crying), (sobs), (whimpers), (groans), (moans), (sighs), (gasps), (inhales), (exhales), (breathing heavily), (whispers), (shouts), (screams), (singing), (humming), (stutters), (pause), (clears throat), (coughs), (sniffs), (smacks lips), (clicks tongue), (yawns), (sneezes), (hiccups), (burps), (gulps), (gags), (grunts), (scoffs), (snorts).
+   - Inserted in-line at natural speech pauses or emotional beats.
+3. NO FOLEY OR UNVOICED PARENTHETICALS:
+   - Strictly NO Foley/SFX brackets (e.g. do NOT write "[SFX: explosion]" or "*click*" or unspoken action parentheticals). Describe auditory sensations and acoustic textures through spoken dialogue or narration.
 
 1. MULTI-VOICE SPEAKER SYNTAX:
 - Every line in your response MUST start with a speaker identifier followed by a colon and a single space:
   Format: SpeakerName: Spoken text here.
-  Or with expressive vocal delivery direction: SpeakerName: [vocal delivery direction] Spoken text here.
+  Or with expressive voice instruction: SpeakerName: [One- or two-sentence voice instruction describing emotion, pace, energy, tone, and delivery.] Spoken text here with optional (localized vocal events).
 - The ONLY permitted speakers are the active characters in this scene and the "Narrator".
 - Do not use markdown bolding, asterisks, italics, or indentation on speaker tags or dialogue. Output clean, unformatted plain text.
 
 2. THE NARRATOR AS AN AUDIBLE VOICE:
 - The "Narrator" is a dedicated, audible voice actor in the production carrying the descriptive weight of the scene.
-- Vocal delivery directions (in brackets or parentheses) steer the acoustic delivery of the voice actor and are NEVER spoken aloud by TTS.
+- Voice instructions (in brackets) and vocal events (in parentheses) steer acoustic delivery and are NEVER spoken aloud by TTS.
 - Physical blocking placed inside tags is discarded by TTS engines and will never be heard. Therefore, the Narrator must speak all physical actions, blocking, spatial movements, sensory details, and atmospheric shifts aloud so the listener can visualize the action.
-- Strictly NO FOLEY/SFX BRACKETS (e.g. do NOT write "[SFX: explosion]" or "*click*" or unspoken action parentheticals). Describe auditory sensations and acoustic textures through spoken dialogue or narration.
 - Because each character in an audio drama has their own voice and expressiveness, traditional dialogue attributions (e.g., "he yelled," "she whispered") in the Narrator's lines are completely redundant. Stop narrating how a character is speaking.
   * INCORRECT (Novel style):
     Derek: Stop running away!
     Narrator: Derek yelled, sprinting after her.
   * CORRECT (Audio Drama style):
-    Derek: [deep and loud shouting] Stop running away!
-    Narrator: [excited] Derek sprinted down the alley.
+    Derek: [A deep, thunderous shout carrying desperate urgency. Rapid, forceful delivery that reverberates across the corridor.] Stop running away!
+    Narrator: Derek sprinted down the alley, boots splashing through rain water.
 
-3. INLINE VOCAL DELIVERY DIRECTIONS & CANONICAL VOCAL EVENTS:
-- CANONICAL NON-VERBAL VOCAL EVENTS: You may use ONLY these six vocal events, in parentheses, exactly as written:
-  (sigh) (laugh) (cough) (clears throat) (gasp) (yawn)
-  Place them naturally between thoughts or sentences—never in the middle of a continuous phrase.
-- VOCAL DELIVERY DIRECTIONS: Strictly 1 to 3 words in brackets [...] describing acoustic performance.
-- STRICT LIMIT: Limit yourself to one vocal delivery direction or canonical vocal event per emotional beat to maintain natural dialogue prosody. Never string multiple bracketed descriptions together.
-
-4. OUTPUT SPECIFICATIONS:
+3. OUTPUT SPECIFICATIONS:
 - Output the complete script enclosed strictly within <prose_text> and </prose_text> tags.
 - Output ONLY the formatted script lines. No scene headers, markdown formatting (no bold/italics), or meta-commentary inside or outside the tags.
 - Stop writing immediately after the final </prose_text> tag.
@@ -21756,10 +22012,10 @@ Whenever physical blocking, movement, gestures, gazes, or prop manipulation occu
 <kinetic_and_spatial_physics>
   - THREE-BEAT ACTION COMPRESSION: Replace simultaneous play-by-play narration of physical actions ("You're swinging that wrench at my head!") with causal compression across three distinct beats:
     1. Verbalized Intent or Threat before the act ("Take one more step toward that desk and I swear—").
-    2. A fractured syntactic break or non-lexical vocal exertion during the impact (\`—\`, \`[choked grunt]\`, \`"—get your arm off—"\`).
+    2. A fractured syntactic break or non-lexical vocal exertion during the impact (\`—\`, \`(grunts)\`, \`"—get your arm off—"\`).
     3. Verbalized Consequence or Damage immediately after ("Stay down. And leave your wrist alone, I think it's sprained.").
   - FRICTION-DRIVEN ROUTINE ACTIONS: Voice routine physical actions (opening doors, pouring drinks, checking watches) only when they encounter physical resistance, urgency, or interpersonal suspicion (e.g., a jammed latch, a trembling hand, a concealed key).
-  - VOCAL PROXIMITY AS SCENOGRAPHY: Encode room dimensions and physical distance directly into vocal delivery. Contrast intimate proximity (\`[close, barely audible]\`) with projected distance (\`[calling from across the hall, strained]\`) so the listener maps the space through vocal effort.
+  - VOCAL PROXIMITY AS SCENOGRAPHY: Encode room dimensions and physical distance directly into vocal delivery. Contrast intimate proximity ([A hushed, breathy whisper right against the ear. Very close and intimate delivery.]) with projected distance ([Strained, raised voice projecting across the cavernous room.]) so the listener maps the space through vocal effort.
 </kinetic_and_spatial_physics>
 
 <idiolect_and_speaker_tracking>
@@ -21775,8 +22031,8 @@ Whenever physical blocking, movement, gestures, gazes, or prop manipulation occu
 <acoustic_prosody_and_turn_taking>
   - BREATH-UNIT SYNTAX: Construct lines to fit comfortably within a single human exhalation (typically 8–15 words). Break multi-clause thoughts into distinct rhythmic beats, rendering high-stress speech in fractured clauses, false starts, and mid-thought pivots rather than tidy, retrospective summaries.
   - ASYMMETRICAL TURN-TAKING & CROSSTALK: Script natural conversational momentum by cutting lines at the exact word where the listener grasps the subtext. Use em-dashes (\`—\`) at the tail of Line A and the onset of Line B for sharp interruptions and overlapping speech, and ellipses (\`...\`) for audible hesitation or trailing off.
-  - PHYSIOLOGICAL PARALINGUISTICS: Guide vocal performance using playable physiological states and breath cues (\`[sharp inhale]\`, \`[voice cracking]\`, \`[talking through a tight laugh]\`, \`[out of breath]\`) rather than prose emotional adverbs (\`[angrily]\`, \`[sadly]\`). Whenever silence occurs, anchor its meaning with an immediate reaction line or breath cue.
-  - STRICT VOCAL BOUNDARY: Every bracketed vocal delivery direction [...] MUST guide vocal sound and acoustic delivery in 1–3 words. NEVER substitute a physical action ([settling into chair], [looking up], [checking watch]) for vocal delivery. If a character acts physically, the Narrator speaks it aloud.
+  - PHYSIOLOGICAL PARALINGUISTICS & LOCALIZED EVENTS: Deploy exact in-line vocal tags in parentheses ((sighs), (gasps), (inhales), (exhales), (breathing heavily), (whispers), (clears throat), (groans), (grunts), (pause)) to puncture dialogue with human vulnerability, strain, or autonomic response rather than prose emotional adverbs. Whenever silence occurs, anchor it with an in-line (pause) or an immediate narrator reaction.
+  - STRICT VOCAL BOUNDARY: Every bracketed instruction [...] MUST guide acoustic vocal delivery (emotion, pace, energy, tone, delivery). NEVER substitute a physical action ([settling into chair], [looking up], [checking watch]) for vocal direction. If a character acts physically, the Narrator speaks it aloud.
 </acoustic_prosody_and_turn_taking>
 
 <narration_protocol>
@@ -21797,55 +22053,55 @@ Treat external narration as a precision instrument reserved strictly for non-voc
   <example type="subtext_and_discovery">
     <prose_pattern>The narrator explains that the accountant noticed the numbers didn't add up and grew nervous.</prose_pattern>
     <acoustic_execution>
-      PRIYA: That can't be right. Run it again.
-      TOMAS: I've run it twice, Priya. It's off by—wait. That's the exact amount we moved last Tuesday.
-      PRIYA: [low, close] ...Close the door.
+      PRIYA: [A sharp, alert question with clipped analytical precision. Steady tempo, holding back growing suspicion.] That can't be right. Run it again.
+      TOMAS: [Hesitant, troubled cadence. Measured pace with a slight tremor of disbelief.] I've run it twice, Priya. It's off by—wait. That's the exact amount we moved last Tuesday.
+      PRIYA: [A low, hushed whisper vibrating with suppressed dread. The pace slows to a crawl, projecting contained urgency.] (sighs) ...Close the door.
     </acoustic_execution>
   </example>
 
   <example type="kinetic_crisis">
     <prose_pattern>The narrator describes the ship's hull breaching while the crew scrambles to seal the hatch.</prose_pattern>
     <acoustic_execution>
-      OKAFOR: Pressure's dropping! Section four!
-      VANCE: Seal it! Seal it now!
-      OKAFOR: Hatch won't latch—something's wedged in the lower frame!
-      VANCE: Then pry it loose, Okafor, or we all go out with the air!
+      OKAFOR: [High-velocity combat urgency. Breathless, rapid delivery shouting over ambient roar.] (gasps) Pressure's dropping! Section four!
+      VANCE: [Authoritative command carrying fierce adrenaline. The delivery is forceful and unyielding.] (shouts) Seal it! Seal it now!
+      OKAFOR: [Strained panic pushing against exhaustion. Halting, breathless delivery.] Hatch won't latch—something's wedged in the lower frame!
+      VANCE: [Fierce determination cutting through the alarm. Direct, punchy cadence.] Then pry it loose, Okafor, or we all go out with the air!
     </acoustic_execution>
   </example>
 
   <example type="recognition_and_backstory">
     <prose_pattern>The narrator notes that the old woman recognized the stranger from decades ago.</prose_pattern>
     <acoustic_execution>
-      MARA: You've got your father's way of standing. Weight on the back heel.
-      ELI: You knew my father?
-      MARA: I knew him when he still used that name.
+      MARA: [A dry, knowing assessment with gravelly warmth. Slow, deliberate pace laden with quiet nostalgia.] You've got your father's way of standing. Weight on the back heel.
+      ELI: [Guarded curiosity, searching and cautious. Steady, neutral tone.] You knew my father?
+      MARA: [A faint, wistful scoff fading into serious conviction. Soft, reflective delivery.] (scoffs) I knew him when he still used that name.
     </acoustic_execution>
   </example>
 
   <example type="three_beat_action_compression">
     <prose_pattern>The narrator states that Reyes lunged across the table and wrenched the revolver out of Corso's grip, bruising his wrist.</prose_pattern>
     <acoustic_execution>
-      REYES: Point that barrel at the floor, Corso. Right now.
-      CORSO: Or what? You're ten feet—
-      REYES: [sharp exhale, strained exertion] —give me that—!
-      CORSO: [choked grunt] —off! Get off my arm!
-      REYES: [breathing hard] It's on safety anyway, you idiot. Now sit down before I break the wrist too.
+      REYES: [Cold tactical menace. The pace is slow, quiet, and lethal.] Point that barrel at the floor, Corso. Right now.
+      CORSO: [Defiant bravado, rising in pitch.] Or what? You're ten feet—
+      REYES: [Physical exertion breaking through clenched teeth. Explosive delivery.] (grunts) —give me that—!
+      CORSO: (groans) —off! Get off my arm!
+      REYES: (breathing heavily) [Composed tactical dominance, restoring steady control.] It's on safety anyway, you idiot. Now sit down before I break the wrist too.
     </acoustic_execution>
   </example>
 
-  <example type="vocal_delivery_direction_vs_physical_action">
+  <example type="vocal_direction_vs_physical_action">
     <prose_pattern>Tomas settled into the chair beside Priya and spoke in a low, serious voice.</prose_pattern>
     <acoustic_execution>
       NARRATOR: Tomas pulled up a wooden stool, settling into the chair beside her.
-      TOMAS: [low, serious murmur] Is that the ledger from last week?
+      TOMAS: [A quiet, conspiratorial murmur. Cautious, steady delivery keeping resonance low.] Is that the ledger from last week?
     </acoustic_execution>
   </example>
 
-  <example type="vocal_delivery_direction_vs_gaze_action">
+  <example type="vocal_direction_vs_gaze_action">
     <prose_pattern>Corso looked up at the second-floor window and whispered nervously to Elena, wondering if someone was watching.</prose_pattern>
     <acoustic_execution>
       NARRATOR: Corso stopped under the streetlight, looking up toward the dark second-floor window.
-      CORSO: [strained, urgent whisper] Elena. Someone's standing by the glass.
+      CORSO: [A strained, urgent whisper carrying sharp vigilance. Rapid pace with breathless diction.] (whispers) Elena. Someone's standing by the glass.
     </acoustic_execution>
   </example>
 
@@ -21853,7 +22109,7 @@ Treat external narration as a precision instrument reserved strictly for non-voc
     <prose_pattern>The narrator describes the cramped back office late at night while Tomas worries about the inspector discovering their fraud.</prose_pattern>
     <acoustic_execution>
       NARRATOR: The back office of the shop, an hour after closing.
-      PRIYA: Tomas, you said nobody would find out. The inspector has the ledger.
+      PRIYA: [Nervous agitation with brittle, accusatory sharpness. Rapid, restless delivery.] Tomas, you said nobody would find out. The inspector has the ledger.
     </acoustic_execution>
   </example>
 </few_shot_transformations>
@@ -21867,7 +22123,10 @@ Before finalizing your scene generation for the output pipeline, silently audit 
 5. PROSODIC BREATHABILITY: Is every line constructible within a single breath (8–15 words), with distinct character idiolects and physiological vocal cues rather than emotional adverbs?
 6. STRUCTURAL ECONOMY: Does the scene enter late, exit on a sharp hook, and mark every spatial or temporal transition in spoken words?
 7. FORMATTING COMPLIANCE: Every line starts with "SpeakerName: " or "Narrator: " with zero unvoiced parentheticals or SFX brackets, and the entire script is wrapped strictly in <prose_text>...</prose_text>.
-8. STRICT VOCAL DELIVERY DIRECTION AUDIT: Read every single bracketed direction [...] in your draft. Does ANY direction exceed 3 words, or contain a physical verb, participle (-ing), prepositional phrase, furniture, or smuggled action (e.g., "[settling into the chair beside her, low]", "[looking up at the window]")? If yes, YOU MUST ERASE the physical action from the brackets, keep only the 1–2 word acoustic delivery (e.g. "[low, intimate]"), and place the physical movement in a spoken NARRATOR line.
+8. STRICT VOCAL DIRECTION & LOCALIZED EVENT AUDIT:
+   - Read every bracketed instruction [...]: Are they one- or two-sentence natural-language voice instructions describing intended emotion, pace, energy, tone, and delivery placed at the beginning of character speech (e.g. "[Combine high-stakes necessity with tactical composure. The pace is rapid but highly articulate...]")? Do they strictly avoid physical actions, verbs (-ing), posture shifts, furniture, or smuggled blocking?
+   - Read every parenthetical tag (...): Are they in-line localized vocal events using ONLY the exact documented English input tags ((laughs), (chuckles), (giggles), (crying), (sobs), (whimpers), (groans), (moans), (sighs), (gasps), (inhales), (exhales), (breathing heavily), (whispers), (shouts), (screams), (singing), (humming), (stutters), (pause), (clears throat), (coughs), (sniffs), (smacks lips), (clicks tongue), (yawns), (sneezes), (hiccups), (burps), (gulps), (gags), (grunts), (scoffs), (snorts))?
+   - If any physical action was placed inside brackets or parentheses, MOVE it to a spoken NARRATOR line!
 </internal_verification_gate>`,
 
             get audioDramaWritingAgent() {
@@ -21885,17 +22144,26 @@ EVALUATION CRITERIA (in order of severity):
 
 **CRITICAL (Grounds for Mandatory FAIL):**
 1. **Plot Point & Beat Fidelity:** Did the script alter, dilute, soften, generalize, or omit ANY specific plot commitment, wager, challenge, rule, condition, ultimatum, secret, factual revelation, or dialogue agreement established in the beats?
-2. **Formatting Violation (Studio TTS):** Did the script include unvoiced standalone stage directions outside lines or bracketed foley tags (e.g., [SFX: ...] or *sigh*)? The script MUST follow the "SpeakerName: (delivery) Spoken text." format. Physical actions must be spoken aloud by the Narrator, not hidden in unspoken parentheticals. Canonical vocal events must be one of the six supported events ((sigh), (laugh), (cough), (clears throat), (gasp), (yawn)).
+2. **Formatting Violation (Studio TTS):** Did the script include unvoiced standalone stage directions outside lines or bracketed foley tags (e.g., [SFX: ...] or *sigh*)? The script MUST follow the "SpeakerName: [voice instruction] Spoken text." format. Physical actions must be spoken aloud by the Narrator, not hidden in unspoken parentheticals.
 3. **Multi-Voice Speaker Attribution:** Every single line must begin with a canonical character name or "Narrator:". Unattributed text blocks fail immediately.
-4. **Physical Actions or Smuggled Clauses in Vocal Delivery Directions (MANDATORY FAIL):** Vocal delivery directions in brackets [...] must be strictly 1 to 3 words describing acoustic sound and vocal mechanics (e.g. [whispering], [low, strained], [wearily], [calling out], [sharp inhale]). Any line containing physical body movements, participles, or smuggled action clauses (e.g. [settling into the chair beside her, low], [Looking up at the window], [turns to door], [standing up], [reaches into pocket]) is a CRITICAL DEFECT. If found, you MUST FAIL the script and instruct the author to move the physical action to the Narrator.
-5. **Vocal Event & Delivery Direction Compliance:** Are inline vocal events limited to the 6 canonical events? Are vocal delivery directions limited to 1–3 words of acoustic delivery rather than physical gestures?
-6. **Over-Tagging & Improper Directions:** Is there more than one control tag per sentence or emotional beat? Are there traditional dialogue attributions (e.g., "he yelled")? Are delivery directions used for physical actions or smuggled clauses (e.g., "[settling into chair, low]")? A single mistake here is a WARNING, but if you find MORE THAN TWO improper directions, over-tagged sentences, or redundant dialogue tags in the script, it is a FAIL.
+4. **Physical Actions or Smuggled Clauses in Voice Instructions (MANDATORY FAIL):** Bracketed instructions [...] at the start of speech must be 1- or 2-sentence natural-language voice instructions describing intended emotion, pace, energy, tone, and delivery (e.g., "[Combine high-stakes necessity with tactical composure. The pace is rapid but highly articulate, projecting focused, steady energy that mobilizes others without tipping into panic.]"). Any instruction containing physical body movements, staging, participles, or smuggled action clauses (e.g. [settling into the chair beside her, low], [Looking up at the window], [turns to door], [standing up], [reaches into pocket]) is a CRITICAL DEFECT. If found, you MUST FAIL the script and instruct the author to move the physical action to the Narrator.
+5. **Localized Vocal Event Compliance:** In-line localized vocalizations in parentheses (...) must use ONLY the exact documented English input tags:
+   - Laughter: (laughs), (chuckles), (giggles)
+   - Crying and pain: (crying), (sobs), (whimpers), (groans), (moans)
+   - Breathing: (sighs), (gasps), (inhales), (exhales), (breathing heavily)
+   - Vocal delivery: (whispers), (shouts), (screams), (singing), (humming), (stutters), (pause)
+   - Throat and nose: (clears throat), (coughs), (sniffs)
+   - Mouth sounds: (smacks lips), (clicks tongue)
+   - Body reflexes: (yawns), (sneezes), (hiccups), (burps), (gulps), (gags)
+   - Reaction sounds: (grunts), (scoffs), (snorts)
+   Any unsupported parenthetical tag (e.g., (heavy sigh), (bursts into laughter), (unvoiced action)) is a violation.
+6. **Over-Tagging & Improper Directions:** Are multiple bracketed instructions chained together? Are there traditional dialogue attributions in narration (e.g., "he yelled")? Are voice directions used for physical actions or smuggled clauses? A single mistake here is a WARNING, but if you find MORE THAN TWO improper directions, invalid localized tags, or redundant dialogue tags in the script, it is a FAIL.
 7. **Continuity Break & Name Confusion:** Does the script contradict physical facts established earlier in the scene (character positions, held items, injuries) or misname characters?
 8. **Epistemic Boundary Violation:** Did the script (via the Narrator) state unobservable internal thoughts or motives of non-focal characters as objective facts?
 
 PASS/FAIL DECISION FRAMEWORK:
-- **PASS** if: The script faithfully executes the choreography, preserves all specific dialogue stakes/plot terms, strictly adheres to Multi-Voice Studio TTS formatting (no unvoiced standalone stage directions or foley brackets), uses bracketed vocal delivery directions exclusively for 1–3 word acoustic sound (zero physical actions or smuggled clauses in brackets), maintains physical continuity, and has 2 or fewer over-tagged sentences or improper delivery/dialogue tags.
-- **FAIL** if: Any CRITICAL violation occurred (plot fidelity failure, formatting breakdown, speaker attribution failure, physical actions/smuggled clauses in vocal delivery directions, >2 over-tagging errors, or physical continuity breaks).
+- **PASS** if: The script faithfully executes the choreography, preserves all specific dialogue stakes/plot terms, strictly adheres to Multi-Voice Studio TTS formatting (no unvoiced standalone stage directions or foley brackets), uses bracketed instructions exclusively for natural-language voice performance (zero physical actions or smuggled clauses in brackets), uses exact documented English tags for localized vocal events in parentheses, maintains physical continuity, and has 2 or fewer minor over-tagging/formatting warnings.
+- **FAIL** if: Any CRITICAL violation occurred (plot fidelity failure, formatting breakdown, speaker attribution failure, physical actions/smuggled clauses in voice instructions, unsupported vocal event tags, >2 over-tagging errors, or physical continuity breaks).
 
 Structure your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.`,
