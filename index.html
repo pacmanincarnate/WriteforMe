@@ -3252,23 +3252,31 @@
             if (obj === null || obj === undefined) return "";
             if (typeof obj === 'string') return obj;
             try {
-                const seen = new WeakSet();
-                return JSON.stringify(obj, (key, value) => {
-                    if (typeof value === 'object' && value !== null) {
-                        if (typeof window !== 'undefined' && (value === window || value instanceof Node || (typeof Event !== 'undefined' && value instanceof Event))) {
-                            return '[DOM/Window Object]';
-                        }
-                        if (seen.has(value)) {
-                            return '[Circular]';
-                        }
-                        seen.add(value);
+                const ancestors = [];
+                return JSON.stringify(obj, function (key, value) {
+                    if (typeof value !== 'object' || value === null) {
+                        return value;
                     }
+                    if (typeof window !== 'undefined' && (value === window || value instanceof Node || (typeof Event !== 'undefined' && value instanceof Event))) {
+                        return '[DOM/Window Object]';
+                    }
+                    while (ancestors.length > 0 && ancestors[ancestors.length - 1] !== this) {
+                        ancestors.pop();
+                    }
+                    if (ancestors.includes(value)) {
+                        return '[Circular]';
+                    }
+                    ancestors.push(value);
                     return value;
                 }, space) || "";
             } catch (e) {
                 return "";
             }
         };
+        const SERIALIZATION_PLACEHOLDER_REGEX = /^\[(?:circular|dom\/window object|object object)\]$/i;
+        const isSerializationPlaceholder = (val) => typeof val === 'string' && SERIALIZATION_PLACEHOLDER_REGEX.test(val.trim());
+        window.safeJsonStringify = safeJsonStringify;
+        window.isSerializationPlaceholder = isSerializationPlaceholder;
 
         const safeLocalStorageSet = (key, value) => {
             try {
@@ -15497,21 +15505,92 @@ ${charFocus}
             }
 
             const parseStrList = (val) => {
-                if (Array.isArray(val)) return val.map(x => typeof x === 'string' ? x.trim() : (x?.name || String(x || ''))).filter(Boolean);
-                if (typeof val === 'string') return val.split(/[,;\n]+/).map(s => s.trim().replace(/^-\s*/, '')).filter(Boolean);
+                if (Array.isArray(val)) return val.map(x => typeof x === 'string' ? x.trim() : (x?.name || String(x || '')).trim()).filter(x => x && !isSerializationPlaceholder(x));
+                if (typeof val === 'string') return val.split(/[,;\n]+/).map(s => s.trim().replace(/^-\s*/, '')).filter(x => x && !isSerializationPlaceholder(x));
                 return [];
+            };
+
+            const containsPlaceholder = (val) => {
+                if (typeof val === 'string') {
+                    return val.split(/[,;\n]+/).some(s => isSerializationPlaceholder(s.replace(/^-\s*/, '').trim()));
+                }
+                if (Array.isArray(val)) {
+                    return val.some(x => isSerializationPlaceholder(typeof x === 'string' ? x : (x?.name || String(x || ''))));
+                }
+                return false;
             };
 
             const resolveCast = () => {
                 const castList = Array.isArray(storyCast) ? storyCast : [];
-                let rawNames = parseStrList(restScene.cast_names);
-                if (rawNames.length === 0) rawNames = parseStrList(restScene.characters_present);
+                const presNames = parseStrList(restScene.characters_present);
+                const castNamesRaw = parseStrList(restScene.cast_names);
                 const rawIds = parseStrList(restScene.cast_ids);
+                let rawNames = [...presNames, ...castNamesRaw];
                 if (rawNames.length === 0 && rawIds.length > 0) {
                     rawNames = rawIds.map(id => {
                         const found = castList.find(c => c.id === id || c.name?.toLowerCase() === id.toLowerCase());
                         return found ? found.name : id;
                     });
+                }
+                const hadCastPlaceholder = containsPlaceholder(restScene.cast_names)
+                    || containsPlaceholder(restScene.characters_present)
+                    || containsPlaceholder(restScene.cast_ids);
+                if (rawNames.length === 0 && hadCastPlaceholder) {
+                    if (typeof restScene.pov_character === 'string' && restScene.pov_character.trim() && !isSerializationPlaceholder(restScene.pov_character)) {
+                        rawNames.push(restScene.pov_character.trim());
+                    }
+                    if (Array.isArray(restScene.target_epistemic_deltas)) {
+                        restScene.target_epistemic_deltas.forEach(d => {
+                            if (typeof d?.holder === 'string' && d.holder.trim() && !isSerializationPlaceholder(d.holder)) {
+                                rawNames.push(d.holder.trim());
+                            }
+                        });
+                    }
+                    const searchText = [
+                        restScene.title,
+                        restScene.pov_character,
+                        restScene.scene_events,
+                        restScene.objective,
+                        restScene.goal,
+                        restScene.entrance_conditions,
+                        restScene.entrance_condition,
+                        restScene.exit_conditions,
+                        restScene.exit_condition,
+                        restScene.exit_hook,
+                        restScene.surface_activity,
+                        restScene.main_character_heart,
+                        restScene.other_character_heart,
+                        restScene.the_hinge_moment,
+                        restScene.atmospheric_overview,
+                        legacyDesc
+                    ].filter(Boolean).join(' ').toLowerCase();
+                    if (searchText && castList.length > 0) {
+                        const matchToken = (haystack, needle) => {
+                            if (!haystack || !needle) return false;
+                            if (typeof tokenMatch === 'function') return tokenMatch(haystack, needle);
+                            const clean = String(needle).trim();
+                            if (!clean) return false;
+                            try {
+                                const escaped = clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                return new RegExp(`(^|[^a-zA-Z0-9_])${escaped}([^a-zA-Z0-9_]|$)`, 'i').test(String(haystack));
+                            } catch (_) {
+                                return String(haystack).toLowerCase().includes(clean.toLowerCase());
+                            }
+                        };
+                        const stopSet = typeof STOPWORDS !== 'undefined' ? STOPWORDS : new Set();
+                        castList.forEach(ch => {
+                            if (!ch || !ch.name) return;
+                            const cName = String(ch.name).trim().toLowerCase();
+                            const cAliases = (Array.isArray(ch.aliases) ? ch.aliases : (Array.isArray(ch.details?.aliases) ? ch.details.aliases : []))
+                                .map(a => String(a).trim().toLowerCase())
+                                .filter(Boolean);
+                            const parts = cName.split(/\s+/);
+                            const matched = matchToken(searchText, cName)
+                                || cAliases.some(a => matchToken(searchText, a))
+                                || parts.some(p => p.length >= 2 && !stopSet.has(p) && matchToken(searchText, p));
+                            if (matched) rawNames.push(ch.name);
+                        });
+                    }
                 }
                 const seen = new Set();
                 const uniqueInputs = [];
@@ -15535,10 +15614,10 @@ ${charFocus}
                             castNames.push(entry);
                         }
                     });
-                    return { cast_ids: castIds, cast_names: castNames, characters_present: [...castNames] };
+                    return { cast_ids: [...castIds], cast_names: [...castNames], characters_present: [...castNames] };
                 }
                 return {
-                    cast_ids: rawIds.length > 0 ? rawIds : [...uniqueInputs],
+                    cast_ids: rawIds.length > 0 ? [...rawIds] : [...uniqueInputs],
                     cast_names: [...uniqueInputs],
                     characters_present: [...uniqueInputs]
                 };
@@ -15590,14 +15669,34 @@ ${charFocus}
             };
 
             const parseCommitmentList = (val) => {
-                if (Array.isArray(val)) return val.map(x => typeof x === 'string' ? x.trim() : String(x || '').trim()).filter(Boolean);
-                if (typeof val === 'string' && val.trim()) return val.split(/\n+/).map(s => s.replace(/^[-*]\s*/, '').trim()).filter(Boolean);
+                if (Array.isArray(val)) return val.map(x => typeof x === 'string' ? x.trim() : String(x || '').trim()).filter(x => x && !isSerializationPlaceholder(x));
+                if (typeof val === 'string' && val.trim()) return val.split(/\n+/).map(s => s.replace(/^[-*]\s*/, '').trim()).filter(x => x && !isSerializationPlaceholder(x));
                 return [];
             };
 
-            const relChanges = Array.isArray(restScene.relationship_changes)
-                ? restScene.relationship_changes.filter(Boolean)
-                : (Array.isArray(restScene.relationship_shifts) ? restScene.relationship_shifts.filter(Boolean) : parseCommitmentList(restScene.relationship_changes || restScene.relationship_shifts));
+            const rawRelChanges = Array.isArray(restScene.relationship_changes)
+                ? restScene.relationship_changes.filter(rc => rc && !isSerializationPlaceholder(rc))
+                : [];
+            const rawRelShifts = Array.isArray(restScene.relationship_shifts)
+                ? restScene.relationship_shifts.filter(rc => rc && !isSerializationPlaceholder(rc))
+                : [];
+            const relChanges = rawRelChanges.length > 0
+                ? rawRelChanges
+                : (rawRelShifts.length > 0 ? rawRelShifts : parseCommitmentList(restScene.relationship_changes || restScene.relationship_shifts));
+
+            const rawPov = String(restScene.pov_character || legacy.pov_character || "").trim();
+            const cleanPov = isSerializationPlaceholder(rawPov) ? "" : rawPov;
+            const sanitizedBridgeSnapshot = (restScene.bridged_to_scene_snapshot && typeof restScene.bridged_to_scene_snapshot === 'object')
+                ? {
+                    ...restScene.bridged_to_scene_snapshot,
+                    characters_present: (() => {
+                        const snapPres = parseStrList(restScene.bridged_to_scene_snapshot.characters_present);
+                        return snapPres.length > 0
+                            ? snapPres
+                            : parseStrList(restScene.bridged_to_scene_snapshot.cast_names);
+                    })()
+                }
+                : restScene.bridged_to_scene_snapshot;
 
             const normalized = {
                 ...restScene,
@@ -15605,7 +15704,7 @@ ${charFocus}
                 number: restScene.number || sceneNum,
                 title: String(restScene.title || `Scene ${idx + 1}`).trim(),
                 scene_type: sceneType,
-                pov_character: String(restScene.pov_character || legacy.pov_character || "").trim(),
+                pov_character: cleanPov,
                 setting: String(restScene.setting || legacy.setting || "").trim(),
                 transition_jump: String(restScene.transition_jump || legacy.transition_jump || "").trim(),
                 objective: canonicalObjective,
@@ -15632,8 +15731,9 @@ ${charFocus}
                 activation_contexts: parseStrList(restScene.activation_contexts),
                 target_epistemic_deltas: normalizeDeltas(restScene.target_epistemic_deltas),
                 plot_commitments: parseCommitmentList(restScene.plot_commitments),
-                relationship_changes: relChanges,
-                relationship_shifts: relChanges,
+                relationship_changes: [...relChanges],
+                relationship_shifts: [...relChanges],
+                ...(sanitizedBridgeSnapshot !== undefined ? { bridged_to_scene_snapshot: sanitizedBridgeSnapshot } : {}),
                 user_edited: Boolean(restScene.user_edited),
                 is_bridge_scene: Boolean(restScene.is_bridge_scene)
             };
@@ -17858,12 +17958,12 @@ Evaluate how ${charDisplayName} integrates <newly_observed_fact> with <previousl
             rawChars.forEach(c => {
                 if (!c) return;
                 if (typeof c === 'string') {
-                    c.split(/[,;\n]+|(?:\band\b)/i).map(s => s.trim().replace(/^-\s*/, '')).filter(Boolean).forEach(x => {
+                    c.split(/[,;\n]+|(?:\band\b)/i).map(s => s.trim().replace(/^-\s*/, '')).filter(x => x && !isSerializationPlaceholder(x)).forEach(x => {
                         if (!charNames.some(cn => cn.toLowerCase() === x.toLowerCase())) charNames.push(x);
                     });
                 } else if (c.name && typeof c.name === 'string') {
                     const cn = c.name.trim();
-                    if (cn && !charNames.some(existing => existing.toLowerCase() === cn.toLowerCase())) {
+                    if (cn && !isSerializationPlaceholder(cn) && !charNames.some(existing => existing.toLowerCase() === cn.toLowerCase())) {
                         charNames.push(cn);
                     }
                 }
@@ -18225,11 +18325,25 @@ ${getAuthorNoteXml(sanitizedStory)}`;
 
         function formatSceneCharactersList(sc = {}) {
             if (!sc) return '';
-            const raw = (Array.isArray(sc.characters_present) && sc.characters_present.length > 0)
-                ? sc.characters_present
-                : (sc.cast_names || sc.characters_present || []);
-            return Array.isArray(raw) ? raw.join(', ') : String(raw || '');
+            const toCleanList = (val) => {
+                if (Array.isArray(val)) {
+                    return val
+                        .map(x => (typeof x === 'string' ? x.trim() : (x?.name || String(x || '')).trim()))
+                        .filter(x => x && !isSerializationPlaceholder(x));
+                }
+                if (typeof val === 'string') {
+                    return val
+                        .split(/[,;\n]+/)
+                        .map(s => s.trim().replace(/^-\s*/, ''))
+                        .filter(x => x && !isSerializationPlaceholder(x));
+                }
+                return [];
+            };
+            const pres = toCleanList(sc.characters_present);
+            const names = pres.length > 0 ? pres : toCleanList(sc.cast_names);
+            return names.join(', ');
         }
+        window.formatSceneCharactersList = formatSceneCharactersList;
 
         function buildScenePlannerContinuityBlock(storyState = {}, seqIdx = 0, liveSequence = null) {
             const sequencesArr = Array.isArray(storyState.sequences) ? storyState.sequences : [];
@@ -28169,10 +28283,12 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                 </div>
 
                                 {(() => {
-                                    const rawCast = s.cast_names || s.characters_present;
-                                    const castList = Array.isArray(rawCast)
-                                        ? rawCast.map(n => (typeof n === 'string' ? n.trim() : (n?.name || String(n || '')))).filter(Boolean)
-                                        : (typeof rawCast === 'string' ? rawCast.split(/[,;\n]+/).map(n => n.trim().replace(/^-\s*/, '')).filter(Boolean) : []);
+                                    const extractCleanCast = (rawCast) => (Array.isArray(rawCast)
+                                        ? rawCast.map(n => (typeof n === 'string' ? n.trim() : (n?.name || String(n || '')).trim()))
+                                        : (typeof rawCast === 'string' ? rawCast.split(/[,;\n]+/).map(n => n.trim().replace(/^-\s*/, '')) : [])
+                                    ).filter(n => n && !isSerializationPlaceholder(n));
+                                    const presList = extractCleanCast(s.characters_present);
+                                    const castList = presList.length > 0 ? presList : extractCleanCast(s.cast_names);
                                     if (!castList || castList.length === 0) return null;
                                     return (
                                         <div className={isStructure ? "flex flex-wrap gap-1.5 pt-1" : "flex flex-wrap gap-1.5 mt-1"}>
@@ -40670,7 +40786,7 @@ BEGIN RETROACTIVE STATE INJECTION`;
                     const out = [];
                     items.forEach(it => {
                         if (typeof it === 'string') {
-                            it.split(/[,;\n]+|(?:\band\b)/i).map(s => s.trim().replace(/^-\s*/, '')).filter(Boolean).forEach(x => out.push(x));
+                            it.split(/[,;\n]+|(?:\band\b)/i).map(s => s.trim().replace(/^-\s*/, '')).filter(x => x && !isSerializationPlaceholder(x)).forEach(x => out.push(x));
                         } else if (it) {
                             out.push(it);
                         }
@@ -50831,9 +50947,9 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                     }
 
                     if ('relationship_changes' in mergedUpdates && !('relationship_shifts' in mergedUpdates)) {
-                        mergedUpdates.relationship_shifts = mergedUpdates.relationship_changes;
+                        mergedUpdates.relationship_shifts = Array.isArray(mergedUpdates.relationship_changes) ? [...mergedUpdates.relationship_changes] : mergedUpdates.relationship_changes;
                     } else if ('relationship_shifts' in mergedUpdates && !('relationship_changes' in mergedUpdates)) {
-                        mergedUpdates.relationship_changes = mergedUpdates.relationship_shifts;
+                        mergedUpdates.relationship_changes = Array.isArray(mergedUpdates.relationship_shifts) ? [...mergedUpdates.relationship_shifts] : mergedUpdates.relationship_shifts;
                     }
 
                     if ('value_shift' in mergedUpdates) {
@@ -50841,12 +50957,16 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                     }
 
                     if ('cast_names' in mergedUpdates || 'characters_present' in mergedUpdates || 'cast_ids' in mergedUpdates) {
-                        const rawCastVal = 'cast_names' in mergedUpdates
-                            ? mergedUpdates.cast_names
-                            : ('characters_present' in mergedUpdates ? mergedUpdates.characters_present : mergedUpdates.cast_ids);
-                        const parsedCastNames = Array.isArray(rawCastVal)
-                            ? rawCastVal.map(x => typeof x === 'string' ? x.trim() : (x?.name || String(x || ''))).filter(Boolean)
-                            : (typeof rawCastVal === 'string' ? rawCastVal.split(/[,;\n]+/).map(s => s.trim().replace(/^-\s*/, '')).filter(Boolean) : []);
+                        const parseRawCastArr = (rawVal) => (Array.isArray(rawVal)
+                            ? rawVal.map(x => typeof x === 'string' ? x.trim() : (x?.name || String(x || '')).trim())
+                            : (typeof rawVal === 'string' ? rawVal.split(/[,;\n]+/).map(s => s.trim().replace(/^-\s*/, '')) : [])
+                        ).filter(x => x && !isSerializationPlaceholder(x));
+                        let parsedCastNames = 'cast_names' in mergedUpdates
+                            ? parseRawCastArr(mergedUpdates.cast_names)
+                            : ('characters_present' in mergedUpdates ? parseRawCastArr(mergedUpdates.characters_present) : parseRawCastArr(mergedUpdates.cast_ids));
+                        if (parsedCastNames.length === 0 && 'cast_names' in mergedUpdates && 'characters_present' in mergedUpdates) {
+                            parsedCastNames = parseRawCastArr(mergedUpdates.characters_present);
+                        }
                         const castList = Array.isArray(prev.cast) ? prev.cast : [];
                         const deduped = [];
                         const seen = new Set();
@@ -50859,7 +50979,7 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                                 deduped.push(displayName);
                             }
                         });
-                        mergedUpdates.cast_names = deduped;
+                        mergedUpdates.cast_names = [...deduped];
                         mergedUpdates.characters_present = [...deduped];
                         mergedUpdates.cast_ids = deduped.map(name => {
                             const matched = castList.find(c => c.name?.toLowerCase() === name.toLowerCase());
@@ -51051,8 +51171,8 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                         setting: prevScene?.setting || "",
                         transition_jump: insertIdx === 0 ? "Sequence opening" : "Seamless temporal/spatial continuation",
                         modality_hand: defaultHand,
-                        characters_present: defaultCast,
-                        cast_names: defaultCast,
+                        characters_present: [...defaultCast],
+                        cast_names: [...defaultCast],
                         epistemic_friction_level: "MODERATE",
                         value_shift: { start_state: "", end_state: "" },
                         user_edited: true
@@ -51560,9 +51680,11 @@ BEGIN DEVELOPING STORY SEQUENCES
 
                         const atmosphericOverview = getField('atmospheric_overview', ['atmosphere', 'setting overview', 'spatial overview']) || "";
                         const rawCharactersPresent = getField('characters_present', ['characters', 'cast present', 'cast names', 'active characters']) || "";
-                        const charList = rawCharactersPresent
+                        const rawCharTokens = rawCharactersPresent
                             ? rawCharactersPresent.split(/[,;\n]+|(?:\band\b)/i).map(s => s.trim().replace(/^-\s*/, '')).filter(Boolean)
                             : [];
+                        const hadCharPlaceholder = rawCharTokens.some(s => isSerializationPlaceholder(s));
+                        const charList = rawCharTokens.filter(s => !isSerializationPlaceholder(s));
 
                         const rawModalityHand = getField('modality_hand', ['modalities', 'narrative modalities', 'selected modalities']) || "";
                         let modalityHandList = rawModalityHand
@@ -51739,8 +51861,8 @@ BEGIN DEVELOPING STORY SEQUENCES
                             dominant_narrative_mode: matchedModeId,
                             atmospheric_overview: atmosphericOverview,
                             modality_hand: finalModalityHand,
-                            characters_present: charList,
-                            cast_names: charList,
+                            characters_present: (hadCharPlaceholder && charList.length === 0) ? ['[Circular]'] : [...charList],
+                            cast_names: (hadCharPlaceholder && charList.length === 0) ? ['[Circular]'] : [...charList],
                             goal: goal,
                             objective: goal,
                             value_shift: parsedValueShift,
@@ -51927,25 +52049,34 @@ If ANY spatial contradiction, redundant first-meeting re-introduction, or next-s
                                             const nextAtm = cScene.atmospheric_overview || orig.atmospheric_overview;
                                             const nextValShift = (cScene.value_shift && cScene.value_shift.start_state) ? cScene.value_shift : orig.value_shift;
                                             const valStr = typeof nextValShift === 'object' ? (nextValShift.start_state || '') : String(nextValShift || '');
-                                            const nextCast = (cScene.characters_present && cScene.characters_present.length > 0) ? cScene.characters_present : orig.characters_present;
-                                            newScenes[matchIdx] = {
+                                            const cleanRepairCast = (arr) => (Array.isArray(arr) ? arr : [])
+                                                .map(x => typeof x === 'string' ? x.trim() : (x?.name || String(x || '')).trim())
+                                                .filter(x => x && !isSerializationPlaceholder(x));
+                                            const repairedCast = cleanRepairCast(cScene.characters_present);
+                                            const origPresCast = cleanRepairCast(orig.characters_present);
+                                            const origNamesCast = cleanRepairCast(orig.cast_names);
+                                            const nextCast = repairedCast.length > 0 ? repairedCast : (origPresCast.length > 0 ? origPresCast : origNamesCast);
+                                            const repairedScene = normalizeSceneBlueprint({
                                                 ...orig,
                                                 title: (cScene.title && !/^Scene \d+$/i.test(cScene.title)) ? cScene.title : orig.title,
                                                 pov_character: cScene.pov_character || orig.pov_character,
                                                 setting: nextSetting,
                                                 transition_jump: nextTransition,
                                                 entrance_conditions: nextEntrance,
-                                                characters_present: nextCast,
-                                                cast_names: nextCast,
+                                                characters_present: [...nextCast],
+                                                cast_names: [...nextCast],
                                                 goal: nextGoal,
                                                 objective: nextGoal,
                                                 scene_events: nextEvents,
                                                 atmospheric_overview: nextAtm,
                                                 value_shift: nextValShift,
                                                 exit_hook: nextExitHook,
-                                                exit_conditions: nextExitHook || orig.exit_conditions,
-                                                description: `**Setting:** ${nextSetting}${nextTransition ? `\n**Transition Jump:** ${nextTransition}` : ''}${nextEntrance ? `\n**Entrance Conditions:** ${nextEntrance}` : ''}\n**Goal:** ${nextGoal}${nextEvents ? `\n**Scene Events:** ${nextEvents}` : ''}\n**Value Shift:** ${valStr}\n**Exit Hook:** ${nextExitHook}${orig.surface_activity ? `\n**Surface Activity:** ${orig.surface_activity}` : ''}${nextAtm ? `\n**Atmospheric Overview:** ${nextAtm.slice(0, 160)}...` : ''}`
-                                            };
+                                                exit_conditions: nextExitHook || orig.exit_conditions
+                                            }, matchIdx, currentSequence.number, liveStoryForAudit.cast || storyToUse.cast || []);
+                                            repairedScene.id = orig.id;
+                                            repairedScene.number = orig.number;
+                                            repairedScene.description = `**Setting:** ${nextSetting}${nextTransition ? `\n**Transition Jump:** ${nextTransition}` : ''}${nextEntrance ? `\n**Entrance Conditions:** ${nextEntrance}` : ''}\n**Goal:** ${nextGoal}${nextEvents ? `\n**Scene Events:** ${nextEvents}` : ''}\n**Value Shift:** ${valStr}\n**Exit Hook:** ${nextExitHook}${orig.surface_activity ? `\n**Surface Activity:** ${orig.surface_activity}` : ''}${nextAtm ? `\n**Atmospheric Overview:** ${nextAtm.slice(0, 160)}...` : ''}`;
+                                            newScenes[matchIdx] = repairedScene;
                                             appliedFixes++;
                                         }
                                     });
@@ -52127,12 +52258,12 @@ If ANY spatial contradiction, redundant first-meeting re-introduction, or next-s
                 rawPresent.forEach(c => {
                     if (!c) return;
                     if (typeof c === 'string') {
-                        c.split(/[,;\n]+|(?:\band\b)/i).map(s => s.trim().replace(/^-\s*/, '')).filter(Boolean).forEach(x => {
+                        c.split(/[,;\n]+|(?:\band\b)/i).map(s => s.trim().replace(/^-\s*/, '')).filter(x => x && !isSerializationPlaceholder(x)).forEach(x => {
                             if (!presentChars.some(cn => cn.toLowerCase() === x.toLowerCase())) presentChars.push(x);
                         });
                     } else if (c.name && typeof c.name === 'string') {
                         const cn = c.name.trim();
-                        if (cn && !presentChars.some(existing => existing.toLowerCase() === cn.toLowerCase())) {
+                        if (cn && !isSerializationPlaceholder(cn) && !presentChars.some(existing => existing.toLowerCase() === cn.toLowerCase())) {
                             presentChars.push(cn);
                         }
                     }
@@ -52745,9 +52876,18 @@ ${PROMPTS.bridgeSceneGeneratorAgent}
 
                             // Parse characters_present into a clean array matching parseSceneBlueprints
                             const rawCharactersPresent = extractXML("characters_present");
-                            const charList = rawCharactersPresent
+                            const parsedBridgeTokens = rawCharactersPresent
                                 ? rawCharactersPresent.split(/[,;\n]+|(?:\band\b)/i).map(cs => cs.trim().replace(/^-\s*/, '')).filter(Boolean)
-                                : (Array.isArray(scene.characters_present) ? [...scene.characters_present] : []);
+                                : [];
+                            const bridgeHadPlaceholder = parsedBridgeTokens.some(cs => isSerializationPlaceholder(cs));
+                            const cleanBridgeTokens = parsedBridgeTokens.filter(cs => !isSerializationPlaceholder(cs));
+                            const fallbackSceneCast = (Array.isArray(scene.characters_present) && scene.characters_present.length > 0
+                                ? scene.characters_present
+                                : (Array.isArray(scene.cast_names) ? scene.cast_names : [])
+                            ).map(cs => typeof cs === 'string' ? cs.trim() : (cs?.name || String(cs || '')).trim()).filter(cs => cs && !isSerializationPlaceholder(cs));
+                            const charList = cleanBridgeTokens.length > 0
+                                ? cleanBridgeTokens
+                                : (fallbackSceneCast.length > 0 ? fallbackSceneCast : (bridgeHadPlaceholder ? ['[Circular]'] : []));
 
                             // Parse and canonicalize modality_hand into a 3-5 element array against STRUCTURAL_MODALITIES
                             const allModalities = Object.values(STRUCTURAL_MODALITIES).map(m => m.name);
@@ -52820,12 +52960,16 @@ ${PROMPTS.bridgeSceneGeneratorAgent}
                                 }
                             }
 
+                            const snapshotCast = (Array.isArray(scene.characters_present) && scene.characters_present.length > 0
+                                ? scene.characters_present
+                                : (Array.isArray(scene.cast_names) ? scene.cast_names : [])
+                            ).map(cs => typeof cs === 'string' ? cs.trim() : (cs?.name || String(cs || '')).trim()).filter(cs => cs && !isSerializationPlaceholder(cs));
                             const targetSceneSnapshot = {
                                 id: scene.id,
                                 title: scene.title,
                                 pov_character: scene.pov_character,
                                 setting: scene.setting,
-                                characters_present: scene.characters_present || scene.cast_names,
+                                characters_present: [...snapshotCast],
                                 objective: scene.objective || scene.goal,
                                 scene_events: scene.scene_events
                             };
@@ -52842,8 +52986,8 @@ ${PROMPTS.bridgeSceneGeneratorAgent}
                                 dominant_narrative_mode: matchedModeId,
                                 atmospheric_overview: insertedAtmosphericOverview,
                                 modality_hand: finalModalityHand,
-                                characters_present: charList,
-                                cast_names: charList,
+                                characters_present: [...charList],
+                                cast_names: [...charList],
                                 goal: insertedGoal,
                                 objective: insertedGoal,
                                 value_shift: parsedBridgeVS,
@@ -61192,10 +61336,11 @@ ${finalProseText}
                                 const isProactiveScene = String(currentScene.scene_type).toLowerCase().includes('proactive') || currentScene.scene_type === 'scene';
                                 const allModalityNames = Object.values(STRUCTURAL_MODALITIES || {}).map(m => m.name);
                                 const presentCharList = (() => {
-                                    const raw = Array.isArray(currentScene.characters_present) && currentScene.characters_present.length > 0
-                                        ? currentScene.characters_present
-                                        : (Array.isArray(currentScene.cast_names) ? currentScene.cast_names : []);
-                                    return raw.map(x => typeof x === 'string' ? x.trim() : (x?.name || String(x || ''))).filter(Boolean);
+                                    const toCleanNames = (raw) => (Array.isArray(raw) ? raw : [])
+                                        .map(x => typeof x === 'string' ? x.trim() : (x?.name || String(x || '')).trim())
+                                        .filter(x => x && !isSerializationPlaceholder(x));
+                                    const pres = toCleanNames(currentScene.characters_present);
+                                    return pres.length > 0 ? pres : toCleanNames(currentScene.cast_names);
                                 })();
                                 const availableCastToAdd = (story.cast || [])
                                     .map(c => c?.name)
@@ -61203,9 +61348,11 @@ ${finalProseText}
 
                                 const buildDraftFromScene = (sc = currentScene) => {
                                     const vs = parseValueShiftInput(sc.value_shift);
-                                    const chars = Array.isArray(sc.characters_present) && sc.characters_present.length > 0
-                                        ? [...sc.characters_present]
-                                        : (Array.isArray(sc.cast_names) ? [...sc.cast_names] : []);
+                                    const cleanDraftChars = (raw) => (Array.isArray(raw) ? raw : [])
+                                        .map(x => typeof x === 'string' ? x.trim() : (x?.name || String(x || '')).trim())
+                                        .filter(x => x && !isSerializationPlaceholder(x));
+                                    const presDraftChars = cleanDraftChars(sc.characters_present);
+                                    const chars = presDraftChars.length > 0 ? presDraftChars : cleanDraftChars(sc.cast_names);
                                     const deltas = Array.isArray(sc.target_epistemic_deltas)
                                         ? sc.target_epistemic_deltas.map(d => ({
                                             holder: d?.holder || '',
@@ -61294,8 +61441,8 @@ ${finalProseText}
                                         setting: d.setting,
                                         transition_jump: d.transition_jump,
                                         dominant_narrative_mode: d.dominant_narrative_mode,
-                                        characters_present: d.characters_present,
-                                        cast_names: d.characters_present,
+                                        characters_present: Array.isArray(d.characters_present) ? [...d.characters_present] : [],
+                                        cast_names: Array.isArray(d.characters_present) ? [...d.characters_present] : [],
                                         objective: d.objective,
                                         goal: d.objective,
                                         scene_events: d.scene_events,
@@ -61690,7 +61837,7 @@ ${finalProseText}
                                                                     type="button"
                                                                     onClick={() => {
                                                                         const nextList = presentCharList.filter((_, i) => i !== cIdx);
-                                                                        updateSceneBlueprint(selectedSequence, selectedScene, { characters_present: nextList, cast_names: nextList });
+                                                                        updateSceneBlueprint(selectedSequence, selectedScene, { characters_present: [...nextList], cast_names: [...nextList] });
                                                                     }}
                                                                     className="text-ink-400 hover:text-blush-600 transition-colors cursor-pointer"
                                                                     title={`Remove ${charName} from scene`}
@@ -61707,15 +61854,15 @@ ${finalProseText}
                                                             if (!chosen) return;
                                                             if (chosen === "__CUSTOM__") {
                                                                 openEditModal("Add Character to Scene", "", (val) => {
-                                                                    const added = String(val || '').split(/[,;\n]+/).map(x => x.trim()).filter(Boolean);
+                                                                    const added = String(val || '').split(/[,;\n]+/).map(x => x.trim()).filter(x => x && !isSerializationPlaceholder(x));
                                                                     if (added.length > 0) {
                                                                         const nextList = [...presentCharList, ...added.filter(n => !presentCharList.some(pc => pc.toLowerCase() === n.toLowerCase()))];
-                                                                        updateSceneBlueprint(selectedSequence, selectedScene, { characters_present: nextList, cast_names: nextList });
+                                                                        updateSceneBlueprint(selectedSequence, selectedScene, { characters_present: [...nextList], cast_names: [...nextList] });
                                                                     }
                                                                 });
                                                             } else {
                                                                 const nextList = [...presentCharList, chosen];
-                                                                updateSceneBlueprint(selectedSequence, selectedScene, { characters_present: nextList, cast_names: nextList });
+                                                                updateSceneBlueprint(selectedSequence, selectedScene, { characters_present: [...nextList], cast_names: [...nextList] });
                                                             }
                                                         }}
                                                         className="text-xs font-mono bg-surface hover:bg-wash border border-dashed border-edge-strong text-gold-ink rounded-full px-2.5 py-0.5 outline-none cursor-pointer"
