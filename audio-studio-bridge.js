@@ -1,6 +1,6 @@
 /**
  * EllipsisProse Audio Studio Bridge (Hybrid Studio TTS)
- * Manages Audio.cpp process lifecycle across Wave 1 (Breeze 2), Wave 2 (MOSS-TTSD),
+ * Manages Audio.cpp process lifecycle across Wave 1 (Breeze 2), Wave 2 (Fish Audio Drama-3),
  * and Wave 3 (Verifier), provides local voice WAV reference caching,
  * and reverse proxies inference requests over persistent HTTP Keep-Alive.
  *
@@ -107,13 +107,13 @@ function findAudioCppExecutable() {
 
 const WAVE_CONFIGS = {
     1: path.join(AUDIOCPP_CONFIGS_DIR, 'config_wave1_breeze.json'),
-    2: path.join(AUDIOCPP_CONFIGS_DIR, 'config_wave2_moss.json'),
+    2: path.join(AUDIOCPP_CONFIGS_DIR, 'config_wave2_drama3.json'),
     3: path.join(AUDIOCPP_CONFIGS_DIR, 'config_wave3_verifier.json')
 };
 
 const WAVE_MODEL_IDS = {
     1: 'breeze-tts',
-    2: 'moss_ensemble',
+    2: 'drama-3',
     3: 'whisper_verifier'
 };
 
@@ -334,9 +334,52 @@ function sendJson(res, statusCode, data) {
     res.end(JSON.stringify(data, null, 2));
 }
 
+function isWaveConfigModelAvailable(waveNum, binPath, daemonAlive) {
+    const cfgPath = WAVE_CONFIGS[waveNum];
+    if (!cfgPath || !fs.existsSync(cfgPath)) return false;
+    if (!binPath && !daemonAlive) return false;
+    try {
+        const cfg = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
+        const models = Array.isArray(cfg?.models) ? cfg.models : [];
+        if (models.length === 0) return false;
+        // If we have a local binary path, verify at least one declared model file exists when resolvable
+        const baseDirs = [
+            binPath ? path.resolve(path.dirname(binPath), '..', '..') : '',
+            'D:\\AI_Projects\\Audiocpp\\audio.cpp',
+            ROOT_DIR
+        ].filter(Boolean);
+        let anyPathChecked = false;
+        let anyPathExists = false;
+        for (const m of models) {
+            const p = m?.path || m?.weights;
+            if (!p) continue;
+            if (path.isAbsolute(p)) {
+                anyPathChecked = true;
+                if (fs.existsSync(p)) { anyPathExists = true; break; }
+            } else {
+                for (const bd of baseDirs) {
+                    const candidate = path.resolve(bd, p);
+                    if (fs.existsSync(candidate)) {
+                        anyPathChecked = true;
+                        anyPathExists = true;
+                        break;
+                    }
+                }
+                if (!anyPathChecked && baseDirs.some(bd => fs.existsSync(bd))) {
+                    anyPathChecked = true;
+                }
+            }
+        }
+        return (!anyPathChecked || anyPathExists || daemonAlive);
+    } catch (_) {
+        return Boolean(binPath || daemonAlive);
+    }
+}
+
 function handleHealth(req, res) {
     isPortListening(settings.daemonPort).then(daemonAlive => {
         const bin = findAudioCppExecutable();
+        const availableWaves = [1, 2, 3].filter(w => isWaveConfigModelAvailable(w, bin, daemonAlive));
         sendJson(res, 200, {
             status: 'ok',
             bridge_port: settings.port,
@@ -344,6 +387,7 @@ function handleHealth(req, res) {
             audiocpp_server_port: settings.daemonPort,
             audiocpp_server_alive: daemonAlive,
             audiocpp_bin: bin,
+            available_waves: availableWaves,
             active_wave: state.activeWave,
             active_model: state.activeModel,
             uptime_seconds: state.procStartTime ? Math.round((Date.now() - state.procStartTime) / 1000) : 0,
@@ -438,7 +482,7 @@ function handleProxyV1(req, res) {
         method: req.method,
         headers,
         agent: proxyAgent,
-        timeout: 900000 // 15 minutes for large multi-speaker MOSS-TTSD chunks + model load
+        timeout: 900000 // 15 minutes for large multi-speaker Drama-3 chunks + model load
     }, proxyRes => {
         if (finished || res.headersSent || res.writableEnded) return;
         finished = true;

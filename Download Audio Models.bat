@@ -5,7 +5,7 @@ cd /d "%~dp0"
 
 echo ===============================================================================
 echo            EllipsisProse Audio Studio - Model Downloader
-echo          Breeze 2 TTS + MOSS-TTSD + Whisper Verifier + VAD
+echo          Breeze 2 TTS + Fish Audio Drama-3 + Whisper Verifier + VAD
 echo ===============================================================================
 echo.
 
@@ -85,13 +85,13 @@ if defined CLI_CHOICE (
 echo -------------------------------------------------------------------------------
 echo Select download option:
 echo.
-echo   [1] Download ALL Models (~15.5 GB total - Full Audio Drama Studio)
+echo   [1] Download ALL Models (~28.5 GB total - Full Audio Drama Studio)
 echo       - Wave 1: Breeze 2 TTS Q8_0 + F16 Codec (~5.4 GB)
-echo       - Wave 2: MOSS-TTSD Dialogue Engine Q8_0 + F16 Tokenizer (~10.0 GB)
+echo       - Wave 2: Fish Audio Drama-3 MoE Backbone Q4_K_S (~23.0 GB)
 echo       - Wave 3: Whisper Base ASR Q8_0 + VAD (~155 MB)
 echo.
 echo   [2] Wave 1 Only: Breeze 2 TTS (Voice Design + Narration, ~5.4 GB)
-echo   [3] Wave 2 Only: MOSS-TTSD (Multi-Speaker Dialogue Engine, ~10.0 GB)
+echo   [3] Wave 2 Only: Fish Audio Drama-3 (Multi-Speaker Dialogue Engine, ~23.0 GB)
 echo   [4] Wave 3 Only: Whisper Verifier + VAD (Silence Trimming & ASR, ~155 MB)
 echo   [5] Change Target Directory
 echo   [6] Exit
@@ -162,21 +162,18 @@ call :download_file "https://huggingface.co/HoppouAI/Breeze-TTS-2.cpp/resolve/ma
 exit /b 0
 
 rem ---------------------------------------------------------------------------
-rem Wave 2: MOSS-TTSD Multi-Speaker Dialogue
+rem Wave 2: Fish Audio Drama-3 Multi-Speaker Dialogue
 rem ---------------------------------------------------------------------------
 :do_wave2
 echo.
 echo ===============================================================================
-echo [WAVE 2] Downloading MOSS-TTSD Dialogue Models
+echo [WAVE 2] Downloading Fish Audio Drama-3 Dialogue Model
 echo ===============================================================================
-set "W2_DIR=%TARGET_DIR%\models\moss_ttsd"
+set "W2_DIR=%TARGET_DIR%\models\Drama-3-GGUF"
 if not exist "%W2_DIR%" mkdir "%W2_DIR%"
 
-rem 1. MOSS-TTSD Backbone Q8_0
-call :download_file "https://huggingface.co/hans00/MOSS-TTSD-v0.7-GGUF/resolve/main/moss-ttsd-v0.7-q8_0.gguf" "%W2_DIR%\moss-ttsd-v1.0-q8_0.gguf" "MOSS-TTSD Dialogue Backbone (Q8_0, ~9.5 GB)"
-
-rem 2. MOSS Audio Tokenizer F16
-call :download_file "https://huggingface.co/hans00/MOSS-TTSD-v0.7-GGUF/resolve/main/codec-f16.gguf" "%W2_DIR%\moss-audio-tokenizer-f16.gguf" "MOSS Audio Tokenizer / Codec (F16, ~480 MB)"
+rem Fish Audio Drama-3 MoE Backbone (8bit/F32 routers, Q4_K_S experts, bundled codec)
+call :download_file "https://huggingface.co/Jmica/Drama-3-GGUF/resolve/main/drama-3-backbone-8bit-F32-routers-experts-Q4_K_S.gguf" "%W2_DIR%\drama-3-backbone-8bit-F32-routers-experts-Q4_K_S.gguf" "Fish Audio Drama-3 Backbone (Q4_K_S MoE, ~23.0 GB)"
 
 exit /b 0
 
@@ -267,16 +264,10 @@ if exist "%TARGET_DIR%\models\breeze2\breeze-codec-f16.gguf" (
 )
 
 rem Check Wave 2
-if exist "%TARGET_DIR%\models\moss_ttsd\moss-ttsd-v1.0-q8_0.gguf" (
-    echo [OK] Wave 2: models\moss_ttsd\moss-ttsd-v1.0-q8_0.gguf
+if exist "%TARGET_DIR%\models\Drama-3-GGUF\drama-3-backbone-8bit-F32-routers-experts-Q4_K_S.gguf" (
+    echo [OK] Wave 2: models\Drama-3-GGUF\drama-3-backbone-8bit-F32-routers-experts-Q4_K_S.gguf
 ) else (
-    echo [MISSING] Wave 2: models\moss_ttsd\moss-ttsd-v1.0-q8_0.gguf
-    set /a MISSING+=1
-)
-if exist "%TARGET_DIR%\models\moss_ttsd\moss-audio-tokenizer-f16.gguf" (
-    echo [OK] Wave 2: models\moss_ttsd\moss-audio-tokenizer-f16.gguf
-) else (
-    echo [MISSING] Wave 2: models\moss_ttsd\moss-audio-tokenizer-f16.gguf
+    echo [MISSING] Wave 2: models\Drama-3-GGUF\drama-3-backbone-8bit-F32-routers-experts-Q4_K_S.gguf
     set /a MISSING+=1
 )
 

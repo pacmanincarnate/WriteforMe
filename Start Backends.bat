@@ -5,7 +5,7 @@ title EllipsisProse Audio Studio (TTS Backend)
 
 rem ---------------------------------------------------------------------------
 rem Starts only the components required for Audio Drama TTS:
-rem   Audio Studio Bridge (Hybrid Studio TTS: Breeze 2 + MOSS-TTSD) -> http://127.0.0.1:5020
+rem   Audio Studio Bridge (Hybrid Studio TTS: Breeze 2 + Drama-3) -> http://127.0.0.1:5020
 rem   Proxies inference requests to local Audio.cpp daemon -> http://127.0.0.1:8080
 rem ---------------------------------------------------------------------------
 
