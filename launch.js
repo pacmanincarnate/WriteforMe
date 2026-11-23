@@ -205,7 +205,16 @@ async function main() {
         openInDefaultBrowser(appUrl);
     }
 
-    // 4. Pre-warm Audio.cpp (Wave 1) through Audio Studio Bridge unless already listening or disabled
+    // 4. Report GPU VRAM availability so external VRAM-heavy apps (e.g. LM Studio) are surfaced early
+    const gpuVram = bridgeHealth?.gpu_vram;
+    if (gpuVram && Number.isFinite(gpuVram.free_mb)) {
+        console.log(`[GPU] ${gpuVram.gpu}: ${gpuVram.free_mb} MiB free / ${gpuVram.total_mb} MiB total (${gpuVram.used_mb} MiB in use).`);
+        if (gpuVram.free_mb < 8500) {
+            console.warn(`[GPU Warning] Free VRAM is below 8.5 GiB (${gpuVram.free_mb} MiB). Unload models in other apps (e.g. LM Studio) before running Drama-3 to prevent slow VRAM-to-RAM spilling.`);
+        }
+    }
+
+    // 5. Pre-warm Audio.cpp (Wave 1) through Audio Studio Bridge unless already listening or disabled
     if (opts.startBridge && opts.prewarmAudio && bridgeHealth) {
         const daemonAlreadyUp = Boolean(bridgeHealth.audiocpp_server_alive || bridgeHealth.daemon_alive) || (await isPortListening(opts.daemonPort));
         const detectedBin = bridgeHealth.audiocpp_bin || bridgeHealth.audiocpp_executable;

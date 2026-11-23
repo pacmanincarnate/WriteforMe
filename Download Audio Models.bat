@@ -172,8 +172,8 @@ echo ===========================================================================
 set "W2_DIR=%TARGET_DIR%\models\Drama-3-GGUF"
 if not exist "%W2_DIR%" mkdir "%W2_DIR%"
 
-rem Fish Audio Drama-3 MoE Backbone (8bit/F32 routers, Q4_K_S experts, bundled codec)
-call :download_file "https://huggingface.co/Jmica/Drama-3-GGUF/resolve/main/drama-3-backbone-8bit-F32-routers-experts-Q4_K_S.gguf" "%W2_DIR%\drama-3-backbone-8bit-F32-routers-experts-Q4_K_S.gguf" "Fish Audio Drama-3 Backbone (Q4_K_S MoE, ~23.0 GB)"
+rem Fish Audio Drama-3 MoE Backbone (8bit, Q4_K_S experts, bundled codec)
+call :download_file "https://huggingface.co/Jmica/Drama-3-GGUF/resolve/main/drama-3-backbone-8bit-experts-Q4_K_S.gguf" "%W2_DIR%\drama-3-backbone-8bit-experts-Q4_K_S.gguf" "Fish Audio Drama-3 Backbone (Q4_K_S MoE, ~23.0 GB)"
 
 exit /b 0
 
@@ -264,10 +264,10 @@ if exist "%TARGET_DIR%\models\breeze2\breeze-codec-f16.gguf" (
 )
 
 rem Check Wave 2
-if exist "%TARGET_DIR%\models\Drama-3-GGUF\drama-3-backbone-8bit-F32-routers-experts-Q4_K_S.gguf" (
-    echo [OK] Wave 2: models\Drama-3-GGUF\drama-3-backbone-8bit-F32-routers-experts-Q4_K_S.gguf
+if exist "%TARGET_DIR%\models\Drama-3-GGUF\drama-3-backbone-8bit-experts-Q4_K_S.gguf" (
+    echo [OK] Wave 2: models\Drama-3-GGUF\drama-3-backbone-8bit-experts-Q4_K_S.gguf
 ) else (
-    echo [MISSING] Wave 2: models\Drama-3-GGUF\drama-3-backbone-8bit-F32-routers-experts-Q4_K_S.gguf
+    echo [MISSING] Wave 2: models\Drama-3-GGUF\drama-3-backbone-8bit-experts-Q4_K_S.gguf
     set /a MISSING+=1
 )
 

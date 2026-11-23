@@ -49,6 +49,58 @@ for (let i = 2; i < process.argv.length; i += 2) {
 // Ensure cache directory exists
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 
+function pruneVoiceCache({ keepStoryId = '', deleteAll = false, maxAgeMs = 0 } = {}) {
+    if (!fs.existsSync(CACHE_DIR)) return { deleted: 0, remaining: 0 };
+    const cleanKeepPrefix = keepStoryId
+        ? String(keepStoryId).replace(/[^a-zA-Z0-9_-]/g, '_') + '_'
+        : '';
+    const now = Date.now();
+    const files = fs.readdirSync(CACHE_DIR).filter(f => f.toLowerCase().endsWith('.wav'));
+    const byMasterPrefix = new Map();
+    let deleted = 0;
+
+    for (const f of files) {
+        const fullPath = path.join(CACHE_DIR, f);
+        let stat = null;
+        try { stat = fs.statSync(fullPath); } catch (_) { continue; }
+
+        if (deleteAll) {
+            try { fs.unlinkSync(fullPath); deleted++; } catch (_) {}
+            continue;
+        }
+        if (cleanKeepPrefix && !f.startsWith(cleanKeepPrefix)) {
+            try { fs.unlinkSync(fullPath); deleted++; } catch (_) {}
+            continue;
+        }
+        if (maxAgeMs > 0 && (now - stat.mtimeMs) > maxAgeMs) {
+            try { fs.unlinkSync(fullPath); deleted++; } catch (_) {}
+            continue;
+        }
+        const m = f.match(/^(.+_master)_[a-zA-Z0-9]+\.wav$/i);
+        if (m) {
+            const key = m[1].toLowerCase();
+            const prev = byMasterPrefix.get(key);
+            if (!prev || stat.mtimeMs > prev.mtimeMs) {
+                if (prev) {
+                    try { fs.unlinkSync(prev.fullPath); deleted++; } catch (_) {}
+                }
+                byMasterPrefix.set(key, { fullPath, mtimeMs: stat.mtimeMs });
+            } else {
+                try { fs.unlinkSync(fullPath); deleted++; } catch (_) {}
+            }
+        }
+    }
+
+    const remaining = fs.readdirSync(CACHE_DIR).filter(f => f.toLowerCase().endsWith('.wav')).length;
+    return { deleted, remaining };
+}
+
+// Startup only deduplicates superseded master hashes for the same speaker; keep all active Master WAVs across restarts
+const _startupPrune = pruneVoiceCache({});
+if (_startupPrune.deleted > 0) {
+    console.log(`[Bridge Startup] Pruned ${_startupPrune.deleted} superseded duplicate voice WAV sample(s); ${_startupPrune.remaining} active.`);
+}
+
 // ---------------------------------------------------------------------------
 // Audio.cpp Binary & Path Discovery
 // ---------------------------------------------------------------------------
@@ -125,6 +177,9 @@ const state = {
     activeModel: null,
     activeProc: null,
     procStartTime: null,
+    activeStoryPrefix: '',
+    cudaWarmupSuppressed: 0,
+    cudaWarmupFirstLogged: false,
     logRing: [],
     swapMode: settings.swapMode
 };
@@ -132,8 +187,37 @@ const state = {
 function pushLog(msg) {
     const entry = `[${new Date().toISOString()}] ${msg}`;
     state.logRing.push(entry);
-    if (state.logRing.length > 200) state.logRing.shift();
+    if (state.logRing.length > 500) state.logRing.shift();
     console.log(entry);
+}
+
+/**
+ * Splits child daemon stdout/stderr chunks into lines and throttles repetitive
+ * CUDA graph warmup noise so voice calibration logs remain visible in /logs.
+ */
+function logDaemonStreamChunk(streamLabel, chunk) {
+    const rawLines = String(chunk).split(/\r?\n/);
+    for (const rawLine of rawLines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if (/cuda graph warmup complete/i.test(line)) {
+            if (!state.cudaWarmupFirstLogged) {
+                state.cudaWarmupFirstLogged = true;
+                pushLog(`[audiocpp ${streamLabel}] ${line}`);
+            } else {
+                state.cudaWarmupSuppressed = (state.cudaWarmupSuppressed || 0) + 1;
+                if (state.cudaWarmupSuppressed % 100 === 0) {
+                    pushLog(`[audiocpp ${streamLabel}] (${state.cudaWarmupSuppressed} repetitive CUDA graph warmup messages suppressed)`);
+                }
+            }
+            continue;
+        }
+        if (state.cudaWarmupSuppressed > 0) {
+            pushLog(`[audiocpp ${streamLabel}] (suppressed ${state.cudaWarmupSuppressed} repetitive CUDA graph warmup messages)`);
+            state.cudaWarmupSuppressed = 0;
+        }
+        pushLog(`[audiocpp ${streamLabel}] ${line}`);
+    }
 }
 
 const proxyAgent = new http.Agent({
@@ -177,8 +261,11 @@ function pollHealth(url, timeoutMs = 120000) {
         const started = Date.now();
         const check = () => {
             const req = http.get(url, res => {
+                res.resume();
                 if (res.statusCode >= 200 && res.statusCode < 400) {
                     resolve(true);
+                } else if (res.statusCode === 404) {
+                    reject(new Error('Daemon health check returned status 404'));
                 } else if (Date.now() - started > timeoutMs) {
                     reject(new Error(`Daemon health check timed out with status ${res.statusCode}`));
                 } else {
@@ -198,6 +285,27 @@ function pollHealth(url, timeoutMs = 120000) {
     });
 }
 
+function queryGpuVramStatus() {
+    try {
+        const out = execSync(
+            'nvidia-smi --query-gpu=name,memory.total,memory.used,memory.free --format=csv,noheader,nounits',
+            { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8', timeout: 2500 }
+        ).trim();
+        const firstLine = out.split(/\r?\n/)[0];
+        if (!firstLine) return null;
+        const parts = firstLine.split(',').map(s => s.trim());
+        if (parts.length < 4) return null;
+        return {
+            gpu: parts[0],
+            total_mb: Number(parts[1]),
+            used_mb: Number(parts[2]),
+            free_mb: Number(parts[3])
+        };
+    } catch (_) {
+        return null;
+    }
+}
+
 async function stopActiveDaemon() {
     if (state.activeProc) {
         const pid = state.activeProc.pid;
@@ -212,6 +320,15 @@ async function stopActiveDaemon() {
         state.activeProc = null;
     }
 
+    // Ensure no orphaned Audio.cpp server processes (from earlier runs or other waves) remain holding VRAM
+    if (os.platform() === 'win32') {
+        for (const exeName of ['audiocpp_server.exe', 'audiocpp.exe', 'audio-server.exe']) {
+            try {
+                execSync(`taskkill /F /IM ${exeName}`, { stdio: 'ignore', timeout: 3000 });
+            } catch (_) {}
+        }
+    }
+
     state.activeWave = null;
     state.activeModel = null;
     state.procStartTime = null;
@@ -221,6 +338,8 @@ async function stopActiveDaemon() {
         pushLog(`Warning: Port ${settings.daemonPort} remained busy after termination`);
     } else {
         pushLog(`Port ${settings.daemonPort} released successfully.`);
+        // Give CUDA/WDDM a brief moment to reclaim freed VRAM before spawning the next model
+        await sleep(400);
     }
 }
 
@@ -255,6 +374,14 @@ async function activateWave(waveNumber) {
 
     await stopActiveDaemon();
 
+    const vramBefore = queryGpuVramStatus();
+    if (vramBefore) {
+        pushLog(`[GPU] ${vramBefore.gpu}: ${vramBefore.free_mb} MiB free / ${vramBefore.total_mb} MiB total (${vramBefore.used_mb} MiB used by other apps)`);
+        if (wave === 2 && vramBefore.free_mb < 8500) {
+            pushLog(`[GPU Warning] Only ${vramBefore.free_mb} MiB VRAM free before starting Drama-3. Close other GPU-resident models (e.g. LM Studio, Ollama, Koboldcpp) if synthesis slows down.`);
+        }
+    }
+
     const bin = findAudioCppExecutable();
     if (!bin) {
         throw new Error('Audio.cpp executable not found. Install audiocpp_server or configure ELLIPSISPROSE_AUDIOCPP_DIR.');
@@ -265,6 +392,8 @@ async function activateWave(waveNumber) {
         throw new Error(`Configuration preset not found: ${configFile}`);
     }
 
+    state.cudaWarmupSuppressed = 0;
+    state.cudaWarmupFirstLogged = false;
     pushLog(`Spawning Audio.cpp Wave ${wave} daemon (${WAVE_MODEL_IDS[wave]}) using ${bin}...`);
     const args = ['--config', configFile];
     const modelSpecsDir = 'D:\\AI_Projects\\Audiocpp\\audio.cpp\\model_specs';
@@ -277,8 +406,8 @@ async function activateWave(waveNumber) {
         stdio: ['ignore', 'pipe', 'pipe']
     });
 
-    proc.stdout.on('data', d => pushLog(`[audiocpp stdout] ${String(d).trim()}`));
-    proc.stderr.on('data', d => pushLog(`[audiocpp stderr] ${String(d).trim()}`));
+    proc.stdout.on('data', d => logDaemonStreamChunk('stdout', d));
+    proc.stderr.on('data', d => logDaemonStreamChunk('stderr', d));
 
     proc.on('exit', (code, signal) => {
         pushLog(`Audio.cpp daemon exited with code ${code}, signal ${signal}`);
@@ -294,18 +423,26 @@ async function activateWave(waveNumber) {
     state.activeModel = WAVE_MODEL_IDS[wave];
     state.procStartTime = Date.now();
 
-    const healthUrl = `http://127.0.0.1:${settings.daemonPort}/v1/health`;
+    const healthUrl = `http://127.0.0.1:${settings.daemonPort}/health`;
     pushLog(`Polling health at ${healthUrl}...`);
     try {
         await pollHealth(healthUrl, 120000);
         pushLog(`Audio.cpp Wave ${wave} daemon is healthy and ready.`);
     } catch (e) {
-        pushLog(`Health check failed: ${e.message}. Testing fallback root health endpoint...`);
+        pushLog(`Health check failed: ${e.message}. Testing fallback /v1/health endpoint...`);
         try {
-            await pollHealth(`http://127.0.0.1:${settings.daemonPort}/health`, 10000);
+            await pollHealth(`http://127.0.0.1:${settings.daemonPort}/v1/health`, 10000);
             pushLog(`Audio.cpp Wave ${wave} daemon responded on fallback endpoint.`);
         } catch (e2) {
             await stopActiveDaemon();
+
+    const vramBefore = queryGpuVramStatus();
+    if (vramBefore) {
+        pushLog(`[GPU] ${vramBefore.gpu}: ${vramBefore.free_mb} MiB free / ${vramBefore.total_mb} MiB total (${vramBefore.used_mb} MiB used by other apps)`);
+        if (wave === 2 && vramBefore.free_mb < 8500) {
+            pushLog(`[GPU Warning] Only ${vramBefore.free_mb} MiB VRAM free before starting Drama-3. Close other GPU-resident models (e.g. LM Studio, Ollama, Koboldcpp) if synthesis slows down.`);
+        }
+    }
             throw new Error(`Failed to activate Wave ${wave} daemon: ${e.message}`);
         }
     }
@@ -391,9 +528,11 @@ function handleHealth(req, res) {
             active_wave: state.activeWave,
             active_model: state.activeModel,
             uptime_seconds: state.procStartTime ? Math.round((Date.now() - state.procStartTime) / 1000) : 0,
+            gpu_vram: queryGpuVramStatus(),
             cache_dir: CACHE_DIR,
             routes: {
                 health: '/health',
+                logs: '/logs',
                 voices: '/voices/:speakerKey',
                 activate_wave: '/wave/:n/activate',
                 proxy_v1: '/v1/*'
@@ -422,6 +561,22 @@ function handlePutVoice(req, res, speakerKey) {
         try {
             fs.writeFileSync(filePath, buffer);
             const refPath = path.resolve(filePath);
+
+            // Immediately delete any superseded _master_<hash>.wav files for the exact same
+            // story+speaker while preserving all other characters' and stories' saved Master WAVs.
+            const masterMatch = sanitized.match(/^(.+_master)_[a-zA-Z0-9]+$/i);
+            const masterPrefix = masterMatch ? (masterMatch[1] + '_') : '';
+            if (masterPrefix) {
+                try {
+                    for (const existing of fs.readdirSync(CACHE_DIR)) {
+                        if (!existing.toLowerCase().endsWith('.wav') || existing.toLowerCase() === fileName.toLowerCase()) continue;
+                        if (existing.toLowerCase().startsWith(masterPrefix.toLowerCase())) {
+                            try { fs.unlinkSync(path.join(CACHE_DIR, existing)); } catch (_) {}
+                        }
+                    }
+                } catch (_) {}
+            }
+
             pushLog(`Saved reference voice WAV [${sanitized}] (${buffer.length} bytes) to ${refPath}`);
             sendJson(res, 200, {
                 status: 'ok',
@@ -439,6 +594,157 @@ function handlePutVoice(req, res, speakerKey) {
     });
 }
 
+function handleHeadVoice(req, res, speakerKey) {
+    const sanitized = speakerKey.replace(/[^a-zA-Z0-9_\.-]/g, '_');
+    const filePath = path.join(CACHE_DIR, `${sanitized}.wav`);
+    if (!fs.existsSync(filePath)) {
+        setCorsHeaders(res);
+        res.writeHead(404);
+        return res.end();
+    }
+    try {
+        const stat = fs.statSync(filePath);
+        if (stat.size < 44) {
+            setCorsHeaders(res);
+            res.writeHead(404);
+            return res.end();
+        }
+        // Touch mtime on active HEAD verification so active voices are not aged out mid-render
+        try {
+            const now = new Date();
+            fs.utimesSync(filePath, now, now);
+        } catch (_) {}
+        setCorsHeaders(res);
+        res.writeHead(200, {
+            'Content-Type': 'audio/wav',
+            'Content-Length': stat.size
+        });
+        return res.end();
+    } catch (_) {
+        setCorsHeaders(res);
+        res.writeHead(404);
+        return res.end();
+    }
+}
+
+function handleDeleteVoice(req, res, speakerKey) {
+    const sanitized = speakerKey.replace(/[^a-zA-Z0-9_\.-]/g, '_');
+    const filePath = path.join(CACHE_DIR, `${sanitized}.wav`);
+    let deleted = false;
+    if (fs.existsSync(filePath)) {
+        try {
+            fs.unlinkSync(filePath);
+            deleted = true;
+        } catch (_) {}
+    }
+    sendJson(res, 200, { status: 'ok', key: sanitized, deleted });
+}
+
+function readJsonBody(req) {
+    return new Promise((resolve, reject) => {
+        const chunks = [];
+        req.on('data', c => chunks.push(c));
+        req.on('end', () => {
+            try {
+                const raw = Buffer.concat(chunks).toString('utf8');
+                resolve(raw.trim() ? JSON.parse(raw) : {});
+            } catch (_) {
+                resolve({});
+            }
+        });
+        req.on('error', reject);
+    });
+}
+
+/**
+ * Deletes cached Master WAV files for a specific speaker across all known aliases
+ * within a story without touching any other cast member or story WAVs.
+ */
+function invalidateSpeakerVoices({ storyId = '', speakerAliases = [] } = {}) {
+    if (!fs.existsSync(CACHE_DIR)) return { deleted: 0, deletedFiles: [], remaining: 0 };
+    const cleanStoryId = String(storyId || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+    const files = fs.readdirSync(CACHE_DIR).filter(f => f.toLowerCase().endsWith('.wav'));
+    if (!cleanStoryId) {
+        return { deleted: 0, deletedFiles: [], remaining: files.length };
+    }
+
+    const prefixes = new Set();
+    const storyLower = cleanStoryId.toLowerCase();
+    for (const rawAlias of (Array.isArray(speakerAliases) ? speakerAliases : [])) {
+        const trimmed = String(rawAlias || '').trim();
+        if (!trimmed) continue;
+        const variants = new Set([trimmed, trimmed.replace(/\s+/g, '_')]);
+        if (trimmed.toLowerCase() === 'narrator') {
+            variants.add('narrator');
+            variants.add('NARRATOR');
+        }
+        for (const variant of variants) {
+            const sanitizedAlias = variant.replace(/[^a-zA-Z0-9_\.-]/g, '_').toLowerCase();
+            if (sanitizedAlias) {
+                prefixes.add(`${storyLower}_${sanitizedAlias}_master`);
+            }
+        }
+    }
+
+    let deleted = 0;
+    const deletedFiles = [];
+    for (const f of files) {
+        const lower = f.toLowerCase();
+        let matches = false;
+        for (const p of prefixes) {
+            if (lower.startsWith(p + '_') || lower === (p + '.wav')) {
+                matches = true;
+                break;
+            }
+        }
+        if (matches) {
+            try {
+                fs.unlinkSync(path.join(CACHE_DIR, f));
+                deleted++;
+                deletedFiles.push(f);
+            } catch (_) {}
+        }
+    }
+
+    const remaining = fs.readdirSync(CACHE_DIR).filter(f => f.toLowerCase().endsWith('.wav')).length;
+    return { deleted, deletedFiles, remaining };
+}
+
+function handleInvalidateVoices(req, res) {
+    readJsonBody(req)
+        .then(body => {
+            const speakerAliases = Array.isArray(body.speakerAliases) ? body.speakerAliases : [];
+            const result = invalidateSpeakerVoices({
+                storyId: body.storyId || '',
+                speakerAliases
+            });
+            if (result.deleted > 0) {
+                pushLog(`Invalidated ${result.deleted} cached voice WAV(s) for ${body.storyId || 'story'} [${speakerAliases.join(', ')}]`);
+            }
+            sendJson(res, 200, { status: 'ok', ...result });
+        })
+        .catch(err => sendJson(res, 500, { error: err.message }));
+}
+
+function handlePruneVoices(req, res) {
+    readJsonBody(req)
+        .then(body => {
+            if (body.keepStoryId) {
+                state.activeStoryPrefix = String(body.keepStoryId).replace(/[^a-zA-Z0-9_-]/g, '_') + '_';
+            }
+            const result = pruneVoiceCache({
+                keepStoryId: body.keepStoryId || '',
+                deleteAll: Boolean(body.deleteAll),
+                maxAgeMs: Number(body.maxAgeMs) || 0
+            });
+            if (result.deleted > 0) {
+                pushLog(`Pruned ${result.deleted} ephemeral voice WAV sample(s); ${result.remaining} remaining.`);
+            }
+            sendJson(res, 200, { status: 'ok', ...result });
+        })
+        .catch(err => sendJson(res, 500, { error: err.message }));
+}
+
 function handleGetVoice(req, res, speakerKey) {
     const sanitized = speakerKey.replace(/[^a-zA-Z0-9_\.-]/g, '_');
     const fileName = `${sanitized}.wav`;
@@ -450,6 +756,10 @@ function handleGetVoice(req, res, speakerKey) {
 
     try {
         const stat = fs.statSync(filePath);
+        try {
+            const now = new Date();
+            fs.utimesSync(filePath, now, now);
+        } catch (_) {}
         setCorsHeaders(res);
         res.writeHead(200, {
             'Content-Type': 'audio/wav',
@@ -536,14 +846,36 @@ const server = http.createServer((req, res) => {
         return handleHealth(req, res);
     }
 
-    // Route: PUT /voices/:speakerKey
+    // Route: GET /logs
+    if (req.method === 'GET' && pathname === '/logs') {
+        return sendJson(res, 200, { logs: state.logRing });
+    }
+
+    // Route: POST /voices/invalidate
+    if (req.method === 'POST' && pathname === '/voices/invalidate') {
+        return handleInvalidateVoices(req, res);
+    }
+
+    // Route: POST /voices/prune
+    if (req.method === 'POST' && pathname === '/voices/prune') {
+        return handlePruneVoices(req, res);
+    }
+
+    // Route: PUT / GET / HEAD / DELETE /voices/:speakerKey
     const voiceMatch = pathname.match(/^\/voices\/([^\/]+)$/);
     if (voiceMatch) {
+        const decodedKey = decodeURIComponent(voiceMatch[1]);
         if (req.method === 'PUT') {
-            return handlePutVoice(req, res, decodeURIComponent(voiceMatch[1]));
+            return handlePutVoice(req, res, decodedKey);
         }
         if (req.method === 'GET') {
-            return handleGetVoice(req, res, decodeURIComponent(voiceMatch[1]));
+            return handleGetVoice(req, res, decodedKey);
+        }
+        if (req.method === 'HEAD') {
+            return handleHeadVoice(req, res, decodedKey);
+        }
+        if (req.method === 'DELETE') {
+            return handleDeleteVoice(req, res, decodedKey);
         }
     }
 

@@ -13,7 +13,7 @@
  *     talks straight to the network.
  */
 
-const CACHE_VERSION = 'ellipsisprose-static-v1';
+const CACHE_VERSION = 'ellipsisprose-static-v2';
 
 const OFFLINE_URLS = [
     './',
@@ -35,8 +35,7 @@ const CDN_HOSTS = [
     'cdn.jsdelivr.net',
     'fonts.googleapis.com',
     'fonts.gstatic.com',
-    'esm.sh',           // kokoro-js + transformers.js
-    'huggingface.co'    // ONNX model weights
+    'esm.sh'            // kokoro-js + transformers.js
 ];
 
 self.addEventListener('install', (event) => {
@@ -62,6 +61,9 @@ self.addEventListener('fetch', (event) => {
     if (req.method !== 'GET') return;
 
     const url = new URL(req.url);
+
+    // Local Disk Vault API must always bypass Service Worker caching.
+    if (url.pathname.startsWith('/api/')) return;
 
     // App shell: network-first, offline fallback from cache.
     if (req.mode === 'navigate' || (url.origin === self.location.origin && url.pathname.endsWith('/index.html'))) {
