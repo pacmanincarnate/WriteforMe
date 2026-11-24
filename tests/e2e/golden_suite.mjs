@@ -1000,8 +1000,15 @@ async function runMode(opts) {
             server = await startStaticHttpServer({ port, mountPrefix: '/WriteforMe/', staticDir: distDir, indexFile: 'index.html' });
             session = await launchChromeSession(userDataDir, cdpPort);
             await runCoreSuite({ ...session, baseUrl: `http://127.0.0.1:${port}/WriteforMe/`, screenshotDir: opts.screenshots, results });
-            if (session.api404Responses.length > 0) {
-                console.log(`  [INFO] Subpath mode observed ${session.api404Responses.length} /api/storage/* 404 probe(s) (scheduled for Phase 3 vaultDetector cleanup).`);
+            const nonStatusApi404s = session.api404Responses.filter((r) => !String(r.url || '').endsWith('/api/storage/status'));
+            const api404CheckName = 'Subpath mode emits at most 1 /api/storage/status probe per load and 0 other /api/storage/* 404s';
+            if (session.api404Responses.length <= 2 && nonStatusApi404s.length === 0) {
+                results.passed.push(api404CheckName);
+                console.log(`  [PASS] ${api404CheckName} (observed ${session.api404Responses.length} status probe(s))`);
+            } else {
+                const detail = `observed ${session.api404Responses.length} total (${nonStatusApi404s.length} non-status): ${JSON.stringify(session.api404Responses.slice(0, 5))}`;
+                results.failed.push({ name: api404CheckName, detail });
+                console.error(`  [FAIL] ${api404CheckName} -> ${detail}`);
             }
         } else if (opts.mode === 'singlefile') {
             const sfDir = path.join(ROOT_DIR, 'dist-singlefile');

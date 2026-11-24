@@ -8,6 +8,7 @@ import './styles/components.css';
 import './legacy/setupGlobals';
 import './legacy/registerFoundationGlobals';
 import './legacy/registerDomainGlobals';
+import './legacy/registerServiceGlobals';
 import './legacy/MonolithApp.jsx';
 
 const PRELOAD_RELOAD_GUARD_KEY = 'ellipsisprose_preload_reload_once';
