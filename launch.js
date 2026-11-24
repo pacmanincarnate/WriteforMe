@@ -12,8 +12,9 @@
 
 const http = require('http');
 const net = require('net');
+const fs = require('fs');
 const path = require('path');
-const { spawn } = require('child_process');
+const { spawn, spawnSync } = require('child_process');
 
 const ROOT_DIR = __dirname;
 
@@ -164,7 +165,21 @@ async function main() {
         return;
     }
 
-    // 1. Web server (server.js)
+    // 1. Ensure dist/ is built before launching server.js
+    const distIndex = path.join(ROOT_DIR, 'dist', 'index.html');
+    if (!fs.existsSync(distIndex)) {
+        console.log('[Build] dist/index.html not found — running Vite production build...');
+        const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+        const buildRes = spawnSync(npmCmd, ['run', 'build'], {
+            cwd: ROOT_DIR,
+            stdio: 'inherit'
+        });
+        if (buildRes.status !== 0) {
+            throw new Error(`Vite build failed with exit code ${buildRes.status}`);
+        }
+    }
+
+    // 2. Web server (server.js)
     const webAlreadyUp = await isPortListening(opts.webPort);
     if (webAlreadyUp) {
         console.log(`[Web] server.js is already listening on port ${opts.webPort}.`);
