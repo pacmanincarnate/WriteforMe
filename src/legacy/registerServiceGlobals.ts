@@ -25,6 +25,29 @@ import {
     yieldToMain
 } from '@/services/documents';
 import { fetchWithTimeout } from '@/services/http';
+import {
+    callAgenticLoop,
+    callGemini,
+    callKoboldCPP,
+    callNanoGPT,
+    callOpenRouter,
+    checkKoboldCPPStatus,
+    clearOpenRouterRoutingState,
+    computeOpenRouterSmartRoutingProfile,
+    executeLocalTool,
+    fetchNanoGPTModels,
+    fetchOpenRouterModels,
+    filterModelsClientSide,
+    formatOpenAITools,
+    getOpenRouterModelLimits,
+    getOpenRouterSmartRouting,
+    isCloudModelName,
+    isMetaCommentaryText,
+    parseNanoGPTModelMetadata,
+    searchNanoGPTModels,
+    supportsExplicitOpenRouterCacheControl,
+    WRITING_AGENT_TOOLS
+} from '@/services/llm';
 import { EmbeddingService, VectorStore } from '@/services/rag';
 import {
     audioStore,
@@ -106,5 +129,28 @@ registerWindowGlobals({
 
     // RAG embedding & vector store
     EmbeddingService,
-    VectorStore
+    VectorStore,
+
+    // LLM transports, smart routing, model catalogs & agentic loop
+    callGemini,
+    callOpenRouter,
+    callNanoGPT,
+    callKoboldCPP,
+    checkKoboldCPPStatus,
+    isCloudModelName,
+    getOpenRouterModelLimits,
+    computeOpenRouterSmartRoutingProfile,
+    getOpenRouterSmartRouting,
+    _clearOpenRouterRoutingState: clearOpenRouterRoutingState,
+    formatOpenAITools,
+    supportsExplicitOpenRouterCacheControl,
+    parseNanoGPTModelMetadata,
+    filterModelsClientSide,
+    fetchNanoGPTModels,
+    searchNanoGPTModels,
+    fetchOpenRouterModels,
+    WRITING_AGENT_TOOLS,
+    executeLocalTool,
+    callAgenticLoop,
+    isMetaCommentaryText
 });
