@@ -67,7 +67,24 @@ import {
     extractTextFromPlainText,
     yieldToMain
 } from '@/services/documents';
+import {
+    buildAudioDramaTxtScript,
+    buildStoryEpubBlob,
+    exportAudioDramaTxt,
+    exportStoryEpub,
+    exportStoryJson,
+    parseStoryImportFile,
+    persistImportedStory
+} from '@/services/export';
 import { fetchWithTimeout } from '@/services/http';
+import {
+    buildComfyKrea2Workflow,
+    cleanImagePrompt,
+    comfyAspectToSize,
+    generateComfyImage,
+    generateImage,
+    pickComfyDefault
+} from '@/services/images';
 import {
     callAgenticLoop,
     callGemini,
@@ -91,7 +108,12 @@ import {
     supportsExplicitOpenRouterCacheControl,
     WRITING_AGENT_TOOLS
 } from '@/services/llm';
-import { EmbeddingService, VectorStore } from '@/services/rag';
+import {
+    EmbeddingService,
+    retrieveLoreContext,
+    searchLoreLexical,
+    VectorStore
+} from '@/services/rag';
 import {
     audioStore,
     AudioStore,
@@ -174,9 +196,28 @@ registerWindowGlobals({
     AudioStore,
     audioStore,
 
-    // RAG embedding & vector store
+    // RAG embedding, vector store & retrieval
     EmbeddingService,
     VectorStore,
+    searchLoreLexical,
+    retrieveLoreContext,
+
+    // Image generation service
+    cleanImagePrompt,
+    comfyAspectToSize,
+    buildComfyKrea2Workflow,
+    pickComfyDefault,
+    generateComfyImage,
+    generateImage,
+
+    // Story export & import services
+    exportStoryJson,
+    buildAudioDramaTxtScript,
+    exportAudioDramaTxt,
+    buildStoryEpubBlob,
+    exportStoryEpub,
+    parseStoryImportFile,
+    persistImportedStory,
 
     // LLM transports, smart routing, model catalogs & agentic loop
     callGemini,

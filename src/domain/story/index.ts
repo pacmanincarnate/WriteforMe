@@ -6,3 +6,4 @@ export * from './directives';
 export * from './progress';
 export * from './coverTypography';
 export * from './logFormatter';
+export * from './stats';

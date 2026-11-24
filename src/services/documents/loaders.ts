@@ -8,12 +8,19 @@ export interface JSZipFileEntry {
     name: string;
     async(type: 'text'): Promise<string>;
     async(type: 'arraybuffer'): Promise<ArrayBuffer>;
+    async(type: 'blob'): Promise<Blob>;
 }
 
 export interface JSZipArchive {
     file(path: string): JSZipFileEntry | null;
     file(pattern: RegExp): JSZipFileEntry[];
-    file(path: string, data: string | ArrayBuffer | Uint8Array | Blob): JSZipArchive;
+    file(
+        path: string,
+        data: string | ArrayBuffer | Uint8Array | Blob,
+        options?: { compression?: string }
+    ): JSZipArchive;
+    folder(name: string): JSZipArchive | null;
+    loadAsync(data: ArrayBuffer | Uint8Array | Blob | string): Promise<JSZipArchive>;
     generateAsync(options: { type: 'arraybuffer' }): Promise<ArrayBuffer>;
     generateAsync(options: { type: 'blob' }): Promise<Blob>;
 }

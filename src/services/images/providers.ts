@@ -1,0 +1,236 @@
+/**
+ * @module services/images/providers
+ * Multi-provider image generation dispatcher (ComfyUI, Gemini Imagen / generateContent, OpenRouter).
+ */
+
+import { fetchWithTimeout } from '@/services/http';
+import { generateComfyImage, type ComfyGenerationOptions } from './comfyui';
+
+export type ImageProviderName = 'comfyui' | 'gemini' | 'openrouter' | string;
+
+export interface ImageGenerationConfig {
+    provider: ImageProviderName;
+    model?: string;
+    apiKey?: string;
+    fallbackGeminiKey?: string;
+    fallbackOpenRouterKey?: string;
+    onModelMigrated?: (nextModel: string) => void;
+    comfy?: ComfyGenerationOptions;
+}
+
+interface GeminiImageApiResponse {
+    predictions?: Array<{
+        bytesBase64Encoded?: string;
+        imageBytes?: string;
+        mimeType?: string;
+        image?: { imageBytes?: string; mimeType?: string };
+    }>;
+    generatedImages?: Array<{
+        image?: { imageBytes?: string; mimeType?: string };
+    }>;
+    candidates?: Array<{
+        content?: {
+            parts?: Array<{
+                inlineData?: { data?: string; mimeType?: string };
+            }>;
+        };
+    }>;
+}
+
+interface OpenRouterImageResponse {
+    choices?: Array<{
+        message?: {
+            images?: Array<{
+                image_url?: { url?: string };
+                url?: string;
+            }>;
+        };
+    }>;
+}
+
+function extractGeminiErrorMessage(status: number, errText: string): string {
+    let errMsg = `Gemini Image API failed: ${status} - ${errText}`;
+    try {
+        const parsed = JSON.parse(errText) as { error?: { message?: string } };
+        if (parsed.error?.message) errMsg = `Gemini Image API failed: ${parsed.error.message}`;
+    } catch {
+        // Retain raw error text when response body is not JSON
+    }
+    return errMsg;
+}
+
+/** Dispatches an image generation prompt to the configured provider and returns a data URL. */
+export async function generateImage(
+    prompt: string,
+    aspectRatio = '1:1',
+    config: ImageGenerationConfig
+): Promise<string> {
+    const prov = config.provider;
+    const model = config.model;
+    const key =
+        config.apiKey || (prov === 'gemini' ? config.fallbackGeminiKey : config.fallbackOpenRouterKey);
+
+    if (prov === 'comfyui') {
+        const comfyOpts: ComfyGenerationOptions = config.comfy || { unet: '', clip: '', vae: '' };
+        return generateComfyImage(prompt, aspectRatio, comfyOpts);
+    }
+
+    if (!key) {
+        throw new Error(`API key for provider "${prov}" is not configured. Please check your settings.`);
+    }
+
+    if (prov === 'gemini') {
+        let cleanModel = (model || 'gemini-3.1-flash-image')
+            .trim()
+            .replace(/:(predict|generateImages|generateContent)$/, '');
+        if (cleanModel === 'imagen-3.0-generate-002') {
+            cleanModel = 'gemini-3.1-flash-image';
+            config.onModelMigrated?.('gemini-3.1-flash-image');
+        }
+        const isLegacyImagen = cleanModel.startsWith('imagen-');
+
+        if (isLegacyImagen) {
+            const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:predict?key=${encodeURIComponent(key)}`;
+            const payload = {
+                instances: [{ prompt }],
+                parameters: { sampleCount: 1, aspectRatio, outputMimeType: 'image/jpeg' }
+            };
+            const response = await fetchWithTimeout(
+                url,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+                    body: JSON.stringify(payload)
+                },
+                60000
+            );
+
+            if (!response.ok) {
+                const errText = await response.text();
+                throw new Error(extractGeminiErrorMessage(response.status, errText));
+            }
+
+            const data = (await response.json()) as GeminiImageApiResponse;
+            const b64 =
+                data.predictions?.[0]?.bytesBase64Encoded ||
+                data.predictions?.[0]?.image?.imageBytes ||
+                data.predictions?.[0]?.imageBytes ||
+                data.generatedImages?.[0]?.image?.imageBytes;
+            if (!b64) {
+                throw new Error(`No image returned from Gemini API. Response: ${JSON.stringify(data)}`);
+            }
+            const mimeType =
+                data.predictions?.[0]?.mimeType ||
+                data.generatedImages?.[0]?.image?.mimeType ||
+                'image/jpeg';
+            return `data:${mimeType};base64,${b64}`;
+        }
+
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(key)}`;
+        const promptWithAspect =
+            aspectRatio && !prompt.toLowerCase().includes('aspect ratio')
+                ? `${prompt} (Aspect ratio: ${aspectRatio})`
+                : prompt;
+        const payload = {
+            contents: [{ parts: [{ text: promptWithAspect }] }],
+            generationConfig: { responseModalities: ['IMAGE'] }
+        };
+
+        const response = await fetchWithTimeout(
+            url,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+                body: JSON.stringify(payload)
+            },
+            60000
+        );
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(extractGeminiErrorMessage(response.status, errText));
+        }
+
+        const data = (await response.json()) as GeminiImageApiResponse;
+        const imagePart = data.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
+        if (imagePart?.inlineData?.data) {
+            const mimeType = imagePart.inlineData.mimeType || 'image/jpeg';
+            return `data:${mimeType};base64,${imagePart.inlineData.data}`;
+        }
+
+        const b64 =
+            data.predictions?.[0]?.bytesBase64Encoded ||
+            data.predictions?.[0]?.image?.imageBytes ||
+            data.generatedImages?.[0]?.image?.imageBytes;
+        if (b64) {
+            const mimeType = data.predictions?.[0]?.mimeType || 'image/jpeg';
+            return `data:${mimeType};base64,${b64}`;
+        }
+        throw new Error(`No image returned from Gemini API. Response: ${JSON.stringify(data)}`);
+    }
+
+    if (prov === 'openrouter') {
+        const url = 'https://openrouter.ai/api/v1/chat/completions';
+        const payload = {
+            model,
+            messages: [{ role: 'user', content: prompt }],
+            modalities: ['image']
+        };
+        const referer =
+            typeof window !== 'undefined' && window.location ? window.location.href : '';
+
+        const response = await fetchWithTimeout(
+            url,
+            {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${key}`,
+                    'HTTP-Referer': referer,
+                    'X-Title': 'EllipsisProse'
+                },
+                body: JSON.stringify(payload)
+            },
+            60000
+        );
+
+        if (!response.ok) {
+            const errText = await response.text();
+            throw new Error(`OpenRouter Image API failed: ${response.status} - ${errText}`);
+        }
+
+        const data = (await response.json()) as OpenRouterImageResponse;
+        const imgObj = data.choices?.[0]?.message?.images?.[0];
+        const imgUrl = imgObj?.image_url?.url || imgObj?.url;
+
+        if (!imgUrl) {
+            throw new Error(`No image URL returned from OpenRouter. Response: ${JSON.stringify(data)}`);
+        }
+
+        if (imgUrl.startsWith('data:')) {
+            return imgUrl;
+        }
+
+        const imgResponse = await fetchWithTimeout(imgUrl, {}, 30000);
+        if (!imgResponse.ok) {
+            throw new Error(
+                `Failed to fetch image from URL returned by OpenRouter: ${imgResponse.statusText}`
+            );
+        }
+        const blob = await imgResponse.blob();
+        return new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                if (typeof reader.result === 'string') {
+                    resolve(reader.result);
+                } else {
+                    reject(new Error('OpenRouter: failed to convert image blob to data URL'));
+                }
+            };
+            reader.onerror = () => reject(reader.error || new Error('OpenRouter: FileReader error'));
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    throw new Error(`Unsupported Image Provider: ${prov}`);
+}

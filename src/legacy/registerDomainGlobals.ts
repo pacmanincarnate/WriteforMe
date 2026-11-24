@@ -11,6 +11,7 @@ import {
     buildRelationshipFrictionBlock,
     buildSceneCountTargetBlock,
     buildStoryInfoBlock,
+    calculateStoryStats,
     calculateTargetWordCount,
     computeAudioProductionEstimate,
     computeDirectiveStoryStats,
@@ -249,6 +250,7 @@ import {
     cleanPreservedCastMember,
     cleanRelationshipsForRollback,
     cleanScenesForProseRollback,
+    createDefaultStoryTemplate,
     isGeneratedCastMemberForStage,
     isPreservedPreWritingLoreItem,
     migrateStoryToSequences,
@@ -306,6 +308,7 @@ registerWindowGlobals({
     extractCharacterBrief,
     extractRelationship,
     buildStoryInfoBlock,
+    calculateStoryStats,
     resolveCharacter,
     ensureCharacter,
     buildCharacterArcsBlock,
@@ -550,6 +553,7 @@ registerWindowGlobals({
 
     // Lifecycle Domain (Rollback & Migration)
     STORY_RESET_STAGES,
+    createDefaultStoryTemplate,
     isPreservedPreWritingLoreItem,
     restorePreservedLoreItem,
     isGeneratedCastMemberForStage,
