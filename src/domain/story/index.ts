@@ -7,3 +7,4 @@ export * from './progress';
 export * from './coverTypography';
 export * from './logFormatter';
 export * from './stats';
+export * from './directivePlanning';

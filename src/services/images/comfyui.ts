@@ -128,6 +128,125 @@ export function pickComfyDefault(
     return '';
 }
 
+export interface ComfyOptionsCatalog {
+    unet: string[];
+    clip: string[];
+    vae: string[];
+    lora: string[];
+    sampler: string[];
+    scheduler: string[];
+}
+
+export interface ComfyStatusInfo {
+    online: boolean;
+    version: string;
+    device: string;
+    error: string;
+}
+
+export interface ComfyDiscoveryResult {
+    status: ComfyStatusInfo;
+    options: ComfyOptionsCatalog;
+    defaults: {
+        unet: string;
+        clip: string;
+        vae: string;
+    };
+}
+
+interface ComfySystemStatsResponse {
+    system?: { comfyui_version?: string };
+    devices?: Array<{ name?: string }>;
+}
+
+type ComfyObjectInfoResponse = Record<
+    string,
+    { input?: { required?: Record<string, [unknown]> } } | undefined
+>;
+
+/** Probes ComfyUI `system_stats` and Krea 2 loader node options, sorting Krea/Qwen entries first. */
+export async function fetchComfyInfoCatalog(
+    comfyUrl = 'http://127.0.0.1:8188'
+): Promise<ComfyDiscoveryResult> {
+    const baseUrl = (String(comfyUrl || '').trim() || 'http://127.0.0.1:8188').replace(/\/+$/, '');
+    const emptyOptions: ComfyOptionsCatalog = {
+        unet: [],
+        clip: [],
+        vae: [],
+        lora: [],
+        sampler: [],
+        scheduler: []
+    };
+    try {
+        const paths = [
+            'system_stats',
+            'object_info/UNETLoader',
+            'object_info/CLIPLoader',
+            'object_info/VAELoader',
+            'object_info/LoraLoaderModelOnly',
+            'object_info/KSampler'
+        ];
+        const [statsRaw, unetRaw, clipRaw, vaeRaw, loraRaw, samplerRaw] = await Promise.all(
+            paths.map(async (path) => {
+                const response = await fetchWithTimeout(`${baseUrl}/${path}`, {}, 6000);
+                if (!response.ok) throw new Error(`ComfyUI ${path}: HTTP ${response.status}`);
+                return (await response.json()) as unknown;
+            })
+        );
+
+        const stats = statsRaw as ComfySystemStatsResponse;
+        const optionsFor = (infoRaw: unknown, nodeClass: string, name: string): string[] => {
+            const info = infoRaw as ComfyObjectInfoResponse;
+            const opts = info?.[nodeClass]?.input?.required?.[name]?.[0];
+            if (!Array.isArray(opts)) {
+                throw new Error(`ComfyUI: missing ${nodeClass} ${name} options`);
+            }
+            return opts
+                .filter((option): option is string => typeof option === 'string')
+                .sort(
+                    (a, b) =>
+                        Number(/krea|qwen/i.test(b)) - Number(/krea|qwen/i.test(a)) ||
+                        a.localeCompare(b)
+                );
+        };
+
+        const options: ComfyOptionsCatalog = {
+            unet: optionsFor(unetRaw, 'UNETLoader', 'unet_name'),
+            clip: optionsFor(clipRaw, 'CLIPLoader', 'clip_name'),
+            vae: optionsFor(vaeRaw, 'VAELoader', 'vae_name'),
+            lora: optionsFor(loraRaw, 'LoraLoaderModelOnly', 'lora_name'),
+            sampler: optionsFor(samplerRaw, 'KSampler', 'sampler_name'),
+            scheduler: optionsFor(samplerRaw, 'KSampler', 'scheduler')
+        };
+
+        return {
+            options,
+            defaults: {
+                unet: pickComfyDefault(options.unet, [/krea.?2.*turbo/i, /krea.?2/i]),
+                clip: pickComfyDefault(options.clip, [/qwen3.?vl.*4b/i, /qwen.?3/i, /qwen/i]),
+                vae: pickComfyDefault(options.vae, [/qwen.*vae|qwen_vae/i, /qwen/i])
+            },
+            status: {
+                online: true,
+                version: stats.system?.comfyui_version || 'unknown',
+                device: stats.devices?.[0]?.name || 'unknown device',
+                error: ''
+            }
+        };
+    } catch (error) {
+        const rawMessage = error instanceof Error ? error.message : '';
+        const message =
+            error instanceof TypeError || /failed to fetch/i.test(rawMessage)
+                ? `Cannot reach ComfyUI at ${baseUrl}. Is it running, and was it started with --enable-cors-header? See README.`
+                : rawMessage || 'ComfyUI offline';
+        return {
+            options: emptyOptions,
+            defaults: { unet: '', clip: '', vae: '' },
+            status: { online: false, version: '', device: '', error: message }
+        };
+    }
+}
+
 interface ComfyQueuedResponse {
     prompt_id?: string;
     error?: { message?: string };

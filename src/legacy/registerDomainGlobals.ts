@@ -2,6 +2,7 @@ import { registerWindowGlobals } from '@/compat/windowBridge';
 import { countWords, escapeRegExp, parseNum, readingMinutes, safeEscapeRegex, STOPWORDS, tokenMatch } from '@/utils';
 import {
     actForSequence,
+    appendPersistedMandate,
     AUDIO_PRODUCTION_STAGE_ORDER,
     buildCharacterArcsBlock,
     buildDirectiveActionPreview,
@@ -10,9 +11,12 @@ import {
     buildLengthMandateBlock,
     buildRelationshipFrictionBlock,
     buildSceneCountTargetBlock,
+    buildSceneDescriptionFromBlueprint,
     buildStoryInfoBlock,
     calculateStoryStats,
     calculateTargetWordCount,
+    canonicalizeModalityHand,
+    clearDirectivePlanResults,
     computeAudioProductionEstimate,
     computeDirectiveStoryStats,
     computeNovelProgressEstimate,
@@ -20,6 +24,7 @@ import {
     computeSceneWordTarget,
     computeSequenceLengthPlan,
     computeStoryProgressMetrics,
+    countStoryWords,
     DIRECTIVE_ACTION_META,
     DIRECTIVE_PROSE_SAFE_ACTIONS,
     DIRECTIVE_STRUCTURAL_ACTIONS,
@@ -39,6 +44,7 @@ import {
     getCoverStyleIndex,
     getDirectiveActionScopeMeta,
     getRecentStoryArtifacts,
+    getSceneActiveCast,
     getSecretRevealDirectiveForScene,
     insertTargetWordCount,
     isActionBlockedByProtection,
@@ -54,6 +60,7 @@ import {
     normalizeSequences,
     normalizeStoryArcObject,
     parseActNumber,
+    parseDirectivePlan,
     parseLegacyDescriptionFields,
     parseSequencesXML,
     parseStoryArcXml,
@@ -65,9 +72,11 @@ import {
     reindexStoryForSequenceInsert,
     resolveCharacter,
     resolveDirectiveTargetLabel,
+    resolveSceneCastFields,
     sanitizeStoryContextForPosition,
     SEQUENCE_ACT_MAP,
     SEQUENCE_DEFAULT_FUNCTIONS,
+    serializeDirectivePlan,
     translateLoadingStepToHuman
 } from '@/domain/story';
 import {
@@ -206,6 +215,7 @@ import {
     validateStructuralOutput
 } from '@/domain/validation';
 import {
+    applyWorldUpdates,
     archiveRevealedSecretBeliefs,
     buildScenePlannerContinuityBlock,
     buildSequencePromptContext,
@@ -332,6 +342,15 @@ registerWindowGlobals({
     parseActNumber,
     reindexStoryForSequenceInsert,
     reindexStoryForSequenceDelete,
+    getSceneActiveCast,
+    canonicalizeModalityHand,
+    resolveSceneCastFields,
+    buildSceneDescriptionFromBlueprint,
+    appendPersistedMandate,
+    serializeDirectivePlan,
+    clearDirectivePlanResults,
+    parseDirectivePlan,
+    countStoryWords,
     isLegacyValenceEntry,
     normalizeStoryArcObject,
     parseStoryArcXml,
@@ -532,6 +551,7 @@ registerWindowGlobals({
     initKnowledgeGraph,
     updateKnowledgeGraph,
     logSemanticEvent,
+    applyWorldUpdates,
     querySemanticEventLog,
     compileActiveState,
     runContinuityAuditor,

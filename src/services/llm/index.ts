@@ -6,3 +6,5 @@ export * from './koboldcpp';
 export * from './models';
 export * from './tools';
 export * from './agenticLoop';
+export * from './roleConfig';
+export * from './catalogs';
