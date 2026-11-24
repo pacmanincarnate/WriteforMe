@@ -30,7 +30,8 @@ export default defineConfig({
             output: {
                 manualChunks: {
                     'react-vendor': ['react', 'react-dom'],
-                    'markdown-vendor': ['marked', 'dompurify']
+                    'markdown-vendor': ['marked', 'dompurify'],
+                    'icons-vendor': ['lucide-react']
                 }
             },
             onwarn(warning, defaultHandler) {
