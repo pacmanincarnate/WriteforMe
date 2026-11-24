@@ -1,0 +1,47 @@
+/**
+ * @module prompts
+ * Central AI prompt registry, protocols, and dynamic system prompt builders.
+ */
+
+export * from './protocols';
+export * from './systemPrompt';
+export { CONCEPT_PROMPTS } from './tiers/concept';
+export { STRUCTURE_PROMPTS } from './tiers/structure';
+export { PROSE_PROMPTS } from './tiers/prose';
+export { CONTINUITY_PROMPTS } from './tiers/continuity';
+export { EDITORIAL_PROMPTS } from './tiers/editorial';
+
+import { buildWritingSystemPrompt } from './systemPrompt';
+import { CONCEPT_PROMPTS } from './tiers/concept';
+import { STRUCTURE_PROMPTS } from './tiers/structure';
+import { PROSE_PROMPTS } from './tiers/prose';
+import { CONTINUITY_PROMPTS } from './tiers/continuity';
+import { EDITORIAL_PROMPTS } from './tiers/editorial';
+
+export const PROMPTS = {
+    ...STRUCTURE_PROMPTS,
+    ...CONCEPT_PROMPTS,
+    ...PROSE_PROMPTS,
+    ...CONTINUITY_PROMPTS,
+    ...EDITORIAL_PROMPTS,
+    writingAgent: buildWritingSystemPrompt({ isAudioDrama: false }),
+    get audioDramaWritingAgent(): string {
+        return `${buildWritingSystemPrompt({ isAudioDrama: true })}\n\n${PROMPTS.audioDramaWritingModifier}`;
+    },
+    // Backwards-compatibility aliases preserving exact 60-key legacy registry
+    writing: '',
+    characterDeveloper: '',
+    storyArcPlanner: '',
+    actDivisionPlanner: '',
+    sequencePlanner: '',
+    sceneRosterPlanner: ''
+};
+
+PROMPTS.writing = PROMPTS.writingAgent;
+PROMPTS.characterDeveloper = PROMPTS.characterDevelopment;
+PROMPTS.storyArcPlanner = PROMPTS.storyArc;
+PROMPTS.actDivisionPlanner = PROMPTS.actAgent;
+PROMPTS.sequencePlanner = PROMPTS.sequenceAgent;
+PROMPTS.sceneRosterPlanner = PROMPTS.scenePlannerAgent;
+
+export type PromptKey = keyof typeof PROMPTS;

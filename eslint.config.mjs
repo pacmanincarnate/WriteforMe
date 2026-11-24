@@ -23,8 +23,10 @@ export default tseslint.config(
                     project: './tsconfig.json'
                 })
             ],
+            'boundaries/files': [
+                { pattern: ['src/main.tsx', 'src/App.tsx', 'src/sw.ts'], category: 'entry' }
+            ],
             'boundaries/elements': [
-                { type: 'entry', pattern: 'src/*', mode: 'file' },
                 { type: 'ui', pattern: ['src/views/**', 'src/components/**', 'src/hooks/**'] },
                 { type: 'stores', pattern: ['src/stores/**'] },
                 { type: 'pipeline', pattern: ['src/pipeline/**', 'src/services/bridge/**'] },
@@ -40,16 +42,28 @@ export default tseslint.config(
                 {
                     default: 'disallow',
                     policies: [
-                        { from: { type: 'entry' }, allow: [{ to: { type: ['entry', 'ui', 'stores', 'pipeline', 'services', 'domain', 'foundation'] } }] },
-                        { from: { type: 'ui' }, allow: [{ to: { type: ['ui', 'stores', 'pipeline', 'services', 'domain', 'foundation'] } }] },
-                        { from: { type: 'stores' }, allow: [{ to: { type: ['stores', 'services', 'domain', 'foundation'] } }] },
-                        { from: { type: 'pipeline' }, allow: [{ to: { type: ['pipeline', 'stores', 'services', 'domain', 'foundation'] } }] },
-                        { from: { type: 'services' }, allow: [{ to: { type: ['services', 'domain', 'foundation'] } }] },
-                        { from: { type: 'domain' }, allow: [{ to: { type: ['domain', 'foundation'] } }] },
-                        { from: { type: 'foundation' }, allow: [{ to: { type: 'foundation' } }] }
+                        {
+                            from: { file: { categories: 'entry' } },
+                            allow: [
+                                { to: { element: { type: ['ui', 'stores', 'pipeline', 'services', 'domain', 'foundation'] } } },
+                                { to: { file: { categories: 'entry' } } }
+                            ]
+                        },
+                        { from: { element: { type: 'ui' } }, allow: [{ to: { element: { type: ['ui', 'stores', 'pipeline', 'services', 'domain', 'foundation'] } } }] },
+                        { from: { element: { type: 'stores' } }, allow: [{ to: { element: { type: ['stores', 'services', 'domain', 'foundation'] } } }] },
+                        { from: { element: { type: 'pipeline' } }, allow: [{ to: { element: { type: ['pipeline', 'stores', 'services', 'domain', 'foundation'] } } }] },
+                        { from: { element: { type: 'services' } }, allow: [{ to: { element: { type: ['services', 'domain', 'foundation'] } } }] },
+                        { from: { element: { type: 'domain' } }, allow: [{ to: { element: { type: ['domain', 'foundation'] } } }] },
+                        { from: { element: { type: 'foundation' } }, allow: [{ to: { element: { type: 'foundation' } } }] }
                     ]
                 }
             ]
+        }
+    },
+    {
+        files: ['src/prompts/tiers/**/*.ts'],
+        rules: {
+            'no-useless-escape': 'off'
         }
     }
 );

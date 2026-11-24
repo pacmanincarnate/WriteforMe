@@ -1,0 +1,385 @@
+        :root {
+            /* Apple fluid physics and spring easing */
+            --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+            --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+
+            /* Typeface tokens (theme-independent) - .lib-card-title/.lib-meta referenced these
+               without a definition, silently inheriting the body font */
+            --font-serif: 'Newsreader', 'Cormorant Garamond', 'Merriweather', Georgia, serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+            /* Scandinavian Light / Folio Bianca System */
+            --bg-void: #F7F5F0;
+            /* Warm parchment canvas */
+            --bg-surface: #FFFFFF;
+            /* Clean white surface */
+            --bg-surface-elevated: #FFFFFF;
+            /* Clean white cards */
+            --bg-surface-active: #F0EDE6;
+            /* Light warm stone active */
+            --bg-surface-subtle: #F2EFE9;
+            /* Soft warm tint */
+            --bg-sidebar: #F4F1EA;
+            /* Frosted light parchment sidebar */
+
+            --border-subtle: rgba(0, 0, 0, 0.07);
+            --border-highlight: rgba(0, 0, 0, 0.12);
+            --border-focus: rgba(184, 147, 90, 0.55);
+
+            --accent-gold: #B8935A;
+            /* Warm literary foil gold */
+            --accent-gold-glow: rgba(184, 147, 90, 0.2);
+            --accent-twilight: #B8935A;
+            /* Warm gold accent */
+            --accent-twilight-glow: rgba(184, 147, 90, 0.2);
+            --accent-emerald: #5B8A72;
+            /* Muted Scandinavian sage */
+            --accent-rose: #C97070;
+            /* Warm terracotta / rose */
+            --accent-amber: #C4956A;
+            /* Warm amber */
+            --accent-teal: #5B8A72;
+            /* Sage / Teal */
+
+            --text-primary: #1C1917;
+            /* Stone-900 / Deep warm charcoal */
+            --text-secondary: #57534E;
+            /* Stone-600 / Warm gray */
+            --text-muted: #8A847C;
+            /* Stone-400 / Subdued stone */
+            --text-subtle: #A8A29E;
+
+            /* Semantic token backing for the tailwind.config colors. Light values reproduce
+               the exact utilities they replace (stone text ramp, #FAF8F5 inset panels, the
+               primary button, the emerald "positive" badge); dark values reproduce what the
+               `.dark ... !important` override block renders for those same utilities, so
+               migrated views keep byte-identical colors in both themes. */
+            --bg-inset: #FAF8F5;
+            --edge-strong: #E7E5E4;
+            --accent-gold-rgb: 184 147 90;
+            /* --accent-gold as an R G B triplet for /opacity */
+            --accent-emerald-rgb: 91 138 114;
+            /* --accent-emerald as an R G B triplet for /opacity */
+            --gold-ink: #8C6B32;
+            --ink-900: #1C1917;
+            --ink-800: #292524;
+            --ink-700: #44403C;
+            --ink-600: #57534E;
+            --ink-500: #78716C;
+            --ink-400: #A8A29E;
+            --btn-bg: #1C1917;
+            --btn-bg-hover: #292524;
+            --btn-ink: #FFFFFF;
+
+            /* Full token system (see tailwind.config colors). Light values reproduce the utilities they replace. */
+            --surface-rgb: 255 255 255;
+            --inset-rgb: 250 248 245;
+            --mist-50-rgb: 250 250 249;
+            --mist-100-rgb: 245 245 244;
+            --mist-200-rgb: 231 229 228;
+            --mist-300-rgb: 214 211 209;
+            --wash: rgba(0, 0, 0, 0.05);
+            --wash-strong: rgba(0, 0, 0, 0.10);
+            --edge-soft: #F5F5F4;
+            --edge-300: #D6D3D1;
+            --edge-bold: rgba(0, 0, 0, 0.10);
+            --ink-950: #0C0A09;
+            --ink-300: #D6D3D1;
+            --gold-ink-deep: #735522;
+            --btn-accent: #C9A96E;
+            --ember-tint: #FFFBEB;
+            --ember-tint-strong: #FEF3C7;
+            --ember-edge: #FDE68A;
+            --ember-600: #D97706;
+            --ember-700: #B45309;
+            --ember-800: #92400E;
+            --ember-900: #78350F;
+            --ember-950: #451A03;
+            --blush-tint: #FFF1F2;
+            --blush-tint-strong: #FFE4E6;
+            --blush-edge: #FECDD3;
+            --blush-600: #E11D48;
+            --blush-700: #BE123C;
+            --blush-800: #9F1239;
+            --blush-900: #881337;
+            --blush-950: #4C0519;
+            --sage-tint: #ECFDF5;
+            --sage-tint-strong: #D1FAE5;
+            --sage-edge: #A7F3D0;
+            --sage-600: #059669;
+            --sage-700: #047857;
+            --sage-800: #065F46;
+            --sage-900: #064E3B;
+            --plum-tint: #FAF5FF;
+            --plum-tint-strong: #F3E8FF;
+            --plum-edge: #E9D5FF;
+            --plum-600: #9333EA;
+            --plum-700: #7E22CE;
+            --plum-800: #6B21A8;
+            --plum-900: #581C87;
+            --plum-950: #3B0764;
+            --azure-tint: #F0F9FF;
+            --azure-edge: #BAE6FD;
+            --azure-700: #0369A1;
+            --azure-800: #075985;
+            --azure-900: #0C4A6E;
+            --iris-tint: #EEF2FF;
+            --iris-tint-strong: #E0E7FF;
+            --iris-edge: #C7D2FE;
+            --iris-700: #4338CA;
+            --iris-800: #3730A3;
+            --lagoon-tint: #F0FDFA;
+            --lagoon-tint-strong: #CCFBF1;
+            --lagoon-edge: #99F6E4;
+            --lagoon-800: #115E59;
+            --tangerine-tint: #FFF7ED;
+            --tangerine-edge: #FED7AA;
+            --tangerine-800: #9A3412;
+            --orchid-tint: #FDF4FF;
+            --orchid-edge: #F5D0FE;
+            --orchid-800: #86198F;
+
+            /* Component tokens (prose, nav, glass, library, act nodes, flow cards, thread visualizer, fields). */
+            --scroll-track: rgba(0, 0, 0, 0.03);
+            --scroll-thumb: rgba(0, 0, 0, 0.16);
+            --scroll-thumb-hover: rgba(0, 0, 0, 0.28);
+            --glass-modal-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.16);
+            --prose-ink: #292524;
+            --prose-strong: #1C1917;
+            --prose-em: #44403C;
+            --prose-heading: #1C1917;
+            --prose-quote: #57534E;
+            --prose-quote-bg: rgba(184, 147, 90, 0.06);
+            --prose-code-bg: #F0EDE6;
+            --prose-code-edge: rgba(0, 0, 0, 0.06);
+            --prose-pre-bg: #F7F5F0;
+            --prose-pre-edge: #E5E0D8;
+            --nav-active-bg: rgba(184, 147, 90, 0.12);
+            --nav-active-edge: rgba(184, 147, 90, 0.3);
+            --nav-active-shadow: 0 1px 4px rgba(184, 147, 90, 0.15);
+            --act-hover-bg: #F9F7F3;
+            --act-active-shadow: 0 2px 8px rgba(184, 147, 90, 0.18), 0 0 0 1px var(--accent-gold);
+            --act-badge-bg: #F0EDE6;
+            --on-gold-ink: #FFFFFF;
+            --book-bg: #EAE6DF;
+            --book-shadow: 0 16px 28px -6px rgba(0, 0, 0, 0.2), 0 6px 12px -3px rgba(0, 0, 0, 0.1), -2px 2px 6px rgba(0, 0, 0, 0.08), 0 0 1px rgba(0, 0, 0, 0.25);
+            --book-shadow-hover: 0 26px 42px -8px rgba(0, 0, 0, 0.26), 0 10px 18px -4px rgba(0, 0, 0, 0.12), -3px 3px 10px rgba(0, 0, 0, 0.1);
+            --spine-crease: linear-gradient(to right, rgba(0, 0, 0, 0.18), rgba(255, 255, 255, 0.3) 50%, rgba(0, 0, 0, 0.08));
+            --spine-shadow: linear-gradient(to right, rgba(0, 0, 0, 0.22), transparent);
+            --lib-secondary-edge: rgba(0, 0, 0, 0.15);
+            --lib-secondary-edge-hover: rgba(0, 0, 0, 0.3);
+            --lib-meta-edge: rgba(0, 0, 0, 0.04);
+            --lib-meta-sep: #D6D3CD;
+            --tv-lane: #E5E0D8;
+            --field-edge: rgba(0, 0, 0, 0.12);
+            --field-placeholder: #A8A29E;
+            --gold-tint: rgba(184, 147, 90, 0.10);
+            --gold-edge: rgba(184, 147, 90, 0.30);
+            --lift: #FAFAF9;
+            --progress-track: #E5E0D8;
+            --lib-title-hover: #8C6B32;
+            --tv-surface: #FFFFFF;
+            --header-glass: rgba(255, 255, 255, 0.85);
+            --act-hover-edge: rgba(184, 147, 90, 0.3);
+
+            /* Apple / Emil Kowalski Precision Motion Easings */
+            --ease-snappy: cubic-bezier(0.23, 1, 0.32, 1);
+            --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+            --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+            --spring-duration: 220ms;
+        }
+
+        /* Warm Dark Literary Studio / Atelier Nuit System */
+        html.dark,
+        body.dark,
+        .dark,
+        [data-theme="dark"] {
+            --bg-void: #141416;
+            /* Warm deep obsidian / midnight studio */
+            --bg-surface: #1E1E22;
+            /* Elevated warm dark surface */
+            --bg-surface-elevated: #26262C;
+            /* Floating cards / modal sheets */
+            --bg-surface-active: #2F2F37;
+            /* Active / pressed state */
+            --bg-surface-subtle: #18181C;
+            /* Soft dark sub-box */
+            --bg-sidebar: #18181C;
+            /* Frosted dark sidebar */
+
+            --border-subtle: rgba(255, 255, 255, 0.08);
+            --border-highlight: rgba(255, 255, 255, 0.14);
+            --border-focus: rgba(201, 169, 110, 0.6);
+
+            --accent-gold: #C9A96E;
+            /* Luminous literary gold */
+            --accent-gold-glow: rgba(201, 169, 110, 0.25);
+            --accent-twilight: #C9A96E;
+            --accent-twilight-glow: rgba(201, 169, 110, 0.25);
+            --accent-emerald: #689F84;
+            /* Muted sage */
+            --accent-rose: #D97E7E;
+            /* Soft terracotta rose */
+            --accent-amber: #D4A373;
+            /* Warm gold amber */
+            --accent-teal: #689F84;
+
+            --text-primary: #F5F0E8;
+            /* Warm ivory / cream */
+            --text-secondary: #A8A29E;
+            /* Warm light gray (Stone-400) */
+            --text-muted: #78716C;
+            /* Muted stone */
+            --text-subtle: #57534E;
+
+            /* Semantic token backing — dark values mirror the `.dark ... !important`
+               override block for the utilities these tokens replace. */
+            --bg-inset: #18181C;
+            --edge-strong: rgba(255, 255, 255, 0.08);
+            --accent-gold-rgb: 201 169 110;
+            --accent-emerald-rgb: 104 159 132;
+            --gold-ink: #D8B47A;
+            --ink-900: #FDFBFA;
+            --ink-800: #F0ECE4;
+            --ink-700: #DDD7CD;
+            --ink-600: #C5BEB3;
+            --ink-500: #ABA498;
+            --ink-400: #A0998D;
+            --btn-bg: #F5F0E8;
+            --btn-bg-hover: #FFFFFF;
+            --btn-ink: #141416;
+
+            /* Full token system — dark values reproduce the former .dark override block. */
+            --surface-rgb: 30 30 34;
+            --inset-rgb: 24 24 28;
+            --mist-50-rgb: 34 34 40;
+            --mist-100-rgb: 34 34 40;
+            --mist-200-rgb: 44 44 52;
+            --mist-300-rgb: 56 56 66;
+            --wash: rgba(255, 255, 255, 0.05);
+            --wash-strong: rgba(255, 255, 255, 0.10);
+            --edge-soft: rgba(255, 255, 255, 0.08);
+            --edge-300: rgba(255, 255, 255, 0.08);
+            --edge-bold: rgba(255, 255, 255, 0.08);
+            --ink-950: #FFFFFF;
+            --ink-300: #8C8578;
+            --gold-ink-deep: #E5C38D;
+            --btn-accent: #1C1917;
+            --ember-tint: rgba(217, 140, 48, 0.16);
+            --ember-tint-strong: rgba(217, 140, 48, 0.16);
+            --ember-edge: rgba(217, 140, 48, 0.35);
+            --ember-600: #F5B864;
+            --ember-700: #F6C47A;
+            --ember-800: #F9CF90;
+            --ember-900: #FBE0B5;
+            --ember-950: #FFF1DC;
+            --blush-tint: rgba(225, 112, 112, 0.16);
+            --blush-tint-strong: rgba(225, 112, 112, 0.16);
+            --blush-edge: rgba(225, 112, 112, 0.35);
+            --blush-600: #FDA4AF;
+            --blush-700: #FECDD3;
+            --blush-800: #FFE4E6;
+            --blush-900: #FFF1F2;
+            --blush-950: #FFF1F2;
+            --sage-tint: rgba(91, 138, 114, 0.18);
+            --sage-tint-strong: rgba(91, 138, 114, 0.18);
+            --sage-edge: rgba(91, 138, 114, 0.4);
+            --sage-600: #6EE7B7;
+            --sage-700: #86EFAC;
+            --sage-800: #A7F3D0;
+            --sage-900: #D1FAE5;
+            --plum-tint: rgba(192, 132, 252, 0.16);
+            --plum-tint-strong: rgba(192, 132, 252, 0.16);
+            --plum-edge: rgba(192, 132, 252, 0.35);
+            --plum-600: #C084FC;
+            --plum-700: #D8B4FE;
+            --plum-800: #E9D5FF;
+            --plum-900: #F3E8FF;
+            --plum-950: #F3E8FF;
+            --azure-tint: rgba(56, 189, 248, 0.16);
+            --azure-edge: rgba(56, 189, 248, 0.35);
+            --azure-700: #BAE6FD;
+            --azure-800: #E0F2FE;
+            --azure-900: #F0F9FF;
+            --iris-tint: rgba(129, 140, 248, 0.16);
+            --iris-tint-strong: rgba(129, 140, 248, 0.16);
+            --iris-edge: rgba(129, 140, 248, 0.35);
+            --iris-700: #C7D2FE;
+            --iris-800: #E0E7FF;
+            --lagoon-tint: rgba(45, 212, 191, 0.15);
+            --lagoon-tint-strong: rgba(45, 212, 191, 0.15);
+            --lagoon-edge: rgba(45, 212, 191, 0.35);
+            --lagoon-800: #CCFBF1;
+            --tangerine-tint: rgba(251, 146, 60, 0.16);
+            --tangerine-edge: rgba(251, 146, 60, 0.35);
+            --tangerine-800: #FFEDD5;
+            --orchid-tint: rgba(232, 121, 249, 0.16);
+            --orchid-edge: rgba(232, 121, 249, 0.35);
+            --orchid-800: #F5D0FE;
+
+            /* Component tokens — dark. */
+            --scroll-track: rgba(255, 255, 255, 0.02);
+            --scroll-thumb: rgba(255, 255, 255, 0.18);
+            --scroll-thumb-hover: rgba(255, 255, 255, 0.3);
+            --glass-modal-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.6);
+            --prose-ink: #EDE8E0;
+            --prose-strong: #FFFFFF;
+            --prose-em: #D4CECE;
+            --prose-heading: #F5F0E8;
+            --prose-quote: #C7C2BA;
+            --prose-quote-bg: rgba(201, 169, 110, 0.08);
+            --prose-code-bg: #24242B;
+            --prose-code-edge: rgba(255, 255, 255, 0.08);
+            --prose-pre-bg: #161619;
+            --prose-pre-edge: rgba(255, 255, 255, 0.1);
+            --nav-active-bg: rgba(201, 169, 110, 0.16);
+            --nav-active-edge: rgba(201, 169, 110, 0.35);
+            --nav-active-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+            --act-hover-bg: #26262C;
+            --act-active-shadow: 0 0 0 1px var(--accent-gold), 0 4px 16px rgba(0, 0, 0, 0.4);
+            --act-badge-bg: #282830;
+            --on-gold-ink: #141416;
+            --book-bg: #1A1A1E;
+            --book-shadow: 0 22px 38px -8px rgba(0, 0, 0, 0.85), 0 10px 18px -4px rgba(0, 0, 0, 0.65), -2px 2px 8px rgba(0, 0, 0, 0.8), inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+            --book-shadow-hover: 0 34px 56px -10px rgba(0, 0, 0, 0.95), 0 16px 26px -5px rgba(0, 0, 0, 0.75), inset 0 0 0 1px rgba(201, 169, 110, 0.35), -3px 4px 14px rgba(0, 0, 0, 0.9);
+            --spine-crease: linear-gradient(to right, rgba(0, 0, 0, 0.55), rgba(255, 255, 255, 0.14) 50%, rgba(0, 0, 0, 0.3));
+            --spine-shadow: linear-gradient(to right, rgba(0, 0, 0, 0.45), transparent);
+            --lib-secondary-edge: rgba(255, 255, 255, 0.15);
+            --lib-secondary-edge-hover: rgba(255, 255, 255, 0.3);
+            --lib-meta-edge: rgba(255, 255, 255, 0.06);
+            --lib-meta-sep: #44403C;
+            --tv-lane: rgba(255, 255, 255, 0.12);
+            --field-edge: rgba(255, 255, 255, 0.12);
+            --field-placeholder: #6E6A64;
+            --gold-tint: rgba(201, 169, 110, 0.16);
+            --gold-edge: rgba(201, 169, 110, 0.35);
+            --lift: #2F2F37;
+            --progress-track: #292524;
+            --lib-title-hover: #C9A96E;
+            --tv-surface: #1A1A1E;
+            --header-glass: rgba(30, 30, 34, 0.92);
+            --act-hover-edge: rgba(255, 255, 255, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: var(--bg-void);
+            color: var(--text-primary);
+            font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* iOS Input Zoom Fix */
+        @media screen and (max-width: 1300px) {
+
+            input,
+            textarea,
+            select {
+                font-size: 16px !important;
+            }
+        }

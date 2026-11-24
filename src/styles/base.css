@@ -1,0 +1,351 @@
+        .font-serif {
+            font-family: 'Newsreader', 'Cormorant Garamond', 'Merriweather', Georgia, serif;
+            font-feature-settings: "kern", "liga", "clig", "calt";
+        }
+
+        .font-display {
+            font-family: 'Cormorant Garamond', 'Newsreader', Georgia, serif;
+            letter-spacing: -0.025em;
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
+
+        /* Fluid Press Feedback (Apple/Emil standard) */
+        button,
+        .btn,
+        .nav-btn {
+            transition: transform 140ms var(--ease-snappy), opacity 140ms ease-out, background-color 140ms ease-out, border-color 140ms ease-out, box-shadow 140ms ease-out;
+        }
+
+        button:active:not(:disabled),
+        .btn:active:not(:disabled),
+        .nav-btn:active:not(:disabled) {
+            transform: scale(0.97) !important;
+        }
+
+        /* iOS Safe Area Regions & Dynamic Island / Camera Cutout Support */
+        :root {
+            --sat: env(safe-area-inset-top, 0px);
+            --sar: env(safe-area-inset-right, 0px);
+            --sab: env(safe-area-inset-bottom, 0px);
+            --sal: env(safe-area-inset-left, 0px);
+        }
+
+        /* Top Studio Header with safe area padding */
+        .studio-top-header {
+            background-color: var(--header-glass);
+            padding-top: max(0.35rem, env(safe-area-inset-top, 0px));
+            padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
+            padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
+            min-height: calc(3.75rem + env(safe-area-inset-top, 0px));
+            width: 100%;
+            max-width: 100%;
+        }
+
+
+        /* Mobile Sidebar with safe area padding */
+        .studio-sidebar {
+            padding-top: env(safe-area-inset-top, 0px);
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+            padding-left: env(safe-area-inset-left, 0px);
+            transition: transform 0.28s var(--ease-drawer), width 0.28s var(--ease-drawer);
+        }
+
+        /* Main Workspace container with bottom safe area padding */
+        .studio-main-workspace {
+            padding-bottom: env(safe-area-inset-bottom, 0px);
+            padding-left: env(safe-area-inset-left, 0px);
+            padding-right: env(safe-area-inset-right, 0px);
+        }
+
+        /* Hide scrollbars for smooth swipeable horizontal toolbars */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+        }
+
+        .no-scrollbar {
+            -ms-overflow-style: none !important;
+        }
+
+        @supports (scrollbar-width: none) {
+            .no-scrollbar {
+                scrollbar-width: none !important;
+            }
+        }
+
+        /* Momentum scrolling on iOS Safari & touch devices */
+        .touch-scroll {
+            overflow: auto;
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior: contain;
+            touch-action: pan-x pan-y;
+        }
+
+        .touch-scroll-x {
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior-x: contain;
+            touch-action: pan-x pan-y;
+        }
+
+        .touch-scroll-y {
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch !important;
+            overscroll-behavior-y: contain;
+            touch-action: pan-y;
+        }
+
+        /* Custom Translucent Glassmorphism Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--scroll-track);
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--scroll-thumb);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--scroll-thumb-hover);
+        }
+
+        /* Glassmorphic Surfaces for Light Scandinavian Mode */
+        .glass-panel {
+            background: rgba(247, 245, 240, 0.88);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            backdrop-filter: blur(20px) saturate(180%);
+            border-color: var(--border-subtle);
+        }
+
+        .glass-card {
+            background: #FFFFFF;
+            border: 1px solid var(--border-subtle);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 6px 16px rgba(0, 0, 0, 0.025);
+        }
+
+        @keyframes modalSpringIn {
+            0% { opacity: 0; transform: scale(0.96) translateY(8px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .glass-modal {
+            background: rgb(var(--surface-rgb));
+            border: 1px solid var(--border-highlight);
+            box-shadow: var(--glass-modal-shadow);
+            animation: modalSpringIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* Typography & Editorial Prose */
+        .prose {
+            color: var(--prose-ink);
+            max-width: 100%;
+            overflow-wrap: break-word;
+            word-break: break-word;
+        }
+
+        .prose p {
+            margin-bottom: 1.25em;
+            line-height: 1.9;
+            font-size: 1.0625rem;
+            color: var(--prose-ink);
+        }
+
+        .prose strong {
+            color: var(--prose-strong);
+            font-weight: 700;
+        }
+
+        .prose em {
+            color: var(--prose-em);
+            font-style: italic;
+        }
+
+        .prose h1,
+        .prose h2,
+        .prose h3,
+        .prose h4,
+        .prose h5,
+        .prose h6 {
+            color: var(--prose-heading);
+            font-family: 'Newsreader', 'Cormorant Garamond', Georgia, serif;
+            font-weight: 700;
+            margin-top: 1.5rem;
+            margin-bottom: 0.75rem;
+            line-height: 1.25;
+            letter-spacing: -0.02em;
+        }
+
+        .prose h1 {
+            font-size: 1.55rem;
+        }
+
+        .prose h2 {
+            font-size: 1.35rem;
+        }
+
+        .prose h3 {
+            font-size: 1.2rem;
+        }
+
+        .prose h4 {
+            font-size: 1.08rem;
+        }
+
+        .prose ul {
+            list-style-type: disc;
+            padding-left: 1.35rem;
+            margin-bottom: 1rem;
+            margin-top: 0.35rem;
+        }
+
+        .prose ol {
+            list-style-type: decimal;
+            padding-left: 1.35rem;
+            margin-bottom: 1rem;
+            margin-top: 0.35rem;
+        }
+
+        .prose li {
+            margin-bottom: 0.35rem;
+        }
+
+        .prose li p {
+            margin-bottom: 0;
+        }
+
+        .drama3-xml-tag {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+            font-size: 0.78em;
+            color: var(--gold-ink, inherit);
+            opacity: 0.78;
+            font-weight: 500;
+            letter-spacing: 0.01em;
+        }
+
+        /* Audio Drama Script Typography (bracketed cues & per-character speaker hues) */
+        .drama-bracket-cue {
+            font-style: italic;
+            font-size: 0.88em;
+            font-weight: 400;
+            letter-spacing: 0.01em;
+            color: rgba(87, 83, 78, 0.78);
+        }
+
+        .reader-theme-sepia .drama-bracket-cue {
+            color: rgba(102, 79, 53, 0.78);
+        }
+
+        html.dark .drama-bracket-cue,
+        .reader-theme-dark .drama-bracket-cue,
+        .reader-theme-oled .drama-bracket-cue {
+            color: rgba(214, 211, 209, 0.65);
+        }
+
+        .drama-speaker-name {
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .drama-speaker-narrator {
+            color: #6B635B;
+        }
+
+        .reader-theme-sepia .drama-speaker-narrator {
+            color: #705C46;
+        }
+
+        html.dark .drama-speaker-narrator,
+        .reader-theme-dark .drama-speaker-narrator,
+        .reader-theme-oled .drama-speaker-narrator {
+            color: #A8A095;
+        }
+
+        .drama-speaker-hue-0  { color: #2E5A88; }
+        .drama-speaker-hue-1  { color: #9A4832; }
+        .drama-speaker-hue-2  { color: #2F6B52; }
+        .drama-speaker-hue-3  { color: #73447A; }
+        .drama-speaker-hue-4  { color: #8C5E1A; }
+        .drama-speaker-hue-5  { color: #236B73; }
+        .drama-speaker-hue-6  { color: #474994; }
+        .drama-speaker-hue-7  { color: #8F3D58; }
+        .drama-speaker-hue-8  { color: #5D6826; }
+        .drama-speaker-hue-9  { color: #2C6282; }
+        .drama-speaker-hue-10 { color: #7D3B68; }
+        .drama-speaker-hue-11 { color: #8A4F26; }
+
+        html.dark .drama-speaker-hue-0,  .reader-theme-dark .drama-speaker-hue-0,  .reader-theme-oled .drama-speaker-hue-0  { color: #7FB3E6; }
+        html.dark .drama-speaker-hue-1,  .reader-theme-dark .drama-speaker-hue-1,  .reader-theme-oled .drama-speaker-hue-1  { color: #E59883; }
+        html.dark .drama-speaker-hue-2,  .reader-theme-dark .drama-speaker-hue-2,  .reader-theme-oled .drama-speaker-hue-2  { color: #7CC7A4; }
+        html.dark .drama-speaker-hue-3,  .reader-theme-dark .drama-speaker-hue-3,  .reader-theme-oled .drama-speaker-hue-3  { color: #C89AD0; }
+        html.dark .drama-speaker-hue-4,  .reader-theme-dark .drama-speaker-hue-4,  .reader-theme-oled .drama-speaker-hue-4  { color: #DFB06B; }
+        html.dark .drama-speaker-hue-5,  .reader-theme-dark .drama-speaker-hue-5,  .reader-theme-oled .drama-speaker-hue-5  { color: #72C8D1; }
+        html.dark .drama-speaker-hue-6,  .reader-theme-dark .drama-speaker-hue-6,  .reader-theme-oled .drama-speaker-hue-6  { color: #9DA0E8; }
+        html.dark .drama-speaker-hue-7,  .reader-theme-dark .drama-speaker-hue-7,  .reader-theme-oled .drama-speaker-hue-7  { color: #E08DA7; }
+        html.dark .drama-speaker-hue-8,  .reader-theme-dark .drama-speaker-hue-8,  .reader-theme-oled .drama-speaker-hue-8  { color: #B4C272; }
+        html.dark .drama-speaker-hue-9,  .reader-theme-dark .drama-speaker-hue-9,  .reader-theme-oled .drama-speaker-hue-9  { color: #7CBCE0; }
+        html.dark .drama-speaker-hue-10, .reader-theme-dark .drama-speaker-hue-10, .reader-theme-oled .drama-speaker-hue-10 { color: #D48EC0; }
+        html.dark .drama-speaker-hue-11, .reader-theme-dark .drama-speaker-hue-11, .reader-theme-oled .drama-speaker-hue-11 { color: #DB9E72; }
+
+        .prose blockquote {
+            border-left: 3px solid var(--accent-gold);
+            padding-left: 1.25rem;
+            color: var(--prose-quote);
+            font-style: italic;
+            margin: 1.5rem 0;
+            background: var(--prose-quote-bg);
+            padding-top: 0.75rem;
+            padding-bottom: 0.75rem;
+            border-radius: 0 0.5rem 0.5rem 0;
+        }
+
+        .prose code {
+            font-family: 'JetBrains Mono', monospace;
+            background-color: var(--prose-code-bg);
+            padding: 0.15rem 0.35rem;
+            border-radius: 0.3rem;
+            font-size: 0.85em;
+            color: var(--gold-ink);
+            border: 1px solid var(--prose-code-edge);
+        }
+
+        .prose pre {
+            background-color: var(--prose-pre-bg);
+            padding: 1rem;
+            border-radius: 0.6rem;
+            overflow-x: auto;
+            margin-bottom: 1rem;
+            border: 1px solid var(--prose-pre-edge);
+            color: var(--prose-ink);
+            max-width: 100%;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .prose pre code {
+            background-color: transparent;
+            padding: 0;
+            font-size: 0.875rem;
+            border: none;
+            color: inherit;
+        }
+
+        .prose a {
+            color: var(--gold-ink);
+            text-decoration: underline;
+            text-underline-offset: 3px;
+            transition: color 0.15s ease-out;
+        }
+
+        .prose a:hover {
+            color: var(--accent-gold);
+        }

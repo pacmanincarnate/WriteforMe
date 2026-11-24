@@ -1,7 +1,12 @@
 import './styles/tailwind.css';
-import './styles/legacy.css';
+import './styles/tokens.css';
+import './styles/base.css';
+import './styles/sidebar.css';
+import './styles/library.css';
+import './styles/reader.css';
+import './styles/components.css';
 import './legacy/setupGlobals';
-import './legacy/preboot.js';
+import './legacy/registerFoundationGlobals';
 import './legacy/MonolithApp.jsx';
 
 const PRELOAD_RELOAD_GUARD_KEY = 'ellipsisprose_preload_reload_once';

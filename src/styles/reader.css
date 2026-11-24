@@ -1,0 +1,550 @@
+        /* ----------------------------------------------------
+           EBOOK READER MODE SYSTEM
+           ---------------------------------------------------- */
+        .reader-theme-light {
+            background-color: #FAF8F5 !important;
+            color: #1C1917 !important;
+        }
+
+        .reader-theme-light .reader-text {
+            color: #292524 !important;
+        }
+
+        .reader-theme-light .reader-ui-bg {
+            background-color: rgba(250, 248, 245, 0.92) !important;
+            border-color: rgba(0, 0, 0, 0.08) !important;
+        }
+
+        .reader-theme-light .reader-ui-card {
+            background-color: #FFFFFF !important;
+            border-color: rgba(0, 0, 0, 0.09) !important;
+            color: #1C1917 !important;
+        }
+
+        .reader-theme-light .reader-ui-border {
+            border-color: rgba(0, 0, 0, 0.08) !important;
+        }
+
+        .reader-theme-sepia {
+            background-color: #F5EEDB !important;
+            color: #382E24 !important;
+        }
+
+        .reader-theme-sepia .reader-text {
+            color: #382E24 !important;
+        }
+
+        .reader-theme-sepia .reader-ui-bg {
+            background-color: rgba(245, 238, 219, 0.92) !important;
+            border-color: rgba(90, 70, 45, 0.12) !important;
+        }
+
+        .reader-theme-sepia .reader-ui-card {
+            background-color: #ECE3CE !important;
+            border-color: rgba(90, 70, 45, 0.15) !important;
+            color: #382E24 !important;
+        }
+
+        .reader-theme-sepia .reader-ui-border {
+            border-color: rgba(90, 70, 45, 0.12) !important;
+        }
+
+        .reader-theme-dark {
+            background-color: #18181B !important;
+            color: #EDE8E0 !important;
+        }
+
+        .reader-theme-dark .reader-text {
+            color: #EDE8E0 !important;
+        }
+
+        .reader-theme-dark .reader-ui-bg {
+            background-color: rgba(24, 24, 27, 0.92) !important;
+            border-color: rgba(255, 255, 255, 0.08) !important;
+        }
+
+        .reader-theme-dark .reader-ui-card {
+            background-color: #27272A !important;
+            border-color: rgba(255, 255, 255, 0.1) !important;
+            color: #EDE8E0 !important;
+        }
+
+        .reader-theme-dark .reader-ui-border {
+            border-color: rgba(255, 255, 255, 0.08) !important;
+        }
+
+        .reader-theme-oled {
+            background-color: #000000 !important;
+            color: #D4D0C8 !important;
+        }
+
+        .reader-theme-oled .reader-text {
+            color: #D4D0C8 !important;
+        }
+
+        .reader-theme-oled .reader-ui-bg {
+            background-color: rgba(0, 0, 0, 0.94) !important;
+            border-color: rgba(255, 255, 255, 0.07) !important;
+        }
+
+        .reader-theme-oled .reader-ui-card {
+            background-color: #121212 !important;
+            border-color: rgba(255, 255, 255, 0.09) !important;
+            color: #D4D0C8 !important;
+        }
+
+        .reader-theme-oled .reader-ui-border {
+            border-color: rgba(255, 255, 255, 0.07) !important;
+        }
+
+        /* Reader Prose Formatting */
+        .reader-prose {
+            text-wrap: pretty;
+            hyphens: auto;
+            -webkit-hyphens: auto;
+            overflow-wrap: break-word;
+            orphans: 2;
+            widows: 2;
+        }
+
+        .reader-prose p {
+            margin-bottom: 1.15em;
+            text-wrap: pretty;
+            hyphens: auto;
+            -webkit-hyphens: auto;
+            overflow-wrap: break-word;
+            orphans: 2;
+            widows: 2;
+        }
+
+        /* Literary Scene Divider Line (Refined Thin Gold Line) */
+        .reader-scene-divider-line,
+        .reader-prose hr,
+        .reader-fleuron-divider {
+            border: none !important;
+            height: 1px !important;
+            width: 56px !important;
+            max-width: 25% !important;
+            margin: 2.5rem auto !important;
+            background: var(--gold, #B48A3C) !important;
+            opacity: 0.55;
+            display: block;
+            clear: both;
+            position: relative;
+        }
+
+        .reader-scene-divider-line::after,
+        .reader-prose hr::after,
+        .reader-fleuron-divider::after {
+            content: none !important;
+            display: none !important;
+        }
+
+        .reader-theme-dark .reader-scene-divider-line,
+        .reader-theme-dark .reader-prose hr,
+        .reader-theme-dark .reader-fleuron-divider {
+            background: #D4AF37 !important;
+            opacity: 0.45;
+        }
+
+        .reader-theme-oled .reader-scene-divider-line,
+        .reader-theme-oled .reader-prose hr,
+        .reader-theme-oled .reader-fleuron-divider {
+            background: #E5C38D !important;
+            opacity: 0.5;
+        }
+
+        /* Publication Chapter Headings */
+        .reader-chapter-header {
+            text-align: center;
+            margin-bottom: 2.75rem;
+            padding-top: 1rem;
+            padding-bottom: 0.5rem;
+            clear: both;
+        }
+
+        .reader-chapter-number {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.25em;
+            text-transform: uppercase;
+            color: var(--gold, #B48A3C);
+            margin-bottom: 0.65rem;
+        }
+
+        .reader-chapter-title {
+            font-family: inherit;
+            font-size: 1.75rem;
+            line-height: 1.28;
+            font-weight: 700;
+            letter-spacing: -0.015em;
+            max-width: 32rem;
+            margin: 0 auto;
+        }
+
+        .reader-prose.reader-indented p {
+            margin-bottom: 0 !important;
+            text-indent: 1.6em;
+        }
+
+        .reader-prose.reader-indented p:first-of-type,
+        .reader-prose.reader-indented h1+p,
+        .reader-prose.reader-indented h2+p,
+        .reader-prose.reader-indented h3+p,
+        .reader-prose.reader-indented hr+p,
+        .reader-prose.reader-indented blockquote+p {
+            text-indent: 0 !important;
+        }
+
+        .reader-drop-cap>p:first-of-type::first-letter {
+            float: left;
+            font-size: 3.2em;
+            line-height: 0.82;
+            padding-top: 4px;
+            padding-right: 8px;
+            padding-bottom: 2px;
+            font-weight: 700;
+            font-family: inherit;
+        }
+
+        /* ── Dialogue Styling (Subtle medium weight & diffuse glow/shadow) ── */
+        .reader-dialogue {
+            display: inline;
+            position: relative;
+            background: none !important;
+            box-shadow: none !important;
+            border: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            font-weight: 500;
+            letter-spacing: 0.005em;
+            transition: all 0.2s ease;
+        }
+
+        /* Light / Folio Bianca Theme */
+        .reader-theme-light .reader-dialogue {
+            color: #1a1614;
+            text-shadow: 0 1px 2px rgba(140, 107, 50, 0.16), 0 0 4px rgba(184, 147, 90, 0.1);
+        }
+
+        /* Sepia Theme */
+        .reader-theme-sepia .reader-dialogue {
+            color: #261a10;
+            text-shadow: 0 1px 2px rgba(110, 70, 30, 0.18), 0 0 4px rgba(139, 90, 43, 0.12);
+        }
+
+        /* Atelier Dark Theme */
+        .reader-theme-dark .reader-dialogue {
+            color: #FFFDF8;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 0 6px rgba(229, 195, 141, 0.2);
+        }
+
+        /* Midnight OLED Theme */
+        .reader-theme-oled .reader-dialogue {
+            color: #FFFFFF;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.7), 0 0 8px rgba(201, 169, 110, 0.25);
+        }
+
+        /* Multi-column Paginated Viewport & Fluid Page Transitions */
+        .reader-page-column-container {
+            column-fill: auto;
+            column-gap: 48px;
+            height: 100% !important;
+            max-height: 100% !important;
+            width: 100%;
+            transition: transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+            will-change: transform;
+            box-sizing: border-box;
+            touch-action: pan-y;
+        }
+
+        @media (max-width: 640px) {
+            .reader-page-column-container {
+                column-gap: 24px;
+                height: 100% !important;
+                max-height: 100% !important;
+                transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1);
+            }
+        }
+
+        .reader-page-slide-next {
+            animation: readerPageSlideNext 0.24s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+        }
+
+        .reader-page-slide-prev {
+            animation: readerPageSlidePrev 0.24s cubic-bezier(0.2, 0.9, 0.3, 1) both;
+        }
+
+        @keyframes readerPageSlideNext {
+            0% {
+                opacity: 0.65;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        @keyframes readerPageSlidePrev {
+            0% {
+                opacity: 0.65;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        /* ── Subtle Book Spine Depth & Gutter Gradient ── */
+        .reader-spine-depth {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            width: 32px;
+            background: linear-gradient(to right, rgba(0, 0, 0, 0.04), transparent 24px);
+            pointer-events: none;
+            z-index: 24;
+            transition: opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1);
+        }
+
+        .reader-spine-depth-right {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            right: 0;
+            width: 32px;
+            background: linear-gradient(to left, rgba(0, 0, 0, 0.04), transparent 24px);
+            pointer-events: none;
+            z-index: 24;
+            transition: opacity 0.25s cubic-bezier(0.2, 0.9, 0.3, 1);
+        }
+
+        .reader-theme-dark .reader-spine-depth {
+            background: linear-gradient(to right, rgba(0, 0, 0, 0.35), transparent 24px);
+        }
+
+        .reader-theme-dark .reader-spine-depth-right {
+            background: linear-gradient(to left, rgba(0, 0, 0, 0.35), transparent 24px);
+        }
+
+        .reader-theme-oled .reader-spine-depth {
+            background: linear-gradient(to right, rgba(255, 255, 255, 0.05), transparent 24px);
+        }
+
+        .reader-theme-oled .reader-spine-depth-right {
+            background: linear-gradient(to left, rgba(255, 255, 255, 0.05), transparent 24px);
+        }
+
+        /* ── Ambient Paper Fiber Texture Overlay ── */
+        .reader-paper-texture {
+            position: fixed;
+            inset: 0;
+            pointer-events: none;
+            z-index: 12;
+            opacity: 0.025;
+            background-repeat: repeat;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='paperNoise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23paperNoise)'/%3E%3C/svg%3E");
+        }
+
+        .reader-theme-light .reader-paper-texture,
+        .reader-theme-sepia .reader-paper-texture {
+            mix-blend-mode: multiply;
+            display: block;
+        }
+
+        .reader-theme-dark .reader-paper-texture,
+        .reader-theme-oled .reader-paper-texture {
+            display: none;
+        }
+
+        /* ── Multimodal Audio-Visual Sync (Kindle / Apple Books Minimal Highlight) ── */
+        .reader-text {
+            padding-left: 10px;
+        }
+
+        ::highlight(reader-karaoke) {
+            background-color: rgba(184, 146, 74, 0.08);
+            color: inherit;
+            text-decoration: underline;
+            text-decoration-color: rgba(184, 146, 74, 0.58);
+            text-decoration-thickness: 1.5px;
+            text-underline-offset: 4px;
+        }
+
+        .reader-theme-sepia ::highlight(reader-karaoke) {
+            background-color: rgba(164, 120, 52, 0.09);
+            text-decoration-color: rgba(164, 120, 52, 0.62);
+        }
+
+        .reader-theme-dark ::highlight(reader-karaoke) {
+            background-color: rgba(217, 185, 128, 0.10);
+            color: inherit;
+            text-decoration-color: rgba(217, 185, 128, 0.65);
+        }
+
+        .reader-theme-oled ::highlight(reader-karaoke) {
+            background-color: rgba(229, 195, 141, 0.12);
+            color: inherit;
+            text-decoration-color: rgba(229, 195, 141, 0.72);
+        }
+
+        .reader-active-cue-block {
+            position: relative;
+        }
+
+        .reader-active-cue-block::before {
+            content: '';
+            position: absolute;
+            left: -8px;
+            top: 0.18em;
+            bottom: 0.18em;
+            width: 2.5px;
+            border-radius: 9999px;
+            background-color: rgba(184, 146, 74, 0.65);
+            pointer-events: none;
+            transition: opacity 0.2s ease;
+        }
+
+        .reader-theme-dark .reader-active-cue-block::before,
+        .reader-theme-oled .reader-active-cue-block::before {
+            background-color: rgba(217, 185, 128, 0.72);
+        }
+
+        .reader-karaoke-highlight {
+            background-color: rgba(184, 146, 74, 0.08) !important;
+            text-decoration: underline;
+            text-decoration-color: rgba(184, 146, 74, 0.58);
+            text-decoration-thickness: 1.5px;
+            text-underline-offset: 4px;
+            border-radius: 3px;
+            transition: background-color 0.25s ease;
+        }
+
+        .reader-theme-dark .reader-karaoke-highlight,
+        .reader-theme-oled .reader-karaoke-highlight {
+            background-color: rgba(217, 185, 128, 0.11) !important;
+            text-decoration-color: rgba(217, 185, 128, 0.68);
+        }
+
+        /* ── Reader TTS Floating Mini-Player (Apple Glass Capsule) ── */
+        .reader-tts-floating-bar {
+            position: fixed;
+            left: 0;
+            right: 0;
+            margin-left: auto;
+            margin-right: auto;
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 3.85rem);
+            z-index: 35;
+            max-width: calc(100% - 1.5rem);
+            width: 36rem;
+            background: rgba(250, 248, 245, 0.84);
+            backdrop-filter: blur(20px) saturate(180%);
+            -webkit-backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(28, 25, 23, 0.09);
+            border-top-color: rgba(255, 255, 255, 0.65);
+            box-shadow: 0 12px 32px -8px rgba(28, 25, 23, 0.16), 0 4px 12px -4px rgba(28, 25, 23, 0.08);
+            transition: opacity 0.25s ease, transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .reader-theme-sepia .reader-tts-floating-bar {
+            background: rgba(245, 238, 219, 0.86);
+            border-color: rgba(56, 46, 36, 0.11);
+            border-top-color: rgba(255, 252, 244, 0.55);
+        }
+
+        .reader-theme-dark .reader-tts-floating-bar {
+            background: rgba(28, 28, 32, 0.82);
+            border-color: rgba(255, 255, 255, 0.10);
+            border-top-color: rgba(255, 255, 255, 0.18);
+            box-shadow: 0 14px 36px -8px rgba(0, 0, 0, 0.52);
+        }
+
+        .reader-theme-oled .reader-tts-floating-bar {
+            background: rgba(14, 14, 16, 0.88);
+            border-color: rgba(255, 255, 255, 0.12);
+            border-top-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 14px 36px -8px rgba(0, 0, 0, 0.72);
+        }
+
+        @media (prefers-reduced-transparency: reduce) {
+            .reader-tts-floating-bar {
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                background: #FAF8F5 !important;
+            }
+            .reader-theme-sepia .reader-tts-floating-bar { background: #F5EEDB !important; }
+            .reader-theme-dark .reader-tts-floating-bar { background: #1C1C20 !important; }
+            .reader-theme-oled .reader-tts-floating-bar { background: #0E0E10 !important; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .reader-tts-floating-bar {
+                transition: opacity 180ms ease !important;
+                transform: none !important;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .reader-tts-floating-bar {
+                width: calc(100% - 1.25rem);
+                bottom: calc(env(safe-area-inset-bottom, 0px) + 3.5rem);
+            }
+        }
+
+        .reader-tts-pulse {
+            animation: readerTtsPulse 1.8s ease-in-out infinite;
+        }
+
+        @keyframes readerTtsPulse {
+
+            0%,
+            100% {
+                opacity: 0.9;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.55;
+                transform: scale(0.96);
+            }
+        }
+
+        .reader-tts-wave-bar {
+            display: inline-block;
+            width: 2.5px;
+            background-color: currentColor;
+            border-radius: 9999px;
+            animation: readerTtsWave 1s ease-in-out infinite alternate;
+        }
+
+        .reader-tts-wave-bar:nth-child(1) {
+            height: 6px;
+            animation-delay: 0.1s;
+        }
+
+        .reader-tts-wave-bar:nth-child(2) {
+            height: 14px;
+            animation-delay: 0.35s;
+        }
+
+        .reader-tts-wave-bar:nth-child(3) {
+            height: 9px;
+            animation-delay: 0.2s;
+        }
+
+        .reader-tts-wave-bar:nth-child(4) {
+            height: 12px;
+            animation-delay: 0.45s;
+        }
+
+        @keyframes readerTtsWave {
+            0% {
+                transform: scaleY(0.4);
+            }
+
+            100% {
+                transform: scaleY(1.2);
+            }
+        }

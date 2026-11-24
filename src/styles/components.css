@@ -1,0 +1,76 @@
+        /* Relationship matrix: keep both axes readable within the scroll viewport. */
+        .rel-matrix {
+            position: relative;
+            isolation: isolate;
+        }
+
+        .rel-matrix .rel-matrix-scroll {
+            max-height: 70vh;
+            overflow: auto;
+        }
+
+        .rel-matrix table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+
+        .rel-matrix th,
+        .rel-matrix td {
+            min-width: 140px;
+            width: 160px;
+            max-width: 180px;
+        }
+
+        .rel-matrix thead {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+        }
+
+        .rel-matrix thead th {
+            background: var(--bg-inset);
+        }
+
+        .rel-matrix tr> :first-child {
+            position: sticky;
+            left: 0;
+            z-index: 1;
+            min-width: 140px;
+            width: 140px;
+            max-width: 140px;
+            background: var(--bg-inset);
+            border-right: 1px solid var(--edge-strong);
+        }
+
+        .rel-matrix thead tr> :first-child {
+            z-index: 3;
+        }
+
+        .rel-matrix .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 2;
+            overflow: hidden;
+            overflow-wrap: anywhere;
+            white-space: normal;
+        }
+
+        .rel-matrix .rel-matrix-fade {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 28px;
+            z-index: 4;
+            pointer-events: none;
+        }
+
+        .rel-matrix .rel-matrix-fade-left {
+            left: 140px;
+            background: linear-gradient(to right, var(--bg-inset), transparent);
+        }
+
+        .rel-matrix .rel-matrix-fade-right {
+            right: 0;
+            background: linear-gradient(to left, var(--bg-inset), transparent);
+        }

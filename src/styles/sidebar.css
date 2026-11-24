@@ -1,0 +1,217 @@
+        /* Navigation Styles */
+        .nav-btn {
+            width: 100%;
+            text-align: left;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            border: 1px solid transparent;
+            transition: all 140ms ease-out;
+        }
+
+        .nav-btn:hover {
+            background-color: var(--wash);
+            color: var(--text-primary);
+        }
+
+        .nav-btn.active {
+            background-color: var(--nav-active-bg);
+            color: var(--gold-ink);
+            border-color: var(--nav-active-edge);
+            font-weight: 600;
+            box-shadow: var(--nav-active-shadow);
+        }
+
+        /* Desktop icon rail; mobile keeps the full-width, labelled drawer. */
+        @media (min-width: 768px) {
+            .studio-sidebar.collapsed .sidebar-header {
+                flex-direction: column;
+                justify-content: center;
+                gap: 0.5rem;
+                padding: 0.75rem 0;
+            }
+
+            .studio-sidebar.collapsed .sidebar-brand {
+                justify-content: center;
+            }
+
+            .studio-sidebar.collapsed .nav-label,
+            .studio-sidebar.collapsed .sidebar-section-label,
+            .studio-sidebar.collapsed .sidebar-tree {
+                display: none;
+            }
+
+            .studio-sidebar.collapsed .sidebar-nav {
+                padding: 0.75rem 0.5rem;
+            }
+
+            .studio-sidebar.collapsed .nav-btn {
+                justify-content: center;
+                padding: 0.625rem 0;
+                gap: 0;
+            }
+
+            .studio-sidebar.collapsed .sidebar-autopilot,
+            .studio-sidebar.collapsed .sidebar-storage>button {
+                flex: none;
+                width: 2.5rem;
+                height: 2.5rem;
+                padding: 0;
+                gap: 0;
+                margin-inline: auto;
+            }
+
+            .studio-sidebar.collapsed .sidebar-storage {
+                flex-direction: column;
+            }
+        }
+
+        /* Spring Entrance Animations */
+        @keyframes springFadeIn {
+            from {
+                opacity: 0;
+                transform: scale(0.985) translateY(6px);
+            }
+
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+
+
+        .animate-fade-in {
+            animation: springFadeIn var(--spring-duration) var(--ease-snappy) forwards;
+        }
+
+        /* Thread Visualizer (SVG presentation attributes carry the light defaults; these
+           rules make both themes flow from the tokens) */
+        .thread-vis-lane-line {
+            stroke: var(--tv-lane);
+        }
+
+        .thread-vis-lane-text {
+            fill: var(--text-secondary);
+        }
+
+        .thread-vis-scene-text {
+            fill: var(--text-primary);
+        }
+
+        .thread-vis-node {
+            fill: var(--tv-surface);
+        }
+
+        .thread-vis-bg {
+            background-color: var(--tv-surface);
+        }
+
+        /* Option B Structure: Connected Act Timeline Tabs */
+        .act-timeline-track {
+            display: flex;
+            align-items: center;
+            position: relative;
+            padding: 4px 0;
+            gap: 8px;
+        }
+
+        .act-node-btn {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 16px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            background: rgb(var(--surface-rgb));
+            color: var(--text-secondary);
+            border: 1px solid var(--border-subtle);
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+            transition: all 160ms var(--ease-snappy);
+            cursor: pointer;
+        }
+
+        .act-node-btn:hover {
+            background: var(--act-hover-bg);
+            color: var(--text-primary);
+            border-color: var(--act-hover-edge);
+        }
+
+        .act-node-btn.active {
+            background: rgb(var(--surface-rgb));
+            color: var(--gold-ink);
+            border-color: var(--accent-gold);
+            box-shadow: var(--act-active-shadow);
+            font-weight: 700;
+        }
+
+        .act-node-badge {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            font-weight: 700;
+            background: var(--act-badge-bg);
+            color: var(--text-secondary);
+            transition: all 140ms ease;
+        }
+
+        .act-node-btn.active .act-node-badge {
+            background: var(--accent-gold);
+            color: var(--on-gold-ink);
+        }
+
+        /* Option B Overview: Book Cover Frame */
+        .book-cover-frame {
+            aspect-ratio: 2 / 3;
+            border-radius: 10px;
+            overflow: hidden;
+            background: var(--book-bg);
+            position: relative;
+            box-shadow: 0 16px 36px -8px rgba(0, 0, 0, 0.16), 0 4px 12px -2px rgba(0, 0, 0, 0.06), inset 1.5px 0 0 0 rgba(255, 255, 255, 0.5), inset -1.5px 0 0 0 rgba(0, 0, 0, 0.1);
+            transition: transform 300ms var(--ease-snappy), box-shadow 300ms ease;
+        }
+
+        .book-cover-frame:hover {
+            transform: translateY(-3px) scale(1.01);
+            box-shadow: 0 22px 44px -10px rgba(0, 0, 0, 0.22), 0 6px 16px -3px rgba(0, 0, 0, 0.09);
+        }
+
+        /* Accessibility: Reduced Motion */
+        @media (prefers-reduced-motion: reduce) {
+
+            *,
+            ::before,
+            ::after {
+                animation-duration: 0.01ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.01ms !important;
+            }
+
+            .animate-fade-in {
+                animation: none !important;
+                opacity: 1 !important;
+                transform: none !important;
+            }
+        }
+
+        /* Accessibility: Reduced Transparency */
+        @media (prefers-reduced-transparency: reduce) {
+
+            .glass-modal {
+                background: rgb(var(--surface-rgb)) !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+            }
+        }
