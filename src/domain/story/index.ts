@@ -5,3 +5,4 @@ export * from './structure';
 export * from './directives';
 export * from './progress';
 export * from './coverTypography';
+export * from './logFormatter';

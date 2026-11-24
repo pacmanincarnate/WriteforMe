@@ -27,9 +27,11 @@ import {
     extractRelationship,
     extractStoryProseText,
     formatAudioDuration,
+    formatAllVerboseLogs,
     formatBytesCompact,
     formatLoreForPrompt,
     formatSceneSummary,
+    formatVerboseLogEntry,
     getActiveClueDirectivesForScene,
     getAdaptiveCoverTypography,
     getAuthorNoteXml,
@@ -197,6 +199,8 @@ import {
     parseIssuesFromReview,
     parseValenceState,
     parseWritingOutput,
+    surgicallyRepairBeatMRUs,
+    surgicallyRepairValueShifts,
     validatePromptCacheOrder,
     validateStructuralOutput
 } from '@/domain/validation';
@@ -240,6 +244,50 @@ import {
     runEpistemicSleepCycle,
     updateKnowledgeGraph
 } from '@/domain/continuity';
+import {
+    buildRolledBackStoryState,
+    cleanPreservedCastMember,
+    cleanRelationshipsForRollback,
+    cleanScenesForProseRollback,
+    isGeneratedCastMemberForStage,
+    isPreservedPreWritingLoreItem,
+    migrateStoryToSequences,
+    rebuildBaselineCharacterStates,
+    resetSecretVaultForRollback,
+    restorePreservedLoreItem,
+    STORY_RESET_STAGES
+} from '@/domain/lifecycle';
+import {
+    applyManuscriptPatchToScene,
+    buildDeterministicSurgicalRepair,
+    compileAestheticConstitution,
+    compileGateFailureFeedback,
+    compileNarrativeStateGraph,
+    compileThreeWaveEditPlan,
+    computeCharacter8DVoiceVector,
+    computeEbbinghausMemoryDecay,
+    computeVoiceDriftDistance,
+    conveneAdversarialTribunal,
+    createHarnessInspectionTools,
+    denormalizeSceneFromXml,
+    escapeHarnessXml,
+    evaluateSceneLayer0AndDivergence,
+    extractAuthorVoiceDNA,
+    extractEditorialPatchPayload,
+    getDraftedStoryScenesList,
+    HARNESS_FILTER_VERBS,
+    HARNESS_FORBIDDEN_SLOP_LEXICON,
+    HARNESS_SOMATIC_PATTERNS,
+    hasBalancedQuotes,
+    inferSpeakerForSentence,
+    normalizePreservingNewlines,
+    normalizeSceneToXml,
+    runAutonomousInvestigationStage,
+    runFourGateVerificationSuite,
+    runFullManuscriptNlpTelemetry,
+    runSceneNlpTelemetry,
+    splitProseIntoSentences
+} from '@/domain/editorial';
 
 registerWindowGlobals({
     // Text Utils
@@ -492,5 +540,55 @@ registerWindowGlobals({
     buildUpcomingBoundaryGuardInfo,
     formatChoreographedBeatHistory,
     formatSequenceCastProfiles,
-    formatArchivistBlueprintContext
+    formatArchivistBlueprintContext,
+
+    // Story Log Formatting & Structural Repair
+    formatVerboseLogEntry,
+    formatAllVerboseLogs,
+    surgicallyRepairBeatMRUs,
+    surgicallyRepairValueShifts,
+
+    // Lifecycle Domain (Rollback & Migration)
+    STORY_RESET_STAGES,
+    isPreservedPreWritingLoreItem,
+    restorePreservedLoreItem,
+    isGeneratedCastMemberForStage,
+    cleanPreservedCastMember,
+    rebuildBaselineCharacterStates,
+    cleanRelationshipsForRollback,
+    resetSecretVaultForRollback,
+    cleanScenesForProseRollback,
+    buildRolledBackStoryState,
+    migrateStoryToSequences,
+
+    // Editorial Harness Domain
+    HARNESS_FORBIDDEN_SLOP_LEXICON,
+    HARNESS_FILTER_VERBS,
+    HARNESS_SOMATIC_PATTERNS,
+    escapeHarnessXml,
+    splitProseIntoSentences,
+    inferSpeakerForSentence,
+    normalizePreservingNewlines,
+    normalizeSceneToXml,
+    denormalizeSceneFromXml,
+    getDraftedStoryScenesList,
+    compileAestheticConstitution,
+    runSceneNlpTelemetry,
+    computeCharacter8DVoiceVector,
+    computeVoiceDriftDistance,
+    runFullManuscriptNlpTelemetry,
+    extractAuthorVoiceDNA,
+    compileNarrativeStateGraph,
+    computeEbbinghausMemoryDecay,
+    evaluateSceneLayer0AndDivergence,
+    createHarnessInspectionTools,
+    runAutonomousInvestigationStage,
+    conveneAdversarialTribunal,
+    compileThreeWaveEditPlan,
+    hasBalancedQuotes,
+    extractEditorialPatchPayload,
+    applyManuscriptPatchToScene,
+    buildDeterministicSurgicalRepair,
+    runFourGateVerificationSuite,
+    compileGateFailureFeedback
 });
