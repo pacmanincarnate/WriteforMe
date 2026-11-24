@@ -107,6 +107,7 @@ import {
     isRecoverableIdbConnectionError,
     logStore,
     LogStore,
+    recoverOrphanedLogs,
     markLocalVaultUnavailable,
     probeLocalVaultAvailability,
     ResilientIdbStore,
@@ -169,6 +170,7 @@ registerWindowGlobals({
     storyStore,
     LogStore,
     logStore,
+    recoverOrphanedLogs,
     AudioStore,
     audioStore,
 

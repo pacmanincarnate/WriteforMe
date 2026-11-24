@@ -106,3 +106,65 @@ export class LogStore extends ResilientIdbStore {
 }
 
 export const logStore = new LogStore();
+
+export interface RecoverableLogEntry {
+    id?: string | number;
+    function?: string;
+    [key: string]: unknown;
+}
+
+export interface RecoverOrphanedLogsResult {
+    recovered: number;
+    message?: string;
+    logs?: RecoverableLogEntry[];
+    error?: string;
+}
+
+/**
+ * Recovers orphaned Character Developer / Conceptual Development logs saved under
+ * `'story_default'` during setup into the active/target story's log store.
+ */
+export async function recoverOrphanedLogs(
+    targetStoryId: string | null = null
+): Promise<RecoverOrphanedLogsResult> {
+    let fallbackId = 'story_default';
+    try {
+        fallbackId = localStorage.getItem('ellipsisprose_active_story_id') || 'story_default';
+    } catch {
+        // Ignore restricted storage access
+    }
+    const destId = targetStoryId || fallbackId;
+    try {
+        const defaultLogs = (await logStore.loadLogs('story_default')) as RecoverableLogEntry[];
+        if (!defaultLogs || defaultLogs.length === 0) {
+            console.log("[recoverOrphanedLogs] No logs found in 'story_default'.");
+            return { recovered: 0, message: "No logs found in 'story_default'." };
+        }
+        const currentLogs = (await logStore.loadLogs(destId)) as RecoverableLogEntry[];
+        const existingIds = new Set((currentLogs || []).map((l) => l?.id));
+        const earlyOrphans = defaultLogs.filter(
+            (l) =>
+                l &&
+                typeof l.function === 'string' &&
+                (l.function.includes('Character Developer') ||
+                    l.function.includes('Conceptual Development'))
+        );
+        const toRecover = earlyOrphans.filter((l) => !existingIds.has(l.id));
+        if (toRecover.length === 0) {
+            console.log(
+                `[recoverOrphanedLogs] All early setup logs in 'story_default' already exist in story '${destId}'.`
+            );
+            return { recovered: 0, message: `All logs already present in '${destId}'.` };
+        }
+        const merged = [...(currentLogs || []), ...toRecover];
+        await logStore.saveLogs(destId, merged);
+        console.log(
+            `[recoverOrphanedLogs] Successfully recovered ${toRecover.length} orphaned logs into '${destId}'. Reload page or switch stories to view.`
+        );
+        return { recovered: toRecover.length, logs: toRecover };
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[recoverOrphanedLogs] Failed:', err);
+        return { recovered: 0, error: message };
+    }
+}

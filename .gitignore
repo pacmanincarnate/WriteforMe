@@ -13,7 +13,7 @@ dist/
 dist-singlefile/
 coverage/
 .vite/
-Logs/
+/Logs/
 audiocpp/models/
 *.gguf
 
