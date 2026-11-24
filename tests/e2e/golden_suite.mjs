@@ -337,6 +337,7 @@ async function launchChromeSession(userDataDir, cdpPort) {
         '--no-default-browser-check',
         'about:blank'
     ], { stdio: 'ignore' });
+    const exitPromise = new Promise((resolve) => chrome.once('exit', resolve));
 
     let pages = null;
     for (let i = 0; i < 30; i++) {
@@ -388,9 +389,27 @@ async function launchChromeSession(userDataDir, cdpPort) {
         badStaticResponses,
         api404Responses,
         close: async () => {
+            try {
+                await cdp.send('Browser.close');
+            } catch (_) {
+                // Fallback: connect to browser-level WebSocket if page target rejects Browser.close
+                try {
+                    const ver = await fetchJson(`http://127.0.0.1:${cdpPort}/json/version`);
+                    if (ver?.webSocketDebuggerUrl) {
+                        const bCdp = new NativeCDP(ver.webSocketDebuggerUrl);
+                        await bCdp.connect();
+                        await bCdp.send('Browser.close');
+                        bCdp.close();
+                    }
+                } catch (_) {}
+            }
             cdp.close();
-            try { chrome.kill(); } catch (_) {}
-            await sleep(300);
+            await Promise.race([exitPromise, sleep(5000)]);
+            if (chrome.exitCode === null) {
+                try { chrome.kill(); } catch (_) {}
+                await Promise.race([exitPromise, sleep(1000)]);
+            }
+            await sleep(200);
         }
     };
 }
