@@ -1,5 +1,48 @@
 import { registerWindowGlobals } from '@/compat/windowBridge';
 import {
+    DEFAULT_AUDIO_DRAMA_SETTINGS,
+    ELEVENLABS_VOICES,
+    GEMINI_PREBUILT_VOICES,
+    TTS_PIPELINE_TIERS
+} from '@/config';
+import {
+    _rawSynthesizeAudioDramaChunk,
+    activateAudioCppWave,
+    base64AudioToBlob,
+    blobToBase64,
+    buildDrama3Payload,
+    buildWave2ActivateBody,
+    cleanAndTrimAudioBuffer,
+    clearKokoroModelCache,
+    createKokoroWorker,
+    decodeAudioBlobToSamples,
+    decodeWavBlobDirect,
+    encodeAudioBufferToWavBlob,
+    encodeFloat32PcmToMp3Blob,
+    enqueueAudioCppTask,
+    ensureAudioDramaVoicesRegistered,
+    ensureMp3AudioBlob,
+    ensureSpeakerMasterVoice,
+    exportSceneAudioMp3,
+    exportSequenceAudioMp3,
+    getCachedSpeakerMasterVoice,
+    hashLiveSegmentSig,
+    installDefaultAudioStageLoggers,
+    isAudioCppQueueBusy,
+    liveAudioCppWaveState,
+    resolveSpeakersMasterMap,
+    runStudioRenderJob,
+    sanitizeAudioBlob,
+    stitchAndEncodeChunksToMp3,
+    stitchAudioBlobsToMp3,
+    stitchAudioBlobsWithPause,
+    StudioPipeline,
+    synthesizeAudioDramaChunk,
+    synthesizeDrama3SegmentChunk,
+    toDrama3HttpBody,
+    trimTrailingAudioStatic
+} from '@/services/audio';
+import {
     copyVerboseLogToClipboard,
     downloadBlob,
     downloadVerboseLogFile,
@@ -73,6 +116,8 @@ import {
     StudioCacheStore,
     toAsciiHeaderJson
 } from '@/services/storage';
+
+installDefaultAudioStageLoggers();
 
 registerWindowGlobals({
     // HTTP
@@ -152,5 +197,46 @@ registerWindowGlobals({
     WRITING_AGENT_TOOLS,
     executeLocalTool,
     callAgenticLoop,
-    isMetaCommentaryText
+    isMetaCommentaryText,
+
+    // Audio pipeline config constants & Studio / TTS services
+    TTS_PIPELINE_TIERS,
+    DEFAULT_AUDIO_DRAMA_SETTINGS,
+    ELEVENLABS_VOICES,
+    GEMINI_PREBUILT_VOICES,
+    createKokoroWorker,
+    clearKokoroModelCache,
+    decodeAudioBlobToSamples,
+    decodeWavBlobDirect,
+    blobToBase64,
+    getCachedSpeakerMasterVoice,
+    ensureSpeakerMasterVoice,
+    buildDrama3Payload,
+    toDrama3HttpBody,
+    isAudioCppQueueBusy,
+    enqueueAudioCppTask,
+    _liveAudioCppWaveState: liveAudioCppWaveState,
+    liveAudioCppWaveState,
+    buildWave2ActivateBody,
+    activateAudioCppWave,
+    resolveSpeakersMasterMap,
+    stitchAudioBlobsWithPause,
+    encodeFloat32PcmToMp3Blob,
+    ensureMp3AudioBlob,
+    runStudioRenderJob,
+    StudioPipeline,
+    ensureAudioDramaVoicesRegistered,
+    base64AudioToBlob,
+    encodeAudioBufferToWavBlob,
+    cleanAndTrimAudioBuffer,
+    trimTrailingAudioStatic,
+    sanitizeAudioBlob,
+    _hashLiveSegmentSig: hashLiveSegmentSig,
+    synthesizeDrama3SegmentChunk,
+    _rawSynthesizeAudioDramaChunk,
+    synthesizeAudioDramaChunk,
+    stitchAndEncodeChunksToMp3,
+    exportSceneAudioMp3,
+    exportSequenceAudioMp3,
+    stitchAudioBlobsToMp3
 });

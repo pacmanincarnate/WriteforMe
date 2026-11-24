@@ -77,7 +77,7 @@ export interface SpeakerVoiceIdentity {
 }
 
 export interface MasterVoiceRecordLike {
-    refPath?: string;
+    refPath?: string | null;
     promptInstruction?: string;
     seed?: number;
     referenceText?: string;
