@@ -2114,6 +2114,7 @@ const ReactDOM = ReactDOMClient;
                 readerSettingsRef,
                 updateReaderSetting,
                 readingProgress,
+                setReadingProgress,
                 readerPageIndex,
                 readerPageIndexRef,
                 readerTotalPages,

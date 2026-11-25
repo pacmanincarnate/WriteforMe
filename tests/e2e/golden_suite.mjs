@@ -1270,12 +1270,18 @@ async function runPersistenceEditorSuite({ cdp, baseUrl, assert }) {
             titles: sceneTitles(live()),
             castLen: (live().cast || []).length,
             actsLen: (live().acts || []).length,
-            modalClosed: await until(() => !Array.from(document.querySelectorAll('button')).some((b) => (b.innerText || '').trim() === confirmLabel))
+            modalClosed: await until(() => !Array.from(document.querySelectorAll('button')).some((b) => (b.innerText || '').trim() === confirmLabel)),
+            // The reset continues after the save (images, audio, selection, world memory); it reports the outcome in a toast.
+            finished: await until(() => (document.body.innerText || '').includes('All prose and writing-time data deleted')),
+            failedToast: (document.body.innerText || '').includes('Story reset failed')
         };
     `);
     assert('Persistence: reset stage "prose" clears prose, keeps structure, and persists the regression',
         reset.clicked && reset.cleared && reset.persisted && reset.titles.length === 3 && reset.castLen === 2 && reset.actsLen === 3 && reset.modalClosed,
         JSON.stringify(reset));
+    assert('Persistence: reset stage "prose" runs to completion and reports success',
+        reset.finished && !reset.failedToast,
+        JSON.stringify({ finished: reset.finished, failedToast: reset.failedToast }));
 
     // 7i. JSON import: the imported story becomes active, is persisted, and existing stories are untouched.
     const imported = await run(`
