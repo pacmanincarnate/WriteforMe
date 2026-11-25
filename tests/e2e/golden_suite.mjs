@@ -6,7 +6,7 @@
  * domain-engine, mocked-pipeline, document-parser, and MP3 encoding parity.
  *
  * Modes:
- *   --mode legacy     Serve scratch/legacy_baseline_index.html (or root index.html)
+ *   --mode legacy     Serve the pre-refactor single-file app (see "Legacy baseline" below)
  *   --mode local      Start server.js serving dist/ with isolated temp ELLIPSIS_DATA_DIR
  *   --mode subpath    Serve dist/ mounted at /WriteforMe/ with NO /api/* backend (GitHub Pages sim)
  *   --mode singlefile Test dist-singlefile/EllipsisProse-portable.html over HTTP and file:///
@@ -14,6 +14,20 @@
  *
  * Optional:
  *   --screenshots <dir>  Capture light/dark desktop (1440x900) & mobile (390x844) PNGs
+ *
+ * Environment:
+ *   CHROME_PATH           Chrome/Chromium executable. When unset, common install
+ *                         locations for Windows, macOS and Linux are probed.
+ *   CHROME_FLAGS          Extra space-separated Chrome flags (e.g. "--no-sandbox").
+ *                         --no-sandbox is added automatically when running as root or under CI.
+ *   LEGACY_BASELINE_PATH  Path to a pre-refactor index.html to use for legacy/upgrade modes.
+ *   LEGACY_BASELINE_REF   Git ref whose index.html is the legacy baseline
+ *                         (default: the commit the refactor branch started from).
+ *
+ * Legacy baseline: legacy/upgrade modes need the old single-file app. It is resolved from
+ * scratch/legacy_baseline_index.html if present, else LEGACY_BASELINE_PATH, else it is
+ * extracted from git history into scratch/ (gitignored) so a fresh clone can run every mode.
+ * The legacy page loads its libraries from public CDNs, so these two modes need internet access.
  */
 
 import http from 'node:http';
@@ -22,13 +36,90 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '../..');
-const CHROME_PATH = process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const LEGACY_BASELINE_REL = 'scratch/legacy_baseline_index.html';
+// Last commit of the single-file app: the commit refactor/modular-architecture was branched from.
+const DEFAULT_LEGACY_BASELINE_REF = 'fd3b70f4ace06b8f8757ed5efee5287ab808ca1a';
+
+function resolveChromePath() {
+    if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
+    const candidates = [];
+    if (process.platform === 'win32') {
+        for (const base of [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)'], process.env.LOCALAPPDATA]) {
+            if (!base) continue;
+            candidates.push(path.join(base, 'Google', 'Chrome', 'Application', 'chrome.exe'));
+            candidates.push(path.join(base, 'Chromium', 'Application', 'chrome.exe'));
+            candidates.push(path.join(base, 'Microsoft', 'Edge', 'Application', 'msedge.exe'));
+        }
+        candidates.push('C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe');
+    } else if (process.platform === 'darwin') {
+        candidates.push('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome');
+        candidates.push('/Applications/Chromium.app/Contents/MacOS/Chromium');
+        candidates.push('/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge');
+    } else {
+        const names = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'chrome'];
+        for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
+            if (!dir) continue;
+            for (const name of names) candidates.push(path.join(dir, name));
+        }
+    }
+    const found = candidates.find((c) => fs.existsSync(c));
+    // Fall back to the historical default so the "not found" error names a concrete path.
+    return found || candidates[0] || 'chrome';
+}
+
+function resolveChromeFlags() {
+    const flags = String(process.env.CHROME_FLAGS || '').split(/\s+/).filter(Boolean);
+    const isRoot = typeof process.getuid === 'function' && process.getuid() === 0;
+    // Chrome's sandbox cannot start as root, and CI Linux runners restrict unprivileged user namespaces.
+    if ((isRoot || (process.env.CI && process.platform === 'linux')) && !flags.includes('--no-sandbox')) {
+        flags.push('--no-sandbox');
+    }
+    return flags;
+}
+
+const CHROME_PATH = resolveChromePath();
+const CHROME_FLAGS = resolveChromeFlags();
+
+/**
+ * Make sure scratch/legacy_baseline_index.html exists and return its repo-relative path.
+ * Resolution order: existing scratch file -> LEGACY_BASELINE_PATH -> `git show <ref>:index.html`.
+ */
+function ensureLegacyBaseline() {
+    const target = path.join(ROOT_DIR, LEGACY_BASELINE_REL);
+    if (fs.existsSync(target)) return LEGACY_BASELINE_REL;
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+
+    if (process.env.LEGACY_BASELINE_PATH) {
+        const src = path.resolve(process.env.LEGACY_BASELINE_PATH);
+        if (!fs.existsSync(src)) throw new Error(`LEGACY_BASELINE_PATH does not exist: ${src}`);
+        fs.copyFileSync(src, target);
+        return LEGACY_BASELINE_REL;
+    }
+
+    const ref = process.env.LEGACY_BASELINE_REF || DEFAULT_LEGACY_BASELINE_REF;
+    const git = (args) => spawnSync('git', args, { cwd: ROOT_DIR, maxBuffer: 256 * 1024 * 1024 });
+    let shown = git(['show', `${ref}:index.html`]);
+    if (shown.status !== 0) {
+        // Shallow clones (CI default) may not have the baseline commit yet.
+        git(['fetch', '--depth', '1', 'origin', ref]);
+        shown = git(['show', `${ref}:index.html`]);
+    }
+    if (shown.status !== 0 || !shown.stdout || shown.stdout.length < 100000) {
+        throw new Error(
+            `Legacy baseline unavailable: could not read index.html at git ref ${ref}. ` +
+            `Place the pre-refactor index.html at ${LEGACY_BASELINE_REL} or set LEGACY_BASELINE_PATH.`
+        );
+    }
+    fs.writeFileSync(target, shown.stdout);
+    console.log(`[golden] Extracted legacy baseline from git ref ${ref.slice(0, 12)} -> ${LEGACY_BASELINE_REL}`);
+    return LEGACY_BASELINE_REL;
+}
 
 const EXPECTED_PROMPT_KEYS = [
     'scenePlannerAgent', 'conceptualDevelopment', 'characterDevelopment', 'storyArc', 'arcReview',
@@ -324,7 +415,7 @@ async function startLocalAppServer({ port, staticDir, dataDir }) {
 
 async function launchChromeSession(userDataDir, cdpPort) {
     if (!fs.existsSync(CHROME_PATH)) {
-        throw new Error(`Chrome not found at ${CHROME_PATH}`);
+        throw new Error(`Chrome not found at ${CHROME_PATH} — set CHROME_PATH to a Chrome/Chromium executable`);
     }
     fs.mkdirSync(userDataDir, { recursive: true });
     const chrome = spawn(CHROME_PATH, [
@@ -335,6 +426,7 @@ async function launchChromeSession(userDataDir, cdpPort) {
         '--window-size=1440,900',
         '--no-first-run',
         '--no-default-browser-check',
+        ...CHROME_FLAGS,
         'about:blank'
     ], { stdio: 'ignore' });
     const exitPromise = new Promise((resolve) => chrome.once('exit', resolve));
@@ -978,9 +1070,7 @@ async function runMode(opts) {
         const cdpPort = await getFreePort();
 
         if (opts.mode === 'legacy') {
-            const legacyPath = fs.existsSync(path.join(ROOT_DIR, 'scratch/legacy_baseline_index.html'))
-                ? 'scratch/legacy_baseline_index.html'
-                : 'index.html';
+            const legacyPath = ensureLegacyBaseline();
             server = await startStaticHttpServer({ port, staticDir: ROOT_DIR, indexFile: legacyPath });
             session = await launchChromeSession(userDataDir, cdpPort);
             await runCoreSuite({ ...session, baseUrl: `http://127.0.0.1:${port}/`, screenshotDir: opts.screenshots, results });
@@ -1030,9 +1120,8 @@ async function runMode(opts) {
                 console.error('  [FAIL] Singlefile direct file:/// boot');
             }
         } else if (opts.mode === 'upgrade') {
-            const legacyPath = 'scratch/legacy_baseline_index.html';
+            const legacyPath = ensureLegacyBaseline();
             const distDir = path.join(ROOT_DIR, 'dist');
-            if (!fs.existsSync(path.join(ROOT_DIR, legacyPath))) throw new Error('scratch/legacy_baseline_index.html missing');
             if (!fs.existsSync(path.join(distDir, 'index.html'))) throw new Error('dist/index.html missing');
 
             // Step A: Boot legacy app on fixed origin & seed IDB + localStorage via real app APIs
