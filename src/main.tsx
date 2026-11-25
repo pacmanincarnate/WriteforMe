@@ -9,6 +9,7 @@ import './legacy/setupGlobals';
 import './legacy/registerFoundationGlobals';
 import './legacy/registerDomainGlobals';
 import './legacy/registerServiceGlobals';
+import './legacy/registerStoreGlobals';
 import './legacy/registerPipelineGlobals';
 import './legacy/registerUiGlobals';
 import './legacy/MonolithApp.jsx';

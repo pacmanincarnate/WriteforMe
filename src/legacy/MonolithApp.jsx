@@ -636,93 +636,17 @@ const ReactDOM = ReactDOMClient;
             window.setStory = setStory;
 
             // Inspector Mode State (Toggled in Sidebar Footer)
-            const [isInspectorMode, setIsInspectorMode] = useState(() => localStorage.getItem("ellipsisprose_inspector_mode") === "true");
-            const toggleInspectorMode = () => {
-                setIsInspectorMode(prev => {
-                    const next = !prev;
-                    localStorage.setItem("ellipsisprose_inspector_mode", String(next));
-                    return next;
-                });
-            };
+            const isInspectorMode = useUiStore(s => s.isInspectorMode);
+            const toggleInspectorMode = useUiStore(s => s.toggleInspectorMode);
             window.isInspectorMode = isInspectorMode;
 
             // Custom Editorial Dialog States (replacing window.confirm and window.prompt)
-            const [confirmModalState, setConfirmModalState] = useState({
-                isOpen: false,
-                title: '',
-                message: '',
-                confirmLabel: 'Confirm',
-                cancelLabel: 'Cancel',
-                secondaryLabel: null,
-                danger: false,
-                warning: false,
-                onConfirm: null,
-                onSecondary: null,
-                onCancel: null
-            });
-
-            const requestConfirm = useCallback(({ title, message, confirmLabel = 'Confirm', cancelLabel = 'Cancel', secondaryLabel = null, danger = false, warning = false, onConfirm, onSecondary }) => {
-                return new Promise((resolve) => {
-                    setConfirmModalState({
-                        isOpen: true,
-                        title,
-                        message,
-                        confirmLabel,
-                        cancelLabel,
-                        secondaryLabel,
-                        danger,
-                        warning,
-                        onConfirm: () => {
-                            setConfirmModalState(prev => ({ ...prev, isOpen: false }));
-                            if (typeof onConfirm === 'function') onConfirm();
-                            resolve(true);
-                        },
-                        onSecondary: secondaryLabel ? () => {
-                            setConfirmModalState(prev => ({ ...prev, isOpen: false }));
-                            if (typeof onSecondary === 'function') onSecondary();
-                            resolve('secondary');
-                        } : null,
-                        onCancel: () => {
-                            setConfirmModalState(prev => ({ ...prev, isOpen: false }));
-                            resolve(false);
-                        }
-                    });
-                });
-            }, []);
+            const confirmModalState = useUiStore(s => s.confirmModalState);
+            const requestConfirm = useUiStore(s => s.requestConfirm);
             window.requestConfirm = requestConfirm;
 
-            const [formModalState, setFormModalState] = useState({
-                isOpen: false,
-                title: '',
-                subtitle: '',
-                fields: [],
-                submitLabel: 'Save',
-                cancelLabel: 'Cancel',
-                onSubmit: null,
-                onCancel: null
-            });
-
-            const openFormModal = useCallback(({ title, subtitle, fields, submitLabel = 'Save', cancelLabel = 'Cancel', onSubmit }) => {
-                return new Promise((resolve) => {
-                    setFormModalState({
-                        isOpen: true,
-                        title,
-                        subtitle,
-                        fields,
-                        submitLabel,
-                        cancelLabel,
-                        onSubmit: (formData) => {
-                            setFormModalState(prev => ({ ...prev, isOpen: false }));
-                            if (typeof onSubmit === 'function') onSubmit(formData);
-                            resolve(formData);
-                        },
-                        onCancel: () => {
-                            setFormModalState(prev => ({ ...prev, isOpen: false }));
-                            resolve(null);
-                        }
-                    });
-                });
-            }, []);
+            const formModalState = useUiStore(s => s.formModalState);
+            const openFormModal = useUiStore(s => s.openFormModal);
             window.openFormModal = openFormModal;
 
             // Helper to list stories and update library metadata state
@@ -1169,60 +1093,6 @@ const ReactDOM = ReactDOMClient;
                     }
                 });
             };
-            const __skipOldDeleteHandler = async (storyItem, e) => {
-                try {
-                    const deletedId = storyItem.id;
-                    await storyStore.deleteStory(deletedId);
-                    await logStore.clearLogs(deletedId);
-                    try {
-                        await imageStore.deleteImage(`cover_${deletedId}`);
-                    } catch (imgErr) {
-                        console.warn("Cover deletion skipped:", imgErr);
-                    }
-                    try {
-                        if (window.audioStore) await window.audioStore.deleteStoryAudio(deletedId);
-                    } catch (audioDelErr) {
-                        console.warn("Story audio deletion skipped:", audioDelErr);
-                    }
-
-                    if (activeStoryId === deletedId) {
-                        const allStories = await storyStore.listStories();
-                        const validRemaining = allStories.filter(s => s.id !== 'current_story' && s.id !== deletedId);
-                        if (validRemaining.length > 0) {
-                            validRemaining.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                            const nextStory = validRemaining[0];
-                            const migrated = migrateStoryToSequences(nextStory.data);
-                            setActiveStoryId(nextStory.id);
-                            setStory({
-                                relationships: {},
-                                graph_edges: [],
-                                ...migrated,
-                                world_primer: nextStory.data?.world_primer || migrated?.world_primer || null,
-                                continuity_ledger: Array.isArray(migrated?.continuity_ledger) ? migrated.continuity_ledger : [],
-                                secret_vault: Array.isArray(migrated?.secret_vault) ? migrated.secret_vault : [],
-                                id: nextStory.id
-                            });
-                            setWorldPrimer(nextStory.data?.world_primer || migrated?.world_primer || null);
-                        } else {
-                            const defaultStory = createDefaultStoryTemplate('story_default');
-                            await storyStore.saveStory('story_default', defaultStory);
-                            setActiveStoryId('story_default');
-                            setStory(defaultStory);
-                            setWorldPrimer(null);
-                        }
-                        setSelectedAct(null);
-                        setSelectedSequence(null);
-                        setSelectedScene(null);
-                    }
-
-                    await refreshLibrary();
-                    showToast(`Deleted "${storyTitle}"`, "success");
-                } catch (err) {
-                    console.error("Failed to delete story:", err);
-                    showToast("Failed to delete story: " + err.message, "error");
-                }
-            };
-
             // Settings State
             const [enableReview, setEnableReview] = useState(() => {
                 const val = localStorage.getItem("ellipsisprose_enable_review");
@@ -1790,26 +1660,15 @@ const ReactDOM = ReactDOMClient;
                     window.removeEventListener('resize', measureMatrixScroll);
                 };
             }, [view, matrixView, story?.id, story?.cast?.length]);
-            const [theme, setTheme] = useState(() => localStorage.getItem("ellipsisprose_theme") || 'light');
+            const theme = useSettingsStore(s => s.theme);
+            const setTheme = useSettingsStore(s => s.setTheme);
 
             useEffect(() => {
-                if (theme === 'dark') {
-                    document.documentElement.classList.add('dark');
-                    document.documentElement.setAttribute('data-theme', 'dark');
-                } else {
-                    document.documentElement.classList.remove('dark');
-                    document.documentElement.setAttribute('data-theme', 'light');
-                }
+                applyThemeToDom(theme);
                 localStorage.setItem("ellipsisprose_theme", theme);
             }, [theme]);
 
-            const toggleTheme = () => {
-                setTheme(prev => {
-                    const next = prev === 'dark' ? 'light' : 'dark';
-                    localStorage.setItem("ellipsisprose_theme", next);
-                    return next;
-                });
-            };
+            const toggleTheme = useSettingsStore(s => s.toggleTheme);
 
             const [settingsTab, setSettingsTab] = useState(() => localStorage.getItem("ellipsisprose_settings_tab") || 'models');
             useEffect(() => {
@@ -1827,11 +1686,10 @@ const ReactDOM = ReactDOMClient;
 
             const [loading, setLoading] = useState(false);
             const [loadingStep, setLoadingStep] = useState("");
-            const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-            const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
-                try { return localStorage.getItem('ellipsisprose_sidebar_collapsed') === 'true'; }
-                catch { return false; }
-            });
+            const isSidebarOpen = useUiStore(s => s.isSidebarOpen);
+            const setIsSidebarOpen = useUiStore(s => s.setIsSidebarOpen);
+            const isSidebarCollapsed = useUiStore(s => s.isSidebarCollapsed);
+            const setIsSidebarCollapsed = useUiStore(s => s.setIsSidebarCollapsed);
             const [isWriterFocusMode, setIsWriterFocusMode] = useState(false);
             const [isEditingProseInline, setIsEditingProseInline] = useState(false);
             const [inlineProseDraft, setInlineProseDraft] = useState("");
@@ -2032,7 +1890,8 @@ const ReactDOM = ReactDOMClient;
             const loreInputRef = useRef(null);
             const coverUploadInputRef = useRef(null);
 
-            const [promptLog, setPromptLog] = useState([]);
+            const promptLog = usePipelineStore(s => s.promptLog);
+            const setPromptLog = usePipelineStore(s => s.setPromptLog);
             const isLogHydrated = useRef(false);
 
             useEffect(() => {
@@ -2096,9 +1955,11 @@ const ReactDOM = ReactDOMClient;
                 }
             }, [promptLog, activeStoryId]);
 
-            const [currentPipelineStep, setCurrentPipelineStep] = useState(null);
+            const currentPipelineStep = usePipelineStore(s => s.currentPipelineStep);
+            const setCurrentPipelineStep = usePipelineStore(s => s.setCurrentPipelineStep);
             const [inspectedStepId, setInspectedStepId] = useState(null);
-            const [generatingSceneKey, setGeneratingSceneKey] = useState(null);
+            const generatingSceneKey = usePipelineStore(s => s.generatingSceneKey);
+            const setGeneratingSceneKey = usePipelineStore(s => s.setGeneratingSceneKey);
             const [pipelineViewMode, setPipelineViewMode] = useState('detailed');
             const [pipelineDisplayMode, setPipelineDisplayMode] = useState('stage'); // 'stage' (Novel Control Center) | 'audio' (Audio Production) | 'graph' (Technical Flowchart)
             const [activePipelineWork, setActivePipelineWork] = useState(null);
@@ -6408,198 +6269,12 @@ const ReactDOM = ReactDOMClient;
             }, [loading]);
 
 
-            const logPipelineDelay = (stageName, durationMs, reason = "Cooldown delay") => {
-                const logId = Date.now() + Math.random();
-                const durationSec = (durationMs / 1000).toFixed(2);
-                const stepInfo = typeof getPipelineStepInfo === 'function' ? getPipelineStepInfo(stageName) : null;
-                if (stepInfo?.stepId) {
-                    setCurrentPipelineStep(stepInfo.stepId);
-                }
-                const logEntry = {
-                    id: logId,
-                    timestamp: new Date().toLocaleTimeString(),
-                    function: stageName || "Pipeline Delay",
-                    stepId: stepInfo?.stepId || null,
-                    stepTier: stepInfo?.stepTier || null,
-                    stepTitle: stepInfo?.stepTitle || null,
-                    isDelay: true,
-                    status: 'delay',
-                    durationSec: durationSec,
-                    durationMs: Math.round(durationMs),
-                    validationSummary: `[Delay Timer] ${reason} (${durationSec}s / ${Math.round(durationMs)}ms)`,
-                    prompt: `Delay timer paused execution for ${durationSec}s (${Math.round(durationMs)}ms). Reason: ${reason}`,
-                    systemPrompt: "SYSTEM TIMER"
-                };
-                setPromptLog(prev => [logEntry, ...prev].slice(0, PROMPT_LOG_CAP));
-            };
-
-            const logPipelineValidation = (stageName, isPassed, details, durationSec = null, meta = {}) => {
-                const logId = Date.now() + Math.random();
-                const detailText = Array.isArray(details) ? details.join('\n') : String(details || "");
-                const stepInfo = typeof getPipelineStepInfo === 'function' ? getPipelineStepInfo(stageName || meta.tierName) : null;
-                if (stepInfo?.stepId) {
-                    setCurrentPipelineStep(stepInfo.stepId);
-                }
-                const logEntry = {
-                    id: logId,
-                    timestamp: new Date().toLocaleTimeString(),
-                    isoTimestamp: new Date().toISOString(),
-                    function: stageName,
-                    stepId: stepInfo?.stepId || null,
-                    stepTier: stepInfo?.stepTier || null,
-                    stepTitle: stepInfo?.stepTitle || null,
-                    isValidation: true,
-                    status: isPassed ? 'success' : 'validation_failed',
-                    durationSec: durationSec,
-                    validationSummary: meta.summary || `[Validation Gate] ${isPassed ? 'PASS' : 'FAIL'}: ${detailText.split('\n')[0]}`,
-                    prompt: detailText,
-                    systemPrompt: meta.systemPrompt || "PIPELINE VALIDATION GATE",
-                    pipelineAttempt: meta.attempt || (stageName && stageName.match(/Attempt\s+(\d+)/i) ? parseInt(stageName.match(/Attempt\s+(\d+)/i)[1], 10) : null),
-                    pipelineMaxAttempts: meta.maxAttempts || (stageName && stageName.match(/Attempt\s+\d+\/(\d+)/i) ? parseInt(stageName.match(/Attempt\s+\d+\/(\d+)/i)[1], 10) : 3),
-                    actionTaken: meta.actionTaken || null,
-                    errors: meta.errors || (isPassed ? [] : (Array.isArray(details) ? details : [detailText])),
-                    errorDetails: meta.errorDetails || (!isPassed ? detailText : null),
-                    tierName: meta.tierName || null,
-                    validationType: meta.type || 'validation_gate'
-                };
-                setPromptLog(prev => [logEntry, ...prev].slice(0, PROMPT_LOG_CAP));
-            };
-
-            const logPipelineError = (stageName, errorMsg, errorDetails = null, meta = {}) => {
-                const logId = Date.now() + Math.random();
-                const stepInfo = typeof getPipelineStepInfo === 'function' ? getPipelineStepInfo(stageName || meta.tierName) : null;
-                if (stepInfo?.stepId) {
-                    setCurrentPipelineStep(stepInfo.stepId);
-                }
-                const logEntry = {
-                    id: logId,
-                    timestamp: new Date().toLocaleTimeString(),
-                    isoTimestamp: new Date().toISOString(),
-                    function: stageName,
-                    stepId: stepInfo?.stepId || null,
-                    stepTier: stepInfo?.stepTier || null,
-                    stepTitle: stepInfo?.stepTitle || null,
-                    isError: true,
-                    status: 'error',
-                    durationSec: meta.durationSec || null,
-                    validationSummary: meta.summary || `[Pipeline Failure] ${errorMsg}`,
-                    prompt: errorDetails ? `${errorMsg}\n\nDetails:\n${errorDetails}` : errorMsg,
-                    systemPrompt: meta.systemPrompt || "PIPELINE ERROR / FAILURE",
-                    error: errorMsg,
-                    errorDetails: errorDetails,
-                    pipelineAttempt: meta.attempt || (stageName && stageName.match(/Attempt\s+(\d+)/i) ? parseInt(stageName.match(/Attempt\s+(\d+)/i)[1], 10) : null),
-                    pipelineMaxAttempts: meta.maxAttempts || (stageName && stageName.match(/Attempt\s+\d+\/(\d+)/i) ? parseInt(stageName.match(/Attempt\s+\d+\/(\d+)/i)[1], 10) : 3),
-                    actionTaken: meta.actionTaken || null,
-                    errors: meta.errors || [errorMsg],
-                    tierName: meta.tierName || null,
-                    rawOutputSnippet: meta.rawOutputSnippet || null
-                };
-                setPromptLog(prev => [logEntry, ...prev].slice(0, PROMPT_LOG_CAP));
-            };
-            const logAudioDramaPipelineStageStart = (stageKey, stageTitle, details = null, meta = {}) => {
-                const logId = Date.now() + Math.random();
-                const detailText = typeof details === 'object' && details !== null ? JSON.stringify(details, null, 2) : String(details || "");
-                const stepInfo = typeof getPipelineStepInfo === 'function' ? getPipelineStepInfo(22) : null;
-                if (typeof setCurrentPipelineStep === 'function') {
-                    setCurrentPipelineStep(22);
-                }
-                const logEntry = {
-                    id: logId,
-                    timestamp: new Date().toLocaleTimeString(),
-                    isoTimestamp: new Date().toISOString(),
-                    function: `[Audio Drama] ${stageTitle}`,
-                    stepId: 22,
-                    stepTier: "Tier 7.0",
-                    stepTitle: "Audio Drama Multi-Voice Production",
-                    stageKey: stageKey,
-                    isAudio: true,
-                    category: 'audio',
-                    status: 'running',
-                    isValidation: false,
-                    validationSummary: stageTitle,
-                    prompt: `[RUNNING STAGE: ${stageKey}]
-${stageTitle}
-
-${detailText}`,
-                    systemPrompt: "AUDIO DRAMA TTS PIPELINE: " + String(stageKey).toUpperCase(),
-                    tierName: "Tier 7.0: Audio Drama",
-                    parameters: details || {},
-                    meta: meta || {}
-                };
-                setPromptLog(prev => [logEntry, ...prev].slice(0, PROMPT_LOG_CAP));
-            };
-
-            const logAudioDramaPipelineStageComplete = (stageKey, stageTitle, details = null, meta = {}) => {
-                const logId = Date.now() + Math.random();
-                const detailText = typeof details === 'object' && details !== null ? JSON.stringify(details, null, 2) : String(details || "");
-                const stepInfo = typeof getPipelineStepInfo === 'function' ? getPipelineStepInfo(22) : null;
-                const durationSec = meta.durationSec || (details && details.durationSec) || (details && details.totalDurationSec) || (details && details.totalExportSec) || null;
-                const logEntry = {
-                    id: logId,
-                    timestamp: new Date().toLocaleTimeString(),
-                    isoTimestamp: new Date().toISOString(),
-                    function: `[Audio Drama] ${stageTitle}`,
-                    stepId: 22,
-                    stepTier: "Tier 7.0",
-                    stepTitle: "Audio Drama Multi-Voice Production",
-                    stageKey: stageKey,
-                    isAudio: true,
-                    category: 'audio',
-                    status: 'success',
-                    durationSec: durationSec,
-                    isValidation: false,
-                    validationSummary: stageTitle,
-                    prompt: `[COMPLETED STAGE: ${stageKey}]
-${stageTitle}
-
-${detailText}`,
-                    systemPrompt: "AUDIO DRAMA TTS PIPELINE: " + String(stageKey).toUpperCase(),
-                    tierName: "Tier 7.0: Audio Drama",
-                    parameters: details || {},
-                    meta: meta || {}
-                };
-                setPromptLog(prev => [logEntry, ...prev].slice(0, PROMPT_LOG_CAP));
-            };
-
-            const logAudioDramaPipelineStageError = (stageKey, stageTitle, error, details = null, meta = {}) => {
-                const logId = Date.now() + Math.random();
-                const errorMsg = error instanceof Error ? error.message : String(error || "Unknown TTS Error");
-                const detailText = typeof details === 'object' && details !== null ? JSON.stringify(details, null, 2) : String(details || "");
-                const stepInfo = typeof getPipelineStepInfo === 'function' ? getPipelineStepInfo(22) : null;
-                if (typeof setCurrentPipelineStep === 'function') {
-                    setCurrentPipelineStep(22);
-                }
-                const logEntry = {
-                    id: logId,
-                    timestamp: new Date().toLocaleTimeString(),
-                    isoTimestamp: new Date().toISOString(),
-                    function: `[Audio Drama ERROR] ${stageTitle}`,
-                    stepId: 22,
-                    stepTier: "Tier 7.0",
-                    stepTitle: "Audio Drama Multi-Voice Production",
-                    stageKey: stageKey,
-                    isAudio: true,
-                    category: 'audio',
-                    isError: true,
-                    status: 'error',
-                    durationSec: meta.durationSec || null,
-                    validationSummary: `[Audio Drama TTS Error] ${stageTitle}: ${errorMsg}`,
-                    prompt: `[STAGE FAILED: ${stageKey}]
-${stageTitle}
-
-Error: ${errorMsg}
-
-Details:
-${detailText}`,
-                    systemPrompt: "AUDIO DRAMA TTS PIPELINE ERROR",
-                    error: errorMsg,
-                    errorDetails: detailText,
-                    tierName: "Tier 7.0: Audio Drama",
-                    parameters: details || {},
-                    meta: meta || {}
-                };
-                setPromptLog(prev => [logEntry, ...prev].slice(0, PROMPT_LOG_CAP));
-            };
+            const logPipelineDelay = usePipelineStore(s => s.logPipelineDelay);
+            const logPipelineValidation = usePipelineStore(s => s.logPipelineValidation);
+            const logPipelineError = usePipelineStore(s => s.logPipelineError);
+            const logAudioDramaPipelineStageStart = usePipelineStore(s => s.logAudioDramaPipelineStageStart);
+            const logAudioDramaPipelineStageComplete = usePipelineStore(s => s.logAudioDramaPipelineStageComplete);
+            const logAudioDramaPipelineStageError = usePipelineStore(s => s.logAudioDramaPipelineStageError);
 
             window.logAudioDramaPipelineStageStart = logAudioDramaPipelineStageStart;
             window.logAudioDramaPipelineStageComplete = logAudioDramaPipelineStageComplete;
@@ -15542,19 +15217,6 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                         showToast(`Beat ${b + 1} deleted`);
                     }
                 });
-            };
-            const __skipOldDeleteBeat = (seqIdx, sceneIdx, beatIdx) => {
-                const sId = `${seqIdx}-${sceneIdx}`;
-                setStory(prev => {
-                    const currentBeats = prev.beats[sId] ? [...prev.beats[sId]] : [];
-                    if (currentBeats.length > b) {
-                        currentBeats.splice(b, 1);
-                    }
-                    // Renumber remaining beats
-                    const renumbered = currentBeats.map((bItem, i) => ({ ...bItem, number: i + 1 }));
-                    return { ...prev, beats: { ...prev.beats, [sId]: renumbered } };
-                });
-                showToast(`Beat ${b + 1} deleted`);
             };
 
             const handleDeleteScene = (seqIdx, sceneIdx) => {
@@ -34106,6 +33768,9 @@ ${auditLines}
                 await diskSettingsVault.hydrateBeforeMount();
             } catch (err) {
                 console.warn('[DiskSettingsVault] Pre-mount hydration failed:', err);
+            }
+            if (typeof hydrateAllStoresFromStorage === 'function') {
+                hydrateAllStoresFromStorage();
             }
             const container = document.getElementById('root');
             if (!window.reactRoot) {
