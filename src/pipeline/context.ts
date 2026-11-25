@@ -1,0 +1,213 @@
+/**
+ * @module pipeline/context
+ * Shared strict-TypeScript runtime context contract, typed story aliases,
+ * and safe runtime value-coercion helpers for modular AI pipeline orchestrators.
+ */
+
+import type {
+    CastMember,
+    EntityNameAuditReport,
+    LoreItem,
+    SlopConfig
+} from '@/types';
+import type { PipelineLogMeta } from '@/stores';
+import type {
+    EffectiveModelConfig,
+    ProviderModelSettings
+} from '@/services/llm';
+import type {
+    EmbeddingService,
+    LoreRetrievalResult,
+    VectorStore
+} from '@/services/rag';
+import type { GraphManager } from '@/domain/lore';
+import type {
+    ProcessedLoreEntry,
+    WorldUpdatesPayload
+} from '@/domain/continuity';
+
+export type PipelineStory = Record<string, unknown>;
+export type PipelineRecord = Record<string, unknown>;
+
+export type CallAiFn = (
+    prompt: string,
+    systemPrompt: string,
+    isJson?: boolean,
+    logName?: string,
+    modelRoleOrSize?: string
+) => Promise<string>;
+
+export type StoryUpdater =
+    | PipelineStory
+    | ((prev: PipelineStory) => PipelineStory);
+
+export interface InterventionModalPayload {
+    isOpen: boolean;
+    tierName: string;
+    deviationReasons: string[];
+    rawOutput: string;
+    onResolve:
+        | ((action: 'abort' | 'retry' | 'accept', editedText?: string) => void | Promise<void>)
+        | null;
+}
+
+export interface PipelineRuntimeContext {
+    // Story & Library State
+    getStory: () => PipelineStory;
+    setStory: (updaterOrValue: StoryUpdater) => PipelineStory;
+    getActiveStoryId: () => string;
+    updateStoryById: (
+        targetStoryId: string,
+        updaterOrPatch: StoryUpdater
+    ) => Promise<PipelineStory | null>;
+    refreshLibrary?: () => Promise<void>;
+
+    // Settings & Configuration Getters
+    getModelSettings: () => ProviderModelSettings;
+    getEffectiveModelConfig: (role?: string) => EffectiveModelConfig;
+    getApiProvider: () => string;
+    getEnableReview: () => boolean;
+    getEnableNarrativeLenses: () => boolean;
+    getEnableStylePolish?: () => boolean;
+    getEnableAudioDramaDirectionPass?: () => boolean;
+    getSlopConfig: () => SlopConfig;
+    getBannedPhrases: () => string[];
+
+    // Feedback & Escalation UI State
+    getFeedbackLedger: () => Record<string, string[]>;
+    setFeedbackLedger: (
+        updater:
+            | Record<string, string[]>
+            | ((prev: Record<string, string[]>) => Record<string, string[]>)
+    ) => void;
+    setFailedReviewCritiques: (
+        updater: string[] | ((prev: string[]) => string[])
+    ) => void;
+    setInterventionState: (
+        updater:
+            | InterventionModalPayload
+            | ((prev: InterventionModalPayload) => InterventionModalPayload)
+    ) => void;
+
+    // UI Status & Logging Callbacks
+    setLoading: (loading: boolean) => void;
+    setLoadingStep: (step: string) => void;
+    setCurrentPipelineStep?: (stepId: number | null) => void;
+    setActivePipelineWork?: (work: PipelineRecord | null) => void;
+    setGeneratingSceneKey?: (key: string | null) => void;
+    setWorldPrimer: (primer: string | null) => void;
+    setRagStatus: (status: string) => void;
+    getRagStatus: () => string;
+    setIsRebuildingRag: (rebuilding: boolean) => void;
+    getIsRebuildingRag: () => boolean;
+    setView?: (nextView: string | ((prev: string) => string)) => void;
+    setSelectedSequence?: (seqIdx: number | null) => void;
+    setSelectedScene?: (sceneIdx: number | null) => void;
+
+    showToast: (
+        message: string,
+        variant?: 'success' | 'error' | 'info' | 'warning'
+    ) => void;
+    logPipelineValidation: (
+        stageName: string,
+        isPassed: boolean,
+        details: string | string[],
+        durationSec?: string | number | null,
+        meta?: PipelineLogMeta
+    ) => void;
+    logPipelineError: (
+        stageName: string,
+        errorMsg: string,
+        errorDetails?: string | null,
+        meta?: PipelineLogMeta
+    ) => void;
+
+    // RAG & Lore Import Refs
+    getVectorStore: () => VectorStore | null;
+    getGraphManager: () => GraphManager | null;
+    getEmbeddingService: () => EmbeddingService | null;
+    getRagIndexRevision: () => number;
+    bumpRagIndexRevision: () => number;
+    getLoreImportVersion: () => number;
+    retrieveContext: (
+        query: string,
+        threshold?: number,
+        filterFn?: ((metadata: Record<string, unknown>) => boolean) | null,
+        loreList?: LoreItem[] | null
+    ) => Promise<LoreRetrievalResult[]>;
+
+    // Core AI Dispatcher
+    callAI: CallAiFn;
+
+    // Optional Cross-Layer / Hook Delegates (Populated incrementally across Phase 6)
+    applyWorldUpdates?: (
+        baseStory: PipelineStory,
+        updates: WorldUpdatesPayload,
+        processedLore: ProcessedLoreEntry[],
+        activeActNum?: number | string,
+        activeSceneNum?: number | string
+    ) => PipelineStory;
+    auditEntityNamesAndPlaces?: (params: {
+        characters?: Array<CastMember | string>;
+        places?: Array<{ name?: string } | string>;
+        existingCast?: Array<CastMember | string>;
+        slopConfig?: SlopConfig | null;
+        story?: PipelineStory | null;
+    }) => EntityNameAuditReport;
+    applyCascadingNameReplacements?: (
+        text: string,
+        renameMap: Record<string, string>
+    ) => string;
+}
+
+export function asRecord(val: unknown): PipelineRecord {
+    return val && typeof val === 'object' && !Array.isArray(val)
+        ? (val as PipelineRecord)
+        : {};
+}
+
+export function asOptionalRecord(val: unknown): PipelineRecord | null {
+    return val && typeof val === 'object' && !Array.isArray(val)
+        ? (val as PipelineRecord)
+        : null;
+}
+
+export function asArray<T = unknown>(val: unknown): T[] {
+    return Array.isArray(val) ? (val as T[]) : [];
+}
+
+export function asString(val: unknown, fallback = ''): string {
+    if (typeof val === 'string') return val;
+    if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+    return fallback;
+}
+
+export function asNumber(val: unknown, fallback = 0): number {
+    if (typeof val === 'number' && !Number.isNaN(val)) return val;
+    if (typeof val === 'string') {
+        const parsed = Number(val);
+        if (!Number.isNaN(parsed)) return parsed;
+    }
+    return fallback;
+}
+
+export function asStringArray(val: unknown): string[] {
+    if (Array.isArray(val)) {
+        return val
+            .map((item) => (typeof item === 'string' ? item.trim() : asString(item).trim()))
+            .filter(Boolean);
+    }
+    if (typeof val === 'string') {
+        return val
+            .split(/[,;\n]+/)
+            .map((s) => s.trim())
+            .filter(Boolean);
+    }
+    return [];
+}
+
+export function extractErrorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    return String(err);
+}
