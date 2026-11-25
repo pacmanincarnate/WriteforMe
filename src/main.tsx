@@ -31,10 +31,13 @@ window.addEventListener('vite:preloadError', (event) => {
 });
 
 if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
-    if ('serviceWorker' in navigator) {
+    // The worker is built from src/sw.ts (see its header for what to update and when). It exists
+    // only in the production multi-file build: not under `npm run dev`, not in the portable file.
+    if ('serviceWorker' in navigator && import.meta.env.PROD && !import.meta.env.VITE_SINGLEFILE) {
         window.addEventListener('load', () => {
             navigator.serviceWorker
-                .register('./sw.js')
+                // Same URL as the old hand-written worker, so existing installs update in place.
+                .register('./sw.js', { updateViaCache: 'none' })
                 .then((reg) => {
                     console.log('[PWA] Service Worker registered successfully with scope:', reg.scope);
                 })

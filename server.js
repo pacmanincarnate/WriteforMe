@@ -11,7 +11,7 @@ const DATA_DIR = process.env.ELLIPSIS_DATA_DIR
     : path.join(ROOT, 'data');
 const STATIC_DIR = process.env.STATIC_DIR
     ? path.resolve(process.env.STATIC_DIR)
-    : (fs.existsSync(path.join(ROOT, 'dist', 'index.html')) ? path.join(ROOT, 'dist') : ROOT);
+    : path.join(ROOT, 'dist');
 const STORIES_DIR = path.join(DATA_DIR, 'stories');
 const BACKUPS_DIR = path.join(DATA_DIR, 'backups');
 const DELETED_BACKUPS_DIR = path.join(BACKUPS_DIR, '_deleted');
@@ -871,6 +871,12 @@ const server = http.createServer((req, res) => {
     }
 
     fs.stat(safePath, (err, stats) => {
+        if ((err || !stats.isFile()) && reqPath === '/index.html') {
+            // The app is only served from the Vite build output; the repo root is not servable.
+            res.writeHead(503, { 'Content-Type': 'text/plain; charset=UTF-8' });
+            res.end('EllipsisProse has not been built yet. Run "npm run build" (or use the launcher, which builds on first start), then reload.');
+            return;
+        }
         if (err || !stats.isFile()) {
             res.writeHead(404, { 'Content-Type': 'text/plain' });
             res.end('Not Found: ' + reqPath);
@@ -897,5 +903,8 @@ const server = http.createServer((req, res) => {
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`EllipsisProse Local Server running at http://localhost:${PORT}/ and http://127.0.0.1:${PORT}/`);
     console.log(`Serving static app from: ${STATIC_DIR}`);
+    if (!fs.existsSync(path.join(STATIC_DIR, 'index.html'))) {
+        console.warn('No built app found there yet. Run "npm run build" to create it. The /api endpoints work regardless (for "npm run dev").');
+    }
     console.log(`Local Disk Vault active at: ${DATA_DIR}`);
 });

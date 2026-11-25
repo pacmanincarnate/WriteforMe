@@ -1,0 +1,95 @@
+name: Deploy to GitHub Pages
+
+# Builds the app and publishes dist/ to GitHub Pages whenever `main` moves. `dev` is the work
+# branch and never deploys, so the live site only changes when a release is promoted to main.
+#
+# One-time setup in the repository (Settings -> Pages -> Build and deployment):
+#   Source: "GitHub Actions"   (instead of "Deploy from a branch")
+# If the repository's default branch is not `main`, also allow `main` under
+# Settings -> Environments -> github-pages -> Deployment branches.
+#
+# Works on the free plan for a public repository. Nothing built is committed to git.
+#
+# Offline support: the build generates the service worker (src/sw.ts -> dist/sw.js) with a fresh
+# list of every built file, so a deploy needs no manual cache bump. Installed copies pick the new
+# version up on their next online load. See docs/OFFLINE_AND_UPDATES.md.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time; a newer push waits for the running deploy instead of cancelling it midway.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build site
+    # Forks have no Pages site to deploy to.
+    if: github.event.repository.fork == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Typecheck, lint, unit tests and the production build (which also checks the offline file list).
+      - name: Verify and build
+        run: npm run verify
+
+      # The same build served under /WriteforMe/ with no backend, including a real offline reload.
+      - name: E2E subpath (GitHub Pages simulation)
+        run: npm run test:subpath
+
+      - name: Build portable single file
+        run: npm run build:singlefile
+
+      # Stable download link on the site: <site>/download/EllipsisProse-portable.html
+      - name: Add portable build to the site
+        run: |
+          mkdir -p dist/download
+          cp dist-singlefile/EllipsisProse-portable.html dist/download/EllipsisProse-portable.html
+
+      - name: Upload portable build
+        uses: actions/upload-artifact@v4
+        with:
+          name: EllipsisProse-portable
+          path: dist-singlefile/EllipsisProse-portable.html
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

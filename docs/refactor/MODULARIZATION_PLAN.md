@@ -150,6 +150,8 @@ Create `src/hooks/useStoryPersistence.ts` and `src/hooks/useStoryEditors.ts`; ex
 3. Update `launch.js` / `server.js` / `.bat` docs for the new `dist/` layout; document the dev flow in `README`.
 4. Service worker: confirm `public/sw.js` / Workbox precache works at the subpath and does not break the singlefile build.
 
+**Done ahead of the rest of Phase 7 (decisions from the repo owner, 2026-11-25):** the service worker is now built from `src/sw.ts` by `vite-plugin-pwa` (`injectManifest`) and precaches every file in `dist/`; `public/sw.js` and the hand-written root `sw.js` are gone. The duplicate root copies of the manifest, favicons and icons are deleted (`public/` is the only copy) and `server.js` serves `dist/` only. `deploy-pages.yml` deploys `dist/` from `main` through GitHub Actions and publishes the portable file at `download/EllipsisProse-portable.html`; it needs Pages source set to "GitHub Actions" once. What to update for a release is in `docs/OFFLINE_AND_UPDATES.md` and the header of `src/sw.ts`.
+
 ### 4.4 Hardening & release
 
 - Remove dead code and unused exports; prune `window.*` bindings that nothing reads (**only** after a repo-wide search incl. `mcp-server/` and `audio-studio-bridge.js`). The names that code outside `src/` depends on are listed in `src/compat/testApi.ts` (44 module-level globals, 10 app-level handles, 2 external contracts) and pinned by `tests/unit/test-api-contract.test.ts`; everything else in `src/legacy/register*Globals.ts` only serves the monolith.
