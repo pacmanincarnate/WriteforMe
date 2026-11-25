@@ -165,11 +165,11 @@ server.tool(
     "set_model_config",
     "Changes the selected model API provider, model, and endpoint settings across the application or specific role (dev, review, prose) in EllipsisProse.",
     {
-        provider: z.enum(["gemini", "openrouter", "nanogpt", "koboldcpp", "codex"]).describe("The AI model API provider to select."),
+        provider: z.enum(["gemini", "openrouter", "nanogpt", "koboldcpp", "codex", "claude"]).describe("The AI model API provider to select."),
         model: z.string().optional().describe("The specific model ID to set (e.g., 'gemini-2.0-flash', 'google/gemini-2.0-flash-001', 'gpt-4o', 'anthropic/claude-3.5-sonnet')."),
         role: z.enum(["all", "dev", "review", "prose"]).optional().default("all").describe("Role to apply to: 'all' (primary and all tiers), 'dev' (Master/Development), 'review' (Reviewer), or 'prose' (Prose Writer)."),
         apiKey: z.string().optional().describe("Optional API key to set for the provider (stored securely in browser localStorage)."),
-        baseUrl: z.string().optional().describe("Optional endpoint URL for local providers (e.g. 'http://localhost:5001' for KoboldCPP, 'http://localhost:5010' for Codex Bridge).")
+        baseUrl: z.string().optional().describe("Optional endpoint URL for local providers (e.g. 'http://localhost:5001' for KoboldCPP, 'http://localhost:5010' for Codex Bridge, 'http://localhost:5011' for Claude Code Bridge).")
     },
     async ({ provider, model, role, apiKey, baseUrl }) => {
         const result = await sendToBrowser("setModelConfig", {

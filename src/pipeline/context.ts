@@ -210,6 +210,7 @@ export interface PipelineRuntimeContext {
         nanoGptKey?: string;
         koboldUrl?: string;
         codexUrl?: string;
+        claudeUrl?: string;
         openRouterMaxTokens?: number;
     };
 

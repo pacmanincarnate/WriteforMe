@@ -103,6 +103,13 @@ export interface SettingsModelsTabProps {
     codexStatus: SettingsCodexStatus;
     codexEmbeddingStatus: SettingsCodexEmbeddingStatus | null;
     refreshCodexModels: () => void | Promise<void>;
+    claudeUrl: string;
+    setClaudeUrl: (url: string) => void;
+    claudeModel: string;
+    setClaudeModel: (model: string) => void;
+    claudeModelsList: CodexModelInfo[];
+    claudeStatus: SettingsCodexStatus;
+    refreshClaudeModels: () => void | Promise<void>;
     showOtherApiKeys: boolean;
     setShowOtherApiKeys: React.Dispatch<React.SetStateAction<boolean>>;
     savedModels: string[];

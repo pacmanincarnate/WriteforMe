@@ -17,7 +17,7 @@ export const BRIDGE_VERSION = '2.1.1';
 export const DEFAULT_MCP_BRIDGE_URL = 'ws://127.0.0.1:3002';
 export const MCP_BRIDGE_MAX_RETRIES = 3;
 
-export const BRIDGE_PROVIDERS = ['gemini', 'openrouter', 'nanogpt', 'koboldcpp', 'codex'] as const;
+export const BRIDGE_PROVIDERS = ['gemini', 'openrouter', 'nanogpt', 'koboldcpp', 'codex', 'claude'] as const;
 export type BridgeProvider = (typeof BRIDGE_PROVIDERS)[number];
 
 /** Sub-actions accepted by `triggerPipelineStep`. Keep in sync with the enum in `mcp-server/index.mjs`. */
@@ -108,11 +108,13 @@ export interface BridgeState {
     nanoGptModel: string;
     koboldModel: string;
     codexModel: string;
+    claudeModel: string;
     apiKey: string;
     openRouterKey: string;
     nanoGptKey: string;
     koboldUrl: string;
     codexUrl: string;
+    claudeUrl: string;
     loading: boolean;
     loadingStep: string;
     continuousAutopilot: boolean;
@@ -155,11 +157,13 @@ export interface BridgeActions {
     setNanoGptModel: Setter;
     setKoboldModel: Setter;
     setCodexModel: Setter;
+    setClaudeModel: Setter;
     setApiKey: Setter;
     setOpenRouterKey: Setter;
     setNanoGptKey: Setter;
     setKoboldUrl: Setter;
     setCodexUrl: Setter;
+    setClaudeUrl: Setter;
     setInputTitle: Setter;
     setInputConcept: Setter;
     setInputAuthorNote: Setter;
@@ -256,11 +260,13 @@ export function createBridgeDispatcher(deps: BridgeDeps): BridgeDispatch {
                     nanoGptModel: s.nanoGptModel,
                     koboldModel: s.koboldModel,
                     codexModel: s.codexModel,
+                    claudeModel: s.claudeModel,
                     hasGeminiKey: Boolean(s.apiKey),
                     hasOpenRouterKey: Boolean(s.openRouterKey),
                     hasNanoGptKey: Boolean(s.nanoGptKey),
                     koboldUrl: s.koboldUrl,
-                    codexUrl: s.codexUrl
+                    codexUrl: s.codexUrl,
+                    claudeUrl: s.claudeUrl
                 };
             }
 
@@ -328,6 +334,10 @@ export function createBridgeDispatcher(deps: BridgeDeps): BridgeDispatch {
                         a.setCodexModel(model);
                         safeLocalStorageSet('ellipsisprose_codex_model', model);
                     }
+                    if (provider === 'claude') {
+                        a.setClaudeModel(model);
+                        safeLocalStorageSet('ellipsisprose_claude_model', model);
+                    }
                 }
 
                 // API keys
@@ -355,6 +365,10 @@ export function createBridgeDispatcher(deps: BridgeDeps): BridgeDispatch {
                     if (provider === 'codex') {
                         a.setCodexUrl(baseUrl);
                         safeLocalStorageSet('ellipsisprose_codex_url', baseUrl);
+                    }
+                    if (provider === 'claude') {
+                        a.setClaudeUrl(baseUrl);
+                        safeLocalStorageSet('ellipsisprose_claude_url', baseUrl);
                     }
                 }
 

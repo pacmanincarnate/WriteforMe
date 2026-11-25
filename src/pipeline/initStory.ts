@@ -36,7 +36,7 @@ import {
 } from '@/domain/story';
 import { PROMPTS } from '@/prompts';
 import { logStore, storyStore } from '@/services/storage';
-import type { CastMember, LoreItem, Story } from '@/types';
+import { isLocalProvider, type CastMember, type LoreItem, type Story } from '@/types';
 import {
     decodeXmlEntities,
     extractAllTags,
@@ -1077,8 +1077,7 @@ BEGIN DEVELOPING CONCEPTUAL FOUNDATION`;
             `Character Development (Tier 0.2: 0/${startingCast.length} complete)...`
         );
         const proseConfig = ctx.getEffectiveModelConfig('prose');
-        const isLocalProseEndpoint =
-            proseConfig?.provider === 'koboldcpp' || proseConfig?.provider === 'codex';
+        const isLocalProseEndpoint = isLocalProvider(proseConfig?.provider);
 
         let completedInterviews = 0;
         const executeInterviewForChar = async (

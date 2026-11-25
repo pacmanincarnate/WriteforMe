@@ -24,7 +24,12 @@ import type {
     ThinkingBudgetSettings
 } from '@/services/llm';
 import type { KoboldStatusResult } from '@/services/llm';
-import type { ModelDescriptor, SlopConfig } from '@/types';
+import {
+    CLI_BRIDGE_DEFAULT_URLS,
+    isCliBridgeProvider,
+    type ModelDescriptor,
+    type SlopConfig
+} from '@/types';
 import {
     readSessionJson,
     readStorageBool,
@@ -57,6 +62,8 @@ export interface SettingsState {
     koboldLoadedModel: string;
     codexUrl: string;
     codexModel: string;
+    claudeUrl: string;
+    claudeModel: string;
     savedModels: string[];
     devProvider: string;
     devModel: string;
@@ -109,6 +116,8 @@ export interface SettingsState {
     nanoGptModelsList: ModelDescriptor[];
     codexModelsList: CodexModelInfo[];
     codexStatus: KoboldStatusResult;
+    claudeModelsList: CodexModelInfo[];
+    claudeStatus: KoboldStatusResult;
     codexEmbeddingStatus: Record<string, unknown> | null;
     koboldStatus: string;
     koboldError: string | null;
@@ -158,7 +167,7 @@ export function readInitialSettingsState(): SettingsState {
     const apiProvider = readStorageString('ellipsisprose_api_provider', 'gemini');
     const embeddingProvider =
         readStorageString('ellipsisprose_embedding_provider') ||
-        (apiProvider === 'codex' ? 'gemini' : apiProvider);
+        (isCliBridgeProvider(apiProvider) ? 'gemini' : apiProvider);
     const geminiModel = readStorageString('ellipsisprose_gemini_model', 'gemini-2.0-flash');
     const koboldModel = readStorageString('ellipsisprose_kobold_model', 'koboldcpp');
 
@@ -224,6 +233,8 @@ export function readInitialSettingsState(): SettingsState {
         koboldLoadedModel: koboldModel || 'koboldcpp',
         codexUrl: readStorageString('ellipsisprose_codex_url', 'http://localhost:5010'),
         codexModel: readStorageString('ellipsisprose_codex_model', 'gpt-5.6-luna'),
+        claudeUrl: readStorageString('ellipsisprose_claude_url', CLI_BRIDGE_DEFAULT_URLS.claude),
+        claudeModel: readStorageString('ellipsisprose_claude_model', 'sonnet'),
         savedModels: readStorageJson<string[]>('ellipsisprose_saved_models', [
             'google/gemini-2.0-flash-001'
         ]),
@@ -299,6 +310,8 @@ export function readInitialSettingsState(): SettingsState {
         ),
         codexModelsList: [],
         codexStatus: { online: false, model: null, error: null },
+        claudeModelsList: [],
+        claudeStatus: { online: false, model: null, error: null },
         codexEmbeddingStatus: null,
         koboldStatus: 'idle',
         koboldError: null,
@@ -402,6 +415,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
             openRouterModel: s.openRouterModel,
             nanoGptModel: s.nanoGptModel,
             codexModel: s.codexModel,
+            claudeModel: s.claudeModel,
             koboldModel: s.koboldModel,
             koboldLoadedModel: s.koboldLoadedModel
         };

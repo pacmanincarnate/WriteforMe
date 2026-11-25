@@ -13,6 +13,7 @@ import type { ComfyOptionsCatalog, ComfyStatusInfo } from '@/services/images';
 import { fetchComfyInfoCatalog } from '@/services/images';
 import {
     checkKoboldCPPStatus,
+    fetchClaudeCatalog,
     fetchCodexCatalog,
     fetchGeminiCatalog,
     fetchGeminiImageModelsCatalog,
@@ -32,7 +33,7 @@ import {
     type ParsedModelMetadata,
     type ProviderModelSettings
 } from '@/services/llm';
-import type { ModelDescriptor } from '@/types';
+import { CLI_BRIDGE_DEFAULT_URLS, isCliBridgeProvider, isLocalProvider, type ModelDescriptor } from '@/types';
 import { safeLocalStorageSet, safeSessionStorageSet } from '@/utils';
 import { useDebounce } from './useDebounce';
 
@@ -93,7 +94,7 @@ export function useModelSearch(
 
         const runSearch = async (): Promise<void> => {
             const providerToUse = targetProvider || devProvider || 'gemini';
-            if (providerToUse === 'koboldcpp' || providerToUse === 'codex') {
+            if (isLocalProvider(providerToUse)) {
                 setResults([]);
                 setIsSearching(false);
                 return;
@@ -225,6 +226,12 @@ export interface UseModelCatalogResult {
     codexModelsList: CodexModelInfo[];
     codexStatus: KoboldStatusResult;
     codexEmbeddingStatus: Record<string, unknown> | null;
+    claudeUrl: string;
+    setClaudeUrl: Dispatch<SetStateAction<string>>;
+    claudeModel: string;
+    setClaudeModel: Dispatch<SetStateAction<string>>;
+    claudeModelsList: CodexModelInfo[];
+    claudeStatus: KoboldStatusResult;
     savedModels: string[];
     setSavedModels: Dispatch<SetStateAction<string[]>>;
     openRouterModelsList: OpenRouterCatalogModel[];
@@ -303,6 +310,7 @@ export interface UseModelCatalogResult {
     refreshNanoGptModels: (force?: boolean) => Promise<void>;
     checkKoboldStatus: () => Promise<void>;
     refreshCodexModels: () => Promise<void>;
+    refreshClaudeModels: () => Promise<void>;
     refreshComfyInfo: () => Promise<void>;
     handleCatalogRefresh: (targetProvider?: string | null) => Promise<void>;
     callAI: (
@@ -362,7 +370,7 @@ export function useModelCatalog({
     const [embeddingProvider, setEmbeddingProvider] = useState(
         () =>
             localStorage.getItem('ellipsisprose_embedding_provider') ||
-            (apiProvider === 'codex' ? 'gemini' : apiProvider)
+            (isCliBridgeProvider(apiProvider) ? 'gemini' : apiProvider)
     );
     const [apiKey, setApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
     const [apiTimeout, setApiTimeout] = useState(() => {
@@ -413,6 +421,19 @@ export function useModelCatalog({
         unknown
     > | null>(null);
     const codexRefreshId = useRef(0);
+    const [claudeUrl, setClaudeUrl] = useState(
+        () => localStorage.getItem('ellipsisprose_claude_url') || CLI_BRIDGE_DEFAULT_URLS.claude
+    );
+    const [claudeModel, setClaudeModel] = useState(
+        () => localStorage.getItem('ellipsisprose_claude_model') ?? 'sonnet'
+    );
+    const [claudeModelsList, setClaudeModelsList] = useState<CodexModelInfo[]>([]);
+    const [claudeStatus, setClaudeStatus] = useState<KoboldStatusResult>({
+        online: false,
+        model: null,
+        error: null
+    });
+    const claudeRefreshId = useRef(0);
     const [savedModels, setSavedModels] = useState<string[]>(() => {
         const saved = localStorage.getItem('ellipsisprose_saved_models');
         return saved ? (JSON.parse(saved) as string[]) : ['google/gemini-2.0-flash-001'];
@@ -583,6 +604,12 @@ export function useModelCatalog({
         safeLocalStorageSet('ellipsisprose_codex_prose_model', codexProseModel);
     }, [codexProseModel]);
     useEffect(() => {
+        safeLocalStorageSet('ellipsisprose_claude_url', claudeUrl);
+    }, [claudeUrl]);
+    useEffect(() => {
+        safeLocalStorageSet('ellipsisprose_claude_model', claudeModel);
+    }, [claudeModel]);
+    useEffect(() => {
         safeLocalStorageSet('ellipsisprose_saved_models', savedModels);
     }, [savedModels]);
     useEffect(() => {
@@ -642,11 +669,13 @@ export function useModelCatalog({
             openRouterModel,
             nanoGptModel,
             codexModel,
+            claudeModel,
             koboldModel,
             koboldLoadedModel
         }),
         [
             apiProvider,
+            claudeModel,
             codexModel,
             devModel,
             devProvider,
@@ -807,6 +836,16 @@ export function useModelCatalog({
         setCodexStatus(result.status);
     }, [codexUrl]);
 
+    const refreshClaudeModels = useCallback(async (): Promise<void> => {
+        const refreshId = ++claudeRefreshId.current;
+        setClaudeStatus({ online: false, model: null, error: null });
+        setClaudeModelsList([]);
+        const result = await fetchClaudeCatalog(claudeUrl);
+        if (refreshId !== claudeRefreshId.current) return;
+        setClaudeModelsList(result.models);
+        setClaudeStatus(result.status);
+    }, [claudeUrl]);
+
     const refreshComfyInfo = useCallback(async (): Promise<void> => {
         const refreshId = ++comfyRefreshId.current;
         setComfyStatus({
@@ -847,6 +886,8 @@ export function useModelCatalog({
                 await refreshNanoGptModels();
             } else if (prov === 'codex') {
                 await refreshCodexModels();
+            } else if (prov === 'claude') {
+                await refreshClaudeModels();
             } else if (prov === 'koboldcpp') {
                 await checkKoboldStatus();
             }
@@ -857,6 +898,7 @@ export function useModelCatalog({
             devProvider,
             fetchGeminiImageModels,
             fetchGeminiModels,
+            refreshClaudeModels,
             refreshCodexModels,
             refreshNanoGptModels,
             refreshOpenRouterModels
@@ -894,10 +936,14 @@ export function useModelCatalog({
             if (activeProviders.has('codex') || embeddingProvider === 'codex') {
                 void refreshCodexModels();
             }
+            if (activeProviders.has('claude')) {
+                void refreshClaudeModels();
+            }
             if (imageProvider === 'comfyui') void refreshComfyInfo();
         }
         return () => {
             codexRefreshId.current++;
+            claudeRefreshId.current++;
             currentComfyRef.current++;
         };
     }, [
@@ -913,6 +959,7 @@ export function useModelCatalog({
         nanoGptKey,
         koboldUrl,
         codexUrl,
+        claudeUrl,
         imageProvider,
         comfyUrl,
         geminiModelsList.length,
@@ -926,6 +973,7 @@ export function useModelCatalog({
         refreshNanoGptModels,
         checkKoboldStatus,
         refreshCodexModels,
+        refreshClaudeModels,
         refreshComfyInfo
     ]);
 
@@ -1003,6 +1051,7 @@ export function useModelCatalog({
                         openRouterModel,
                         nanoGptModel,
                         codexModel,
+                        claudeModel,
                         koboldModel,
                         koboldLoadedModel
                     },
@@ -1020,6 +1069,7 @@ export function useModelCatalog({
                     nanoGptKey,
                     koboldUrl,
                     codexUrl,
+                    claudeUrl,
                     openRouterMaxTokens,
                     apiTimeout,
                     activeStory: (activeStory || null) as {
@@ -1040,6 +1090,8 @@ export function useModelCatalog({
             apiKey,
             apiProvider,
             apiTimeout,
+            claudeModel,
+            claudeUrl,
             codexModel,
             codexUrl,
             devModel,
@@ -1116,6 +1168,12 @@ export function useModelCatalog({
         codexModelsList,
         codexStatus,
         codexEmbeddingStatus,
+        claudeUrl,
+        setClaudeUrl,
+        claudeModel,
+        setClaudeModel,
+        claudeModelsList,
+        claudeStatus,
         savedModels,
         setSavedModels,
         openRouterModelsList,
@@ -1194,6 +1252,7 @@ export function useModelCatalog({
         refreshNanoGptModels,
         checkKoboldStatus,
         refreshCodexModels,
+        refreshClaudeModels,
         refreshComfyInfo,
         handleCatalogRefresh,
         callAI

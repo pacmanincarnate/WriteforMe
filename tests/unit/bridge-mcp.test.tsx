@@ -85,11 +85,13 @@ function makeState(overrides: Partial<BridgeState> = {}): BridgeState {
         nanoGptModel: 'nano-x',
         koboldModel: 'kobold-x',
         codexModel: 'codex-x',
+        claudeModel: 'claude-x',
         apiKey: 'key',
         openRouterKey: '',
         nanoGptKey: '',
         koboldUrl: 'http://kobold',
         codexUrl: 'http://codex',
+        claudeUrl: 'http://claude',
         loading: false,
         loadingStep: '',
         continuousAutopilot: false,
@@ -107,8 +109,8 @@ function makeActions(overrides: Partial<BridgeActions> = {}): BridgeActions {
     const names = [
         'setApiProvider', 'setDevProvider', 'setDevModel', 'setReviewProvider', 'setReviewModel',
         'setProseProvider', 'setProseModel', 'setGeminiModel', 'setOpenRouterModel', 'setNanoGptModel',
-        'setKoboldModel', 'setCodexModel', 'setApiKey', 'setOpenRouterKey', 'setNanoGptKey',
-        'setKoboldUrl', 'setCodexUrl', 'setInputTitle', 'setInputConcept', 'setInputAuthorNote',
+        'setKoboldModel', 'setCodexModel', 'setClaudeModel', 'setApiKey', 'setOpenRouterKey', 'setNanoGptKey',
+        'setKoboldUrl', 'setCodexUrl', 'setClaudeUrl', 'setInputTitle', 'setInputConcept', 'setInputAuthorNote',
         'setInputWritingMode', 'setActiveStoryId', 'setStory', 'setView', 'clearImportedLore',
         'showToast', 'toggleContinuousAutopilot'
     ] as const;
@@ -257,7 +259,7 @@ describe('bridge dispatcher: validation and errors', () => {
         const { dispatch, actions } = setup();
         await expect(dispatch('setModelConfig', {})).rejects.toThrow("Missing 'provider' in setModelConfig.");
         await expect(dispatch('setModelConfig', { provider: 'acme' })).rejects.toThrow(
-            "Invalid provider 'acme'. Must be one of: gemini, openrouter, nanogpt, koboldcpp, codex"
+            "Invalid provider 'acme'. Must be one of: gemini, openrouter, nanogpt, koboldcpp, codex, claude"
         );
         expect(actions.setApiProvider).not.toHaveBeenCalled();
     });
@@ -326,6 +328,18 @@ describe('bridge dispatcher: write actions', () => {
         expect(actions.setProseProvider).toHaveBeenCalledWith('codex');
         expect(actions.setProseModel).toHaveBeenCalledWith('c1');
         expect(actions.setCodexModel).toHaveBeenCalledWith('c1');
+    });
+
+    it('setModelConfig selects the Claude Code bridge with its own model and URL', async () => {
+        const { dispatch, actions } = setup();
+        await dispatch('setModelConfig', { provider: 'claude', model: 'opus', baseUrl: 'http://c:5011' });
+        expect(actions.setApiProvider).toHaveBeenCalledWith('claude');
+        expect(actions.setClaudeModel).toHaveBeenCalledWith('opus');
+        expect(actions.setClaudeUrl).toHaveBeenCalledWith('http://c:5011');
+        expect(actions.setCodexModel).not.toHaveBeenCalled();
+        expect(actions.setCodexUrl).not.toHaveBeenCalled();
+        expect(localStorage.getItem('ellipsisprose_claude_model')).toBe('opus');
+        expect(localStorage.getItem('ellipsisprose_claude_url')).toBe('http://c:5011');
     });
 
     it('setModelConfig falls back to the provider default model in its reply', async () => {

@@ -1237,6 +1237,10 @@ const ReactDOM = ReactDOMClient;
                 codexModelsList,
                 codexStatus,
                 codexEmbeddingStatus,
+                claudeUrl, setClaudeUrl,
+                claudeModel, setClaudeModel,
+                claudeModelsList,
+                claudeStatus,
                 savedModels,
                 openRouterModelsList,
                 nanoGptModelsList,
@@ -1286,6 +1290,7 @@ const ReactDOM = ReactDOMClient;
                 refreshNanoGptModels,
                 checkKoboldStatus,
                 refreshCodexModels,
+                refreshClaudeModels,
                 refreshComfyInfo,
                 handleCatalogRefresh,
                 callAI
@@ -2303,6 +2308,7 @@ const ReactDOM = ReactDOMClient;
                     nanoGptKey,
                     koboldUrl,
                     codexUrl,
+                    claudeUrl,
                     openRouterMaxTokens
                 }),
                 getDirectiveInput: () => directiveInput,
@@ -3344,11 +3350,13 @@ const ReactDOM = ReactDOMClient;
                     nanoGptModel,
                     koboldModel,
                     codexModel,
+                    claudeModel,
                     apiKey,
                     openRouterKey,
                     nanoGptKey,
                     koboldUrl,
                     codexUrl,
+                    claudeUrl,
                     loading,
                     loadingStep,
                     continuousAutopilot,
@@ -3372,11 +3380,13 @@ const ReactDOM = ReactDOMClient;
                     setNanoGptModel,
                     setKoboldModel,
                     setCodexModel,
+                    setClaudeModel,
                     setApiKey,
                     setOpenRouterKey,
                     setNanoGptKey,
                     setKoboldUrl,
                     setCodexUrl,
+                    setClaudeUrl,
                     setInputTitle,
                     setInputConcept,
                     setInputAuthorNote,
@@ -4112,6 +4122,13 @@ const ReactDOM = ReactDOMClient;
                                 codexStatus={codexStatus}
                                 codexEmbeddingStatus={codexEmbeddingStatus}
                                 refreshCodexModels={refreshCodexModels}
+                                claudeUrl={claudeUrl}
+                                setClaudeUrl={setClaudeUrl}
+                                claudeModel={claudeModel}
+                                setClaudeModel={setClaudeModel}
+                                claudeModelsList={claudeModelsList}
+                                claudeStatus={claudeStatus}
+                                refreshClaudeModels={refreshClaudeModels}
                                 showOtherApiKeys={showOtherApiKeys}
                                 setShowOtherApiKeys={setShowOtherApiKeys}
                                 savedModels={savedModels}

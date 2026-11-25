@@ -8,7 +8,7 @@
 
 import { computePacingRanges, LENGTH_CONTROL, normalizeSequences } from '@/domain/story';
 import { storyStore } from '@/services/storage';
-import type { Sequence } from '@/types';
+import { isLocalProvider, type Sequence } from '@/types';
 import { generateActsAndSequences, generateSequences, generateStoryArc } from './arcAndActs';
 import {
     asArray,
@@ -35,7 +35,7 @@ function prefetchScenesForSequence(
     currentStory: PipelineStory
 ): void {
     const apiProvider = ctx.getApiProvider();
-    if (apiProvider === 'koboldcpp' || apiProvider === 'codex') return;
+    if (isLocalProvider(apiProvider)) return;
 
     const prefetchCache = ctx.getPrefetchCacheRef?.();
     const continuousRef = ctx.getContinuousAutopilotRef?.();
