@@ -1581,6 +1581,29 @@ function comparePipelineRuns(legacy, modern, results) {
             });
         }
     }
+    // Human-readable drift summary for the job log: lines present on one side only, per differing call.
+    const lineDiff = (x, y) => {
+        const xs = String(x || '').split('\n');
+        const ys = String(y || '').split('\n');
+        const count = (arr) => arr.reduce((m, l) => m.set(l, (m.get(l) || 0) + 1), new Map());
+        const only = (from, other) => {
+            const left = count(other);
+            return from.filter((l) => { const c = left.get(l) || 0; if (c > 0) { left.set(l, c - 1); return false; } return true; });
+        };
+        return { onlyLegacy: only(xs, ys), onlyModular: only(ys, xs) };
+    };
+    const clip = (l) => (l.length > 400 ? `${l.slice(0, 400)}… (+${l.length - 400} chars)` : l);
+    for (const d of promptDiffList) {
+        for (const field of ['system', 'prompt']) {
+            const lx = d.legacy?.[field];
+            const mx = d.modular?.[field];
+            if (lx === mx) continue;
+            const { onlyLegacy, onlyModular } = lineDiff(lx, mx);
+            console.log(`  [drift] call ${d.index} ${d.logName} (${field}): legacy ${String(lx || '').length} chars, modular ${String(mx || '').length} chars; ${onlyLegacy.length} line(s) only in legacy, ${onlyModular.length} only in modular`);
+            onlyLegacy.slice(0, 8).forEach((l) => console.log(`      - ${clip(l)}`));
+            onlyModular.slice(0, 8).forEach((l) => console.log(`      + ${clip(l)}`));
+        }
+    }
     const strip = (d) => d ? { ...d, proseWords: undefined, characterStates: undefined } : d;
     record('Parity: legacy and modular builds produce the same story structure',
         JSON.stringify(strip(legacy.digest)) === JSON.stringify(strip(modern.digest)),
