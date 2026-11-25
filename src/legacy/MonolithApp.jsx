@@ -592,7 +592,18 @@ import {
     ToastNotification,
     PIPELINE_STEPS
 } from '@/components';
-import { LogsView, measureReaderPages, ReaderView } from '@/views';
+import {
+    CastView,
+    InspectorView,
+    LibraryView,
+    LogsView,
+    LoreView,
+    measureReaderPages,
+    ReaderView,
+    RelationshipsView,
+    SetupView,
+    StructureView
+} from '@/views';
 
 const ReactDOM = ReactDOMClient;
         const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = React;
@@ -20134,6 +20145,32 @@ ${auditLines}
                 return () => { codexRefreshId.current++; comfyRefreshId.current++; };
             }, [view, devProvider, reviewProvider, proseProvider, apiProvider, embeddingProvider, apiKey, imageApiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl, imageProvider, comfyUrl]);
 
+            const handleSelectLibraryStory = (targetItem, targetView = 'dashboard') => {
+                if (!targetItem) return;
+                const liveInitData = (initializingStoryIdRef.current === targetItem.id && storySnapshotsByIdRef.current[targetItem.id])
+                    ? storySnapshotsByIdRef.current[targetItem.id]
+                    : null;
+                const targetData = liveInitData || targetItem.data || {};
+                const migrated = migrateStoryToSequences(targetData);
+                if (liveInitData) {
+                    skipNextIdbHydrationIdRef.current = targetItem.id;
+                }
+                setActiveStoryId(targetItem.id);
+                setStory({
+                    relationships: {},
+                    graph_edges: [],
+                    ...migrated,
+                    continuity_ledger: Array.isArray(migrated?.continuity_ledger) ? migrated.continuity_ledger : [],
+                    secret_vault: Array.isArray(migrated?.secret_vault) ? migrated.secret_vault : [],
+                    id: targetItem.id
+                });
+                if (targetView === 'reader') {
+                    enterReaderMode();
+                } else {
+                    setView(targetView);
+                }
+            };
+
             return (
                 <div className={`flex h-screen overflow-hidden font-sans ${theme === 'dark' ? 'dark bg-[#141416] text-[#F5F0E8]' : 'bg-void text-ink-900'}`} data-theme={theme}>
                     {/* Mobile Backdrop Scrim Overlay */}
@@ -20690,233 +20727,35 @@ ${auditLines}
                             )}
 
                             {view === 'setup' && (
-                                <div className="max-w-xl mx-auto py-16 text-center animate-fade-in">
-                                    <div className="w-16 h-16 rounded-2xl bg-gold-tint border border-gold-edge text-gold-ink flex items-center justify-center mx-auto mb-6 shadow-sm">
-                                        <Sparkles size={28} />
-                                    </div>
-                                    <h1 className="text-3xl font-bold font-serif text-ink-900 mb-2 tracking-tight">New Story Setup</h1>
-                                    <p className="text-ink-500 text-sm mb-8">Enter a title and concept. The AI Architect will build your world bible and narrative structure.</p>
-
-                                    <input
-                                        className="w-full bg-surface border border-edge-strong rounded-xl p-4 mb-4 focus:ring-2 focus:ring-gold/40 focus:border-gold outline-none font-bold text-ink-900 shadow-2xs placeholder:text-ink-400 font-serif text-lg"
-                                        placeholder="Story Title (e.g. The Last Starship)"
-                                        value={inputTitle}
-                                        onChange={e => setInputTitle(e.target.value)}
-                                    />
-
-                                    {/* Manuscript Format Selector: Standard Novel vs Audio Drama (Studio TTS) */}
-                                    <div className="mb-4 text-left">
-                                        <label className="text-xs font-bold text-ink-400 uppercase tracking-wider font-mono mb-2 block">Manuscript Format</label>
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                            <button
-                                                type="button"
-                                                onClick={() => setInputWritingMode('novel')}
-                                                className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
-                                                    inputWritingMode !== 'audio_drama'
-                                                        ? 'bg-surface border-gold ring-1 ring-gold/40 shadow-xs'
-                                                        : 'bg-surface/50 border-edge-strong hover:border-stone-400 hover:bg-lift'
-                                                }`}
-                                            >
-                                                <div className="flex items-center justify-between mb-1.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <Book size={16} className={inputWritingMode !== 'audio_drama' ? 'text-gold-ink' : 'text-ink-400'} />
-                                                        <span className="font-bold text-sm text-ink-900 font-serif">Standard Novel</span>
-                                                    </div>
-                                                    {inputWritingMode !== 'audio_drama' && (
-                                                        <span className="w-2 h-2 rounded-full bg-gold" />
-                                                    )}
-                                                </div>
-                                                <p className="text-xs text-ink-500 leading-snug">
-                                                    Traditional narrative prose with rich scene description, narrative pacing, and dialogue tags.
-                                                </p>
-                                            </button>
-
-                                            <button
-                                                type="button"
-                                                onClick={() => setInputWritingMode('audio_drama')}
-                                                className={`p-3.5 rounded-xl border text-left transition-all flex flex-col justify-between cursor-pointer ${
-                                                    inputWritingMode === 'audio_drama'
-                                                        ? 'bg-surface border-gold ring-1 ring-gold/40 shadow-xs'
-                                                        : 'bg-surface/50 border-edge-strong hover:border-stone-400 hover:bg-lift'
-                                                }`}
-                                            >
-                                                <div className="flex items-center justify-between mb-1.5">
-                                                    <div className="flex items-center gap-2">
-                                                        <Headphones size={16} className={inputWritingMode === 'audio_drama' ? 'text-gold-ink' : 'text-ink-400'} />
-                                                        <span className="font-bold text-sm text-ink-900 font-serif">Audio Drama</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-1.5">
-                                                        <span className="text-xs font-bold font-mono uppercase px-2 py-0.5 rounded bg-gold/15 text-gold-ink border border-gold/30">Qwen 3 TTS</span>
-                                                        {inputWritingMode === 'audio_drama' && (
-                                                            <span className="w-2 h-2 rounded-full bg-gold" />
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <p className="text-xs text-ink-500 leading-snug">
-                                                    Multi-voice script formatted as <code className="text-xs bg-inset px-1.5 py-0.5 rounded text-ink-700 font-mono">Speaker: (expression) Text</code> with automatic Narrator.
-                                                </p>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Archetype Dropdown */}
-                                    <div className="mb-4 relative group">
-                                        <div className="absolute right-3.5 top-3.5 text-ink-400 pointer-events-none"><ChevronDown size={15} /></div>
-                                        <select
-                                            className="w-full bg-surface border border-edge-strong rounded-xl p-3.5 pr-10 text-xs text-ink-700 focus:border-gold outline-none appearance-none cursor-pointer hover:bg-lift transition-colors shadow-2xs font-medium"
-                                            onChange={(e) => {
-                                                const val = e.target.value;
-                                                if (val === 'random') {
-                                                    setArchetypeOptions(generateRandomArchetypes(20));
-                                                    e.target.value = ""; // Reset dropdown to placeholder
-                                                } else if (val) {
-                                                    setInputConcept(val);
-                                                }
-                                            }}
-                                            defaultValue=""
-                                        >
-                                            <option value="" disabled>✨ Need Inspiration? Select a Story Archetype...</option>
-                                            {archetypeOptions.map(opt => (
-                                                <option key={opt.id} value={opt.value}>
-                                                    {opt.label}
-                                                </option>
-                                            ))}
-                                            <option value="" disabled>---</option>
-                                            <option value="random">🎲 Generate New List...</option>
-                                        </select>
-                                    </div>
-
-                                    {/* Target Novel Length & Format Selector */}
-                                    <div className="mb-4 text-left">
-                                        <div className="flex gap-2 items-center">
-                                            <div className="relative flex-1">
-                                                <div className="absolute right-3.5 top-3.5 text-ink-400 pointer-events-none"><ChevronDown size={15} /></div>
-                                                <select
-                                                    className="w-full bg-surface border border-edge-strong rounded-xl p-3.5 pr-10 text-xs text-ink-700 focus:border-gold outline-none appearance-none cursor-pointer hover:bg-lift transition-colors shadow-2xs font-medium"
-                                                    value={inputBookType}
-                                                    onChange={(e) => {
-                                                        const newType = e.target.value;
-                                                        setInputBookType(newType);
-                                                        if (newType !== 'custom' && LENGTH_CONTROL.BOOK_TYPES[newType]) {
-                                                            setInputCustomWords(LENGTH_CONTROL.BOOK_TYPES[newType].words);
-                                                        }
-                                                    }}
-                                                >
-                                                    <option value="short_story">Short Story (~20,000 words)</option>
-                                                    <option value="novella">Novella (~40,000 words)</option>
-                                                    <option value="popular">Popular (~80,000 words) — Recommended</option>
-                                                    <option value="full_length">Full Length (~100,000 words)</option>
-                                                    <option value="epic">Epic (~200,000 words)</option>
-                                                    <option value="custom">Custom Target Length...</option>
-                                                </select>
-                                            </div>
-                                            {inputBookType === 'custom' && (
-                                                <div className="w-36 shrink-0">
-                                                    <input
-                                                        type="number"
-                                                        min="5000"
-                                                        max="500000"
-                                                        step="1000"
-                                                        value={inputCustomWords}
-                                                        onChange={(e) => setInputCustomWords(Math.max(1000, parseInt(e.target.value, 10) || 0))}
-                                                        placeholder="Target words"
-                                                        className="w-full bg-surface border border-edge-strong rounded-xl p-3 text-xs text-ink-800 font-mono font-bold focus:border-gold outline-none shadow-2xs"
-                                                        title="Custom target word count"
-                                                    />
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    <textarea
-                                        className="w-full bg-surface border border-edge-strong rounded-xl p-4 h-36 mb-4 focus:ring-2 focus:ring-gold/40 focus:border-gold outline-none text-ink-900 shadow-2xs placeholder:text-ink-400 text-sm leading-relaxed"
-                                        placeholder="Concept (e.g. A fantasy world where magic costs memories...)"
-                                        value={inputConcept}
-                                        onChange={e => setInputConcept(e.target.value)}
-                                    />
-
-                                    <textarea
-                                        className="w-full bg-surface border border-edge-strong rounded-xl p-4 h-24 mb-4 focus:ring-2 focus:ring-gold/40 focus:border-gold outline-none text-ink-900 shadow-2xs placeholder:text-ink-400 text-sm leading-relaxed"
-                                        placeholder="Author's Note (e.g. Focus heavily on atmospheric tension. Make the protagonist more sarcastic.)"
-                                        value={inputAuthorNote}
-                                        onChange={e => setInputAuthorNote(e.target.value)}
-                                    />
-
-                                    {/* Import Lore UI */}
-                                    <div
-                                        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSetupLore(true); }}
-                                        onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSetupLore(true); }}
-                                        onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingSetupLore(false); }}
-                                        onDrop={(e) => {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            setIsDraggingSetupLore(false);
-                                            const droppedFiles = Array.from(e.dataTransfer?.files || []);
-                                            if (droppedFiles.length) handleLoreImport(droppedFiles);
-                                        }}
-                                        className={`mb-8 text-left p-4 rounded-xl border transition-all shadow-2xs ${
-                                            isDraggingSetupLore
-                                                ? 'border-dashed border-2 border-gold bg-gold-tint/25 ring-2 ring-gold/20 shadow-md'
-                                                : 'bg-surface border-edge-strong'
-                                        }`}
-                                    >
-                                        <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
-                                            <label className="text-xs font-bold text-ink-500 uppercase tracking-wider font-mono flex items-center gap-1.5">
-                                                <span>Existing Lore / Notes / Bibles (Optional)</span>
-                                                {isDraggingSetupLore && <span className="text-gold-ink font-semibold animate-pulse">— Drop files to import</span>}
-                                            </label>
-                                            <button onClick={() => loreInputRef.current.click()} disabled={loading || importingLore} className="text-xs text-gold-ink hover:underline flex items-center gap-1 font-semibold disabled:opacity-50 cursor-pointer">
-                                                <Upload size={12} /> {importingLore ? 'Reading files...' : 'Add Documents'}
-                                            </button>
-                                            <input type="file" id="loreFileInput" ref={loreInputRef} onChange={handleLoreImport} className="hidden" accept=".txt,.md,.markdown,.docx,.pdf,.epub,.json,.csv" multiple disabled={loading || importingLore} aria-label="Add lore files" />
-                                        </div>
-                                        <p className="text-xs text-ink-500">Select or drop multiple .txt, .md, .docx, .pdf, .epub, .json, or .csv files. All files will be unified and grounded across your story.</p>
-                                        {importedLoreFiles.length > 0 && (
-                                            <div className="animate-fade-in mt-3 space-y-2">
-                                                <div className="flex justify-between items-center gap-2 text-xs">
-                                                    <span className="text-ink-500 font-mono" role="status">{importedLoreFiles.length} document{importedLoreFiles.length === 1 ? '' : 's'} added</span>
-                                                    <button onClick={clearImportedLore} className="text-ink-500 hover:text-blush-600 cursor-pointer font-mono text-[11px]">Clear all</button>
-                                                </div>
-                                                {importedLoreFiles.map(file => (
-                                                    <LoreFileCard
-                                                        key={file.id}
-                                                        file={file}
-                                                        onUpdate={handleUpdateLoreFile}
-                                                        onRemove={handleRemoveLoreFile}
-                                                    />
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <div className="flex gap-4">
-                                        <button
-                                            onClick={() => initStory(false, { fromSetup: true })}
-                                            disabled={loading || importingLore || !inputConcept}
-                                            className="flex-1 bg-surface border border-edge-300 hover:border-stone-400 text-ink-900 py-3.5 rounded-xl font-bold transition-all shadow-2xs hover:bg-lift disabled:opacity-50"
-                                        >
-                                            Initialize Story
-                                        </button>
-                                        <button
-                                            onClick={() => handleAutopilot({ fromSetup: true })}
-                                            disabled={!continuousAutopilot && (loading || importingLore || !inputConcept)}
-                                            className={`flex-1 py-3.5 rounded-xl font-bold transition-all shadow-md flex items-center justify-center gap-2 ${continuousAutopilot
-                                                ? 'bg-blush-tint border border-blush-edge text-blush-800 hover:bg-blush-tint-strong'
-                                                : 'bg-btn hover:bg-btn-hover text-btn-ink disabled:opacity-50'
-                                                }`}
-                                        >
-                                            {continuousAutopilot ? (
-                                                <>
-                                                    <Loader2 className="animate-spin text-blush-600" size={18} /> Stop Autopilot
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Zap size={18} className="fill-current text-amber-300" /> Start Autopilot
-                                                </>
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
+                                <SetupView
+                                    inputTitle={inputTitle}
+                                    setInputTitle={setInputTitle}
+                                    inputConcept={inputConcept}
+                                    setInputConcept={setInputConcept}
+                                    inputAuthorNote={inputAuthorNote}
+                                    setInputAuthorNote={setInputAuthorNote}
+                                    inputBookType={inputBookType}
+                                    setInputBookType={setInputBookType}
+                                    inputCustomWords={inputCustomWords}
+                                    setInputCustomWords={setInputCustomWords}
+                                    inputWritingMode={inputWritingMode}
+                                    setInputWritingMode={setInputWritingMode}
+                                    archetypeOptions={archetypeOptions}
+                                    setArchetypeOptions={setArchetypeOptions}
+                                    importedLoreFiles={importedLoreFiles}
+                                    importingLore={importingLore}
+                                    isDraggingSetupLore={isDraggingSetupLore}
+                                    setIsDraggingSetupLore={setIsDraggingSetupLore}
+                                    loreInputRef={loreInputRef}
+                                    handleLoreImport={handleLoreImport}
+                                    handleUpdateLoreFile={handleUpdateLoreFile}
+                                    handleRemoveLoreFile={handleRemoveLoreFile}
+                                    clearImportedLore={clearImportedLore}
+                                    loading={loading}
+                                    continuousAutopilot={continuousAutopilot}
+                                    initStory={initStory}
+                                    handleAutopilot={handleAutopilot}
+                                />
                             )}
 
                             {view === 'dashboard' && (() => {
@@ -22686,827 +22525,88 @@ ${auditLines}
                             })()}
 
                             {view === 'cast' && (
-                                <div className="max-w-6xl mx-auto space-y-6 animate-fade-in pb-24">
-                                    <EditorialSubNav activeView={view} onSelectView={setView} story={story} isInspectorMode={isInspectorMode} selectedSequence={selectedSequence} selectedScene={selectedScene} />
-                                    {/* Cast Header */}
-                                    <div className="bg-surface p-6 sm:p-7 rounded-2xl border border-edge shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                        <div>
-                                            <h2 className="text-2xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
-                                                <Users className="text-gold-ink" size={22} /> Cast &amp; Character Web
-                                            </h2>
-                                            <p className="text-xs text-ink-500 mt-1">Dramatis personæ mapped to the Four-Corner Dilemma Web with Safety Habits, contrasting ways of living, and distinct vocal traits.</p>
-                                        </div>
-                                        <button
-                                            onClick={() => {
-                                                openFormModal({
-                                                    title: "Introduce Character",
-                                                    subtitle: "Add a new dramatis personæ to the story's Four-Corner Character Web.",
-                                                    submitLabel: "Add Character",
-                                                    fields: [
-                                                        {
-                                                            key: 'name',
-                                                            label: 'Character Name',
-                                                            placeholder: 'e.g. Silas Thorne',
-                                                            type: 'text',
-                                                            required: true
-                                                        },
-                                                        {
-                                                            key: 'corner_role',
-                                                            label: 'Four-Corner Narrative Dynamic',
-                                                            type: 'select',
-                                                            defaultValue: 'SUPPORTING',
-                                                            options: [
-                                                                { value: 'MAIN_CHARACTER', label: 'Main Character (Protagonist · Center of moral dilemma)' },
-                                                                { value: 'THE_CHALLENGER', label: 'The Challenger (Foil · Directly tests protagonist assumptions)' },
-                                                                { value: 'THE_COMFORTER', label: 'The Comforter (Confidant · Safe ally validating habits)' },
-                                                                { value: 'THE_WARNING', label: 'The Warning (Opponent · Embodies destructive extreme)' },
-                                                                { value: 'SUPPORTING', label: 'Supporting Cast (Secondary presence)' }
-                                                            ]
-                                                        },
-                                                        {
-                                                            key: 'role',
-                                                            label: 'Story Role Title',
-                                                            placeholder: 'e.g. Protagonist, Foil, Confidant, Chief Engineer',
-                                                            type: 'text'
-                                                        },
-                                                        {
-                                                            key: 'archetype',
-                                                            label: 'Archetype',
-                                                            defaultValue: 'Pragmatist',
-                                                            placeholder: 'e.g. Reluctant Expert, Pragmatist, Traditionalist',
-                                                            type: 'text'
-                                                        }
-                                                    ],
-                                                    onSubmit: (data) => {
-                                                        if (!data.name || !data.name.trim()) return;
-                                                        const name = data.name.trim();
-                                                        const resolvedCorner = data.corner_role || "SUPPORTING";
-                                                        const defaultRole = resolvedCorner === "MAIN_CHARACTER" ? "Protagonist" : (resolvedCorner === "THE_CHALLENGER" ? "Foil" : (resolvedCorner === "THE_COMFORTER" ? "Confidant" : (resolvedCorner === "THE_WARNING" ? "Opponent" : "Supporting")));
-                                                        const role = data.role && data.role.trim() ? data.role.trim() : defaultRole;
-                                                        const archetype = data.archetype && data.archetype.trim() ? data.archetype.trim() : "Pragmatist";
-
-                                                        const newChar = {
-                                                            id: `char_${Date.now()}`,
-                                                            name,
-                                                            role,
-                                                            corner_role: resolvedCorner,
-                                                            archetype,
-                                                            logline: "Newly introduced character.",
-                                                            core_flaw: "Defending their current comfort zone or safety habit.",
-                                                            core_desire: "Pursuing their personal goal within the story world.",
-                                                            why_it_makes_sense: "",
-                                                            what_it_costs_them: "",
-                                                            way_of_living: "",
-                                                            why_it_is_appealing: "",
-                                                            shared_outlook: "",
-                                                            the_hidden_trap: "",
-                                                            how_they_ended_up: "",
-                                                            the_wake_up_call: "",
-                                                            details: {
-                                                                history: "Introduced by the author.",
-                                                                goals: "Pursuing their personal goal within the story world.",
-                                                                story_events: "Newly added to cast."
-                                                            },
-                                                            voice: {
-                                                                tone: "Measured",
-                                                                rhythm: "Direct",
-                                                                tics: []
-                                                            }
-                                                        };
-
-                                                        setStory(prev => ({
-                                                            ...prev,
-                                                            cast: [...(prev.cast || []), newChar]
-                                                        }));
-                                                        showToast(`Added character "${name}" (${resolvedCorner.replace(/_/g, ' ')})`, "success");
-                                                    }
-                                                });
-                                            }}
-                                            className="text-xs bg-btn hover:bg-btn-hover text-btn-ink font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
-                                        >
-                                            <Plus size={14} /> Add Character
-                                        </button>
-                                    </div>
-
-                                    {/* Cast Cards Grid */}
-                                    <div className="flex flex-col gap-6">
-                                        {story.cast && story.cast.map((c, i) => (
-                                            <CharacterCard
-                                                key={i}
-                                                c={c}
-                                                story={story}
-                                                onAuditionVoice={testAuditionCharacterVoice}
-                                                onRecalibrateVoice={(target) => testAuditionCharacterVoice(target, { forceRecalibrate: true })}
-                                                onRerollVoiceSeed={handleRerollCharacterSeed}
-                                                isAuditioningVoice={isAuditioningVoice}
-                                                isAnyAudioPlaying={isAnyAudioPlaying}
-                                                stopAllAudioPlayback={stopAllAudioPlayback}
-                                                portraitSrc={loadedImages.portraits?.[c.id]}
-                                                portraitLoading={!!portraitLoading[c.id]}
-                                                onGeneratePortrait={generateCharacterPortrait}
-                                                onUploadPortrait={uploadCharacterPortrait}
-                                                onRemovePortrait={removeCharacterPortrait}
-                                                onEdit={(field, title, val) => {
-                                                    if (field === 'reset_reference_text') {
-                                                        handleResetCharacterReferenceText(c);
-                                                        return;
-                                                    }
-                                                    openEditModal(title, val, (newValue) => {
-                                                        const isVoiceEdit = field === 'vocal_cadence' || field === 'reference_text' || field === 'voice_seed';
-                                                        const applyCastField = (prev) => {
-                                                            const newCast = [...(prev.cast || [])];
-                                                            const targetIdx = findCastIndexForChar(newCast, c);
-                                                            const idx = targetIdx !== -1 ? targetIdx : i;
-                                                            if (!newCast[idx]) return null;
-                                                            const targetChar = { ...newCast[idx] };
-                                                            const charName = targetChar.name || `Character ${idx + 1}`;
-                                                            const nextUserEdited = { ...(prev.user_edited || {}) };
-                                                            const nextCharacterStates = { ...(prev.character_states || {}) };
-
-                                                            if (field === 'vocal_cadence') {
-                                                                const cleaned = cleanCharacterNameFromVoiceProfile(String(newValue || '').trim(), [charName]);
-                                                                if (!cleaned) return null;
-                                                                targetChar.vocal_cadence = cleaned;
-                                                                targetChar.vocal_profile = cleaned;
-                                                                targetChar.voice_profile = cleaned;
-                                                                targetChar.voice_description = cleaned;
-                                                                targetChar.user_edited_cadence = true;
-                                                                targetChar.is_user_edited = true;
-                                                                targetChar.user_edited = true;
-                                                                if (targetChar.details && typeof targetChar.details === 'object') {
-                                                                    targetChar.details = { ...targetChar.details, vocal_profile: cleaned };
-                                                                }
-                                                                if (nextCharacterStates[charName]) {
-                                                                    nextCharacterStates[charName] = { ...nextCharacterStates[charName], vocal_cadence: cleaned };
-                                                                }
-                                                                nextUserEdited[`cast.${charName}.vocal_cadence`] = true;
-                                                                nextUserEdited[`cast.${idx}.vocal_cadence`] = true;
-                                                                nextUserEdited[`cast.${charName}`] = true;
-                                                            } else if (field === 'reference_text') {
-                                                                const cleanedRef = sanitizeVoiceReferenceText(String(newValue || '').trim());
-                                                                if (!cleanedRef) {
-                                                                    showToast('Reference text cannot be empty', 'warning');
-                                                                    return null;
-                                                                }
-                                                                targetChar.reference_text = cleanedRef;
-                                                                targetChar.user_edited_reference_text = true;
-                                                                targetChar.is_user_edited = true;
-                                                                targetChar.user_edited = true;
-                                                                nextUserEdited[`cast.${charName}.reference_text`] = true;
-                                                                nextUserEdited[`cast.${idx}.reference_text`] = true;
-                                                                nextUserEdited[`cast.${charName}`] = true;
-                                                            } else if (field === 'voice_seed') {
-                                                                const parsed = parseInt(String(newValue || '').replace(/[^0-9]/g, ''), 10);
-                                                                if (!Number.isFinite(parsed) || parsed <= 0) {
-                                                                    showToast('Please enter a valid positive integer seed', 'warning');
-                                                                    return null;
-                                                                }
-                                                                targetChar.voice_seed = parsed;
-                                                                nextUserEdited[`cast.${charName}.voice_seed`] = true;
-                                                            } else if (field.includes('.')) {
-                                                                const [parent, child] = field.split('.');
-                                                                targetChar[parent] = { ...(targetChar[parent] || {}), [child]: newValue };
-                                                                if (field === 'details.deep_profile' && !targetChar.user_edited_reference_text && !nextUserEdited[`cast.${charName}.reference_text`]) {
-                                                                    const refreshedRef = extractPersonalizedReferenceTextFromInterview(newValue);
-                                                                    if (refreshedRef) targetChar.reference_text = refreshedRef;
-                                                                }
-                                                            } else {
-                                                                targetChar[field] = newValue;
-                                                            }
-
-                                                            newCast[idx] = targetChar;
-                                                            return {
-                                                                ...prev,
-                                                                cast: newCast,
-                                                                character_states: nextCharacterStates,
-                                                                user_edited: nextUserEdited
-                                                            };
-                                                        };
-
-                                                        const baseCheck = storyRef.current || story;
-                                                        const existingRefEdited = Boolean(
-                                                            c.user_edited_reference_text ||
-                                                            baseCheck?.user_edited?.[`cast.${c.name}.reference_text`]
-                                                        );
-                                                        const affectsVoice = isVoiceEdit || (field === 'details.deep_profile' && !existingRefEdited);
-                                                        if (affectsVoice) {
-                                                            commitVoiceEditUpdate(c.name || `Character ${i + 1}`, applyCastField);
-                                                        } else {
-                                                            setStory(prev => {
-                                                                const updated = applyCastField(prev);
-                                                                if (!updated) return prev;
-                                                                storyRef.current = updated;
-                                                                return updated;
-                                                            });
-                                                        }
-                                                    });
-                                                }}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
+                                <CastView
+                                    view={view}
+                                    setView={setView}
+                                    story={story}
+                                    storyRef={storyRef}
+                                    setStory={setStory}
+                                    isInspectorMode={isInspectorMode}
+                                    selectedSequence={selectedSequence}
+                                    selectedScene={selectedScene}
+                                    loadedImages={loadedImages}
+                                    portraitLoading={portraitLoading}
+                                    isAnyAudioPlaying={isAnyAudioPlaying}
+                                    isAuditioningVoice={isAuditioningVoice}
+                                    openEditModal={openEditModal}
+                                    openFormModal={openFormModal}
+                                    showToast={showToast}
+                                    findCastIndexForChar={findCastIndexForChar}
+                                    commitVoiceEditUpdate={commitVoiceEditUpdate}
+                                    generateCharacterPortrait={generateCharacterPortrait}
+                                    uploadCharacterPortrait={uploadCharacterPortrait}
+                                    removeCharacterPortrait={removeCharacterPortrait}
+                                    handleRerollCharacterSeed={handleRerollCharacterSeed}
+                                    handleResetCharacterReferenceText={handleResetCharacterReferenceText}
+                                    testAuditionCharacterVoice={testAuditionCharacterVoice}
+                                    stopAllAudioPlayback={stopAllAudioPlayback}
+                                />
                             )}
 
                             {view === 'lore' && (
-                                <div
-                                    onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingLoreTab(true); }}
-                                    onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingLoreTab(true); }}
-                                    onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingLoreTab(false); }}
-                                    onDrop={(e) => {
-                                        e.preventDefault();
-                                        e.stopPropagation();
-                                        setIsDraggingLoreTab(false);
-                                        const files = Array.from(e.dataTransfer?.files || []);
-                                        if (files.length) handlePostGenLoreImport(files);
-                                    }}
-                                    className={`max-w-6xl mx-auto space-y-6 animate-fade-in pb-24 transition-all rounded-2xl ${
-                                        isDraggingLoreTab ? 'ring-2 ring-gold/40 bg-gold-tint/10 p-2' : ''
-                                    }`}
-                                >
-                                    <EditorialSubNav activeView={view} onSelectView={setView} story={story} isInspectorMode={isInspectorMode} selectedSequence={selectedSequence} selectedScene={selectedScene} />
-                                    <div className={`bg-surface p-6 sm:p-7 rounded-2xl border transition-all shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-4 ${
-                                        isDraggingLoreTab ? 'border-dashed border-2 border-gold bg-gold-tint/20' : 'border-edge'
-                                    }`}>
-                                        <div>
-                                            <h2 className="text-2xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
-                                                <Globe className="text-gold-ink" size={22} /> World Lore &amp; Story Archive
-                                                {ragStatus === 'indexing' && <span className="text-xs font-mono bg-gold-tint border border-gold-edge text-gold-ink px-2.5 py-0.5 rounded-full animate-pulse">Indexing...</span>}
-                                                {isDraggingLoreTab && <span className="text-xs font-mono bg-gold-tint border border-gold-edge text-gold-ink px-2.5 py-0.5 rounded-full animate-bounce">Drop documents here</span>}
-                                            </h2>
-                                            <p className="text-xs text-ink-500 mt-1">Ingest world bibles, dossiers, character bios, and archives (.txt, .md, .docx, .pdf, .epub, .json, .csv) into local RAG vector memory.</p>
-                                        </div>
-                                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                                            <input
-                                                type="file"
-                                                id="postGenLoreFileInput"
-                                                accept=".txt,.md,.markdown,.docx,.pdf,.epub,.json,.csv"
-                                                multiple
-                                                className="hidden"
-                                                onChange={(e) => {
-                                                    if (e.target.files && e.target.files.length) {
-                                                        handlePostGenLoreImport(Array.from(e.target.files));
-                                                        e.target.value = null;
-                                                    }
-                                                }}
-                                            />
-                                            <button
-                                                onClick={() => document.getElementById('postGenLoreFileInput')?.click()}
-                                                disabled={ragStatus === 'indexing'}
-                                                className="text-xs bg-btn hover:bg-btn-hover text-btn-ink font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-sm disabled:opacity-50 active:scale-95 cursor-pointer"
-                                                title="Upload documents (.txt, .md, .docx, .pdf, .epub, .json, .csv) to chunk and ingest into RAG"
-                                            >
-                                                <Upload size={14} /> Import Document
-                                            </button>
-                                            <button
-                                                onClick={() => {
-                                                    openFormModal({
-                                                        title: "Add World Lore Entry",
-                                                        subtitle: "Document historical facts, world rules, institutional background, or lore.",
-                                                        submitLabel: "Ingest Lore",
-                                                        fields: [
-                                                            {
-                                                                key: 'topic',
-                                                                label: 'Lore Topic / Document Title',
-                                                                placeholder: 'e.g. The Treaty of 1842, The Gilded Spire',
-                                                                type: 'text',
-                                                                required: true
-                                                            },
-                                                            {
-                                                                key: 'detail',
-                                                                label: 'Lore Detail / Text Content',
-                                                                placeholder: 'Full lore description, background history, or rules...',
-                                                                type: 'textarea',
-                                                                rows: 4,
-                                                                required: true
-                                                            }
-                                                        ],
-                                                        onSubmit: (data) => {
-                                                            if (!data.topic || !data.topic.trim() || !data.detail || !data.detail.trim()) return;
-                                                            const topic = data.topic.trim();
-                                                            const detail = data.detail.trim();
-
-                                                            const newItem = {
-                                                                topic,
-                                                                detail,
-                                                                valid_from_act: 1,
-                                                                valid_from_scene: 1,
-                                                                related_to: ["Manual Entry"],
-                                                                description: "User Added Lore"
-                                                            };
-
-                                                            ingestLore(newItem).then(processed => {
-                                                                setStory(prev => ({
-                                                                    ...prev,
-                                                                    lore: [...(prev.lore || []), processed || newItem]
-                                                                }));
-                                                                showToast(`Added lore item "${topic}" to RAG`, "success");
-                                                            });
-                                                        }
-                                                    });
-                                                }}
-                                                disabled={ragStatus === 'indexing'}
-                                                className="text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                                            >
-                                                <Plus size={14} /> Add Fact
-                                            </button>
-                                            <button
-                                                onClick={rebuildRagIndex}
-                                                disabled={isRebuildingRag || ragStatus === 'indexing' || ragStatus === 'indexing_batch'}
-                                                className="text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
-                                                title="Re-embed all lore items into vector database"
-                                            >
-                                                <RefreshCw size={12} className={isRebuildingRag ? 'animate-spin text-gold-ink' : ''} /> Rebuild RAG index
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {(!story.lore || story.lore.length === 0) ? (
-                                        <div className="text-center py-14 border border-dashed border-edge-strong rounded-2xl bg-surface p-8 space-y-4 shadow-sm">
-                                            <div className="w-14 h-14 rounded-2xl bg-gold-tint border border-gold-edge flex items-center justify-center mx-auto text-gold-ink">
-                                                <Globe size={28} />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <h3 className="text-lg font-bold font-serif text-ink-900">No World Lore Indexed Yet</h3>
-                                                <p className="text-xs text-ink-500 max-w-md mx-auto leading-relaxed">Upload documents or drop files here (.txt, .md, .docx, .pdf, .epub, .json, .csv) to chunk and index them into semantic vector memory.</p>
-                                            </div>
-                                            <div className="pt-2">
-                                                <button
-                                                    onClick={() => document.getElementById('postGenLoreFileInput')?.click()}
-                                                    className="text-xs bg-btn hover:bg-btn-hover text-btn-ink font-bold px-5 py-2.5 rounded-xl flex items-center gap-2 transition-all shadow-sm mx-auto active:scale-95 cursor-pointer"
-                                                >
-                                                    <Upload size={14} /> Import Lore Document
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-4">
-                                            {/* Search and Pagination Toolbar */}
-                                            <div className="flex flex-col sm:flex-row justify-between items-center gap-3 bg-surface p-4 rounded-xl border border-edge shadow-2xs">
-                                                <div className="relative w-full sm:w-80">
-                                                    <input
-                                                        type="text"
-                                                        value={loreSearch}
-                                                        onChange={(e) => setLoreSearch(e.target.value)}
-                                                        placeholder="Search lore topics or details..."
-                                                        className="w-full bg-inset border border-edge-strong rounded-lg pl-8 pr-3 py-1.5 text-xs text-ink-900 focus:border-gold outline-none font-mono"
-                                                    />
-                                                    <Search size={13} className="absolute left-2.5 top-2.5 text-ink-400" />
-                                                </div>
-
-                                                <div className="flex items-center gap-3 text-xs font-mono">
-                                                    <span className="text-ink-500">
-                                                        {filteredLore.length} item{filteredLore.length === 1 ? '' : 's'}{loreSearch ? ` matching "${loreSearch}"` : ''}
-                                                    </span>
-                                                    {totalLorePages > 1 && (
-                                                        <div className="flex items-center gap-1.5">
-                                                            <button
-                                                                type="button"
-                                                                disabled={lorePage <= 1}
-                                                                onClick={() => setLorePage(p => Math.max(1, p - 1))}
-                                                                className="px-2.5 py-1 rounded bg-inset border border-edge hover:bg-wash disabled:opacity-40 cursor-pointer font-bold"
-                                                            >
-                                                                Prev
-                                                            </button>
-                                                            <span className="text-ink-700 px-1">
-                                                                {lorePage} / {totalLorePages}
-                                                            </span>
-                                                            <button
-                                                                type="button"
-                                                                disabled={lorePage >= totalLorePages}
-                                                                onClick={() => setLorePage(p => Math.min(totalLorePages, p + 1))}
-                                                                className="px-2.5 py-1 rounded bg-inset border border-edge hover:bg-wash disabled:opacity-40 cursor-pointer font-bold"
-                                                            >
-                                                                Next
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Paginated Lore Cards using precomputed scenesByAct */}
-                                            <div className="grid gap-4">
-                                                {paginatedLore.map((l, localIdx) => {
-                                                    const globalIdx = (lorePage - 1) * LORE_PAGE_SIZE + localIdx;
-                                                    const actNum = l.valid_from_act || 1;
-                                                    return (
-                                                        <LoreCard
-                                                            key={l.id || `${l.topic}-${globalIdx}`}
-                                                            lore={l}
-                                                            index={globalIdx}
-                                                            acts={story.acts || []}
-                                                            scenesForAct={scenesByAct[actNum] || []}
-                                                            onUpdateAct={(idx, newAct) => {
-                                                                setStory(prev => {
-                                                                    const newLore = [...prev.lore];
-                                                                    newLore[idx] = { ...newLore[idx], valid_from_act: newAct, valid_from_scene: 1 };
-                                                                    return { ...prev, lore: newLore };
-                                                                });
-                                                            }}
-                                                            onUpdateScene={(idx, newScene) => {
-                                                                setStory(prev => {
-                                                                    const newLore = [...prev.lore];
-                                                                    newLore[idx] = { ...newLore[idx], valid_from_scene: newScene };
-                                                                    return { ...prev, lore: newLore };
-                                                                });
-                                                            }}
-                                                            onEditTopic={(curTopic) => {
-                                                                openEditModal(`Lore: ${curTopic}`, curTopic, (val) => {
-                                                                    setStory(prev => {
-                                                                        const newLore = [...prev.lore];
-                                                                        newLore[globalIdx] = { ...newLore[globalIdx], topic: val };
-                                                                        return { ...prev, lore: newLore };
-                                                                    });
-                                                                });
-                                                            }}
-                                                            onEditDetail={(curDetail) => {
-                                                                openEditModal(`Lore Detail: ${l.topic}`, curDetail, (val) => {
-                                                                    setStory(prev => {
-                                                                        const newLore = [...prev.lore];
-                                                                        newLore[globalIdx] = { ...newLore[globalIdx], detail: val };
-                                                                        return { ...prev, lore: newLore };
-                                                                    });
-                                                                });
-                                                            }}
-                                                            onDelete={handleDeleteLore}
-                                                        />
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                <LoreView
+                                    view={view}
+                                    setView={setView}
+                                    story={story}
+                                    setStory={setStory}
+                                    isInspectorMode={isInspectorMode}
+                                    selectedSequence={selectedSequence}
+                                    selectedScene={selectedScene}
+                                    loreSearch={loreSearch}
+                                    setLoreSearch={setLoreSearch}
+                                    lorePage={lorePage}
+                                    setLorePage={setLorePage}
+                                    lorePageSize={LORE_PAGE_SIZE}
+                                    filteredLore={filteredLore}
+                                    paginatedLore={paginatedLore}
+                                    totalLorePages={totalLorePages}
+                                    scenesByAct={scenesByAct}
+                                    isDraggingLoreTab={isDraggingLoreTab}
+                                    setIsDraggingLoreTab={setIsDraggingLoreTab}
+                                    ragStatus={ragStatus}
+                                    isRebuildingRag={isRebuildingRag}
+                                    rebuildRagIndex={rebuildRagIndex}
+                                    handlePostGenLoreImport={handlePostGenLoreImport}
+                                    ingestLore={ingestLore}
+                                    handleDeleteLore={handleDeleteLore}
+                                    openEditModal={openEditModal}
+                                    openFormModal={openFormModal}
+                                    showToast={showToast}
+                                />
                             )}
 
                             {view === 'relationships' && (
-                                <div className="max-w-6xl mx-auto space-y-6 animate-fade-in pb-24">
-                                    <EditorialSubNav activeView={view} onSelectView={setView} story={story} isInspectorMode={isInspectorMode} selectedSequence={selectedSequence} selectedScene={selectedScene} />
-                                    <div className="bg-surface p-6 sm:p-7 rounded-2xl border border-edge shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-4">
-                                        <div>
-                                            <h2 className="text-2xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
-                                                <Heart className="text-rose-500 fill-rose-500/20" size={22} /> Character Relationships &amp; Dynamics
-                                            </h2>
-                                            <p className="text-xs text-ink-500 mt-1">
-                                                Track and manage how characters feel about one another. Directional arcs (A ➔ B vs B ➔ A) evolve over scene completions.
-                                            </p>
-                                        </div>
-                                        {story.cast && story.cast.length >= 2 && (
-                                            <button
-                                                onClick={() => {
-                                                    const castNames = (story.cast || []).map(c => c.name);
-                                                    if (castNames.length < 2) return;
-                                                    const defaultFrom = castNames[0];
-                                                    const defaultTo = castNames[1];
-
-                                                    openFormModal({
-                                                        title: "Establish Character Dynamic",
-                                                        subtitle: "Define how one character perceives or feels toward another.",
-                                                        submitLabel: "Save Relationship",
-                                                        fields: [
-                                                            {
-                                                                key: 'from',
-                                                                label: 'From Character',
-                                                                type: 'select',
-                                                                defaultValue: defaultFrom,
-                                                                options: castNames
-                                                            },
-                                                            {
-                                                                key: 'to',
-                                                                label: 'Toward Character',
-                                                                type: 'select',
-                                                                defaultValue: defaultTo,
-                                                                options: castNames
-                                                            },
-                                                            {
-                                                                key: 'feeling',
-                                                                label: 'Current Feeling / Dynamic',
-                                                                placeholder: 'e.g. Secretly in love, Grudging respect, Paranoid distrust',
-                                                                type: 'text',
-                                                                required: true
-                                                            }
-                                                        ],
-                                                        onSubmit: (data) => {
-                                                            const from = data.from;
-                                                            const to = data.to;
-                                                            const feeling = data.feeling ? data.feeling.trim() : '';
-                                                            if (!from || !to || !feeling) return;
-                                                            if (from.toLowerCase() === to.toLowerCase()) {
-                                                                showToast("A character cannot have a relationship with themselves.", "warning");
-                                                                return;
-                                                            }
-
-                                                            setStory(prev => {
-                                                                const newRels = { ...(prev.relationships || {}) };
-                                                                const key = `${from}->${to}`;
-                                                                newRels[key] = {
-                                                                    current: feeling,
-                                                                    history: [
-                                                                        { chapter: "Manual", change: `${feeling} (Created manually)` }
-                                                                    ]
-                                                                };
-                                                                return { ...prev, relationships: newRels };
-                                                            });
-                                                            showToast(`Established dynamic: ${from} ➔ ${to}`, "success");
-                                                        }
-                                                    });
-                                                }}
-                                                className="text-xs bg-btn hover:bg-btn-hover text-btn-ink font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-sm self-start sm:self-auto active:scale-95"
-                                            >
-                                                <Plus size={14} /> Establish Relationship
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    {(!story.cast || story.cast.length < 2) ? (
-                                        <div className="text-center py-16 bg-surface border border-edge rounded-2xl max-w-2xl mx-auto space-y-4 shadow-sm p-8">
-                                            <div className="w-16 h-16 bg-inset rounded-2xl flex items-center justify-center mx-auto border border-edge-strong text-ink-400">
-                                                <Users size={32} />
-                                            </div>
-                                            <div className="space-y-1">
-                                                <h3 className="font-bold font-serif text-lg text-ink-900">Roster Requirements</h3>
-                                                <p className="text-xs text-ink-500 max-w-md mx-auto leading-relaxed">
-                                                    You need at least 2 characters in your story's cast to establish relationships and build the matrix. Add characters under the "Cast & Roster" tab first.
-                                                </p>
-                                            </div>
-                                            <button
-                                                onClick={() => setView('cast')}
-                                                className="text-xs bg-surface hover:bg-lift text-ink-700 font-bold px-4 py-2.5 rounded-xl transition-colors border border-edge-strong shadow-2xs"
-                                            >
-                                                Go to Cast Roster
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="grid lg:grid-cols-3 gap-6">
-                                            {/* Matrix Grid Card (Left 2 cols) */}
-                                            <div className="lg:col-span-2 min-w-0 bg-surface border border-edge rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                                                <div className="p-5 border-b border-edge bg-inset flex flex-wrap items-center justify-between gap-3">
-                                                    <h3 className="font-bold text-ink-800 flex items-center gap-2 text-xs uppercase tracking-wider font-mono">
-                                                        <Layers size={15} className="text-gold-ink" /> Directional {matrixView === 'grid' ? 'Grid' : 'List'}
-                                                    </h3>
-                                                    <div className="inline-flex gap-1 p-1 rounded-lg border border-edge-strong bg-surface" role="group" aria-label="Relationship view">
-                                                        {['grid', 'list'].map(mode => (
-                                                            <button key={mode} type="button" aria-pressed={matrixView === mode} onClick={() => {
-                                                                setMatrixView(mode);
-                                                                try { localStorage.setItem('ellipsisprose_matrix_view', mode); }
-                                                                catch { /* Keep the view toggle usable when storage is unavailable. */ }
-                                                            }} className={`px-3 py-1.5 rounded-md text-xs font-semibold ${matrixView === mode ? 'bg-gold-tint text-gold-ink' : 'text-ink-500 hover:bg-inset'}`}>
-                                                                {mode === 'grid' ? 'Grid' : 'List'}
-                                                            </button>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                                {matrixView === 'grid' ? (
-                                                    <React.Fragment>
-                                                        <div className="rel-matrix">
-                                                            <div ref={matrixScrollRef} onScroll={measureMatrixScroll} className="rel-matrix-scroll custom-scrollbar" tabIndex={0} role="region" aria-label="Character relationship grid" aria-describedby={matrixScroll.left || matrixScroll.right ? 'matrix-scroll-hint' : undefined}>
-                                                                <table>
-                                                                    <thead>
-                                                                        <tr>
-                                                                            <th scope="col" className="p-3 text-xs font-bold text-ink-500 uppercase border-b border-edge-strong text-left bg-inset font-mono">
-                                                                                Source ➔ Target
-                                                                            </th>
-                                                                            {story.cast.map(c => (
-                                                                                <th key={c.name} scope="col" className="p-3 text-[11px] font-bold text-ink-700 uppercase border-b border-edge-strong text-center bg-inset font-serif">
-                                                                                    <div className="flex flex-col items-center gap-2">
-                                                                                        <span className="w-8 h-8 rounded-lg overflow-hidden bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink shrink-0">
-                                                                                            {loadedImages.portraits?.[c.id] ? <img src={loadedImages.portraits[c.id]} alt="" className="w-full h-full object-cover" /> : c.name?.charAt(0).toUpperCase()}
-                                                                                        </span>
-                                                                                        <span className="line-clamp-2" title={c.name}>{c.name}</span>
-                                                                                    </div>
-                                                                                </th>
-                                                                            ))}
-                                                                        </tr>
-                                                                    </thead>
-                                                                    <tbody>
-                                                                        {story.cast.map(fromChar => (
-                                                                            <tr key={fromChar.name} className="border-b border-edge-soft hover:bg-inset/60 transition-colors">
-                                                                                <th scope="row" className="p-3 font-bold text-left text-xs text-ink-900 bg-inset border-b border-edge-strong font-serif">
-                                                                                    <span className="line-clamp-2" title={fromChar.name}>{fromChar.name}</span>
-                                                                                </th>
-                                                                                {story.cast.map(toChar => {
-                                                                                    const isSelf = fromChar.name === toChar.name;
-                                                                                    const relKey = `${fromChar.name}->${toChar.name}`;
-                                                                                    const rel = story.relationships?.[relKey];
-
-                                                                                    if (isSelf) {
-                                                                                        return (
-                                                                                            <td key={toChar.name} className="p-3 text-center bg-inset border-b border-edge text-xs text-ink-500 font-mono italic select-none">
-                                                                                                Self
-                                                                                            </td>
-                                                                                        );
-                                                                                    }
-
-                                                                                    return (
-                                                                                        <td
-                                                                                            key={toChar.name}
-                                                                                            onClick={() => selectMatrixRelationship(fromChar, toChar)}
-                                                                                            onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectMatrixRelationship(fromChar, toChar); } }}
-                                                                                            tabIndex={rel?.current ? 0 : undefined}
-                                                                                            title={rel?.current || `Set arc: ${fromChar.name} to ${toChar.name}`}
-                                                                                            className={`p-3 text-center text-xs cursor-pointer border-b border-edge transition-colors hover:bg-inset ${rel?.current ? 'text-ink-900 bg-gold-tint font-medium' : 'text-ink-400 hover:text-ink-700 italic'}`}
-                                                                                        >
-                                                                                            {rel?.current ? (
-                                                                                                <div className="flex flex-col items-center gap-1 group/cell">
-                                                                                                    <span className="line-clamp-2 text-[11px] font-medium text-ink-800" title={rel.current}>{rel.current}</span>
-                                                                                                    <Heart size={10} className="text-gold-ink opacity-40 group-hover/cell:opacity-100 transition-opacity" />
-                                                                                                </div>
-                                                                                            ) : (
-                                                                                                <button type="button" className="px-2 py-1 rounded-lg text-xs font-medium text-ink-500 hover:text-gold-ink hover:bg-wash transition-colors" onClick={event => { event.stopPropagation(); selectMatrixRelationship(fromChar, toChar); }}>+ Set arc</button>
-                                                                                            )}
-                                                                                        </td>
-                                                                                    );
-                                                                                })}
-                                                                            </tr>
-                                                                        ))}
-                                                                    </tbody>
-                                                                </table>
-                                                            </div>
-                                                            <div aria-hidden="true" className="rel-matrix-fade rel-matrix-fade-left" hidden={!matrixScroll.left} />
-                                                            <div aria-hidden="true" className="rel-matrix-fade rel-matrix-fade-right" hidden={!matrixScroll.right} />
-                                                        </div>
-                                                        {(matrixScroll.left || matrixScroll.right) && <p id="matrix-scroll-hint" className="px-5 py-2 text-xs text-ink-400">Scroll sideways to see more characters</p>}
-                                                    </React.Fragment>
-                                                ) : (
-                                                    <div className="p-5 space-y-5">
-                                                        {story.cast.map(fromChar => (
-                                                            <section key={fromChar.name} className="space-y-2">
-                                                                <h4 className="text-sm font-bold font-serif text-ink-900 break-words">{fromChar.name} <span className="text-ink-400">➔</span></h4>
-                                                                <div className="border border-edge rounded-xl overflow-hidden divide-y divide-edge">
-                                                                    {story.cast.filter(toChar => toChar.name !== fromChar.name).map(toChar => {
-                                                                        const rel = story.relationships?.[`${fromChar.name}->${toChar.name}`];
-                                                                        const trust = Math.min(10, Math.max(1, parseInt(rel?.trust_level, 10) || 5));
-                                                                        return (
-                                                                            <div key={toChar.name} role="button" tabIndex={0}
-                                                                                onClick={() => selectMatrixRelationship(fromChar, toChar)}
-                                                                                onKeyDown={event => { if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) { event.preventDefault(); selectMatrixRelationship(fromChar, toChar); } }}
-                                                                                aria-label={`${fromChar.name} to ${toChar.name}: ${rel?.current || 'Set arc'}`}
-                                                                                className="flex flex-wrap items-center gap-3 p-3 cursor-pointer hover:bg-inset focus-visible:bg-inset text-left">
-                                                                                <span className="w-10 h-10 rounded-xl bg-gold-tint border border-gold-edge flex items-center justify-center text-gold-ink font-serif font-bold overflow-hidden shrink-0">
-                                                                                    {loadedImages.portraits?.[toChar.id] ? <img src={loadedImages.portraits[toChar.id]} alt="" className="w-full h-full object-cover" /> : toChar.name?.charAt(0).toUpperCase()}
-                                                                                </span>
-                                                                                <div className="flex-1 min-w-0">
-                                                                                    <div className="text-xs font-bold text-ink-900 break-words">{toChar.name}</div>
-                                                                                    <p className="text-xs text-ink-600 break-words" title={rel?.current || ''}>{rel?.current || 'No current dynamic defined.'}</p>
-                                                                                </div>
-                                                                                <span role="meter" aria-label="Trust level" aria-valuemin={0} aria-valuemax={10} aria-valuenow={rel?.current ? trust : 0} aria-valuetext={rel?.current ? `${trust} out of 10` : 'Not defined'} title={rel?.current ? `Trust: ${trust}/10` : 'Trust not defined'} className="flex items-center gap-1 shrink-0">
-                                                                                    {[1, 2, 3, 4, 5].map(dot => <span key={dot} aria-hidden="true" className={`w-2 h-2 rounded-full border ${rel?.current && dot <= Math.ceil(trust / 2) ? 'bg-gold-tint border-gold-edge' : 'bg-surface border-edge-strong'}`} />)}
-                                                                                </span>
-                                                                                {!rel?.current && <button type="button" onClick={event => { event.stopPropagation(); selectMatrixRelationship(fromChar, toChar); }} className="px-3 py-1.5 min-h-[36px] rounded-lg border border-gold-edge bg-gold-tint text-gold-ink text-xs font-semibold shrink-0">Set arc</button>}
-                                                                            </div>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            </section>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                                <div className="p-4 border-t border-edge-strong bg-inset flex gap-4 text-xs text-ink-500 font-mono">
-                                                    <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-gold-tint border border-gold-edge inline-block"></span> Established</div>
-                                                    <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-surface border border-edge-strong inline-block"></span> Not Defined</div>
-                                                    <div className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded bg-mist-100 border border-edge-strong inline-block"></span> Diagonal (Self)</div>
-                                                </div>
-                                            </div>
-
-                                            {/* Details & Evolution Panel (Right Col) */}
-                                            <div className="bg-surface border border-edge rounded-2xl shadow-sm flex flex-col overflow-hidden">
-                                                <div className="p-5 border-b border-edge bg-inset">
-                                                    <h3 className="font-bold text-ink-800 flex items-center gap-2 text-xs uppercase tracking-wider font-mono">
-                                                        <Activity size={15} className="text-gold-ink" /> Dynamics Inspector
-                                                    </h3>
-                                                </div>
-
-                                                {!selectedRel ? (
-                                                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-ink-400 italic space-y-3">
-                                                        <Heart size={24} className="text-ink-300 animate-pulse" />
-                                                        <p className="text-xs max-w-[200px]">Click any intersection cell in the matrix grid to inspect directional evolution.</p>
-                                                    </div>
-                                                ) : (
-                                                    <div className="p-6 space-y-6 flex-1 overflow-y-auto">
-                                                        <div className="bg-inset p-4 rounded-xl border border-edge-strong space-y-3">
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-xs font-bold text-gold-ink uppercase font-mono">Current Feeling</span>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        openFormModal({
-                                                                            title: `Update Dynamic`,
-                                                                            subtitle: `${selectedRel.from} ➔ ${selectedRel.to}`,
-                                                                            submitLabel: "Update Feeling",
-                                                                            fields: [
-                                                                                {
-                                                                                    key: 'feeling',
-                                                                                    label: 'Current Dynamic / Feeling',
-                                                                                    defaultValue: selectedRel.current || '',
-                                                                                    placeholder: 'e.g. Grudging respect, Fragile alliance',
-                                                                                    type: 'text',
-                                                                                    required: true
-                                                                                }
-                                                                            ],
-                                                                            onSubmit: (data) => {
-                                                                                const val = data.feeling ? data.feeling.trim() : '';
-                                                                                if (!val) return;
-
-                                                                                const histEntry = {
-                                                                                    chapter: "Manual Edit",
-                                                                                    change: `${val} (Edited manually)`
-                                                                                };
-                                                                                setStory(prev => {
-                                                                                    const prevRels = prev.relationships || {};
-                                                                                    const prevRel = prevRels[selectedRel.key] || { current: "", history: [] };
-                                                                                    const newRel = {
-                                                                                        ...prevRel,
-                                                                                        current: val,
-                                                                                        history: [...(prevRel.history || []), histEntry]
-                                                                                    };
-                                                                                    return { ...prev, relationships: { ...prevRels, [selectedRel.key]: newRel } };
-                                                                                });
-                                                                                const baseRel = (story.relationships || {})[selectedRel.key] || { current: "", history: [] };
-                                                                                setSelectedRel(prevSel => ({
-                                                                                    ...prevSel,
-                                                                                    current: val,
-                                                                                    history: [...(baseRel.history || []), histEntry]
-                                                                                }));
-                                                                                showToast("Relationship dynamic updated.", "success");
-                                                                            }
-                                                                        });
-                                                                    }}
-                                                                    className="text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-3 py-1.5 rounded-lg transition-colors shadow-2xs"
-                                                                >
-                                                                    Edit Active
-                                                                </button>
-                                                            </div>
-                                                            <div className="flex items-center gap-2">
-                                                                <span className="text-xs font-bold font-serif text-ink-900">{selectedRel.from}</span>
-                                                                <span className="text-xs text-gold-ink font-mono">➔</span>
-                                                                <span className="text-xs font-bold font-serif text-ink-900">{selectedRel.to}</span>
-                                                            </div>
-                                                            <div className="text-sm font-serif italic text-ink-800 border-l-2 border-l-gold pl-3 py-1 bg-surface rounded-r border border-edge-strong">
-                                                                {selectedRel.current || "No current dynamic defined."}
-                                                            </div>
-                                                            {selectedRel.hidden_tension && (
-                                                                <div className="text-xs text-ink-600 mt-2">
-                                                                    <span className="font-bold text-ink-400 uppercase font-mono text-xs block mb-0.5">Hidden Tension</span>
-                                                                    <span className="italic leading-normal">{selectedRel.hidden_tension}</span>
-                                                                </div>
-                                                            )}
-                                                            <div className="flex items-center gap-2 mt-2 pt-2 border-t border-edge-strong">
-                                                                <span className="font-bold text-ink-400 uppercase font-mono text-xs">Trust Level:</span>
-                                                                <span className="text-xs font-mono font-bold text-blush-600">{"★".repeat(Math.min(10, Math.max(1, selectedRel.trust_level)))} ({selectedRel.trust_level}/10)</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="space-y-4">
-                                                            <div className="flex items-center justify-between border-b border-edge-strong pb-2">
-                                                                <h4 className="text-xs font-bold text-ink-500 uppercase tracking-wider flex items-center gap-1.5 font-mono">
-                                                                    <History size={13} className="text-gold-ink" /> Evolutionary History
-                                                                </h4>
-                                                                <button
-                                                                    onClick={() => {
-                                                                        requestConfirm({
-                                                                            title: "Clear Milestone Logs?",
-                                                                            message: "Clear all milestone logs for this relationship? The current dynamic value will remain.",
-                                                                            confirmLabel: "Clear Logs",
-                                                                            danger: false,
-                                                                            onConfirm: () => {
-                                                                                setStory(prev => {
-                                                                                    const prevRels = prev.relationships || {};
-                                                                                    const prevRel = prevRels[selectedRel.key];
-                                                                                    if (!prevRel) return prev;
-                                                                                    return { ...prev, relationships: { ...prevRels, [selectedRel.key]: { ...prevRel, history: [] } } };
-                                                                                });
-                                                                                setSelectedRel(prevSel => ({
-                                                                                    ...prevSel,
-                                                                                    history: []
-                                                                                }));
-                                                                            }
-                                                                        });
-                                                                    }}
-                                                                    className="text-xs text-ink-400 hover:text-blush-600 font-bold uppercase transition-colors"
-                                                                >
-                                                                    Reset Logs
-                                                                </button>
-                                                            </div>
-
-                                                            {selectedRel.history.length === 0 ? (
-                                                                <p className="text-xs text-ink-400 italic py-4 text-center">No historical milestones recorded yet.</p>
-                                                            ) : (
-                                                                <div className="relative border-l border-edge-strong ml-2.5 pl-4 space-y-5 py-2">
-                                                                    {selectedRel.history.map((hist, hIdx) => (
-                                                                        <div key={hIdx} className="relative">
-                                                                            <span className="absolute -left-[21.5px] top-1.5 w-2 h-2 rounded-full bg-surface border-2 border-gold"></span>
-                                                                            <div className="space-y-1">
-                                                                                <div className="text-xs font-mono font-bold text-ink-400 uppercase">{hist.chapter}</div>
-                                                                                <div className="text-xs text-ink-700 leading-relaxed font-serif">{hist.change}</div>
-                                                                            </div>
-                                                                        </div>
-                                                                    ))}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                <RelationshipsView
+                                    view={view}
+                                    setView={setView}
+                                    story={story}
+                                    setStory={setStory}
+                                    isInspectorMode={isInspectorMode}
+                                    selectedSequence={selectedSequence}
+                                    selectedScene={selectedScene}
+                                    loadedImages={loadedImages}
+                                    matrixView={matrixView}
+                                    setMatrixView={setMatrixView}
+                                    matrixScroll={matrixScroll}
+                                    matrixScrollRef={matrixScrollRef}
+                                    measureMatrixScroll={measureMatrixScroll}
+                                    selectedRel={selectedRel}
+                                    setSelectedRel={setSelectedRel}
+                                    selectMatrixRelationship={selectMatrixRelationship}
+                                    openFormModal={openFormModal}
+                                    requestConfirm={requestConfirm}
+                                    showToast={showToast}
+                                />
                             )}
 
                             {view === 'directive' && (() => {
@@ -25807,572 +24907,53 @@ ${auditLines}
                                 );
                             })()}
 
-                            {view === 'structure' && (() => {
-                                const hasExplicitActs = Array.isArray(story.acts) && story.acts.length > 0;
-                                const hasSequences = Array.isArray(story.sequences) && story.sequences.length > 0;
-                                const displayActs = hasExplicitActs
-                                    ? story.acts
-                                    : hasSequences
-                                        ? [
-                                            { number: 1, title: 'Act I — Setup & Inciting Incident', description: 'The exposition, inciting incident, and the protagonist taking up the dramatic question.' },
-                                            { number: 2, title: 'Act II — Confrontation & Midpoint', description: 'Rising stakes, trials, the major midpoint reversal, and the dark night of the soul.' },
-                                            { number: 3, title: 'Act III — Climax & Resolution', description: 'The final confrontation, highest tension, resolution of main tension, and aftermath.' }
-                                          ]
-                                        : [];
-                                const hasStructure = displayActs.length > 0;
-                                const safeActTab = Math.min(Math.max(0, activeActTab || 0), Math.max(0, displayActs.length - 1));
-
-                                return (
-                                <div className="max-w-6xl mx-auto space-y-6 animate-fade-in pb-24">
-                                    <EditorialSubNav activeView={view} onSelectView={setView} story={story} isInspectorMode={isInspectorMode} selectedSequence={selectedSequence} selectedScene={selectedScene} />
-                                    {/* Page Header */}
-                                    <div className="bg-surface p-6 sm:p-7 rounded-2xl border border-edge shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                                        <div>
-                                            <h2 className="text-2xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
-                                                <Layers className="text-gold-ink" size={22} /> Acts and Sequences
-                                            </h2>
-                                        </div>
-                                        <div className="flex flex-wrap items-center gap-2.5">
-                                            <StoryResetDropdown
-                                                story={story}
-                                                onResetStage={handleResetStoryStage}
-                                                availableSceneAudioMap={availableSceneAudioMap}
-                                                disabled={loading}
-                                                compact={true}
-                                                align="right"
-                                            />
-                                            {!hasStructure ? (
-                                                <button
-                                                    onClick={() => generateActsAndSequences()}
-                                                    disabled={loading}
-                                                    className="px-4 py-2.5 rounded-xl font-bold text-xs bg-btn hover:bg-btn-hover text-btn-ink shadow-sm transition-all active:scale-95 flex items-center gap-2 disabled:opacity-50"
-                                                >
-                                                    <Sparkles size={14} className="text-amber-300 fill-current" /> Generate Acts & Sequences
-                                                </button>
-                                            ) : (
-                                                <>
-                                                    <button
-                                                        onClick={() => {
-                                                            requestConfirm({
-                                                                title: "Regenerate Acts & Sequences?",
-                                                                message: "Regenerating will overwrite existing acts, sequences, and downstream outline structure. Are you sure you wish to continue?",
-                                                                confirmLabel: "Recreate Structure",
-                                                                danger: true,
-                                                                onConfirm: () => {
-                                                                    generateActsAndSequences();
-                                                                }
-                                                            });
-                                                        }}
-                                                        disabled={loading}
-                                                        className="px-3.5 py-2 rounded-xl font-bold text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 shadow-2xs transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
-                                                    >
-                                                        <RefreshCw size={12} /> Recreate Acts
-                                                    </button>
-                                                    {(!story.sequences || story.sequences.length < 8) && (
-                                                        <button
-                                                            onClick={() => requestSequenceWeaving()}
-                                                            disabled={loading}
-                                                            className="px-4 py-2 rounded-xl font-bold text-xs bg-btn hover:bg-btn-hover text-btn-ink shadow-sm transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50"
-                                                        >
-                                                            <Sparkles size={14} className="text-amber-300 fill-current" /> {(!story.sequences || story.sequences.length === 0) ? "Weave Sequences" : "Complete Sequences"}
-                                                        </button>
-                                                    )}
-                                                </>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Empty Acts Callout Banner when no acts exist */}
-                                    {!hasStructure && (
-                                        <div className="p-12 bg-surface rounded-2xl border border-edge text-center space-y-4 shadow-sm animate-fade-in">
-                                            <div className="w-14 h-14 rounded-2xl bg-gold-tint border border-gold-edge flex items-center justify-center mx-auto text-gold-ink shadow-sm">
-                                                <Layers size={26} />
-                                            </div>
-                                            <div className="space-y-1.5">
-                                                <h3 className="text-xl font-bold font-serif text-ink-900">No Acts Structured Yet</h3>
-                                                <p className="text-xs text-ink-500 max-w-md mx-auto leading-relaxed">
-                                                    Your story overview is ready. Generate the 3-Act narrative architecture (Tier 2.1) and sequences (Tier 2.2) to structure the novel.
-                                                </p>
-                                            </div>
-                                            <div className="pt-2">
-                                                <button
-                                                    onClick={() => generateActsAndSequences()}
-                                                    disabled={loading}
-                                                    className="bg-btn hover:bg-btn-hover text-btn-ink font-bold px-6 py-3 rounded-xl text-xs shadow-md transition-all active:scale-95 inline-flex items-center gap-2 disabled:opacity-50"
-                                                >
-                                                    <Sparkles size={14} className="text-amber-300 fill-current" /> Generate Acts & Sequences (Tier 2.1 & 2.2)
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Option B: Connected Act Timeline Tabs */}
-                                    {hasStructure && (
-                                        <div className="act-timeline-track">
-                                            {displayActs.map((act, idx) => {
-                                                const actNum = parseActNumber(act.number || (idx + 1), idx + 1);
-                                                const cleanTitle = act.title ? act.title.replace(/^Act\s+[0-9IVXLCDM]+[:\s-]*/i, '').trim() : '';
-                                                const displayTitle = cleanTitle ? `Act ${actNum}: ${cleanTitle}` : (act.title ? (/^Act\s+/i.test(act.title) ? act.title : `Act ${actNum}: ${act.title}`) : `Act ${actNum}`);
-                                                return (
-                                                    <button
-                                                        key={idx}
-                                                        onClick={() => setActiveActTab(idx)}
-                                                        className={`act-node-btn ${safeActTab === idx ? 'active' : ''}`}
-                                                    >
-                                                        <span className="act-node-badge">{actNum}</span>
-                                                        <span className="truncate font-serif">{displayTitle}</span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-
-                                    {/* Active Act Content Panel */}
-                                    {hasStructure && displayActs.map((act, idx) => {
-                                        if (idx !== safeActTab) return null;
-                                        const actNum = parseActNumber(act.number || (idx + 1), idx + 1);
-                                        const actSequences = (story.sequences || []).map((seq, sIdx) => ({ ...seq, origIdx: sIdx })).filter(seq => {
-                                            const pAct = parseActNumber(seq.parent_act != null ? seq.parent_act : actForSequence(seq.number || (seq.origIdx + 1)), actForSequence(seq.origIdx + 1));
-                                            return pAct === actNum;
-                                        });
-                                        const isAllExpanded = actSequences.length > 0 && actSequences.every(seq => !!expandedSequences[seq.origIdx]);
-                                        const actDesc = act.description || act.act_mandate || "";
-                                        return (
-                                            <div key={idx} className="bg-surface rounded-2xl border border-edge shadow-sm overflow-hidden animate-fade-in space-y-0">
-                                                {/* Act Banner Header */}
-                                                <div className="p-6 sm:p-7 border-b border-edge bg-inset">
-                                                    <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center justify-between gap-2 mb-2">
-                                                                <span className="text-xs font-mono font-bold text-gold-ink uppercase tracking-wider bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full">
-                                                                    Act {actNum} Architecture
-                                                                </span>
-                                                            </div>
-                                                            <h3 className="text-2xl font-bold font-serif text-ink-900 flex items-center gap-2 text-wrap break-words">
-                                                                {act.title}
-                                                                <EditButton title={`Act ${actNum} Title`} value={act.title} onSave={() => openEditModal(`Act ${actNum} Title`, act.title, (val) => { setStory(prev => { const newActs = [...(prev.acts || displayActs)]; newActs[idx] = { ...(newActs[idx] || {}), title: val }; return { ...prev, acts: newActs }; }); })} />
-                                                            </h3>
-                                                            <div className="text-base text-ink-800 text-wrap break-words mt-3 flex items-start gap-3 leading-relaxed">
-                                                                <div className="prose dark:prose-invert max-w-none flex-1 min-w-0 text-[15px] sm:text-base text-ink-800 font-serif leading-relaxed break-words" dangerouslySetInnerHTML={{ __html: parseMarkdown(actDesc) }} />
-                                                                <EditButton title={`Act ${actNum} Description`} value={actDesc} onSave={() => openEditModal(`Act ${actNum} Description`, actDesc, (val) => { setStory(prev => { const newActs = [...(prev.acts || displayActs)]; newActs[idx] = { ...(newActs[idx] || {}), description: val, act_mandate: val }; return { ...prev, acts: newActs }; }); })} />
-                                                            </div>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => requestSequenceWeaving()}
-                                                            disabled={loading}
-                                                            className="shrink-0 bg-btn px-4 py-2.5 rounded-xl font-bold text-xs hover:bg-btn-hover text-btn-ink shadow-sm transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed self-start"
-                                                        >
-                                                            <Sparkles size={12} className="text-amber-300 fill-current" /> {(!story.sequences || story.sequences.length === 0) ? 'Weave Sequences' : (story.sequences.length < 8 ? 'Complete Sequences' : 'Re-Weave Sequences')}
-                                                        </button>
-                                                    </div>
-
-                                                    {/* Single Toggle Button beneath Act description & above Sequence list */}
-                                                    {actSequences.length > 0 && (
-                                                        <div className="mt-4 pt-3.5 border-t border-edge-soft flex items-center justify-between gap-2 flex-wrap">
-                                                            <span className="text-xs text-ink-500 font-mono font-medium">
-                                                                {actSequences.length} {actSequences.length === 1 ? 'Sequence' : 'Sequences'} in Act {actNum}
-                                                            </span>
-                                                            <button
-                                                                type="button"
-                                                                aria-label={isAllExpanded ? `Collapse all sequences in Act ${actNum}` : `Expand all sequences in Act ${actNum}`}
-                                                                aria-expanded={isAllExpanded}
-                                                                onClick={() => toggleAllSequencesInAct(idx, !isAllExpanded, actSequences.map(s => s.origIdx))}
-                                                                className="text-xs text-ink-700 hover:text-ink-900 font-semibold px-3 py-1.5 rounded-xl bg-surface border border-edge-strong hover:bg-lift transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer"
-                                                            >
-                                                                {isAllExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                                                                <span>{isAllExpanded ? 'Collapse All' : 'Expand All'}</span>
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
-
-                                                {/* Option B: Vertical Sequences Stack (Accordion) */}
-                                                <div className="divide-y divide-edge">
-                                                    {actSequences.map((sequence) => {
-                                                        const seqIdx = sequence.origIdx;
-                                                        const seqScenes = (story.scenes && (story.scenes[`${seqIdx}`] || story.scenes[seqIdx])) || [];
-                                                        const isExpanded = !!expandedSequences[seqIdx];
-                                                        const draftedInSeq = seqScenes.filter(s => {
-                                                            const sKey = `${seqIdx}-${s.scene_idx ?? 0}`;
-                                                            return story.prose?.[sKey]?.final || typeof story.prose?.[sKey] === 'string';
-                                                        }).length;
-
-                                                        return (
-                                                            <div key={seqIdx} className={`transition-colors ${isExpanded ? 'bg-surface border-l-4 border-gold' : 'bg-inset hover:bg-lift border-l-4 border-transparent'}`}>
-                                                                <div
-                                                                    onClick={() => toggleSequence(seqIdx)}
-                                                                    className="p-5 cursor-pointer flex flex-col md:flex-row md:justify-between md:items-center gap-3 select-none"
-                                                                >
-                                                                    <div className="flex items-start gap-3.5 flex-1 min-w-0">
-                                                                        <button
-                                                                            onClick={(e) => { e.stopPropagation(); toggleSequence(seqIdx); }}
-                                                                            className="text-ink-400 hover:text-ink-800 p-1 rounded-lg hover:bg-wash transition-colors shrink-0 mt-0.5"
-                                                                        >
-                                                                            {isExpanded ? <ChevronDown size={17} /> : <ChevronRight size={17} />}
-                                                                        </button>
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <div className="flex flex-wrap items-center gap-2 mb-1">
-                                                                                <span className="text-xs font-bold text-gold-ink uppercase bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full font-mono">
-                                                                                    Sequence {sequence.number || seqIdx + 1}
-                                                                                </span>
-                                                                                {sequence.sequence_function && (
-                                                                                    <span className="text-xs font-medium text-ink-600 bg-mist-100 border border-edge-strong px-2.5 py-0.5 rounded-md font-mono">
-                                                                                        {sequence.sequence_function}
-                                                                                    </span>
-                                                                                )}
-                                                                                {seqScenes.length > 0 && (
-                                                                                    <span className="text-xs font-semibold bg-mist-100 text-ink-600 px-2.5 py-0.5 rounded-full border border-edge-strong">
-                                                                                        {seqScenes.length} {seqScenes.length === 1 ? 'scene' : 'scenes'}
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                            <h4 className="font-serif font-bold text-base text-ink-900 flex items-center gap-2">
-                                                                                {sequence.title}
-                                                                                <span onClick={(e) => e.stopPropagation()}>
-                                                                                    <EditButton title={`Sequence ${sequence.number || seqIdx + 1} Title`} value={sequence.title} onSave={() => openEditModal(`Sequence ${sequence.number || seqIdx + 1} Title`, sequence.title, (val) => { setStory(prev => { const newSeqs = [...(prev.sequences || [])]; newSeqs[seqIdx] = { ...(newSeqs[seqIdx] || {}), title: val }; return { ...prev, sequences: newSeqs }; }); })} />
-                                                                                </span>
-                                                                            </h4>
-                                                                            {sequence.tactical_question && (
-                                                                                <div className="text-xs text-ember-900 bg-ember-tint border border-ember-edge p-2.5 rounded-xl italic mt-1.5">
-                                                                                    <span className="font-bold uppercase text-xs not-italic text-ember-800 font-mono mr-1.5">Tactical Question:</span>
-                                                                                    {sequence.tactical_question}
-                                                                                </div>
-                                                                            )}
-                                                                            {sequence.four_corner_movement && (
-                                                                                <div className="text-xs text-gold-ink bg-gold-tint/40 border border-gold-edge/60 p-2.5 rounded-xl mt-1.5 flex items-start gap-2">
-                                                                                    <span className="font-bold uppercase text-xs not-italic text-gold-ink font-mono shrink-0">⚖️ Four-Corner Dialectic:</span>
-                                                                                    <span className="font-serif italic text-ink-800 flex-1">{sequence.four_corner_movement}</span>
-                                                                                    <span onClick={(e) => e.stopPropagation()}>
-                                                                                        <EditButton title={`Sequence ${sequence.number || seqIdx + 1} Four-Corner Dialectic`} value={sequence.four_corner_movement} onSave={() => openEditModal(`Sequence ${sequence.number || seqIdx + 1} Four-Corner Dialectic`, sequence.four_corner_movement, (val) => { setStory(prev => { const newSeqs = [...(prev.sequences || [])]; newSeqs[seqIdx] = { ...(newSeqs[seqIdx] || {}), four_corner_movement: val }; return { ...prev, sequences: newSeqs }; }); })} />
-                                                                                    </span>
-                                                                                </div>
-                                                                            )}
-                                                                            {(sequence.description || sequence.summary) && (
-                                                                                <p className="text-sm sm:text-[15px] text-ink-700 mt-2 line-clamp-3 leading-relaxed font-serif">
-                                                                                    {sequence.description || sequence.summary}
-                                                                                </p>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="flex items-center gap-2 shrink-0 self-end md:self-auto" onClick={(e) => e.stopPropagation()}>
-                                                                        {(() => {
-                                                                            let seqDrafted = 0;
-                                                                            let seqReady = 0;
-                                                                            seqScenes.forEach((_, sIdx) => {
-                                                                                if (getSceneProseText(story, seqIdx, sIdx)) seqDrafted++;
-                                                                                if (getSceneAudioStatus(seqIdx, sIdx).status === 'ready') seqReady++;
-                                                                            });
-                                                                            if (!(seqDrafted > 0 || seqReady > 0 || Boolean(availableSequenceAudioMap?.[String(seqIdx)]))) return null;
-                                                                            return (
-                                                                                <button
-                                                                                    onClick={() => handleDownloadSequenceAudio(seqIdx)}
-                                                                                    disabled={isExportingSequenceAudio || isExportingSceneAudio || isExportingStoryAudio}
-                                                                                    className={`flex items-center gap-1 border px-2.5 py-1.5 rounded-xl text-xs font-bold shadow-2xs hover:shadow-xs transition-all disabled:opacity-40 cursor-pointer ${
-                                                                                        seqDrafted > 0 && seqReady >= seqDrafted
-                                                                                            ? 'bg-sage-tint hover:bg-sage-tint-strong border-sage-edge text-sage-800'
-                                                                                            : 'text-ink-600 hover:text-ink-900 bg-surface border-edge-strong hover:border-edge-300'
-                                                                                    }`}
-                                                                                    title={seqReady > 0
-                                                                                        ? `Stitch saved scene audio (${seqReady}/${seqDrafted || seqScenes.length}) and export Sequence ${sequence.number || seqIdx + 1} MP3`
-                                                                                        : `Generate & export Sequence ${sequence.number || seqIdx + 1} MP3`}
-                                                                                >
-                                                                                    {isExportingSequenceAudio ? (
-                                                                                        <Loader2 size={12} className="animate-spin text-gold" />
-                                                                                    ) : (
-                                                                                        <Download size={12} className={seqDrafted > 0 && seqReady >= seqDrafted ? 'text-sage-700' : 'text-gold'} />
-                                                                                    )}
-                                                                                    <span>{seqReady > 0 ? `MP3 ${seqReady}/${seqDrafted || seqScenes.length}` : 'MP3'}</span>
-                                                                                </button>
-                                                                            );
-                                                                        })()}
-                                                                        <button
-                                                                            onClick={() => { setSelectedSequence(seqIdx); setView('sequence_dashboard'); }}
-                                                                            className="bg-surface hover:bg-wash border border-edge-strong text-ink-700 px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all shadow-2xs cursor-pointer"
-                                                                        >
-                                                                            Dashboard
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={() => { if (!isExpanded) toggleSequence(seqIdx); handleAddScene(seqIdx); }}
-                                                                            className="bg-surface hover:bg-wash border border-edge-strong text-ink-700 px-3 py-1.5 rounded-xl font-bold text-xs transition-all shadow-2xs flex items-center gap-1 cursor-pointer"
-                                                                            title="Add a new scene at the end of this sequence"
-                                                                        >
-                                                                            <Plus size={12} className="text-gold-ink" /> Add Scene
-                                                                        </button>
-                                                                        {seqScenes.length === 0 && (
-                                                                            <button
-                                                                                onClick={() => requestSceneWeaving(seqIdx)}
-                                                                                disabled={loading}
-                                                                                className="shrink-0 bg-[#5B8A72] hover:bg-[#4a725e] px-3.5 py-1.5 rounded-xl font-bold text-xs text-white shadow-2xs transition-all active:scale-95 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-                                                                            >
-                                                                                <Sparkles size={11} fill="currentColor" /> Weave Scenes
-                                                                            </button>
-                                                                        )}
-                                                                    </div>
-                                                                </div>
-
-                                                                {/* Expanded Sequence View with Thread Visualizer & Numbered Scene Rows */}
-                                                                {isExpanded && seqScenes.length > 0 && (
-                                                                    <div className="animate-fade-in border-t border-edge bg-surface">
-                                                                        <div className="p-5 bg-inset border-b border-edge space-y-3 hidden">
-                                                                            <div className="text-xs font-bold text-ink-400 uppercase tracking-wider font-mono">Sequence Thread Interaction Map</div>
-                                                                            {/* Map was removed as thread extraction isn't currently supported by ScenePlannerAgent */}
-                                                                        </div>
-
-                                                                        {/* Numbered Scene Stack */}
-                                                                        <div className="divide-y divide-edge">
-                                                                            {seqScenes.map((s, si) => (
-                                                                                <SceneRow
-                                                                                    key={si}
-                                                                                    variant="structure"
-                                                                                    scene={s}
-                                                                                    sceneIdx={si}
-                                                                                    seqIdx={seqIdx}
-                                                                                    totalScenes={seqScenes.length}
-                                                                                    proseStale={story.prose?.[`${seqIdx}-${si}`]?.stale}
-                                                                                    sequence={sequence}
-                                                                                    getModeIcon={getModeIcon}
-                                                                                    allNarrativeModes={allNarrativeModes}
-                                                                                    openEditModal={openEditModal}
-                                                                                    onUpdateField={updateSceneBlueprint}
-                                                                                    onMoveScene={handleMoveScene}
-                                                                                    onAddSceneAfter={handleAddScene}
-                                                                                    setStory={setStory}
-                                                                                    showToast={showToast}
-                                                                                    setSelectedSequence={setSelectedSequence}
-                                                                                    setSelectedScene={setSelectedScene}
-                                                                                    setView={setView}
-                                                                                    handleDeleteScene={handleDeleteScene}
-                                                                                    enableNarrativeLenses={enableNarrativeLenses}
-                                                                                    handleDownloadSceneAudio={handleDownloadSceneAudio}
-                                                                                    isExportingSceneAudio={isExportingSceneAudio}
-                                                                                    hasProse={Boolean(story.prose?.[`${seqIdx}-${si}`]?.final || story.prose?.[`${seqIdx}-${si}`]?.draft || story.prose?.[`${seqIdx}-${si}`])}
-                                                                                    availableSceneAudioMap={availableSceneAudioMap}
-                                                                                    getSceneAudioStatus={getSceneAudioStatus}
-                                                                                    playStoredOrLiveSceneAudio={playStoredOrLiveSceneAudio}
-                                                                                    isAnyAudioPlaying={isAnyAudioPlaying}
-                                                                                    stopAllAudioPlayback={stopAllAudioPlayback}
-                                                                                />
-                                                                            ))}
-                                                                        </div>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                        );
-                                                    })}
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                                );
-                            })()}
-
-                            {(view === 'sequence_dashboard' || view === 'chapter_dashboard') && selectedSequence !== null && (() => {
-                                const sequence = (story.sequences || [])[selectedSequence];
-                                if (!sequence) return null;
-                                const dashScenes = (story.scenes && (story.scenes[`${selectedSequence}`] || story.scenes[selectedSequence])) || [];
-                                return (
-                                    <div className="max-w-5xl mx-auto space-y-6 animate-fade-in">
-                                        <EditorialSubNav activeView={view} onSelectView={setView} story={story} isInspectorMode={isInspectorMode} selectedSequence={selectedSequence} selectedScene={selectedScene} />
-                                        <div className="bg-surface p-6 sm:p-8 rounded-2xl border border-edge shadow-sm">
-                                            <button onClick={() => setView('structure')} className="text-xs text-ink-500 flex items-center gap-1.5 mb-4 hover:text-ink-900 transition-colors font-medium">
-                                                <ArrowLeft size={13} /> Back to Sequence
-                                            </button>
-                                            <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4">
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex flex-wrap items-center gap-2 mb-2">
-                                                        <span className="text-xs font-mono font-bold text-gold-ink uppercase bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full">
-                                                            Act {parseActNumber(sequence.parent_act, actForSequence(sequence.number || selectedSequence + 1))} — Sequence {sequence.number || selectedSequence + 1}
-                                                        </span>
-                                                        {sequence.sequence_function && (
-                                                            <span className="text-xs font-bold text-ink-700 bg-mist-100 border border-edge-strong px-2.5 py-0.5 rounded-full">
-                                                                {sequence.sequence_function}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <h2 className="text-2xl sm:text-3xl font-serif font-bold text-ink-900 flex items-center gap-2 tracking-tight">
-                                                        {sequence.title}
-                                                        <EditButton title={`Sequence Title`} value={sequence.title} onSave={() => openEditModal(`Sequence Title`, sequence.title, (val) => { setStory(prev => { const newSeqs = [...(prev.sequences || [])]; newSeqs[selectedSequence] = { ...(newSeqs[selectedSequence] || {}), title: val }; return { ...prev, sequences: newSeqs }; }); })} />
-                                                    </h2>
-                                                    {sequence.tactical_question && (
-                                                        <div className="text-xs text-ember-900 bg-ember-tint border border-ember-edge p-3 rounded-xl italic mt-3">
-                                                            <span className="font-bold uppercase text-xs not-italic text-ember-800 font-mono mr-1.5">Tactical Question:</span>
-                                                            {sequence.tactical_question}
-                                                        </div>
-                                                    )}
-                                                    {sequence.four_corner_movement && (
-                                                        <div className="text-xs text-gold-ink bg-gold-tint/40 border border-gold-edge/60 p-3 rounded-xl mt-3 flex items-start gap-2">
-                                                            <span className="font-bold uppercase text-xs not-italic text-gold-ink font-mono shrink-0">⚖️ Four-Corner Dialectic:</span>
-                                                            <span className="font-serif italic text-ink-800 flex-1">{sequence.four_corner_movement}</span>
-                                                            <EditButton title="Sequence Four-Corner Dialectic" value={sequence.four_corner_movement} onSave={() => openEditModal("Sequence Four-Corner Dialectic", sequence.four_corner_movement, (val) => { setStory(prev => { const newSeqs = [...(prev.sequences || [])]; newSeqs[selectedSequence] = { ...(newSeqs[selectedSequence] || {}), four_corner_movement: val }; return { ...prev, sequences: newSeqs }; }); })} />
-                                                        </div>
-                                                    )}
-                                                    {(sequence.description || sequence.summary) && (
-                                                        <div className="text-base text-ink-800 mt-4 flex items-start gap-3 leading-relaxed">
-                                                            <div className="prose dark:prose-invert max-w-none flex-1 min-w-0 text-[15px] sm:text-base text-ink-800 font-serif leading-relaxed break-words" dangerouslySetInnerHTML={{ __html: parseMarkdown(sequence.description || sequence.summary) }} />
-                                                            <EditButton title={`Sequence Description`} value={sequence.description || sequence.summary} onSave={() => openEditModal(`Sequence Description`, sequence.description || sequence.summary, (val) => { setStory(prev => { const newSeqs = [...(prev.sequences || [])]; newSeqs[selectedSequence] = { ...(newSeqs[selectedSequence] || {}), description: val, summary: val }; return { ...prev, sequences: newSeqs }; }); })} />
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                {(() => {
-                                                    let dashDrafted = 0;
-                                                    let dashReady = 0;
-                                                    let firstPlayableIdx = 0;
-                                                    let foundFirst = false;
-                                                    dashScenes.forEach((_, sIdx) => {
-                                                        const hasP = Boolean(getSceneProseText(story, selectedSequence, sIdx));
-                                                        const isR = getSceneAudioStatus(selectedSequence, sIdx).status === 'ready';
-                                                        if (hasP) dashDrafted++;
-                                                        if (isR) dashReady++;
-                                                        if (!foundFirst && (hasP || isR)) {
-                                                            firstPlayableIdx = sIdx;
-                                                            foundFirst = true;
-                                                        }
-                                                    });
-                                                    const hasAudioOrProse = dashDrafted > 0 || dashReady > 0 || Boolean(availableSequenceAudioMap?.[String(selectedSequence)]);
-                                                    const allReady = dashDrafted > 0 && dashReady >= dashDrafted;
-                                                    return (
-                                                        <div className="flex items-center gap-2 shrink-0 flex-wrap self-start">
-                                                            <button onClick={() => enterReaderMode(selectedSequence, 0)} className="bg-surface hover:bg-lift text-ink-800 border border-edge-strong px-3.5 py-2.5 rounded-xl font-bold text-xs shadow-2xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer">
-                                                                <BookOpen size={13} className="text-gold-ink" /> Read Sequence
-                                                            </button>
-                                                            {hasAudioOrProse && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        if (isAnyAudioPlaying) {
-                                                                            stopAllAudioPlayback();
-                                                                            return;
-                                                                        }
-                                                                        enterReaderMode(selectedSequence, firstPlayableIdx);
-                                                                        setTimeout(() => playSceneAudio(selectedSequence, firstPlayableIdx, { autoplay: true, follow: true }), 80);
-                                                                    }}
-                                                                    className={`border px-3.5 py-2.5 rounded-xl font-bold text-xs shadow-2xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer ${
-                                                                        isAnyAudioPlaying
-                                                                            ? 'bg-gold-tint hover:bg-gold/25 border-gold-edge text-gold-ink'
-                                                                            : dashReady > 0
-                                                                                ? 'bg-sage-tint hover:bg-sage-tint-strong border-sage-edge text-sage-900'
-                                                                                : 'bg-gold-tint hover:bg-gold/25 border-gold-edge text-gold-ink'
-                                                                    }`}
-                                                                    title={isAnyAudioPlaying ? "Pause / Stop playing audio" : dashReady > 0 ? "Listen to Sequence starting with saved audio" : "Listen to Sequence with live narration"}
-                                                                >
-                                                                    {isAnyAudioPlaying ? (
-                                                                        <Pause size={13} className="fill-current text-gold-ink" />
-                                                                    ) : (
-                                                                        <Headphones size={13} className={dashReady > 0 ? 'text-sage-800' : 'text-gold-ink'} />
-                                                                    )}
-                                                                    <span>{isAnyAudioPlaying ? 'Pause' : 'Listen'}</span>
-                                                                </button>
-                                                            )}
-                                                            {hasAudioOrProse && (
-                                                                <button
-                                                                    onClick={() => handleDownloadSequenceAudio(selectedSequence)}
-                                                                    disabled={isExportingSequenceAudio || isExportingSceneAudio || isExportingStoryAudio}
-                                                                    className={`border px-3.5 py-2.5 rounded-xl font-bold text-xs shadow-2xs transition-all active:scale-95 flex items-center gap-1.5 cursor-pointer disabled:opacity-40 ${
-                                                                        allReady
-                                                                            ? 'bg-sage-tint hover:bg-sage-tint-strong border-sage-edge text-sage-800'
-                                                                            : 'bg-surface hover:bg-lift text-ink-800 border-edge-strong'
-                                                                    }`}
-                                                                    title={dashReady > 0
-                                                                        ? `Stitch saved scene audio (${dashReady}/${dashDrafted || dashScenes.length}) into a Sequence MP3`
-                                                                        : "Generate & export Sequence MP3"}
-                                                                >
-                                                                    {isExportingSequenceAudio ? (
-                                                                        <Loader2 size={13} className="animate-spin text-gold" />
-                                                                    ) : (
-                                                                        <Download size={13} className={allReady ? 'text-sage-700' : 'text-gold'} />
-                                                                    )}
-                                                                    <span>
-                                                                        {isExportingSequenceAudio
-                                                                            ? 'Exporting MP3...'
-                                                                            : dashReady > 0
-                                                                                ? `Sequence MP3 (${dashReady}/${dashDrafted || dashScenes.length})`
-                                                                                : 'Sequence MP3'}
-                                                                    </span>
-                                                                </button>
-                                                            )}
-                                                            <button onClick={() => requestSceneWeaving(selectedSequence)} disabled={loading} className="shrink-0 bg-btn hover:bg-btn-hover text-btn-ink px-4 py-2.5 rounded-xl font-bold text-xs shadow-sm transition-all active:scale-95 flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed self-start">
-                                                                <Sparkles size={13} className="text-btn-accent" /> {dashScenes.length > 0 ? 'Re-Weave Scenes' : 'Weave Scenes'}
-                                                            </button>
-                                                        </div>
-                                                    );
-                                                })()}
-                                            </div>
-                                        </div>
-
-                                        {dashScenes.length > 0 && (
-                                            <div className="bg-surface rounded-2xl border border-edge shadow-sm overflow-hidden">
-                                                <div className="p-4 sm:p-5 bg-mist-50/60 border-b border-edge-strong flex items-center justify-between gap-3">
-                                                    <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider font-mono">Scenes ({dashScenes.length})</h3>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleAddScene(selectedSequence)}
-                                                        className="bg-surface hover:bg-lift border border-edge-strong text-ink-800 px-3 py-1.5 rounded-xl font-bold text-xs shadow-2xs transition-all flex items-center gap-1.5 cursor-pointer"
-                                                    >
-                                                        <Plus size={13} className="text-gold-ink" /> Add Scene
-                                                    </button>
-                                                </div>
-                                                <div className="p-5 bg-inset border-b border-edge-strong space-y-4 hidden">
-                                                    {/* Map was removed as thread extraction isn't currently supported by ScenePlannerAgent */}
-                                                </div>
-                                                <div className="divide-y divide-edge-soft">
-                                                    {dashScenes.map((s, si) => (
-                                                        <SceneRow
-                                                            key={si}
-                                                            variant="dashboard"
-                                                            scene={s}
-                                                            sceneIdx={si}
-                                                            seqIdx={selectedSequence}
-                                                            totalScenes={dashScenes.length}
-                                                            proseStale={story.prose?.[`${selectedSequence}-${si}`]?.stale}
-                                                            sequence={sequence}
-                                                            getModeIcon={getModeIcon}
-                                                            allNarrativeModes={allNarrativeModes}
-                                                            openEditModal={openEditModal}
-                                                            onUpdateField={updateSceneBlueprint}
-                                                            onMoveScene={handleMoveScene}
-                                                            onAddSceneAfter={handleAddScene}
-                                                            setStory={setStory}
-                                                            showToast={showToast}
-                                                            setSelectedSequence={setSelectedSequence}
-                                                            setSelectedScene={setSelectedScene}
-                                                            setView={setView}
-                                                            handleDeleteScene={handleDeleteScene}
-                                                            enableNarrativeLenses={enableNarrativeLenses}
-                                                            handleDownloadSceneAudio={handleDownloadSceneAudio}
-                                                            isExportingSceneAudio={isExportingSceneAudio}
-                                                            hasProse={Boolean(story.prose?.[`${selectedSequence}-${si}`]?.final || story.prose?.[`${selectedSequence}-${si}`]?.draft || story.prose?.[`${selectedSequence}-${si}`])}
-                                                            availableSceneAudioMap={availableSceneAudioMap}
-                                                            getSceneAudioStatus={getSceneAudioStatus}
-                                                            playStoredOrLiveSceneAudio={playStoredOrLiveSceneAudio}
-                                                            isAnyAudioPlaying={isAnyAudioPlaying}
-                                                            stopAllAudioPlayback={stopAllAudioPlayback}
-                                                        />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {dashScenes.length === 0 && (
-                                            <div className="text-center py-20 bg-surface rounded-2xl border border-edge p-8 shadow-sm space-y-4">
-                                                <Sparkles className="w-12 h-12 text-gold/50 mx-auto" />
-                                                <div>
-                                                    <p className="font-serif text-lg font-bold text-ink-800">No scenes yet</p>
-                                                    <p className="text-ink-500 text-xs mt-1">Click "Weave Scenes" above to generate 4–12 scenes, or add one manually.</p>
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handleAddScene(selectedSequence)}
-                                                    className="inline-flex items-center gap-1.5 bg-surface hover:bg-lift border border-edge-strong text-ink-800 px-4 py-2 rounded-xl font-bold text-xs shadow-2xs transition-all cursor-pointer"
-                                                >
-                                                    <Plus size={14} className="text-gold-ink" /> Add Scene Manually
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })()}
+                            {(view === 'structure' || view === 'sequence_dashboard' || view === 'chapter_dashboard') && (
+                                <StructureView
+                                    view={view}
+                                    setView={setView}
+                                    story={story}
+                                    setStory={setStory}
+                                    isInspectorMode={isInspectorMode}
+                                    selectedSequence={selectedSequence}
+                                    setSelectedSequence={setSelectedSequence}
+                                    selectedScene={selectedScene}
+                                    setSelectedScene={setSelectedScene}
+                                    activeActTab={activeActTab}
+                                    setActiveActTab={setActiveActTab}
+                                    expandedSequences={expandedSequences}
+                                    toggleSequence={toggleSequence}
+                                    toggleAllSequencesInAct={toggleAllSequencesInAct}
+                                    loading={loading}
+                                    enableNarrativeLenses={enableNarrativeLenses}
+                                    allNarrativeModes={allNarrativeModes}
+                                    getModeIcon={getModeIcon}
+                                    getSceneProseText={getSceneProseText}
+                                    getSceneAudioStatus={getSceneAudioStatus}
+                                    availableSceneAudioMap={availableSceneAudioMap}
+                                    availableSequenceAudioMap={availableSequenceAudioMap}
+                                    isAnyAudioPlaying={isAnyAudioPlaying}
+                                    isExportingSceneAudio={isExportingSceneAudio}
+                                    isExportingSequenceAudio={isExportingSequenceAudio}
+                                    isExportingStoryAudio={isExportingStoryAudio}
+                                    enterReaderMode={enterReaderMode}
+                                    generateActsAndSequences={generateActsAndSequences}
+                                    handleResetStoryStage={handleResetStoryStage}
+                                    handleAddScene={handleAddScene}
+                                    handleDeleteScene={handleDeleteScene}
+                                    handleMoveScene={handleMoveScene}
+                                    handleDownloadSceneAudio={handleDownloadSceneAudio}
+                                    handleDownloadSequenceAudio={handleDownloadSequenceAudio}
+                                    playSceneAudio={playSceneAudio}
+                                    playStoredOrLiveSceneAudio={playStoredOrLiveSceneAudio}
+                                    stopAllAudioPlayback={stopAllAudioPlayback}
+                                    requestConfirm={requestConfirm}
+                                    requestSceneWeaving={requestSceneWeaving}
+                                    requestSequenceWeaving={requestSequenceWeaving}
+                                    updateSceneBlueprint={updateSceneBlueprint}
+                                    openEditModal={openEditModal}
+                                    showToast={showToast}
+                                />
+                            )}
 
                             {view === 'writer' && selectedSequence !== null && selectedScene !== null && (() => {
                                 const writerSceneKey = `${selectedSequence}`;
@@ -30198,421 +28779,40 @@ ${auditLines}
                             })()}
 
                             {view === 'inspector' && (
-                                <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-                                    <EditorialSubNav activeView={view} onSelectView={setView} story={story} isInspectorMode={isInspectorMode} selectedSequence={selectedSequence} selectedScene={selectedScene} />
-                                    <h2 className="text-2xl sm:text-3xl font-serif font-bold text-ink-900 mb-6 flex items-center gap-2.5">
-                                        <Search className="text-gold-ink" /> Story Memory Search {isInspectorMode ? '(RAG Inspector)' : ''}
-                                    </h2>
-
-                                    {/* Test Input */}
-                                    <div className="bg-surface p-6 sm:p-7 rounded-2xl border border-edge shadow-sm">
-                                        <label className="block text-xs font-bold uppercase tracking-wider text-ink-500 mb-2 font-mono">Test Query</label>
-                                        <div className="flex gap-2">
-                                            <input
-                                                className="flex-1 bg-inset border border-edge-strong rounded-xl px-4 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors"
-                                                placeholder="e.g., 'What acts of magic are illegal?'"
-                                                value={ragTestQuery}
-                                                onChange={e => setRagTestQuery(e.target.value)}
-                                                onKeyDown={e => e.key === 'Enter' && handleRagTest()}
-                                            />
-                                            <button onClick={handleRagTest} disabled={ragTestLoading} className="bg-btn hover:bg-btn-hover text-btn-ink px-6 py-2 rounded-xl font-bold text-xs shadow-sm transition-all disabled:opacity-50 flex items-center gap-2">
-                                                {ragTestLoading ? <Loader2 className="animate-spin" size={14} /> : 'Search'}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* World Primer Status */}
-                                    {worldPrimer && (
-                                        <div className="bg-inset border border-edge-strong p-5 rounded-2xl space-y-2">
-                                            <h3 className="text-xs font-bold text-ink-800 uppercase mb-2 flex items-center gap-2 font-mono"><Book size={14} className="text-gold-ink" /> Active World Primer</h3>
-                                            <div className="text-xs text-ink-700 max-h-36 overflow-y-auto whitespace-pre-wrap leading-relaxed font-serif">{worldPrimer}</div>
-                                        </div>
-                                    )}
-
-                                    {/* Results */}
-                                    <div className="space-y-4">
-                                        <h3 className="text-xs font-bold text-ink-400 uppercase tracking-wider font-mono">Retrieval Results</h3>
-                                        {ragTestResults.length === 0 ? (
-                                            <div className="text-center text-ink-400 italic py-12 bg-surface rounded-2xl border border-edge shadow-sm">
-                                                Run a search to inspect vector matches.
-                                            </div>
-                                        ) : (
-                                            ragTestResults.map((res, i) => (
-                                                <div key={i} className="bg-surface rounded-2xl border border-edge p-5 shadow-sm space-y-3">
-                                                    <div className="flex justify-between items-start">
-                                                        <div className="text-xs font-bold text-sage-800 bg-sage-tint border border-sage-edge px-2.5 py-0.5 rounded-full font-mono">
-                                                            Score: {(res.score * 100).toFixed(1)}%
-                                                        </div>
-                                                        <div className="text-xs text-ink-500 font-mono">
-                                                            Topic: {res.metadata.topic}
-                                                        </div>
-                                                    </div>
-                                                    <p className="text-ink-800 text-xs leading-relaxed font-serif">{res.text}</p>
-
-                                                    {/* Metadata Debug */}
-                                                    <div className="text-xs text-ink-500 font-mono bg-inset p-2.5 rounded-xl border border-edge-strong">
-                                                        {JSON.stringify(res.metadata)}
-                                                    </div>
-                                                </div>
-                                            ))
-                                        )}
-                                    </div>
-                                </div>
+                                <InspectorView
+                                    view={view}
+                                    setView={setView}
+                                    story={story}
+                                    isInspectorMode={isInspectorMode}
+                                    selectedSequence={selectedSequence}
+                                    selectedScene={selectedScene}
+                                    worldPrimer={worldPrimer}
+                                    ragTestQuery={ragTestQuery}
+                                    setRagTestQuery={setRagTestQuery}
+                                    ragTestLoading={ragTestLoading}
+                                    ragTestResults={ragTestResults}
+                                    handleRagTest={handleRagTest}
+                                />
                             )}
 
-                            {view === 'library' && (() => {
-                                // Enrich stories with computed stats
-                                const enrichedStories = libraryStories.map(item => {
-                                    const stats = calculateStoryStats(item.data);
-                                    return { ...item, stats };
-                                });
-
-                                // Search filter (covers title, concept, genre, cast names)
-                                const q = (librarySearchQuery || "").trim().toLowerCase();
-                                const filteredStories = enrichedStories.filter(item => {
-                                    const s = item.data || {};
-                                    const title = (s.title || "Untitled").toLowerCase();
-                                    const concept = (s.concept || s.logline || "").toLowerCase();
-                                    const genre = (s.style?.genre || "").toLowerCase();
-                                    const castNames = Array.isArray(s.cast) ? s.cast.map(c => (c.name || "").toLowerCase()).join(" ") : "";
-                                    return !q || title.includes(q) || concept.includes(q) || genre.includes(q) || castNames.includes(q);
-                                });
-
-                                // Sort: most recently active first
-                                filteredStories.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-
-                                // Date formatter: extract from story ID timestamp, fallback to save timestamp
-                                const formatDate = (item) => {
-                                    const idMatch = (item.id || '').match(/story_(\d+)/);
-                                    const ts = idMatch ? parseInt(idMatch[1]) : (item.timestamp || Date.now());
-                                    const d = new Date(ts);
-                                    const mm = String(d.getMonth() + 1).padStart(2, '0');
-                                    const dd = String(d.getDate()).padStart(2, '0');
-                                    const yy = String(d.getFullYear()).slice(-2);
-                                    return `${mm}.${dd}.${yy}`;
-                                };
-
-                                return (
-                                    <div className="lib-magazine-root animate-fade-in">
-                                        {/* ── Header ── */}
-                                        <header className="lib-header">
-                                            <div className="lib-header-top">
-                                                <div>
-                                                    <h1 className="lib-title font-serif">Library</h1>
-                                                    {libraryStories.length > 0 && (
-                                                        <p className="lib-count">
-                                                            {libraryStories.length} {libraryStories.length === 1 ? 'story' : 'stories'}
-                                                        </p>
-                                                    )}
-                                                </div>
-                                                <div className="lib-header-actions">
-                                                    <label className="lib-import-link">
-                                                        Import
-                                                        <input type="file" onChange={handleImport} className="hidden" accept=".json,.epub" />
-                                                    </label>
-                                                    <button
-                                                        onClick={() => setView('setup')}
-                                                        className="lib-new-btn"
-                                                    >
-                                                        <Plus size={15} />
-                                                        <span>New Story</span>
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* Search */}
-                                            {libraryStories.length > 0 && (
-                                                <div className="lib-search-wrap">
-                                                    <Search className="lib-search-icon" size={15} />
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Search stories…"
-                                                        value={librarySearchQuery}
-                                                        onChange={(e) => setLibrarySearchQuery(e.target.value)}
-                                                        className="lib-search-input"
-                                                    />
-                                                    {librarySearchQuery && (
-                                                        <button
-                                                            onClick={() => setLibrarySearchQuery("")}
-                                                            className="lib-search-clear"
-                                                        >
-                                                            <X size={13} />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </header>
-
-                                        {/* ── Content ── */}
-                                        {libraryStories.length === 0 ? (
-                                            /* Empty state */
-                                            <div className="lib-empty">
-                                                <h2 className="lib-empty-title font-serif">No stories yet</h2>
-                                                <p className="lib-empty-desc">
-                                                    Begin your first novel from a concept, or import an existing manuscript.
-                                                </p>
-                                                <div className="lib-empty-actions">
-                                                    <button
-                                                        onClick={() => setView('setup')}
-                                                        className="lib-empty-primary"
-                                                    >
-                                                        <Plus size={16} /> New Story
-                                                    </button>
-                                                    <label className="lib-empty-secondary">
-                                                        <Download size={14} /> Import
-                                                        <input type="file" onChange={handleImport} className="hidden" accept=".json,.epub" />
-                                                    </label>
-                                                </div>
-                                            </div>
-                                        ) : filteredStories.length === 0 ? (
-                                            /* No search results */
-                                            <div className="lib-no-results">
-                                                <p>No stories match your search.</p>
-                                                <button onClick={() => setLibrarySearchQuery("")} className="lib-clear-link">
-                                                    Clear search
-                                                </button>
-                                            </div>
-                                        ) : (() => {
-                                            /* Story cards */
-                                            const handleSelectLibraryStory = (targetItem, targetView = 'dashboard') => {
-                                                if (!targetItem) return;
-                                                const liveInitData = (initializingStoryIdRef.current === targetItem.id && storySnapshotsByIdRef.current[targetItem.id])
-                                                    ? storySnapshotsByIdRef.current[targetItem.id]
-                                                    : null;
-                                                const targetData = liveInitData || targetItem.data || {};
-                                                const migrated = migrateStoryToSequences(targetData);
-                                                if (liveInitData) {
-                                                    skipNextIdbHydrationIdRef.current = targetItem.id;
-                                                }
-                                                setActiveStoryId(targetItem.id);
-                                                setStory({
-                                                    relationships: {},
-                                                    graph_edges: [],
-                                                    ...migrated,
-                                                    continuity_ledger: Array.isArray(migrated?.continuity_ledger) ? migrated.continuity_ledger : [],
-                                                    secret_vault: Array.isArray(migrated?.secret_vault) ? migrated.secret_vault : [],
-                                                    id: targetItem.id
-                                                });
-                                                if (targetView === 'reader') {
-                                                    enterReaderMode();
-                                                } else {
-                                                    setView(targetView);
-                                                }
-                                            };
-
-                                            return (
-                                                <div className="lib-card-list">
-                                                    {filteredStories.map(item => {
-                                                        const s = item.data || {};
-                                                        const isActive = item.id === activeStoryId;
-                                                        const stats = item.stats;
-                                                        const coverSrc = libraryCovers[item.id];
-
-                                                        // Sequence-based completion: each sequence contributes equally,
-                                                        // with partial credit based on completed scenes / total scenes.
-                                                        const seqPct = (() => {
-                                                            const seqs = stats.sequencesStatus;
-                                                            if (!seqs || seqs.length === 0) return 0;
-                                                            const frac = seqs.reduce((sum, sq) => sum + (sq.total > 0 ? sq.completed / sq.total : 0), 0);
-                                                            return Math.round((frac / seqs.length) * 100);
-                                                        })();
-                                                        const isComplete = seqPct === 100;
-
-                                                        const defaultDest = (stats?.words > 0) ? 'reader' : 'dashboard';
-
-                                                        return (
-                                                            <article
-                                                                key={item.id}
-                                                                className={`lib-card group${isActive ? ' lib-card--active' : ''}`}
-                                                            >
-                                                                {/* Physical 3D Book Object - 1-Click Open */}
-                                                                <div
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        handleSelectLibraryStory(item, defaultDest);
-                                                                    }}
-                                                                    className="lib-book-obj"
-                                                                    title={`Open ${s.title || 'Novel'}`}
-                                                                >
-                                                                    {/* Spine crease & shading overlays */}
-                                                                    <div className="book-spine-shadow" />
-                                                                    <div className="book-spine-crease" />
-                                                                    <div className="book-edge-trim" />
-
-                                                                    {/* Quick Action Toolbar on Book Cover (Reveals on hover / tap) */}
-                                                                    <div className="lib-card-actions" onClick={(e) => e.stopPropagation()}>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleSelectLibraryStory(item, 'reader');
-                                                                            }}
-                                                                            className="lib-card-action-btn lib-card-action-btn--gold"
-                                                                            title="Read Novel"
-                                                                        >
-                                                                            <BookOpen size={13} />
-                                                                        </button>
-                                                                        {!coverSrc && (
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    const currentStyle = typeof s.coverStyle === 'number' ? s.coverStyle : getCoverStyleIndex(item.id || s.title);
-                                                                                    const nextStyle = (currentStyle + 1) % 8;
-                                                                                    handleUpdateStoryCoverStyle(item.id, nextStyle);
-                                                                                }}
-                                                                                className="lib-card-action-btn"
-                                                                                title="Cycle Typography & Palette"
-                                                                            >
-                                                                                <Sparkles size={13} />
-                                                                            </button>
-                                                                        )}
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleDuplicateStory(item);
-                                                                            }}
-                                                                            className="lib-card-action-btn"
-                                                                            title="Duplicate Story"
-                                                                        >
-                                                                            <Copy size={13} />
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleDeleteLibraryStory(item, e);
-                                                                            }}
-                                                                            className="lib-card-action-btn lib-card-action-btn--danger"
-                                                                            title="Delete Story"
-                                                                        >
-                                                                            <Trash2 size={13} />
-                                                                        </button>
-                                                                    </div>
-
-                                                                    {coverSrc ? (
-                                                                        <img
-                                                                            src={coverSrc}
-                                                                            alt={s.title || "Story cover"}
-                                                                            className="lib-cover-img"
-                                                                            loading="lazy"
-                                                                        />
-                                                                    ) : (
-                                                                        <StylizedBlankCover
-                                                                            story={s}
-                                                                            theme={theme}
-                                                                            isLarge={false}
-                                                                        />
-                                                                    )}
-
-                                                                    {/* Compositional Cover Art: Audio Drama Rings + Offline Audio Progress Arc */}
-                                                                    <BookCoverAudioArt
-                                                                        story={s}
-                                                                        audioCount={libraryAudioCounts[item.id] || 0}
-                                                                        totalScenes={Object.values(s.prose || {}).filter(p => (typeof p === 'string' ? p : (p?.final || p?.draft || '')).trim()).length}
-                                                                    />
-                                                                </div>
-
-                                                                {/* Card body below book */}
-                                                                <div className="lib-card-body">
-                                                                    {/* Full-width Title Row */}
-                                                                    <div className="lib-title-row">
-                                                                        {isActive && (
-                                                                            <span className="lib-active-dot" title="Active project" />
-                                                                        )}
-                                                                        <h2
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleSelectLibraryStory(item, defaultDest);
-                                                                            }}
-                                                                            className="lib-card-title font-serif cursor-pointer"
-                                                                            title={s.title || "Untitled"}
-                                                                        >
-                                                                            {s.title || "Untitled"}
-                                                                        </h2>
-                                                                    </div>
-
-                                                                    {/* Concept preview */}
-                                                                    <p
-                                                                        onClick={(e) => {
-                                                                            e.stopPropagation();
-                                                                            handleSelectLibraryStory(item, defaultDest);
-                                                                        }}
-                                                                        className="lib-concept cursor-pointer"
-                                                                    >
-                                                                        {s.concept || s.logline || "No concept written yet."}
-                                                                    </p>
-
-                                                                    {/* Metadata row */}
-                                                                    <div className="lib-meta">
-                                                                        <div className="lib-meta-left">
-                                                                            <span>{stats.words.toLocaleString()} words</span>
-                                                                            <span className="lib-meta-sep">&middot;</span>
-                                                                            <span>{formatDate(item)}</span>
-                                                                        </div>
-                                                                        <div className="lib-meta-right">
-                                                                            {initializingStoryId === item.id && !isComplete && seqPct === 0 ? (
-                                                                                <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-gold-ink" title="Initializing Story Bible">
-                                                                                    <Loader2 size={11} className="animate-spin" />
-                                                                                    Building…
-                                                                                </span>
-                                                                            ) : isComplete ? (
-                                                                                <span className="lib-meta-complete" title="All sequences completed">
-                                                                                    <CheckCircle size={12} />
-                                                                                    Done
-                                                                                </span>
-                                                                            ) : (
-                                                                                <span className="lib-meta-progress" title={`Completion: ${seqPct}%`}>
-                                                                                    <span className="text-xs font-mono font-medium">{seqPct}%</span>
-                                                                                    <span className="lib-progress-track">
-                                                                                        <span
-                                                                                            className="lib-progress-fill"
-                                                                                            style={{ width: `${Math.max(seqPct, 4)}%` }}
-                                                                                        />
-                                                                                    </span>
-                                                                                </span>
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {/* Editorial Action Row: Read & Studio */}
-                                                                    <div className="lib-card-footer-actions pt-2.5 mt-1 flex items-center gap-1.5">
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleSelectLibraryStory(item, 'reader');
-                                                                            }}
-                                                                            className="flex-1 py-1 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all bg-gold-tint hover:bg-gold-tint border border-gold-edge text-gold-ink active:scale-95 shadow-2xs cursor-pointer"
-                                                                            title="Read Manuscript"
-                                                                        >
-                                                                            <BookOpen size={12} />
-                                                                            <span>Read</span>
-                                                                        </button>
-                                                                        <button
-                                                                            type="button"
-                                                                            onClick={(e) => {
-                                                                                e.stopPropagation();
-                                                                                handleSelectLibraryStory(item, 'dashboard');
-                                                                            }}
-                                                                            className="flex-1 py-1 px-2 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-all bg-surface hover:bg-wash border border-edge-strong text-ink-700 active:scale-95 shadow-2xs cursor-pointer"
-                                                                            title="Open Studio"
-                                                                        >
-                                                                            <Activity size={12} />
-                                                                            <span>Studio</span>
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                            </article>
-                                                        );
-                                                    })}
-                                                </div>
-                                            );
-                                        })()}
-                                    </div>
-                                );
-                            })()}
+                            {view === 'library' && (
+                                <LibraryView
+                                    activeStoryId={activeStoryId}
+                                    theme={theme}
+                                    libraryStories={libraryStories}
+                                    libraryCovers={libraryCovers}
+                                    libraryAudioCounts={libraryAudioCounts}
+                                    librarySearchQuery={librarySearchQuery}
+                                    setLibrarySearchQuery={setLibrarySearchQuery}
+                                    initializingStoryId={initializingStoryId}
+                                    setView={setView}
+                                    handleImport={handleImport}
+                                    handleDeleteLibraryStory={handleDeleteLibraryStory}
+                                    handleDuplicateStory={handleDuplicateStory}
+                                    handleUpdateStoryCoverStyle={handleUpdateStoryCoverStyle}
+                                    onSelectStory={handleSelectLibraryStory}
+                                />
+                            )}
 
                             {view === 'settings' && (
                                 <div className="max-w-2xl mx-auto py-8 animate-fade-in pb-24">
