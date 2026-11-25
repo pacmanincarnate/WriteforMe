@@ -1357,27 +1357,8 @@ const PIPELINE_STAGE_ORDER = [
     'Archivist'
 ];
 
-/**
- * Mocked-LLM end-to-end pipeline scenario. Uses the real UI path (Setup form -> Start Autopilot ->
- * confirm) and the window.__callAIOverride seam, both present in the legacy app and the modular build.
- * Returns { transcript, digest } so two builds can be compared.
- */
-async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label }) {
-    const assert = (name, cond, detail = '') => {
-        const full = `${name}`;
-        if (cond) {
-            results.passed.push(full);
-            console.log(`  [PASS] ${full}`);
-        } else {
-            results.failed.push({ name: full, detail });
-            console.error(`  [FAIL] ${full}${detail ? ` -> ${detail}` : ''}`);
-        }
-    };
-
-    await cdp.send('Network.setBlockedURLs', { urls: PIPELINE_BLOCKED_URLS });
-    await waitForAppMount(cdp, baseUrl);
-    await sleep(600);
-
+/** Installs the scripted LLM (fixtures/mockLlm.js) behind window.__callAIOverride and starts a transcript. */
+async function installPipelineMock(cdp) {
     const mockSource = fs.readFileSync(path.join(__dirname, 'fixtures', 'mockLlm.js'), 'utf8');
     await cdp.eval(mockSource, false);
     await cdp.eval(`(() => {
@@ -1401,6 +1382,7 @@ async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label })
         window.__goldenTranscript = [];
         window.__goldenPrompts = [];
         window.__callAIOverride = async (prompt, systemPrompt, isJson, logName, role) => {
+            if (String(prompt).includes('redrawing the coastline')) window.__goldenBridgeConceptSeen = true;
             const out = await window.__goldenMockLlm(prompt, systemPrompt, isJson, logName);
             // Known, intended difference: the Lore Extraction prompt embeds the story's status quo and
             // lore topics. The legacy app read them from a stale render closure (usually empty); the
@@ -1427,6 +1409,67 @@ async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label })
         };
         return true;
     })()`, false);
+}
+
+/**
+ * External automation path: `EllipsisProseBridge.startNewStory` (what mcp-server's start_new_story
+ * sends) must fill the Setup form AND actually start generation with that concept.
+ */
+async function runBridgeStartScenario({ cdp, baseUrl, results, label }) {
+    const assert = (name, cond, detail = '') => {
+        if (cond) {
+            results.passed.push(name);
+            console.log(`  [PASS] ${name}`);
+        } else {
+            results.failed.push({ name, detail });
+            console.error(`  [FAIL] ${name}${detail ? ` -> ${detail}` : ''}`);
+        }
+    };
+    await waitForAppMount(cdp, baseUrl);
+    await sleep(600);
+    await installPipelineMock(cdp);
+    const concept = 'A cartographer discovers her maps are redrawing the coastline overnight.';
+    const reply = await cdp.eval(`window.EllipsisProseBridge.startNewStory(${JSON.stringify({ title: 'Bridge Started Story', concept, isAutopilot: false })})`, true);
+    let seen = { calls: 0, conceptInPrompt: false };
+    const deadline = Date.now() + 20000;
+    while (Date.now() < deadline) {
+        await sleep(300);
+        seen = await cdp.eval(`({ calls: window.__goldenTranscript.length, conceptInPrompt: Boolean(window.__goldenBridgeConceptSeen) })`, false);
+        if (seen.calls > 0) break;
+    }
+    assert(`Bridge[${label}]: startNewStory starts generation with the supplied concept`,
+        reply && reply.status === 'started' && seen.calls > 0 && seen.conceptInPrompt,
+        JSON.stringify({ reply, seen }));
+    // Let the run settle so teardown does not race in-flight work.
+    for (let i = 0; i < 120; i++) {
+        const st = await cdp.eval('window.EllipsisProseBridge.getPipelineStatus()', true);
+        if (!st.loading) break;
+        await sleep(500);
+    }
+}
+
+/**
+ * Mocked-LLM end-to-end pipeline scenario. Uses the real UI path (Setup form -> Start Autopilot ->
+ * confirm) and the window.__callAIOverride seam, both present in the legacy app and the modular build.
+ * Returns { transcript, digest } so two builds can be compared.
+ */
+async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label }) {
+    const assert = (name, cond, detail = '') => {
+        const full = `${name}`;
+        if (cond) {
+            results.passed.push(full);
+            console.log(`  [PASS] ${full}`);
+        } else {
+            results.failed.push({ name: full, detail });
+            console.error(`  [FAIL] ${full}${detail ? ` -> ${detail}` : ''}`);
+        }
+    };
+
+    await cdp.send('Network.setBlockedURLs', { urls: PIPELINE_BLOCKED_URLS });
+    await waitForAppMount(cdp, baseUrl);
+    await sleep(600);
+
+    await installPipelineMock(cdp);
 
     // 1. Fill the Setup form through the DOM and start Autopilot (real user path).
     const started = await cdp.eval(`(async () => {
@@ -1701,6 +1744,7 @@ async function runMode(opts) {
                 }
                 session = await launchChromeSession(profile, runCdpPort);
                 const run = await runPipelineScenario({ ...session, baseUrl: `http://127.0.0.1:${runPort}/`, results, label });
+                await runBridgeStartScenario({ ...session, baseUrl: `http://127.0.0.1:${runPort}/`, results, label });
                 await session.close();
                 session = null;
                 await server.close();

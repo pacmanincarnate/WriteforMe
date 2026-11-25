@@ -463,7 +463,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useDebounce, useModelCatalog, useReaderController, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useDebounce, useMcpBridge, useModelCatalog, useReaderController, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -1212,21 +1212,6 @@ const ReactDOM = ReactDOMClient;
             };
             // Settings & Model Catalog Hook
             const [isDirectingVoices, setIsDirectingVoices] = useState(false);
-            const [isMcpConnected, setIsMcpConnected] = useState(false);
-            const [enableMcpBridge, setEnableMcpBridge] = useState(() => {
-                try {
-                    return localStorage.getItem("ellipsisprose_enable_mcp_bridge") === 'true';
-                } catch (e) {
-                    return false;
-                }
-            });
-            const [mcpRetryTrigger, setMcpRetryTrigger] = useState(0);
-
-            useEffect(() => {
-                try {
-                    localStorage.setItem("ellipsisprose_enable_mcp_bridge", String(enableMcpBridge));
-                } catch (e) {}
-            }, [enableMcpBridge]);
 
             const {
                 enableReview, setEnableReview,
@@ -4590,475 +4575,81 @@ const ReactDOM = ReactDOMClient;
             // new story initialization, and pipeline control from Antigravity.
             // ─────────────────────────────────────────────────────────────────────────────
 
-            const bridgeStateRef = useRef({});
-            bridgeStateRef.current = {
-                story,
-                activeStoryId,
-                apiProvider,
-                devProvider,
-                devModel,
-                reviewProvider,
-                reviewModel,
-                proseProvider,
-                proseModel,
-                geminiModel,
-                openRouterModel,
-                nanoGptModel,
-                koboldModel,
-                codexModel,
-                apiKey,
-                openRouterKey,
-                nanoGptKey,
-                koboldUrl,
-                codexUrl,
-                loading,
-                loadingStep,
-                continuousAutopilot,
-                view,
-                inputTitle,
-                inputConcept,
-                inputWritingMode,
-                promptLog
-            };
-
-            const handleBridgeAction = async (action, params = {}) => {
-                const s = bridgeStateRef.current;
-                switch (action) {
-                    case 'getStatus': {
-                        return {
-                            connected: true,
-                            activeStoryId: s.activeStoryId || null,
-                            storyTitle: s.story?.title || s.inputTitle || "Untitled Story",
-                            view: s.view,
-                            apiProvider: s.apiProvider,
-                            devModel: s.devModel || s.geminiModel,
-                            loading: s.loading,
-                            loadingStep: s.loadingStep,
-                            continuousAutopilot: s.continuousAutopilot,
-                            totalWords: countStoryWords(s.story),
-                            sequencesCount: (s.story?.sequences || []).length,
-                            chaptersCount: (s.story?.sequences || []).reduce((acc, sq) => acc + (sq.scenes || []).length, 0),
-                            timestamp: Date.now()
-                        };
-                    }
-
-                    case 'getModelConfig': {
-                        return {
-                            apiProvider: s.apiProvider,
-                            devProvider: s.devProvider || s.apiProvider,
-                            devModel: s.devModel || getDefaultModelForProvider(s.devProvider || s.apiProvider),
-                            reviewProvider: s.reviewProvider || "",
-                            reviewModel: s.reviewModel || "",
-                            proseProvider: s.proseProvider || "",
-                            proseModel: s.proseModel || "",
-                            geminiModel: s.geminiModel,
-                            openRouterModel: s.openRouterModel,
-                            nanoGptModel: s.nanoGptModel,
-                            koboldModel: s.koboldModel,
-                            codexModel: s.codexModel,
-                            hasGeminiKey: Boolean(s.apiKey),
-                            hasOpenRouterKey: Boolean(s.openRouterKey),
-                            hasNanoGptKey: Boolean(s.nanoGptKey),
-                            koboldUrl: s.koboldUrl,
-                            codexUrl: s.codexUrl
-                        };
-                    }
-
-                    case 'setModelConfig': {
-                        const { provider, model, role = 'all', apiKey: newApiKey, baseUrl } = params;
-                        if (!provider) throw new Error("Missing 'provider' in setModelConfig.");
-
-                        const validProviders = ['gemini', 'openrouter', 'nanogpt', 'koboldcpp', 'codex'];
-                        if (!validProviders.includes(provider)) {
-                            throw new Error(`Invalid provider '${provider}'. Must be one of: ${validProviders.join(', ')}`);
-                        }
-
-                        // Apply provider & role logic
-                        if (role === 'all' || role === 'dev') {
-                            setApiProvider(provider);
-                            safeLocalStorageSet("ellipsisprose_api_provider", provider);
-                            setDevProvider(provider);
-                            safeLocalStorageSet("ellipsisprose_dev_provider", provider);
-                            if (model) {
-                                setDevModel(model);
-                                safeLocalStorageSet("ellipsisprose_dev_model", model);
-                            }
-                        }
-                        if (role === 'review') {
-                            setReviewProvider(provider);
-                            safeLocalStorageSet("ellipsisprose_review_provider", provider);
-                            if (model) {
-                                setReviewModel(model);
-                                safeLocalStorageSet("ellipsisprose_review_model", model);
-                            }
-                        }
-                        if (role === 'prose') {
-                            setProseProvider(provider);
-                            safeLocalStorageSet("ellipsisprose_prose_provider", provider);
-                            if (model) {
-                                setProseModel(model);
-                                safeLocalStorageSet("ellipsisprose_prose_model", model);
-                            }
-                        }
-
-                        // Provider-specific model defaults
-                        if (model) {
-                            if (provider === 'gemini') { setGeminiModel(model); safeLocalStorageSet("ellipsisprose_gemini_model", model); }
-                            if (provider === 'openrouter') { setOpenRouterModel(model); safeLocalStorageSet("ellipsisprose_openrouter_model", model); }
-                            if (provider === 'nanogpt') { setNanoGptModel(model); safeLocalStorageSet("ellipsisprose_nanogpt_model", model); }
-                            if (provider === 'koboldcpp') { setKoboldModel(model); safeLocalStorageSet("ellipsisprose_kobold_model", model); }
-                            if (provider === 'codex') { setCodexModel(model); safeLocalStorageSet("ellipsisprose_codex_model", model); }
-                        }
-
-                        // API keys
-                        if (newApiKey) {
-                            if (provider === 'gemini') { setApiKey(newApiKey); safeLocalStorageSet("gemini_api_key", newApiKey); }
-                            if (provider === 'openrouter') { setOpenRouterKey(newApiKey); safeLocalStorageSet("ellipsisprose_openrouter_key", newApiKey); }
-                            if (provider === 'nanogpt') { setNanoGptKey(newApiKey); safeLocalStorageSet("ellipsisprose_nanogpt_key", newApiKey); }
-                        }
-
-                        // Base URLs
-                        if (baseUrl) {
-                            if (provider === 'koboldcpp') { setKoboldUrl(baseUrl); safeLocalStorageSet("ellipsisprose_kobold_url", baseUrl); }
-                            if (provider === 'codex') { setCodexUrl(baseUrl); safeLocalStorageSet("ellipsisprose_codex_url", baseUrl); }
-                        }
-
-                        showToast(`API configuration updated: ${provider.toUpperCase()}${model ? ' (' + model + ')' : ''} for ${role.toUpperCase()}`, 'success');
-
-                        return {
-                            success: true,
-                            provider,
-                            model: model || getDefaultModelForProvider(provider),
-                            role,
-                            message: `Successfully set ${provider} as ${role} provider.`
-                        };
-                    }
-
-                    case 'startNewStory': {
-                        const { title = "", concept, writingMode = "novel", autoStart = true, isAutopilot = false } = params;
-                        if (!concept || !concept.trim()) {
-                            throw new Error("Missing 'concept' parameter for startNewStory.");
-                        }
-
-                        const cleanConcept = concept.trim();
-                        const cleanTitle = (title && title.trim()) || "Untitled Novel";
-
-                        setInputTitle(cleanTitle);
-                        setInputConcept(cleanConcept);
-                        setInputAuthorNote("");
-                        setInputWritingMode(writingMode);
-                        clearImportedLore();
-                        setView('setup');
-
-                        if (autoStart) {
-                            await new Promise(r => setTimeout(r, 120));
-                            // Launch story initialization pipeline
-                            initStory(Boolean(isAutopilot), { fromSetup: true }).catch(err => {
-                                console.error("[Antigravity Bridge] initStory error:", err);
-                            });
-                            return {
-                                success: true,
-                                status: "started",
-                                title: cleanTitle,
-                                writingMode,
-                                autoStart: true,
-                                isAutopilot: Boolean(isAutopilot),
-                                message: `Initialized and started generation for "${cleanTitle}".`
-                            };
-                        }
-
-                        return {
-                            success: true,
-                            status: "ready",
-                            title: cleanTitle,
-                            writingMode,
-                            autoStart: false,
-                            message: `Prepared story canvas for "${cleanTitle}". Ready for pipeline execution.`
-                        };
-                    }
-
-                    case 'getActiveStory': {
-                        const { includeFullProse = false } = params;
-                        const currStory = s.story;
-                        if (!currStory) {
-                            return { story: null, message: "No active story loaded." };
-                        }
-
-                        const sanitizedStory = {
-                            id: s.activeStoryId,
-                            title: currStory.title || s.inputTitle || "Untitled Story",
-                            concept: currStory.concept || s.inputConcept || "",
-                            writingMode: currStory.writingMode || "novel",
-                            acts: currStory.acts || [],
-                            characters: (currStory.characters || []).map(c => ({
-                                name: c.name,
-                                role: c.role,
-                                archetype: c.archetype,
-                                summary: c.summary || c.bio || ""
-                            })),
-                            sequences: (currStory.sequences || []).map(seq => ({
-                                number: seq.sequence_number || seq.number,
-                                title: seq.title,
-                                act: seq.parent_act || seq.act,
-                                dramatic_question: seq.dramatic_question,
-                                scenes: (seq.scenes || []).map(sc => {
-                                    const sKey = `${seq.sequence_number || seq.number}-${sc.scene_number || sc.number}`;
-                                    const prose = sc.prose || (currStory.prose && currStory.prose[sKey]) || "";
-                                    const wordCount = prose ? prose.trim().split(/\s+/).length : 0;
-                                    return {
-                                        number: sc.scene_number || sc.number,
-                                        title: sc.title,
-                                        summary: sc.summary,
-                                        wordCount,
-                                        hasProse: Boolean(prose),
-                                        prose: includeFullProse ? prose : undefined
-                                    };
-                                })
-                            })),
-                            totalWords: countStoryWords(currStory)
-                        };
-
-                        return sanitizedStory;
-                    }
-
-                    case 'listStories': {
-                        if (!window.storyStore) {
-                            throw new Error("StoryStore persistence is unavailable.");
-                        }
-                        const rawStories = await window.storyStore.listStories();
-                        const list = (rawStories || []).map(item => ({
-                            id: item.id,
-                            title: item.title || item.data?.title || "Untitled",
-                            concept: (item.concept || item.data?.concept || "").slice(0, 200),
-                            wordCount: item.wordCount || (item.data ? countStoryWords(item.data) : 0),
-                            lastModified: item.lastModified || item.data?.lastModified || null
-                        }));
-                        return { count: list.length, stories: list };
-                    }
-
-                    case 'switchStory': {
-                        const { storyId } = params;
-                        if (!storyId) throw new Error("Missing 'storyId' to switch.");
-                        if (!window.storyStore) throw new Error("StoryStore persistence is unavailable.");
-
-                        const targetData = await window.storyStore.loadStory(storyId);
-                        if (!targetData) {
-                            throw new Error(`Story with ID '${storyId}' not found in library.`);
-                        }
-
-                        const migrated = migrateStoryToSequences(targetData);
-                        setActiveStoryId(storyId);
-                        setStory({
-                            relationships: {},
-                            graph_edges: [],
-                            ...migrated,
-                            continuity_ledger: Array.isArray(migrated?.continuity_ledger) ? migrated.continuity_ledger : [],
-                            secret_vault: Array.isArray(migrated?.secret_vault) ? migrated.secret_vault : [],
-                            id: storyId
-                        });
-                        setView('dashboard');
-                        showToast(`Switched active story to "${targetData.title || storyId}"`, 'success');
-
-                        return {
-                            success: true,
-                            storyId,
-                            title: targetData.title || "Untitled",
-                            message: `Successfully loaded story "${targetData.title || storyId}".`
-                        };
-                    }
-
-                    case 'getPipelineStatus': {
-                        return {
-                            loading: s.loading,
-                            loadingStep: s.loadingStep,
-                            continuousAutopilot: s.continuousAutopilot,
-                            activeStoryId: s.activeStoryId,
-                            storyTitle: s.story?.title || "Untitled"
-                        };
-                    }
-
-                    case 'triggerPipelineStep': {
-                        const { action: subAction, sequenceIndex = 0, sceneIndex = 0 } = params;
-                        if (subAction === 'step') {
-                            const hasMore = await runContinuousAutopilotStep();
-                            return { success: true, action: 'step', hasMore };
-                        } else if (subAction === 'autopilot_toggle') {
-                            toggleContinuousAutopilot();
-                            return { success: true, continuousAutopilot: !s.continuousAutopilot };
-                        } else if (subAction === 'story_arc') {
-                            await generateStoryArc(s.story, false);
-                            return { success: true, action: 'story_arc' };
-                        } else if (subAction === 'acts_sequences') {
-                            await generateActsAndSequences(s.story, false);
-                            return { success: true, action: 'acts_sequences' };
-                        } else if (subAction === 'sequences') {
-                            await generateSequences(s.story, false);
-                            return { success: true, action: 'sequences' };
-                        } else if (subAction === 'scenes') {
-                            await generateScenes(sequenceIndex, s.story, false);
-                            return { success: true, action: 'scenes', sequenceIndex };
-                        } else if (subAction === 'prose') {
-                            await writeSceneProse(sequenceIndex, sceneIndex);
-                            return { success: true, action: 'prose', sequenceIndex, sceneIndex };
-                        }
-                        throw new Error(`Unknown pipeline step action: '${subAction}'`);
-                    }
-
-                    case 'getChapter': {
-                        const { sequenceIndex = 0, sceneIndex = 0 } = params;
-                        const seq = s.story?.sequences?.[sequenceIndex];
-                        if (!seq) throw new Error(`Sequence ${sequenceIndex} not found in active story.`);
-                        const scene = seq.scenes?.[sceneIndex];
-                        if (!scene) throw new Error(`Scene ${sceneIndex} in sequence ${sequenceIndex} not found.`);
-
-                        const sKey = `${seq.sequence_number || seq.number}-${scene.scene_number || scene.number}`;
-                        const prose = scene.prose || (s.story.prose && s.story.prose[sKey]) || "";
-                        const beats = s.story.beats?.[sKey] || [];
-                        const feedback = feedbackLedger?.[sKey] || null;
-
-                        return {
-                            sequenceNumber: seq.sequence_number || seq.number,
-                            sequenceTitle: seq.title,
-                            sceneNumber: scene.scene_number || scene.number,
-                            sceneTitle: scene.title,
-                            summary: scene.summary,
-                            conflict: scene.conflict,
-                            setting: scene.setting,
-                            characterIds: scene.characterIds || [],
-                            wordCount: prose ? prose.trim().split(/\s+/).length : 0,
-                            beats,
-                            feedback,
-                            prose
-                        };
-                    }
-
-                    case 'injectFeedback': {
-                        const { feedback } = params;
-                        if (!feedback) throw new Error("Missing 'feedback' text.");
-                        showToast(`Directive received from Antigravity: "${feedback.slice(0, 60)}..."`, 'info');
-                        return { success: true, message: "Feedback acknowledged by EllipsisProse." };
-                    }
-
-                    case 'getLogs': {
-                        const { limit = 20 } = params;
-                        const logs = (s.promptLog || []).slice(-limit);
-                        return { count: logs.length, logs };
-                    }
-
-                    default:
-                        throw new Error(`Unrecognized bridge action: '${action}'`);
-                }
-            };
-
-            // Global DevTools & External Bridge Access
-            window.EllipsisProseBridge = {
-                version: "2.1.1",
-                getStatus: () => handleBridgeAction('getStatus'),
-                getModelConfig: () => handleBridgeAction('getModelConfig'),
-                setModelConfig: (p) => handleBridgeAction('setModelConfig', p),
-                startNewStory: (p) => handleBridgeAction('startNewStory', p),
-                getActiveStory: (p) => handleBridgeAction('getActiveStory', p),
-                listStories: () => handleBridgeAction('listStories'),
-                switchStory: (id) => handleBridgeAction('switchStory', { storyId: id }),
-                getPipelineStatus: () => handleBridgeAction('getPipelineStatus'),
-                triggerPipelineStep: (a, opts) => handleBridgeAction('triggerPipelineStep', { action: a, ...opts }),
-                getChapter: (sq, sc) => handleBridgeAction('getChapter', { sequenceIndex: sq, sceneIndex: sc }),
-                injectFeedback: (fb) => handleBridgeAction('injectFeedback', { feedback: fb }),
-                getLogs: (l) => handleBridgeAction('getLogs', { limit: l })
-            };
-
-            // WebSocket Connection Effect (Antigravity MCP Live Bridge)
-            useEffect(() => {
-                let ws = null;
-                let reconnectTimer = null;
-                let isDisposed = false;
-                let retryCount = 0;
-                const MAX_RETRIES = 3;
-
-                // Stop polling and do not open WebSockets if bridge is disabled
-                if (!enableMcpBridge) {
-                    setIsMcpConnected(false);
-                    return;
-                }
-
-                const connect = () => {
-                    if (isDisposed || !enableMcpBridge) return;
-                    try {
-                        ws = new WebSocket('ws://127.0.0.1:3002');
-
-                        ws.onopen = async () => {
-                            if (isDisposed) { try { ws.close(); } catch(e){} return; }
-                            console.log('[Antigravity Bridge] Connected to MCP server on port 3002');
-                            setIsMcpConnected(true);
-                            retryCount = 0;
-                            try {
-                                const status = await handleBridgeAction('getStatus');
-                                ws.send(JSON.stringify({ type: 'status', payload: status }));
-                            } catch(e) {}
-                        };
-
-                        ws.onmessage = async (evt) => {
-                            let msg;
-                            try {
-                                msg = JSON.parse(evt.data);
-                            } catch (e) {
-                                return;
-                            }
-                            const { id, action, params } = msg;
-                            if (!id) return;
-
-                            try {
-                                const result = await handleBridgeAction(action, params);
-                                if (ws && ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({ id, success: true, result }));
-                                }
-                            } catch (err) {
-                                if (ws && ws.readyState === WebSocket.OPEN) {
-                                    ws.send(JSON.stringify({ id, success: false, error: err?.message || String(err) }));
-                                }
-                            }
-                        };
-
-                        ws.onclose = () => {
-                            setIsMcpConnected(false);
-                            ws = null;
-                            if (!isDisposed && enableMcpBridge) {
-                                retryCount++;
-                                if (retryCount <= MAX_RETRIES) {
-                                    const delay = Math.min(3000 * Math.pow(2, retryCount - 1), 15000);
-                                    reconnectTimer = setTimeout(connect, delay);
-                                } else {
-                                    console.info('[Antigravity Bridge] MCP server on port 3002 not reachable. Polling paused. Use Settings -> Pipeline to reconnect.');
-                                }
-                            }
-                        };
-
-                        ws.onerror = () => {
-                            // Silently close on error so onclose manages backoff
-                            try { ws.close(); } catch(e) {}
-                        };
-                    } catch(e) {
-                        setIsMcpConnected(false);
-                        if (!isDisposed && enableMcpBridge) {
-                            retryCount++;
-                            if (retryCount <= MAX_RETRIES) {
-                                reconnectTimer = setTimeout(connect, 3000 * retryCount);
-                            }
-                        }
-                    }
-                };
-
-                connect();
-
-                return () => {
-                    isDisposed = true;
-                    if (reconnectTimer) clearTimeout(reconnectTimer);
-                    if (ws) {
-                        try { ws.close(); } catch(e) {}
-                    }
-                    setIsMcpConnected(false);
-                };
-            }, [enableMcpBridge, mcpRetryTrigger]);
+            const {
+                isMcpConnected,
+                enableMcpBridge,
+                setEnableMcpBridge,
+                setMcpRetryTrigger
+            } = useMcpBridge({
+                state: {
+                    story,
+                    activeStoryId,
+                    apiProvider,
+                    devProvider,
+                    devModel,
+                    reviewProvider,
+                    reviewModel,
+                    proseProvider,
+                    proseModel,
+                    geminiModel,
+                    openRouterModel,
+                    nanoGptModel,
+                    koboldModel,
+                    codexModel,
+                    apiKey,
+                    openRouterKey,
+                    nanoGptKey,
+                    koboldUrl,
+                    codexUrl,
+                    loading,
+                    loadingStep,
+                    continuousAutopilot,
+                    view,
+                    inputTitle,
+                    inputConcept,
+                    inputWritingMode,
+                    promptLog,
+                    feedbackLedger
+                },
+                actions: {
+                    setApiProvider,
+                    setDevProvider,
+                    setDevModel,
+                    setReviewProvider,
+                    setReviewModel,
+                    setProseProvider,
+                    setProseModel,
+                    setGeminiModel,
+                    setOpenRouterModel,
+                    setNanoGptModel,
+                    setKoboldModel,
+                    setCodexModel,
+                    setApiKey,
+                    setOpenRouterKey,
+                    setNanoGptKey,
+                    setKoboldUrl,
+                    setCodexUrl,
+                    setInputTitle,
+                    setInputConcept,
+                    setInputAuthorNote,
+                    setInputWritingMode,
+                    setActiveStoryId,
+                    setStory,
+                    setView,
+                    clearImportedLore,
+                    showToast,
+                    getDefaultModelForProvider,
+                    initStory,
+                    runContinuousAutopilotStep,
+                    toggleContinuousAutopilot,
+                    generateStoryArc,
+                    generateActsAndSequences,
+                    generateSequences,
+                    generateScenes,
+                    writeSceneProse
+                },
+                storyStore
+            });
 
             const handleAutoGenerateScene = (seqIdx, sceneIdx, options = {}) => orchestrateHandleAutoGenerateScene(getPipelineCtx(), seqIdx, sceneIdx, options);
 

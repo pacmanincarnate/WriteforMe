@@ -52,7 +52,7 @@ The server is registered in `~/.gemini/config/mcp_config.json`:
 | `list_stories` | *(none)* | Lists all stories saved in the browser's IndexedDB story library. |
 | `switch_story` | `storyId` (required) | Switches the active story to a specific story in the library. |
 | `get_pipeline_status` | *(none)* | Checks active agent execution, loading step, and continuous autopilot state. |
-| `trigger_pipeline_step`| `action` (`step`, `autopilot_toggle`, `story_arc`, `acts_sequences`, `sequences`, `scenes`, `beats`, `prose`), `sequenceIndex`, `sceneIndex` | Triggers a generation or pipeline step in the writing waterfall. |
+| `trigger_pipeline_step`| `action` (`step`, `autopilot_toggle`, `story_arc`, `acts_sequences`, `sequences`, `scenes`, `prose`), `sequenceIndex`, `sceneIndex` | Triggers a generation or pipeline step in the writing waterfall. |
 | `get_chapter` | `sequenceIndex`, `sceneIndex` | Returns scene metadata, beats, critique notes, and prose. |
 | `inject_feedback` | `feedback` (required) | Injects directorial revision feedback into the current writing cycle. |
 | `get_recent_logs` | `limit` (number, default: 20) | Retrieves recent prompt execution and reasoning logs. |

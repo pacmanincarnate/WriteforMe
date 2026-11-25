@@ -290,9 +290,9 @@ server.tool(
     "trigger_pipeline_step",
     "Triggers a specific pipeline generation step or advances the novel generation process in EllipsisProse.",
     {
-        action: z.enum(["step", "autopilot_toggle", "story_arc", "acts_sequences", "sequences", "scenes", "beats", "prose"]).describe("The pipeline step to execute. 'step' executes the next logical step in the pipeline waterfall. 'autopilot_toggle' starts or pauses continuous autopilot."),
-        sequenceIndex: z.number().int().optional().describe("0-based index of the sequence (for scenes, beats, prose)."),
-        sceneIndex: z.number().int().optional().describe("0-based index of the scene (for beats, prose).")
+        action: z.enum(["step", "autopilot_toggle", "story_arc", "acts_sequences", "sequences", "scenes", "prose"]).describe("The pipeline step to execute. 'step' executes the next logical step in the pipeline waterfall. 'autopilot_toggle' starts or pauses continuous autopilot."),
+        sequenceIndex: z.number().int().optional().describe("0-based index of the sequence (for scenes, prose)."),
+        sceneIndex: z.number().int().optional().describe("0-based index of the scene (for prose).")
     },
     async ({ action, sequenceIndex, sceneIndex }) => {
         const result = await sendToBrowser("triggerPipelineStep", {

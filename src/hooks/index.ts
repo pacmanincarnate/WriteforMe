@@ -5,3 +5,4 @@ export * from './useModelCatalog';
 export * from './useVoiceManagement';
 export * from './useAudioProduction';
 export * from './useTtsPlayback';
+export * from './useMcpBridge';

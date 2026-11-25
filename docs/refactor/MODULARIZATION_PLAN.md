@@ -83,8 +83,8 @@ Import direction (see `eslint.config.mjs`; `import-x/no-cycle` maxDepth 10):
 
 ### 3.2 Current state snapshot
 
-- `src/legacy/MonolithApp.jsx`: **~6,045 lines** (was ~15,900 before Phase 6C).
-- Vitest: **33 files / 170 tests passing.**
+- `src/legacy/MonolithApp.jsx`: **~5,640 lines** (was ~15,900 before Phase 6C).
+- Vitest: **34 files / 201 tests passing.**
 - E2E (all must stay green): `golden` **45/45**, `subpath` **46/46**, `singlefile` **46/46**, `upgrade` **1/1**.
 - Hooks present in `src/hooks/`: `useDebounce`, `useReaderController`, `useStoryImages`, `useModelCatalog`, `useVoiceManagement`, `useAudioProduction`, `useTtsPlayback`.
 - Pipeline orchestrators present in `src/pipeline/` (context, escalation, lore, continuity, story structure, prose, voice director, surgical patch, directive planner/executor, editorial harness, autopilot, …).
@@ -94,7 +94,7 @@ Import direction (see `eslint.config.mjs`; `import-x/no-cycle` maxDepth 10):
 | # | Phase | Status | Scope |
 |---|---|---|---|
 | 1 | **6E-3** Persistence & editors hooks | ⏳ NOT STARTED (surveyed only) | See §4.1 |
-| 2 | **6F** MCP bridge | ⏳ NOT STARTED | See §4.2 |
+| 2 | **6F** MCP bridge | ✅ DONE | `src/services/bridge/mcpBridge.ts` + `src/hooks/useMcpBridge.ts`; see §4.2 |
 | 3 | **7** `src/App.tsx`, retire legacy, CI/CD | ⏳ NOT STARTED | See §4.3 |
 | 4 | Hardening & release | ⏳ NOT STARTED | See §4.4 |
 
@@ -126,7 +126,9 @@ Create `src/hooks/useStoryPersistence.ts` and `src/hooks/useStoryEditors.ts`; ex
 - `openEditModal` is already consumed by `useVoiceManagement` through `openEditModalRef` / `openEditModalStable`. If `openEditModal` moves into `useStoryEditors`, keep the ref indirection (assign `openEditModalRef.current = openEditModal` after the hook call).
 - `refreshAvailableSceneAudio` and `clearStoryTtsArtifacts` (from `useAudioProduction`) are used by import/reset/delete handlers — pass them in as params (hooks are called in a fixed order in `MonolithApp.jsx`; the persistence hook must be called **after** `useAudioProduction`).
 
-### 4.2 Phase 6F — MCP bridge
+### 4.2 Phase 6F — MCP bridge (done)
+
+**Result:** `createBridgeDispatcher` / `createBridgeApi` / `connectMcpBridge` live in `src/services/bridge/mcpBridge.ts` (React-free, state and callbacks injected through `getState()` / `getActions()`); `useMcpBridge` owns the enable toggle, the WebSocket lifecycle and the `window.EllipsisProseBridge` registration. The dispatcher is created once and re-reads state and callbacks on every call and after every `await`, which fixes two stale-closure bugs the inline version had: the WebSocket kept using the pipeline callbacks from the render it connected in, and `startNewStory` with `autoStart` replied "started" but ran `initStory` against the pre-update (empty) Setup form, so nothing was generated. `mcp-server` no longer advertises the `beats` pipeline step, which the app never accepted; `tests/unit/bridge-mcp.test.tsx` pins the two lists together. Original task notes follow.
 
 - New `src/services/bridge/mcpBridge.ts` (+ `index.ts`) holding the dispatcher currently in `handleBridgeAction` (~L4619–4948, ~330 lines) and the MCP WebSocket connection logic.
 - New `src/hooks/useMcpBridge.ts` to own the WebSocket `useEffect` (~90 lines) and the `window.EllipsisProseBridge` registration (~L4949).
@@ -160,14 +162,14 @@ All nine must exit 0 (PowerShell, from repo root; Node 22 on `PATH`):
 $env:PATH = "C:\Users\cshai\AppData\Local\hermes\node;$env:PATH"
 npm run typecheck
 npm run lint -- --max-warnings=0
-npm test                      # Vitest — currently 33 files / 170 tests
+npm test                      # Vitest — currently 34 files / 201 tests
 npm run build
 npm run build:singlefile
 npm run test:golden           # 45/45
 npm run test:subpath          # 46/46
 npm run test:singlefile       # 46/46
 npm run test:upgrade          # 1/1  (IDB + localStorage data survives upgrade)
-npm run test:pipeline         # 8/8  (mocked Autopilot run: setup -> bible -> structure -> 2 written scenes)
+npm run test:pipeline         # 9/9  (mocked Autopilot run: setup -> bible -> structure -> 2 written scenes; bridge startNewStory)
 ```
 
 The whole gate is also available as one command: `npm run gate` (`npm run verify` runs the first four steps, `npm run test:e2e` the four E2E modes). CI (`.github/workflows/ci.yml`) runs the same nine steps on every push and pull request.
