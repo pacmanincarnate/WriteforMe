@@ -185,15 +185,32 @@ export interface PipelineRuntimeContext {
     getHasHydratedStoryRef?: () => { current: boolean };
     getImportingLore?: () => boolean;
     setActiveStoryId?: (id: string) => void;
-    setPromptLog?: (logs: unknown[]) => void;
+    setPromptLog?: (logs: unknown[] | ((prev: unknown[]) => unknown[])) => void;
     setSelectedAct?: (act: number | null) => void;
     setActiveActTab?: (tab: number) => void;
     getSelectedSequence?: () => number | null;
+    getSelectedScene?: () => number | null;
     getView?: () => string;
     isAutopilotProtectedView?: (v?: string) => boolean;
     logPipelineDelay?: (stageName: string, durationMs: number, reason?: string) => void;
     getAllNarrativeModes?: () => Record<string, NarrativeModeDefinition>;
     notifyAlert?: (message: string) => void;
+
+    // Phase 6C Prose, Slop Clean & Voice Director Hooks
+    getLoading?: () => boolean;
+    getIsRunningManualSlopClean?: () => boolean;
+    setIsRunningManualSlopClean?: (running: boolean) => void;
+    getIsDirectingVoices?: () => boolean;
+    setIsDirectingVoices?: (directing: boolean) => void;
+    getFailedReviewCritiques?: () => string[];
+    getApiCredentials?: () => {
+        apiKey?: string;
+        openRouterKey?: string;
+        nanoGptKey?: string;
+        koboldUrl?: string;
+        codexUrl?: string;
+        openRouterMaxTokens?: number;
+    };
 }
 
 export function asRecord(val: unknown): PipelineRecord {
