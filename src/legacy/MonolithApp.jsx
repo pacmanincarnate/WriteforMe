@@ -464,7 +464,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useStoryLibrary, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -2510,184 +2510,17 @@ const ReactDOM = ReactDOMClient;
 
 
 
-            const handleResetStoryStage = (stage, targetStoryObj = null) => {
-                const cfg = STORY_RESET_STAGES[stage];
-                if (!cfg) {
-                    showToast(`Unknown reset stage: ${stage}`, 'error');
-                    return Promise.resolve(false);
-                }
-
-                return requestConfirm({
-                    title: cfg.title,
-                    message: cfg.message,
-                    confirmLabel: cfg.confirmLabel,
-                    danger: true,
-                    onConfirm: async () => {
-                        try {
-                            const sourceStory = targetStoryObj || storyRef.current || story;
-                            if (cfg.ttsOnly || stage === 'tts') {
-                                if (!sourceStory || typeof sourceStory !== 'object') {
-                                    throw new Error('Cannot reset an empty story object.');
-                                }
-                                await clearStoryTtsArtifacts(sourceStory.id);
-                                showToast(cfg.toastMessage, 'success');
-                                return;
-                            }
-
-                            setContinuousAutopilot(false);
-                            const { nextStory, removedCharIds, flags } = buildRolledBackStoryState(sourceStory, stage);
-
-                            storyRef.current = nextStory;
-                            setStory(nextStory);
-
-                            if (nextStory.id && storyStore?.saveStory) {
-                                try {
-                                    await storyStore.saveStory(nextStory.id, nextStory, { allowRegression: true });
-                                } catch (saveErr) {
-                                    console.warn('[handleResetStoryStage] Failed saving reset story to storyStore:', saveErr);
-                                }
-                            }
-
-                            setReadingProgress({});
-                            if (nextStory.id) {
-                                try {
-                                    localStorage.removeItem(`ellipsisprose_reading_progress_${nextStory.id}`);
-                                } catch (_) {}
-                            }
-                            if (prefetchCacheRef?.current) {
-                                prefetchCacheRef.current.clear();
-                            }
-
-                            if (nextStory.id && imageStore) {
-                                try {
-                                    await imageStore.deleteImagesByPrefix(`scene_${nextStory.id}_`);
-                                    await imageStore.deleteImagesByPrefix(`beat_${nextStory.id}_`);
-                                    for (const charId of removedCharIds) {
-                                        await imageStore.deleteImage(`portrait_${nextStory.id}_${charId}`);
-                                    }
-                                } catch (imgErr) {
-                                    console.warn('[handleResetStoryStage] Scene/beat/portrait image cleanup warning:', imgErr);
-                                }
-                            }
-
-                            setLoadedImages(prev => {
-                                const nextPortraits = { ...(prev?.portraits || {}) };
-                                removedCharIds.forEach(charId => { delete nextPortraits[charId]; });
-                                return {
-                                    ...(prev?.cover !== undefined ? { cover: prev.cover } : {}),
-                                    portraits: nextPortraits
-                                };
-                            });
-
-                            await clearStoryTtsArtifacts(nextStory.id);
-
-                            if (flags.clearScenes) setSelectedScene(null);
-                            if (flags.clearSequences) setSelectedSequence(null);
-                            if (flags.clearActs) {
-                                setSelectedAct(null);
-                                setActiveActTab(0);
-                                setCollapsedActs({});
-                            }
-
-                            setFeedbackLedger({});
-
-                            const currentView = viewRef?.current || view;
-                            if (flags.clearScenes && ['writer', 'chapter_dashboard', 'reader'].includes(currentView)) {
-                                setView('structure');
-                            } else if (flags.clearSequences && ['sequence_dashboard', 'chapter_dashboard', 'writer', 'reader'].includes(currentView)) {
-                                setView('structure');
-                            } else if (flags.clearActs && ['sequence_dashboard', 'chapter_dashboard', 'writer', 'reader', 'editorial'].includes(currentView)) {
-                                setView('structure');
-                            } else if (currentView === 'reader') {
-                                setView('dashboard');
-                            }
-
-                            if (graphManager?.current) {
-                                graphManager.current.buildGraph(nextStory.lore || []);
-                            }
-                            try {
-                                localStorage.removeItem('ellipsisprose_rag_fingerprint');
-                            } catch (_) {}
-
-                            if (vectorStore?.current) {
-                                try {
-                                    await vectorStore.current.clear();
-                                    if (nextStory.lore && nextStory.lore.length > 0 && embeddingService?.current?.isConfigured()) {
-                                        ingestLoreBatch(nextStory.lore, {
-                                            clearExisting: true,
-                                            deduplicate: false,
-                                            storyId: nextStory.id,
-                                            fingerprintProcessed: false
-                                        }).catch(err => console.warn('[handleResetStoryStage] Async RAG rebuild warning:', err));
-                                    }
-                                } catch (ragErr) {
-                                    console.warn('[handleResetStoryStage] Vector store cleanup warning:', ragErr);
-                                }
-                            }
-
-                            if (typeof refreshLibrary === 'function') {
-                                refreshLibrary().catch(() => {});
-                            }
-
-                            showToast(cfg.toastMessage, 'success');
-                        } catch (err) {
-                            console.error('[handleResetStoryStage] Failed:', err);
-                            showToast(`Story reset failed: ${err.message}`, 'error');
-                        }
-                    }
-                });
-            };
+            // Stage reset and factory reset (Phase 6E-3).
+            const { handleResetStoryStage, handleDeleteStory } = useStoryReset({
+                story, storyRef, setStory, setActiveStoryId, requestConfirm, showToast,
+                clearStoryTtsArtifacts, setContinuousAutopilot, setReadingProgress, prefetchCacheRef,
+                setLoadedImages, setFeedbackLedger,
+                setSelectedAct, setSelectedSequence, setSelectedScene, setActiveActTab, setCollapsedActs,
+                view, viewRef, setView,
+                graphManager, vectorStore, embeddingService, ingestLoreBatch,
+                refreshLibrary, setLibraryStories, setLibraryCovers, clearSetupDraft
+            });
             window.handleResetStoryStage = handleResetStoryStage;
-
-            const handleDeleteStory = async () => {
-                requestConfirm({
-                    title: "Factory Reset: Erase All Stories & Library?",
-                    message: "WARNING: This will permanently delete ALL stories in your library, world lore, cast characters, outlines, generated prose, vector memory index, and custom covers from the entire app!\n\nThis application-wide reset cannot be undone. Are you absolutely sure you want to erase everything?",
-                    confirmLabel: "Erase All Data",
-                    danger: true,
-                    onConfirm: async () => {
-                        const defaultStory = createDefaultStoryTemplate('story_default');
-                        setStory(defaultStory);
-                        setActiveStoryId('story_default');
-                        localStorage.removeItem("ellipsisprose_story");
-                        localStorage.removeItem("ellipsisprose_active_story_id");
-                        localStorage.removeItem("ellipsisprose_selectedAct");
-                        localStorage.removeItem("ellipsisprose_selectedSequence");
-                        localStorage.removeItem("ellipsisprose_selectedScene");
-                        try {
-                            await storyStore.clear();
-                            await storyStore.saveStory('story_default', defaultStory);
-                        } catch (err) {
-                            console.warn("Failed to clear IndexedDB stories:", err);
-                        }
-                        try {
-                            await imageStore.clear();
-                        } catch (err) {
-                            console.warn("Failed to clear IndexedDB images:", err);
-                        }
-                        try {
-                            if (window.audioStore) await window.audioStore.clear();
-                        } catch (err) {
-                            console.warn("Failed to clear IndexedDB audio store:", err);
-                        }
-                        if (vectorStore.current) {
-                            try {
-                                await vectorStore.current.clear();
-                            } catch (err) {
-                                console.warn("Failed to clear RAG vector store:", err);
-                            }
-                        }
-                        setSelectedAct(null);
-                        setSelectedSequence(null);
-                        setSelectedScene(null);
-                        clearSetupDraft();
-                        setLibraryStories([]);
-                        setLibraryCovers({});
-                        setView("setup");
-                        showToast("All application data and stories erased.", "success");
-                    }
-                });
-            };
 
             // Export (JSON, audio-drama script, EPUB) and file import (Phase 6E-3).
             const { handleExport, handleExportAudioDramaTxt, handleExportEpub, handleImport } = useStoryTransfer({

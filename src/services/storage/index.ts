@@ -7,3 +7,4 @@ export * from './logStore';
 export * from './audioStore';
 export * from './storyStore';
 export * from './storyLibrary';
+export * from './storyReset';
