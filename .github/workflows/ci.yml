@@ -66,6 +66,25 @@ jobs:
       - name: E2E upgrade (legacy data survives the new build)
         run: npm run test:upgrade
 
+      # Autopilot from the Setup form through two written scenes with a scripted LLM (no network).
+      - name: E2E pipeline (mocked full Autopilot run)
+        run: npm run test:pipeline
+
+      # Informational: the same scripted run on the pre-refactor app, compared call by call with
+      # the new build (agent order, prompt hashes, resulting structure). Never blocks the gate.
+      - name: E2E pipeline parity vs legacy (informational)
+        continue-on-error: true
+        run: npm run test:pipeline-parity -- --out pipeline-parity.json
+
+      - name: Upload pipeline parity transcript
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pipeline-parity
+          path: pipeline-parity.json
+          if-no-files-found: ignore
+          retention-days: 14
+
       # Informational: runs the same golden suite against the pre-refactor single-file app, so the
       # characterisation tests are proven to describe legacy behaviour too. Never blocks the gate.
       - name: E2E legacy baseline (informational)

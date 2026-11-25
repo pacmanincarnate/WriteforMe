@@ -11,9 +11,14 @@
  *   --mode subpath    Serve dist/ mounted at /WriteforMe/ with NO /api/* backend (GitHub Pages sim)
  *   --mode singlefile Test dist-singlefile/EllipsisProse-portable.html over HTTP and file:///
  *   --mode upgrade    Seed IDB + localStorage on legacy, then reload Vite dist/ on same origin
+ *   --mode pipeline   Drive a full mocked-LLM autopilot run (setup -> bible -> structure -> scenes -> prose)
+ *                     on dist/ with a deterministic fake LLM and assert the story it produces
+ *   --mode pipeline-legacy   Same scenario against the legacy baseline (needs internet for its CDNs)
+ *   --mode pipeline-parity   Run the scenario on legacy and on dist/ and compare the two transcripts
  *
  * Optional:
  *   --screenshots <dir>  Capture light/dark desktop (1440x900) & mobile (390x844) PNGs
+ *   --out <file>         pipeline modes: write the run transcript (agent calls + story digest) as JSON
  *
  * Environment:
  *   CHROME_PATH           Chrome/Chromium executable. When unset, common install
@@ -164,11 +169,13 @@ const MIME_TYPES = {
 function parseArgs(argv) {
     const opts = {
         mode: 'local',
-        screenshots: ''
+        screenshots: '',
+        out: ''
     };
     for (let i = 0; i < argv.length; i++) {
         if (argv[i] === '--mode' && argv[i + 1]) opts.mode = argv[++i];
         else if (argv[i] === '--screenshots' && argv[i + 1]) opts.screenshots = path.resolve(argv[++i]);
+        else if (argv[i] === '--out' && argv[i + 1]) opts.out = path.resolve(argv[++i]);
     }
     return opts;
 }
@@ -1319,6 +1326,250 @@ async function runPersistenceEditorSuite({ cdp, baseUrl, assert }) {
         JSON.stringify(finalState));
 }
 
+// Hosts the app would call for real LLM / embedding / image work. Blocked in pipeline modes so the
+// mocked run is hermetic and never depends on (or leaks to) a provider.
+const PIPELINE_BLOCKED_URLS = [
+    '*generativelanguage.googleapis.com*',
+    '*openrouter.ai*',
+    '*nano-gpt.com*',
+    '*api.elevenlabs.io*',
+    '*://localhost:5001/*',
+    '*://127.0.0.1:5001/*',
+    '*://localhost:8188/*',
+    '*://127.0.0.1:8188/*'
+];
+const PIPELINE_TARGET_PROSE_SCENES = 2;
+const PIPELINE_STAGE_ORDER = [
+    'Conceptual Development',
+    'Character Developer',
+    'Story Arc Agent',
+    'Act Agent',
+    'Sequence Agent',
+    'Scene Planner',
+    'Writing Agent',
+    'Archivist'
+];
+
+/**
+ * Mocked-LLM end-to-end pipeline scenario. Uses the real UI path (Setup form -> Start Autopilot ->
+ * confirm) and the window.__callAIOverride seam, both present in the legacy app and the modular build.
+ * Returns { transcript, digest } so two builds can be compared.
+ */
+async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label }) {
+    const assert = (name, cond, detail = '') => {
+        const full = `${name}`;
+        if (cond) {
+            results.passed.push(full);
+            console.log(`  [PASS] ${full}`);
+        } else {
+            results.failed.push({ name: full, detail });
+            console.error(`  [FAIL] ${full}${detail ? ` -> ${detail}` : ''}`);
+        }
+    };
+
+    await cdp.send('Network.setBlockedURLs', { urls: PIPELINE_BLOCKED_URLS });
+    await waitForAppMount(cdp, baseUrl);
+    await sleep(600);
+
+    const mockSource = fs.readFileSync(path.join(__dirname, 'fixtures', 'mockLlm.js'), 'utf8');
+    await cdp.eval(mockSource, false);
+    await cdp.eval(`(() => {
+        const normalize = (text) => String(text || '')
+            .replace(/story_\\d{9,}(?:_[a-z0-9]+)?/g, 'story_ID')
+            .replace(/\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?Z?/g, 'ISO_TIME')
+            .replace(/\\b\\d{12,}\\b/g, 'EPOCH');
+        const hash = (text) => {
+            let h = 2166136261;
+            for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+            return ('0000000' + h.toString(16)).slice(-8);
+        };
+        // The pipeline shuffles sensory "modality hands" with Math.random, which lands in
+        // the Writing Agent prompt. Seed it so two runs (and both builds) see the same deal.
+        let seed = 0x2f6e2b1;
+        Math.random = () => {
+            seed = (seed + 0x6d2b79f5) >>> 0;
+            let t = seed;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+        window.__goldenTranscript = [];
+        window.__callAIOverride = async (prompt, systemPrompt, isJson, logName, role) => {
+            const out = await window.__goldenMockLlm(prompt, systemPrompt, isJson, logName);
+            const np = normalize(prompt);
+            const ns = normalize(systemPrompt);
+            window.__goldenTranscript.push({
+                logName: String(logName || ''),
+                role: String(role || ''),
+                isJson: Boolean(isJson),
+                promptLen: np.length,
+                promptHash: hash(np),
+                systemLen: ns.length,
+                systemHash: hash(ns),
+                outLen: String(out || '').length
+            });
+            return out;
+        };
+        return true;
+    })()`, false);
+
+    // 1. Fill the Setup form through the DOM and start Autopilot (real user path).
+    const started = await cdp.eval(`(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        window.setView('setup');
+        await wait(500);
+        const setVal = (el, v) => {
+            const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        };
+        const field = (prefix) => Array.from(document.querySelectorAll('input,textarea'))
+            .find((e) => (e.getAttribute('placeholder') || '').startsWith(prefix));
+        const title = field('Story Title');
+        const concept = field('Concept');
+        if (!title || !concept) return { ok: false, reason: 'setup fields not found' };
+        setVal(title, 'Golden Pipeline Run');
+        setVal(concept, 'A coastal archivist uncovers forged tide ledgers that hide a vanished lighthouse keeper.');
+        await wait(700);
+        const isStart = (b) => /^Start\\s+Autopilot$/i.test((b.innerText || '').trim());
+        const startBtn = Array.from(document.querySelectorAll('button')).find((b) => isStart(b) && !b.disabled);
+        if (!startBtn) return { ok: false, reason: 'Start Autopilot button not found or disabled' };
+        startBtn.click();
+        // The confirm modal renders a second "Start Autopilot" button.
+        let confirmed = false;
+        for (let i = 0; i < 40 && !confirmed; i++) {
+            await wait(100);
+            const matches = Array.from(document.querySelectorAll('button')).filter(isStart);
+            if (matches.length >= 2) { matches[matches.length - 1].click(); confirmed = true; }
+        }
+        return { ok: confirmed, reason: confirmed ? '' : 'confirm modal did not appear' };
+    })()`, true);
+    assert(`Pipeline[${label}]: Setup form starts Autopilot through the confirm modal`, started.ok, JSON.stringify(started));
+    if (!started.ok) return { transcript: [], digest: null };
+
+    // 2. Let Autopilot run until the first scenes have prose, then stop it and wait for it to go idle.
+    const proseCountExpr = `(() => {
+        const s = window.storyRef.current || {};
+        return Object.values(s.prose || {}).filter((p) => p && String(p.final || p.draft || '').trim().length > 0).length;
+    })()`;
+    let proseScenes = 0;
+    let calls = 0;
+    const deadline = Date.now() + 240000;
+    while (Date.now() < deadline) {
+        await sleep(500);
+        proseScenes = await cdp.eval(proseCountExpr, false);
+        calls = await cdp.eval('window.__goldenTranscript.length', false);
+        if (proseScenes >= PIPELINE_TARGET_PROSE_SCENES) break;
+        if (calls > 400) break; // runaway guard: a healthy run needs ~35 calls
+    }
+    const stopped = await cdp.eval(`(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        let st = await window.EllipsisProseBridge.getPipelineStatus();
+        if (st.continuousAutopilot) window.toggleContinuousAutopilot();
+        for (let i = 0; i < 300; i++) {
+            await wait(200);
+            st = await window.EllipsisProseBridge.getPipelineStatus();
+            if (!st.continuousAutopilot && !st.loading) return { idle: true };
+        }
+        return { idle: false, st };
+    })()`, true);
+    assert(`Pipeline[${label}]: Autopilot writes ${PIPELINE_TARGET_PROSE_SCENES} scenes and stops cleanly`,
+        proseScenes >= PIPELINE_TARGET_PROSE_SCENES && stopped.idle, JSON.stringify({ proseScenes, calls, stopped }));
+
+    // 3. Collect the transcript and a digest of the story the run produced.
+    await sleep(800);
+    const report = await cdp.eval(`(async () => {
+        const s = window.storyRef.current || {};
+        const words = (t) => String(t || '').trim().split(/\\s+/).filter(Boolean).length;
+        const digestOf = (st) => ({
+            title: st.title,
+            writingMode: st.writing_mode,
+            cast: (st.cast || []).map((c) => c.name),
+            acts: (st.acts || []).length,
+            sequences: (st.sequences || []).length,
+            scenesPerSequence: Object.fromEntries(Object.entries(st.scenes || {}).map(([k, v]) => [k, (v || []).length])),
+            sceneTitles: ((st.scenes || {})['0'] || []).map((sc) => sc.title),
+            proseWords: Object.fromEntries(Object.entries(st.prose || {}).map(([k, v]) => [k, words(v && (v.final || v.draft))])),
+            loreCount: (st.lore || []).length,
+            hasStoryArc: Boolean(st.story_arc || st.arc || st.central_conflict || st.logline),
+            characterStates: Object.keys(st.character_states || {}).sort()
+        });
+        const saved = s.id ? await window.storyStore.loadStory(s.id) : null;
+        return {
+            id: s.id,
+            activeId: localStorage.getItem('ellipsisprose_active_story_id'),
+            digest: digestOf(s),
+            savedDigest: saved ? digestOf(saved) : null,
+            transcript: window.__goldenTranscript
+        };
+    })()`, true);
+
+    const { digest, savedDigest, transcript } = report;
+    const names = transcript.map((t) => t.logName);
+    const firstIndex = (prefix) => names.findIndex((n) => n.startsWith(prefix));
+    const stageIdx = PIPELINE_STAGE_ORDER.map(firstIndex);
+    const stagesInOrder = stageIdx.every((idx, i) => idx >= 0 && (i === 0 || idx > stageIdx[i - 1]));
+    assert(`Pipeline[${label}]: every pipeline stage runs, in order`, stagesInOrder,
+        JSON.stringify(PIPELINE_STAGE_ORDER.map((st, i) => `${st}@${stageIdx[i]}`)));
+
+    const retries = names.filter((n) => /Attempt [2-9]\/|\(Retry \d+\)/.test(n));
+    assert(`Pipeline[${label}]: valid agent output is accepted on the first attempt (no retries)`, retries.length === 0,
+        JSON.stringify([...new Set(retries)].slice(0, 8)));
+
+    const proseKeys = Object.keys(digest.proseWords || {}).filter((k) => digest.proseWords[k] > 0);
+    const writeStarts = names.filter((n) => /^Writing Agent \(Attempt 1\//.test(n)).length;
+    // A scene may be mid-flight when Autopilot is stopped, so allow one draft beyond the saved scenes.
+    assert(`Pipeline[${label}]: written prose is kept (each scene is drafted once, never re-written in a loop)`,
+        proseKeys.length >= PIPELINE_TARGET_PROSE_SCENES && writeStarts <= proseKeys.length + 1 && proseKeys.every((k) => digest.proseWords[k] > 200),
+        JSON.stringify({ proseWords: digest.proseWords, writeStarts }));
+
+    assert(`Pipeline[${label}]: story bible and structure are populated`,
+        digest.title === 'Golden Pipeline Run' && digest.cast.length >= 3 && digest.acts >= 3 && digest.sequences >= 1 && (digest.scenesPerSequence['0'] || 0) >= PIPELINE_TARGET_PROSE_SCENES,
+        JSON.stringify(digest));
+
+    assert(`Pipeline[${label}]: generated story is the active story and is persisted identically`,
+        Boolean(report.id) && report.id !== 'story_default' && report.activeId === report.id && JSON.stringify(savedDigest) === JSON.stringify(digest),
+        JSON.stringify({ id: report.id, activeId: report.activeId, savedDigest }));
+
+    assert(`Pipeline[${label}]: zero uncaught runtime exceptions`, exceptions.length === 0, exceptions.join(' | '));
+
+    return { transcript, digest };
+}
+
+/** Compare two pipeline runs (legacy vs modular). Reports the first divergence. */
+function comparePipelineRuns(legacy, modern, results) {
+    const record = (name, cond, detail = '') => {
+        if (cond) { results.passed.push(name); console.log(`  [PASS] ${name}`); }
+        else { results.failed.push({ name, detail }); console.error(`  [FAIL] ${name}${detail ? ` -> ${detail}` : ''}`); }
+    };
+    const a = legacy.transcript || [];
+    const b = modern.transcript || [];
+    // Autopilot is stopped by polling, so the two runs can differ by a few trailing calls: compare the common prefix
+    // up to the end of the last fully written scene.
+    const lastArchivist = (t) => t.map((c) => c.logName).lastIndexOf('Archivist');
+    const n = Math.min(lastArchivist(a), lastArchivist(b)) + 1;
+    let firstNameDiff = -1;
+    let firstPromptDiff = -1;
+    let promptDiffs = 0;
+    for (let i = 0; i < n; i++) {
+        if (a[i].logName !== b[i].logName) { firstNameDiff = i; break; }
+        if (a[i].promptHash !== b[i].promptHash || a[i].systemHash !== b[i].systemHash) {
+            promptDiffs++;
+            if (firstPromptDiff < 0) firstPromptDiff = i;
+        }
+    }
+    record('Parity: legacy and modular builds call the same agents in the same order', n > 0 && firstNameDiff < 0,
+        firstNameDiff >= 0 ? JSON.stringify({ index: firstNameDiff, legacy: a[firstNameDiff].logName, modular: b[firstNameDiff].logName }) : `compared ${n} calls`);
+    record('Parity: legacy and modular builds send byte-identical prompts to every agent', n > 0 && firstNameDiff < 0 && promptDiffs === 0,
+        firstPromptDiff >= 0 ? JSON.stringify({ differingCalls: promptDiffs, of: n, first: { index: firstPromptDiff, legacy: a[firstPromptDiff], modular: b[firstPromptDiff] } }) : '');
+    const strip = (d) => d ? { ...d, proseWords: undefined, characterStates: undefined } : d;
+    record('Parity: legacy and modular builds produce the same story structure',
+        JSON.stringify(strip(legacy.digest)) === JSON.stringify(strip(modern.digest)),
+        JSON.stringify({ legacy: strip(legacy.digest), modular: strip(modern.digest) }));
+}
+
 async function runMode(opts) {
     const results = { mode: opts.mode, passed: [], failed: [] };
     const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'ellipsis-golden-'));
@@ -1382,6 +1633,35 @@ async function runMode(opts) {
             } else {
                 results.failed.push({ name: 'Singlefile direct file:/// boot', detail: JSON.stringify(fileState) });
                 console.error('  [FAIL] Singlefile direct file:/// boot');
+            }
+        } else if (opts.mode === 'pipeline' || opts.mode === 'pipeline-legacy' || opts.mode === 'pipeline-parity') {
+            const distDir = path.join(ROOT_DIR, 'dist');
+            const runOn = async (label) => {
+                const runPort = await getFreePort();
+                const runCdpPort = await getFreePort();
+                const profile = path.join(tmpBase, `chrome-prof-${label}`);
+                if (label === 'legacy') {
+                    server = await startStaticHttpServer({ port: runPort, staticDir: ROOT_DIR, indexFile: ensureLegacyBaseline() });
+                } else {
+                    if (!fs.existsSync(path.join(distDir, 'index.html'))) throw new Error('dist/index.html missing — run npm run build first');
+                    server = await startStaticHttpServer({ port: runPort, staticDir: distDir, indexFile: 'index.html' });
+                }
+                session = await launchChromeSession(profile, runCdpPort);
+                const run = await runPipelineScenario({ ...session, baseUrl: `http://127.0.0.1:${runPort}/`, results, label });
+                await session.close();
+                session = null;
+                await server.close();
+                server = null;
+                return run;
+            };
+            const runs = {};
+            if (opts.mode !== 'pipeline') runs.legacy = await runOn('legacy');
+            if (opts.mode !== 'pipeline-legacy') runs.modular = await runOn('modular');
+            if (opts.mode === 'pipeline-parity') comparePipelineRuns(runs.legacy, runs.modular, results);
+            if (opts.out) {
+                fs.mkdirSync(path.dirname(opts.out), { recursive: true });
+                fs.writeFileSync(opts.out, JSON.stringify(runs, null, 2));
+                console.log(`[golden] Wrote pipeline transcript -> ${opts.out}`);
             }
         } else if (opts.mode === 'upgrade') {
             const legacyPath = ensureLegacyBaseline();

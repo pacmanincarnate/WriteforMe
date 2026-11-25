@@ -167,12 +167,14 @@ npm run test:golden           # 45/45
 npm run test:subpath          # 46/46
 npm run test:singlefile       # 46/46
 npm run test:upgrade          # 1/1  (IDB + localStorage data survives upgrade)
+npm run test:pipeline         # 8/8  (mocked Autopilot run: setup -> bible -> structure -> 2 written scenes)
 ```
 
 The whole gate is also available as one command: `npm run gate` (`npm run verify` runs the first four steps, `npm run test:e2e` the four E2E modes). CI (`.github/workflows/ci.yml`) runs the same nine steps on every push and pull request.
 
 E2E notes:
 - Chrome is auto-detected on Windows, macOS and Linux; set `CHROME_PATH` to override and `CHROME_FLAGS` for extra flags (`--no-sandbox` is added automatically as root or under CI).
+- `test:pipeline` drives Autopilot from the Setup form with a scripted LLM (`tests/e2e/fixtures/mockLlm.js`, installed through `window.__callAIOverride`), blocks provider hosts, seeds `Math.random`, and is deterministic run to run. `npm run test:pipeline-parity` runs the same scenario on the legacy baseline and on `dist/` and compares agent order, prompt hashes and the resulting structure; it is informational in CI because the legacy page needs CDN access.
 - `test:upgrade` (and `--mode legacy`) need the pre-refactor single-file app. If `scratch/legacy_baseline_index.html` is missing it is extracted from git history (commit `fd3b70f`, override with `LEGACY_BASELINE_REF` or `LEGACY_BASELINE_PATH`), so a fresh clone can run it. The legacy page loads libraries from public CDNs, so this step needs internet access.
 
 Commit only after all pass. One commit per sub-phase, message format:
