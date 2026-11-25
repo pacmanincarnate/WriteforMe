@@ -464,7 +464,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useDebounce, useMcpBridge, useModelCatalog, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useMcpBridge, useModelCatalog, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -1314,19 +1314,22 @@ const ReactDOM = ReactDOMClient;
             llmKeysRef.current = { apiKey, openRouterKey };
             const [failedReviewCritiques, setFailedReviewCritiques] = useState([]);
 
-            // Custom Narrative Modes State
-            const [customModes, setCustomModes] = useState(() => {
-                const saved = localStorage.getItem("ellipsisprose_custom_modes");
-                return saved ? JSON.parse(saved) : {};
-            });
-            // Persist custom modes (this effect was lost when the neighbouring prose-model effects moved to useModelCatalog).
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_custom_modes", customModes); }, [customModes]);
-            const [editingModeId, setEditingModeId] = useState(null);
-            const [newModeId, setNewModeId] = useState("");
-            const [newModeContext, setNewModeContext] = useState("");
-            const [newModePrompt, setNewModePrompt] = useState("");
-            const [newModeIcon, setNewModeIcon] = useState("tag");
-            const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
+            // Custom narrative modes (Phase 6E-3): saved modes, Settings form state and handlers.
+            const {
+                customModes,
+                allNarrativeModes,
+                getModeIcon,
+                editingModeId,
+                newModeId, setNewModeId,
+                newModeContext, setNewModeContext,
+                newModePrompt, setNewModePrompt,
+                newModeIcon, setNewModeIcon,
+                isIconPickerOpen, setIsIconPickerOpen,
+                handleStartEditCustomMode,
+                handleCancelEditCustomMode,
+                handleSaveCustomMode,
+                handleDeleteCustomMode
+            } = useCustomNarrativeModes({ setStory, showToast, requestConfirm });
 
             // Master Toggle for Narrative Lenses (defaults to true so narrative styles actively shape scene drafting)
             const [enableNarrativeLenses, setEnableNarrativeLenses] = useState(() => {
@@ -1357,31 +1360,6 @@ const ReactDOM = ReactDOMClient;
             const [slopAuditFilter, setSlopAuditFilter] = useState('all'); // 'all' | 'hard' | 'flag' | 'closer' | 'rhetoric'
             const [isRunningManualSlopClean, setIsRunningManualSlopClean] = useState(false);
             const [slopAllowlistExpanded, setSlopAllowlistExpanded] = useState(false);
-
-            const allNarrativeModes = useMemo(() => ({
-                ...NARRATIVE_MODES,
-                ...customModes
-            }), [customModes]);
-
-            const getModeIcon = (modeId) => {
-                const modeObj = allNarrativeModes[modeId];
-                if (modeObj && modeObj.icon) {
-                    return modeObj.icon;
-                }
-                return NARRATIVE_MODE_ICONS[modeId] || "tag";
-            };
-
-            const allNarrativeModesXml = useMemo(() => {
-                let xml = `<narrative_modes>\n`;
-                Object.values(allNarrativeModes).forEach(mode => {
-                    xml += `  <mode>\n`;
-                    xml += `    <id>${mode.id}</id>\n`;
-                    xml += `    <context>${mode.context}</context>\n`;
-                    xml += `  </mode>\n`;
-                });
-                xml += `</narrative_modes>`;
-                return xml;
-            }, [allNarrativeModes]);
 
             // Selected relationship for editing
             const [selectedRel, setSelectedRel] = useState(null);
@@ -3373,126 +3351,6 @@ const ReactDOM = ReactDOMClient;
                     }
                 });
             };
-
-            const handleStartEditCustomMode = (mode) => {
-                setEditingModeId(mode.id);
-                setNewModeId(mode.id);
-                setNewModeContext(mode.context || "");
-                setNewModePrompt(mode.prompt || "");
-                setNewModeIcon(mode.icon || "tag");
-            };
-
-            const handleCancelEditCustomMode = () => {
-                setEditingModeId(null);
-                setNewModeId("");
-                setNewModeContext("");
-                setNewModePrompt("");
-                setNewModeIcon("tag");
-            };
-
-            const handleSaveCustomMode = () => {
-                const rawId = newModeId.trim().toUpperCase().replace(/[^A-Z0-9_]/g, '');
-                if (!rawId) {
-                    alert("Please enter a valid Mode ID.");
-                    return;
-                }
-                if (NARRATIVE_MODES[rawId]) {
-                    alert("This Mode ID conflicts with a built-in narrative mode.");
-                    return;
-                }
-                if (editingModeId) {
-                    if (rawId !== editingModeId && customModes[rawId]) {
-                        alert("Another custom narrative mode with this ID already exists.");
-                        return;
-                    }
-                } else {
-                    if (customModes[rawId]) {
-                        alert("A narrative mode with this ID already exists.");
-                        return;
-                    }
-                }
-                if (!newModeContext.trim()) {
-                    alert("Please enter a description context for the mode.");
-                    return;
-                }
-                if (!newModePrompt.trim()) {
-                    alert("Please enter prompt instructions for the mode.");
-                    return;
-                }
-
-                const updatedModeObj = {
-                    id: rawId,
-                    context: newModeContext.trim(),
-                    prompt: newModePrompt.trim(),
-                    icon: newModeIcon
-                };
-
-                if (editingModeId && editingModeId !== rawId) {
-                    // Renaming mode ID: update customModes and cascade to story scenes
-                    setCustomModes(prev => {
-                        const next = { ...prev };
-                        delete next[editingModeId];
-                        next[rawId] = updatedModeObj;
-                        return next;
-                    });
-
-                    setStory(prev => {
-                        if (!prev || !prev.scenes) return prev;
-                        let changed = false;
-                        const updatedScenes = {};
-                        Object.keys(prev.scenes).forEach(seqKey => {
-                            const sceneList = prev.scenes[seqKey];
-                            if (Array.isArray(sceneList)) {
-                                updatedScenes[seqKey] = sceneList.map(s => {
-                                    if (s && s.dominant_narrative_mode === editingModeId) {
-                                        changed = true;
-                                        return { ...s, dominant_narrative_mode: rawId };
-                                    }
-                                    return s;
-                                });
-                            } else {
-                                updatedScenes[seqKey] = sceneList;
-                            }
-                        });
-                        return changed ? { ...prev, scenes: updatedScenes } : prev;
-                    });
-
-                    showToast(`Custom mode updated to ${rawId}!`, 'success');
-                } else {
-                    // Adding new or updating in-place
-                    setCustomModes(prev => ({
-                        ...prev,
-                        [rawId]: updatedModeObj
-                    }));
-                    showToast(editingModeId ? `Custom mode ${rawId} updated!` : `Custom mode ${rawId} added!`, 'success');
-                }
-
-                // Reset form
-                handleCancelEditCustomMode();
-            };
-
-            const handleDeleteCustomMode = (modeId) => {
-                requestConfirm({
-                    title: `Delete Custom Mode "${modeId}"?`,
-                    message: "Are you sure you want to delete this custom narrative mode?",
-                    confirmLabel: "Delete Mode",
-                    danger: true,
-                    onConfirm: () => {
-                        setCustomModes(prev => {
-                            const next = { ...prev };
-                            delete next[modeId];
-                            return next;
-                        });
-                        if (editingModeId === modeId) {
-                            handleCancelEditCustomMode();
-                        }
-                        showToast(`Custom mode ${modeId} deleted.`, 'info');
-                    }
-                });
-            };
-
-
-
 
             const handleExport = () => {
                 try {

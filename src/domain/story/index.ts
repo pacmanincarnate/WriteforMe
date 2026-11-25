@@ -9,3 +9,4 @@ export * from './logFormatter';
 export * from './stats';
 export * from './directivePlanning';
 export * from './sceneEditing';
+export * from './customNarrativeModes';

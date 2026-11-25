@@ -8,3 +8,4 @@ export * from './useTtsPlayback';
 export * from './useMcpBridge';
 export * from './useStoryEditors';
 export * from './useSlopConfig';
+export * from './useCustomNarrativeModes';
