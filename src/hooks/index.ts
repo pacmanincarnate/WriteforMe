@@ -6,3 +6,4 @@ export * from './useVoiceManagement';
 export * from './useAudioProduction';
 export * from './useTtsPlayback';
 export * from './useMcpBridge';
+export * from './useStoryEditors';

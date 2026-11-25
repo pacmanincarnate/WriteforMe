@@ -14,6 +14,8 @@ import {
     type BridgeStoryStore
 } from '@/services/bridge';
 
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+
 const mountedRoots: Root[] = [];
 
 /** Minimal renderHook: mounts a hook in a throwaway root and exposes its latest return value. */

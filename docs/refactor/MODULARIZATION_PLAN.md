@@ -83,8 +83,8 @@ Import direction (see `eslint.config.mjs`; `import-x/no-cycle` maxDepth 10):
 
 ### 3.2 Current state snapshot
 
-- `src/legacy/MonolithApp.jsx`: **~5,640 lines** (was ~15,900 before Phase 6C).
-- Vitest: **36 files / 210 tests passing.**
+- `src/legacy/MonolithApp.jsx`: **~5,160 lines** (was ~15,900 before Phase 6C).
+- Vitest: **37 files / 228 tests passing.**
 - E2E (all must stay green): `golden` **45/45**, `subpath` **46/46**, `singlefile` **46/46**, `upgrade` **1/1**.
 - Hooks present in `src/hooks/`: `useDebounce`, `useReaderController`, `useStoryImages`, `useModelCatalog`, `useVoiceManagement`, `useAudioProduction`, `useTtsPlayback`.
 - Pipeline orchestrators present in `src/pipeline/` (context, escalation, lore, continuity, story structure, prose, voice director, surgical patch, directive planner/executor, editorial harness, autopilot, …).
@@ -93,7 +93,7 @@ Import direction (see `eslint.config.mjs`; `import-x/no-cycle` maxDepth 10):
 
 | # | Phase | Status | Scope |
 |---|---|---|---|
-| 1 | **6E-3** Persistence & editors hooks | ⏳ NOT STARTED (surveyed only) | See §4.1 |
+| 1 | **6E-3** Persistence & editors hooks | 🔶 IN PROGRESS: scene/beat editors done (`useStoryEditors` + `domain/story/sceneEditing.ts`) | See §4.1 |
 | 2 | **6F** MCP bridge | ✅ DONE | `src/services/bridge/mcpBridge.ts` + `src/hooks/useMcpBridge.ts`; see §4.2 |
 | 3 | **7** `src/App.tsx`, retire legacy, CI/CD | ⏳ NOT STARTED | See §4.3 |
 | 4 | Hardening & release | ⏳ NOT STARTED | See §4.4 |
@@ -119,6 +119,8 @@ Create `src/hooks/useStoryPersistence.ts` and `src/hooks/useStoryEditors.ts`; ex
 - Custom narrative modes CRUD (`handleStartEditCustomMode` … `handleDeleteCustomMode`, ~L3559–3678)
 - Scene/beat CRUD (`handleBeatChange`, `handleAddBeat`, `handleDeleteBeat`, `handleDeleteScene`, `handleAddScene`, `handleMoveScene`, `handleDismissStaleProse`, ~L3823–4300)
 - `openLogDetailModal` (~L2527), `openEditModal` (~L2617), `toggleAllSequencesInAct` (~L2278), `handleDeleteLore`.
+
+**Done so far:** the scene/beat CRUD group (`handleBeatChange`, `handleAddBeat`, `handleDeleteBeat`, `handleDeleteScene`, `updateSceneBlueprint`, `handleDismissStaleProse`, `handleAddScene`, `handleMoveScene`). The story transforms are pure functions in `src/domain/story/sceneEditing.ts`; `src/hooks/useStoryEditors.ts` adds selection, confirm dialogs, toasts and saving. The `window.updateSceneBlueprint` / `window.handleAddScene` / `window.handleMoveScene` assignments stay in the shell. Follow the same split (pure transform in `domain`, thin hook) for the remaining groups.
 
 **Must preserve:** `window.createDefaultStoryTemplate`, `window.hasHydratedStory`, `window.storyRef`, `window.setStory` (set at ~L695–698).
 
@@ -163,7 +165,7 @@ All nine must exit 0 (PowerShell, from repo root; Node 22 on `PATH`):
 $env:PATH = "C:\Users\cshai\AppData\Local\hermes\node;$env:PATH"
 npm run typecheck
 npm run lint -- --max-warnings=0
-npm test                      # Vitest — currently 36 files / 210 tests
+npm test                      # Vitest — currently 37 files / 228 tests
 npm run build
 npm run build:singlefile
 npm run test:golden           # 45/45
