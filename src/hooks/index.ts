@@ -18,3 +18,5 @@ export * from './useStoryLibrary';
 export * from './useStoryTransfer';
 export * from './useStoryReset';
 export * from './useLoreImport';
+export * from './useStoryHydration';
+export * from './useStoryAutosave';

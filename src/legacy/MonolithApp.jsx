@@ -321,6 +321,7 @@ import {
     isGeneratedCastMemberForStage,
     isPreservedPreWritingLoreItem,
     migrateStoryToSequences,
+    prepareLibraryStorySelection,
     rebuildBaselineCharacterStates,
     resetSecretVaultForRollback,
     restorePreservedLoreItem,
@@ -399,6 +400,7 @@ import {
     LogStore,
     ResilientIdbStore,
     storyStore,
+    updateStoryRecordById,
     StoryStore,
     studioCacheStore,
     StudioCacheStore,
@@ -464,7 +466,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -688,6 +690,7 @@ const ReactDOM = ReactDOMClient;
                 return next;
             }, []);
             const hasHydratedStory = useRef(false);
+            const isInitialMount = useRef(true);
             const skipNextIdbHydrationIdRef = useRef(null);
             const [initializingStoryId, setInitializingStoryId] = useState(null);
             const initializingStoryIdRef = useRef(null);
@@ -795,167 +798,15 @@ const ReactDOM = ReactDOMClient;
                 setStory, activeStoryId, setActiveStoryId, view, deletedStoryIdsRef, showToast, requestConfirm
             });
 
-            // Sync activeStoryId to localStorage
-            useEffect(() => {
-                safeLocalStorageSet("ellipsisprose_active_story_id", activeStoryId);
-            }, [activeStoryId]);
-
-            // Load active story from IndexedDB on startup and when activeStoryId changes
-            useEffect(() => {
-                let isMounted = true;
-                let loreSyncTimer = null;
-                if (skipNextIdbHydrationIdRef.current && skipNextIdbHydrationIdRef.current === activeStoryId) {
-                    skipNextIdbHydrationIdRef.current = null;
-                    isInitialMount.current = false;
-                    hasHydratedStory.current = true;
-                    return () => {
-                        isMounted = false;
-                        clearTimeout(loreSyncTimer);
-                    };
-                }
-                hasHydratedStory.current = false;
-                const loadActiveStory = async () => {
-                    if (!activeStoryId) {
-                        // In new story setup mode; keep fresh default template without loading old stories
-                        return;
-                    }
-                    try {
-                        const wasInitialMount = isInitialMount.current;
-                        let resolvedId = activeStoryId;
-                        let idbStory = await storyStore.loadStory(activeStoryId);
-                        if (!isMounted) return;
-
-                        if (wasInitialMount && (!idbStory || computeStoryProgressMetrics(idbStory).score === 0)) {
-                            const allStories = await storyStore.listStories();
-                            if (!isMounted) return;
-                            const nonEmptyStories = allStories
-                                .filter(s => s.id !== 'current_story' && s.data && computeStoryProgressMetrics(s.data).score > 0)
-                                .sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                            if (nonEmptyStories.length > 0) {
-                                const recovered = nonEmptyStories[0];
-                                resolvedId = recovered.id;
-                                idbStory = recovered.data;
-                                if (resolvedId !== activeStoryId) {
-                                    skipNextIdbHydrationIdRef.current = resolvedId;
-                                    setActiveStoryId(resolvedId);
-                                }
-                                console.log(`[StoryStore] Recovered non-empty story '${resolvedId}' on startup instead of blank '${activeStoryId}'.`);
-                            }
-                        }
-
-                        if (idbStory) {
-                            isInitialMount.current = false;
-                            const migrated = migrateStoryToSequences(idbStory);
-                            if (migrated && migrated.scenes) {
-                                Object.keys(migrated.scenes).forEach(seqKey => {
-                                    if (Array.isArray(migrated.scenes[seqKey])) {
-                                        migrated.scenes[seqKey].forEach(scene => {
-                                            if (scene.valence === undefined) {
-                                                scene.valence = parseInt(scene.end_valence, 10) || 0;
-                                            }
-                                            if (!scene.dominant_narrative_mode || scene.dominant_narrative_mode === "BASELINE_NEUTRAL") {
-                                                const inferred = inferNarrativeModeForScene(scene);
-                                                if (inferred && inferred !== "BASELINE_NEUTRAL") {
-                                                    scene.dominant_narrative_mode = inferred;
-                                                }
-                                            }
-                                        });
-                                    }
-                                });
-                            }
-                            setStory({
-                                relationships: {},
-                                graph_edges: [],
-                                ...migrated,
-                                world_primer: idbStory.world_primer || migrated?.world_primer || null,
-                                continuity_ledger: Array.isArray(migrated?.continuity_ledger) ? migrated.continuity_ledger : [],
-                                secret_vault: Array.isArray(migrated?.secret_vault) ? migrated.secret_vault : [],
-                                epistemic_graph: ensureEpistemicGraph(migrated),
-                                id: resolvedId
-                            });
-                            setWorldPrimer(idbStory.world_primer || migrated?.world_primer || null);
-                            hasHydratedStory.current = true;
-                            console.log(`Loaded active story '${resolvedId}' from storage.`);
-
-                            // Defer lore indexing until hydration has returned and the story can render.
-                            if (migrated && Array.isArray(migrated.lore) && vectorStore.current) {
-                                loreSyncTimer = setTimeout(async () => {
-                                    if (!isMounted) return;
-                                    try {
-                                        const service = embeddingService.current;
-                                        const fingerprint = computeLoreFingerprint(resolvedId, migrated.lore, service?.getProviderLabel());
-                                        if (fingerprint === localStorage.getItem('ellipsisprose_rag_fingerprint')) {
-                                            console.info(`[RAG] index up to date for story ${resolvedId}`);
-                                        } else if (!service?.isConfigured()) {
-                                            console.info('[RAG] skipping lore index: no embedding credentials configured');
-                                        } else {
-                                            await ingestLoreBatch(migrated.lore, {
-                                                clearExisting: true,
-                                                deduplicate: false,
-                                                storyId: resolvedId,
-                                                isCurrent: () => isMounted,
-                                                status: 'indexing',
-                                                throwOnError: true
-                                            });
-                                        }
-                                    } catch (loreSyncErr) {
-                                        console.warn('[RAG] lore sync stopped:', loreSyncErr);
-                                    }
-                                }, 0);
-                            }
-
-                            if (view === 'library') {
-                                refreshLibrary();
-                            }
-                        } else if (wasInitialMount) {
-                            // Only perform fallback on initial app load if the saved ID doesn't exist
-                            isInitialMount.current = false;
-                            const allStories = await storyStore.listStories();
-                            if (!isMounted) return;
-                            const validStories = allStories.filter(s => s.id !== 'current_story');
-                            if (validStories.length > 0) {
-                                const nonEmpty = validStories.filter(s => s.data && computeStoryProgressMetrics(s.data).score > 0);
-                                const pool = nonEmpty.length > 0 ? nonEmpty : validStories;
-                                const mostRecent = pool.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))[0];
-                                const migrated = migrateStoryToSequences(mostRecent.data);
-                                skipNextIdbHydrationIdRef.current = mostRecent.id;
-                                setActiveStoryId(mostRecent.id);
-                                setStory({
-                                    relationships: {},
-                                    graph_edges: [],
-                                    ...migrated,
-                                    world_primer: mostRecent.data?.world_primer || migrated?.world_primer || null,
-                                    continuity_ledger: Array.isArray(migrated?.continuity_ledger) ? migrated.continuity_ledger : [],
-                                    secret_vault: Array.isArray(migrated?.secret_vault) ? migrated.secret_vault : [],
-                                    epistemic_graph: ensureEpistemicGraph(mostRecent.data || migrated),
-                                    id: mostRecent.id
-                                });
-                                setWorldPrimer(mostRecent.data?.world_primer || migrated?.world_primer || null);
-                                hasHydratedStory.current = true;
-                            } else {
-                                const defaultStory = createDefaultStoryTemplate('story_default');
-                                await storyStore.saveStory('story_default', defaultStory);
-                                setActiveStoryId('story_default');
-                                setStory(defaultStory);
-                                setWorldPrimer(null);
-                                hasHydratedStory.current = true;
-                                setView('setup');
-                            }
-
-                            if (view === 'library') {
-                                refreshLibrary();
-                            }
-                        }
-                    } catch (e) {
-                        console.error("Failed to load active story from storage:", e);
-                    }
-                };
-                loadActiveStory();
-                return () => {
-                    isMounted = false;
-                    clearTimeout(loreSyncTimer);
-                };
-            }, [activeStoryId]);
+            // Load the active story at startup and on story switches; remember the active id (Phase 6E-3).
+            useStoryHydration({
+                activeStoryId, setActiveStoryId, setStory,
+                isInitialMountRef: isInitialMount,
+                hasHydratedStoryRef: hasHydratedStory,
+                skipNextIdbHydrationIdRef,
+                // Declared further down; read when the load runs.
+                getLateDeps: () => ({ setWorldPrimer, vectorStore, embeddingService, ingestLoreBatch, refreshLibrary, setView, view })
+            });
             const callAIRef = useRef(async (..._args) => '');
             const llmKeysRef = useRef({ apiKey: '', openRouterKey: '' });
             const {
@@ -1007,7 +858,6 @@ const ReactDOM = ReactDOMClient;
                 requestConfirm
             });
 
-            const isInitialMount = useRef(true);
 
 
             // Settings & Model Catalog Hook
@@ -1952,39 +1802,14 @@ const ReactDOM = ReactDOMClient;
             // Updates React state + snapshot when targetStoryId is active, or updates
             // snapshot + IndexedDB directly without clobbering another active story.
             // ============================================================================
-            const updateStoryById = async (targetStoryId, updaterOrPatch) => {
-                if (!targetStoryId || deletedStoryIdsRef.current.has(targetStoryId)) return null;
-                const applyUpdate = (base) => (
-                    typeof updaterOrPatch === 'function'
-                        ? updaterOrPatch(base)
-                        : { ...base, ...updaterOrPatch }
-                );
-
-                let nextStory = null;
-                if (storyRef.current?.id === targetStoryId) {
-                    nextStory = setStory(prev => {
-                        const base = (prev && prev.id === targetStoryId)
-                            ? prev
-                            : (storySnapshotsByIdRef.current[targetStoryId] || createDefaultStoryTemplate(targetStoryId));
-                        const updated = applyUpdate(base);
-                        storySnapshotsByIdRef.current[targetStoryId] = updated;
-                        return updated;
-                    });
-                } else {
-                    const base = storySnapshotsByIdRef.current[targetStoryId]
-                        || (await storyStore.loadStory(targetStoryId))
-                        || createDefaultStoryTemplate(targetStoryId);
-                    nextStory = applyUpdate(base);
-                    storySnapshotsByIdRef.current[targetStoryId] = nextStory;
-                }
-
-                if (nextStory && nextStory.id && !deletedStoryIdsRef.current.has(targetStoryId)) {
-                    await storyStore.saveStory(targetStoryId, nextStory).catch(err => {
-                        console.warn(`[updateStoryById] Failed saving story '${targetStoryId}':`, err);
-                    });
-                }
-                return nextStory;
-            };
+            const updateStoryById = (targetStoryId, updaterOrPatch) => updateStoryRecordById({
+                deletedStoryIds: deletedStoryIdsRef.current,
+                getActiveStory: () => storyRef.current,
+                setStory,
+                snapshots: storySnapshotsByIdRef.current,
+                store: storyStore,
+                createDefaultStory: createDefaultStoryTemplate
+            }, targetStoryId, updaterOrPatch);
 
             const feedbackLedgerRef = useRef(null);
             feedbackLedgerRef.current = feedbackLedger;
@@ -2314,14 +2139,8 @@ const ReactDOM = ReactDOMClient;
 
 
 
-            // Story persistence solely via IndexedDB (handles gigabytes, no quota limits, non-blocking)
-            useEffect(() => {
-                if (!hasHydratedStory.current) return;
-                if (!story || !story.id || !activeStoryId || story.id !== activeStoryId) return;
-                storyStore.saveStory(story.id, story).catch(err => {
-                    console.warn("IndexedDB story save failed:", err);
-                });
-            }, [story, activeStoryId]);
+            // Autosave the open story once it has been loaded from storage (Phase 6E-3).
+            useStoryAutosave({ story, activeStoryId, hasHydratedStoryRef: hasHydratedStory });
 
             // Instantiate/Update Embedding Service
             useEffect(() => {
@@ -2355,20 +2174,8 @@ const ReactDOM = ReactDOMClient;
 
 
 
-            // Ensure story has a unique ID and sync activeStoryId
-            useEffect(() => {
-                if (story && !story.id) {
-                    const newId = `story_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
-                    setActiveStoryId(newId);
-                    setStory(prev => {
-                        if (prev && prev.id) return prev;
-                        return {
-                            ...prev,
-                            id: newId
-                        };
-                    });
-                }
-            }, [story]);
+            // A story without an id gets one and becomes the active story.
+            useEnsureStoryId({ story, setActiveStoryId, setStory });
 
 
 
@@ -2826,19 +2633,11 @@ const ReactDOM = ReactDOMClient;
                     ? storySnapshotsByIdRef.current[targetItem.id]
                     : null;
                 const targetData = liveInitData || targetItem.data || {};
-                const migrated = migrateStoryToSequences(targetData);
                 if (liveInitData) {
                     skipNextIdbHydrationIdRef.current = targetItem.id;
                 }
                 setActiveStoryId(targetItem.id);
-                setStory({
-                    relationships: {},
-                    graph_edges: [],
-                    ...migrated,
-                    continuity_ledger: Array.isArray(migrated?.continuity_ledger) ? migrated.continuity_ledger : [],
-                    secret_vault: Array.isArray(migrated?.secret_vault) ? migrated.secret_vault : [],
-                    id: targetItem.id
-                });
+                setStory(prepareLibraryStorySelection(targetData, targetItem.id));
                 if (targetView === 'reader') {
                     enterReaderMode();
                 } else {
