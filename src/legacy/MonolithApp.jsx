@@ -466,7 +466,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSetupDraft, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSetupDraft, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -1015,64 +1015,37 @@ const ReactDOM = ReactDOMClient;
                 });
             };
 
-            // Directive Agent State
-            const [directiveInput, setDirectiveInput] = useState("");
-            const [directivePlan, setDirectivePlan] = useState(null);
-            const [isPlanningDirective, setIsPlanningDirective] = useState(false);
-            const [directivePlanPhase, setDirectivePlanPhase] = useState(null);
-            const [directiveUndoSnapshot, setDirectiveUndoSnapshot] = useState(null);
-            const [isExecutingDirective, setIsExecutingDirective] = useState(false);
-            const [directiveExecutionLogs, setDirectiveExecutionLogs] = useState([]);
-            const [directiveProgress, setDirectiveProgress] = useState(0);
-            const [protectWrittenProse, setProtectWrittenProse] = useState(true);
-            const [cascadeSceneChanges, setCascadeSceneChanges] = useState(() => {
-                try { return localStorage.getItem('ellipsisprose_directive_cascade') !== 'false'; }
-                catch { return true; }
-            });
-            useEffect(() => {
-                try { localStorage.setItem('ellipsisprose_directive_cascade', String(cascadeSceneChanges)); }
-                catch (err) { console.warn('Could not save directive cascade preference:', err); }
-            }, [cascadeSceneChanges]);
+            // Directive Agent workspace state (Phase 7).
+            const {
+                directiveInput, setDirectiveInput,
+                directivePlan, setDirectivePlan,
+                isPlanningDirective, setIsPlanningDirective,
+                directivePlanPhase, setDirectivePlanPhase,
+                directiveUndoSnapshot, setDirectiveUndoSnapshot,
+                isExecutingDirective, setIsExecutingDirective,
+                directiveExecutionLogs, setDirectiveExecutionLogs,
+                directiveProgress, setDirectiveProgress,
+                protectWrittenProse, setProtectWrittenProse,
+                cascadeSceneChanges, setCascadeSceneChanges,
+                verifyDirectiveEdits, setVerifyDirectiveEdits,
+                directiveRefinement, setDirectiveRefinement,
+                directivePlanHistory, setDirectivePlanHistory,
+                expandedDirectiveActions, setExpandedDirectiveActions
+            } = useDirectiveWorkspaceState();
 
-            const [verifyDirectiveEdits, setVerifyDirectiveEdits] = useState(() => {
-                try { return localStorage.getItem('ellipsisprose_directive_verify') !== 'false'; }
-                catch { return true; }
-            });
-            useEffect(() => {
-                try { localStorage.setItem('ellipsisprose_directive_verify', String(verifyDirectiveEdits)); }
-                catch (err) { console.warn('Could not save directive verification preference:', err); }
-            }, [verifyDirectiveEdits]);
-            const [directiveRefinement, setDirectiveRefinement] = useState('');
-            const [directivePlanHistory, setDirectivePlanHistory] = useState([]);
-            const [expandedDirectiveActions, setExpandedDirectiveActions] = useState({});
-
-            // Autonomous Editorial Harness (Tier 6.0 Literary CI/CD) State
-            const [isRunningEditorialHarness, setIsRunningEditorialHarness] = useState(false);
-            const [editorialHarnessPhase, setEditorialHarnessPhase] = useState('');
-            const [editorialHarnessProgress, setEditorialHarnessProgress] = useState(0);
-            const [editorialHarnessTab, setEditorialHarnessTab] = useState('overview'); // 'overview' | 'telemetry' | 'tribunal' | 'waves' | 'tools'
-            const [editorialScopeSceneId, setEditorialScopeSceneId] = useState('ALL');
-            const [editorialUseDeepLLM, setEditorialUseDeepLLM] = useState(() => {
-                try { return localStorage.getItem('ellipsisprose_editorial_deep_llm') === 'true'; }
-                catch { return false; }
-            });
-            useEffect(() => {
-                try { localStorage.setItem('ellipsisprose_editorial_deep_llm', String(editorialUseDeepLLM)); }
-                catch (err) { console.warn('Could not save editorial deep LLM preference:', err); }
-            }, [editorialUseDeepLLM]);
-
-            const [enableEditorialHarnessAutopilot, setEnableEditorialHarnessAutopilot] = useState(() => {
-                try { return localStorage.getItem('ellipsisprose_editorial_autopilot') !== 'false'; }
-                catch { return true; }
-            });
-            useEffect(() => {
-                try { localStorage.setItem('ellipsisprose_editorial_autopilot', String(enableEditorialHarnessAutopilot)); }
-                catch (err) { console.warn('Could not save editorial autopilot preference:', err); }
-            }, [enableEditorialHarnessAutopilot]);
-
-            const [editorialToolName, setEditorialToolName] = useState('inspect_narrative_hierarchy');
-            const [editorialToolArgs, setEditorialToolArgs] = useState({ scene_id: 'sc_0_0', pattern: '', query: '', character_id: '', topic_or_entity_id: '' });
-            const [editorialToolOutput, setEditorialToolOutput] = useState(null);
+            // Autonomous Editorial Harness (Tier 6.0 Literary CI/CD) panel state (Phase 7).
+            const {
+                isRunningEditorialHarness, setIsRunningEditorialHarness,
+                editorialHarnessPhase, setEditorialHarnessPhase,
+                editorialHarnessProgress, setEditorialHarnessProgress,
+                editorialHarnessTab, setEditorialHarnessTab,
+                editorialScopeSceneId, setEditorialScopeSceneId,
+                editorialUseDeepLLM, setEditorialUseDeepLLM,
+                enableEditorialHarnessAutopilot, setEnableEditorialHarnessAutopilot,
+                editorialToolName, setEditorialToolName,
+                editorialToolArgs, setEditorialToolArgs,
+                editorialToolOutput, setEditorialToolOutput
+            } = useEditorialHarnessState();
             // .novelignore rule form and handlers (Phase 6E-3).
             const {
                 novelIgnoreDraftRule, setNovelIgnoreDraftRule,

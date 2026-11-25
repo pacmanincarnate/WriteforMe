@@ -21,3 +21,6 @@ export * from './useLoreImport';
 export * from './useStoryHydration';
 export * from './useStoryAutosave';
 export * from './useSetupDraft';
+export * from './usePersistedBoolean';
+export * from './useDirectiveWorkspaceState';
+export * from './useEditorialHarnessState';
