@@ -1384,7 +1384,7 @@ async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label })
             for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
             return ('0000000' + h.toString(16)).slice(-8);
         };
-        // The pipeline shuffles sensory "modality hands" with `sort(() => 0.5 - Math.random())`, and the
+        // The pipeline shuffles sensory "modality hands" with sort(() => 0.5 - Math.random()), and the
         // result lands in the Writing Agent prompt. Other code draws from Math.random too (ids, retry
         // jitter), in an order that differs between runs and between the two builds, so a seeded
         // generator is not enough. Returning values just above 0.5 makes that comparator always
