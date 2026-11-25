@@ -1319,6 +1319,8 @@ const ReactDOM = ReactDOMClient;
                 const saved = localStorage.getItem("ellipsisprose_custom_modes");
                 return saved ? JSON.parse(saved) : {};
             });
+            // Persist custom modes (this effect was lost when the neighbouring prose-model effects moved to useModelCatalog).
+            useEffect(() => { safeLocalStorageSet("ellipsisprose_custom_modes", customModes); }, [customModes]);
             const [editingModeId, setEditingModeId] = useState(null);
             const [newModeId, setNewModeId] = useState("");
             const [newModeContext, setNewModeContext] = useState("");
