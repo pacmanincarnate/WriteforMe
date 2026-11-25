@@ -590,7 +590,12 @@ import {
     AudioDramaRipples,
     StylizedBlankCover,
     ToastNotification,
-    PIPELINE_STEPS
+    PIPELINE_STEPS,
+    StudioSidebar,
+    StudioHeader,
+    GesmPropositionModal,
+    GesmBeliefModal,
+    IconPickerModal
 } from '@/components';
 import {
     CastView,
@@ -20179,448 +20184,61 @@ ${auditLines}
 
             return (
                 <div className={`flex h-screen overflow-hidden font-sans ${theme === 'dark' ? 'dark bg-[#141416] text-[#F5F0E8]' : 'bg-void text-ink-900'}`} data-theme={theme}>
-                    {/* Mobile Backdrop Scrim Overlay */}
-                    {isSidebarOpen && view !== 'reader' && (
-                        <div
-                            onClick={() => setIsSidebarOpen(false)}
-                            className="fixed inset-0 z-40 bg-stone-900/40 backdrop-blur-xs md:hidden animate-fade-in"
-                            aria-label="Dismiss sidebar overlay"
-                        />
-                    )}
-
-                    {/* FIXED SIDEBAR NAVIGATION (Light Scandinavian Parchment / Dark Atelier Nuit) */}
-                    <div className={`studio-sidebar ${isSidebarCollapsed ? 'collapsed md:w-16' : ''} fixed inset-y-0 left-0 z-50 w-72 bg-sidebar border-r border-edge flex flex-col transform transition-all duration-300 md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} ${view === 'reader' ? 'hidden md:hidden' : ''} shadow-sm`}>
-                        {/* Studio Logo Header */}
-                        <div className="sidebar-header p-4 flex justify-between items-center border-b border-edge bg-surface/70 backdrop-blur-sm">
-                            <div className="sidebar-brand flex items-center gap-2.5">
-                                <div className="w-9 h-9 rounded-xl overflow-hidden border border-gold-edge shadow-sm flex-shrink-0 bg-btn flex items-center justify-center">
-                                    <img src="ELPIcon2.jpg" alt="EllipsisProse Icon" className="w-full h-full object-cover" />
-                                </div>
-                                <div className="nav-label">
-                                    <h2 className="font-bold text-sm text-ink-900 tracking-tight flex items-center gap-1.5 font-display">
-                                        EllipsisProse <span className="text-xs font-mono font-bold bg-mist-200/80 text-ink-700 px-2 py-0.5 rounded-full">2.11</span>
-                                    </h2>
-                                    <p className="text-xs text-ink-500 font-medium">AI Story Architect & Studio</p>
-                                </div>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setIsSidebarCollapsed(prev => !prev)}
-                                className="hidden md:flex shrink-0 items-center justify-center text-ink-400 hover:text-ink-800 p-1.5 rounded-lg hover:bg-wash transition-colors"
-                                title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                                aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-                                aria-expanded={!isSidebarCollapsed}
-                            >
-                                {isSidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-                            </button>
-                            <button onClick={() => setIsSidebarOpen(false)} className="md:hidden text-ink-400 hover:text-ink-800 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-wash transition-colors" aria-label="Close Navigation Menu">
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        {/* Semantic Grouped Navigation */}
-                        <div className="sidebar-nav flex-1 overflow-y-auto p-3 space-y-4">
-                            {/* SPACE 1: STUDIO WORKSPACE */}
-                            <div className="space-y-0.5">
-                                <div className="sidebar-section-label px-2 pb-1 text-xs font-bold text-ink-400 uppercase tracking-wider font-mono">
-                                    Workspace
-                                </div>
-                                <button onClick={() => { setView('library'); refreshLibrary(); }} className={`nav-btn ${view === 'library' ? 'active' : ''}`} title="Bookshelf">
-                                    <Library size={15} /> <span className="nav-label">Bookshelf</span>
-                                </button>
-                                <button onClick={() => setView('setup')} className={`nav-btn ${view === 'setup' ? 'active' : ''}`} title="New Story">
-                                    <Sparkles size={15} /> <span className="nav-label">New Story</span>
-                                </button>
-                            </div>
-
-                            {/* SPACES 2, 3, 4: EDITORIAL CREATIVE SPACES */}
-                            <div className="space-y-0.5">
-                                <div className="sidebar-section-label px-2 pb-1 text-xs font-bold text-ink-400 uppercase tracking-wider font-mono">
-                                    Creative Spaces
-                                </div>
-                                <button onClick={() => setView('dashboard')} className={`nav-btn ${['dashboard', 'cast', 'relationships', 'lore'].includes(view) ? 'active' : ''}`} title="Overview & World Bible">
-                                    <Activity size={15} /> <span className="nav-label">Overview</span>
-                                </button>
-                                <button onClick={() => setView('pipeline')} className={`nav-btn ${view === 'pipeline' ? 'active' : ''}`} title="Live Progress">
-                                    <div className="relative flex items-center">
-                                        <Workflow size={15} />
-                                        {(loading || continuousAutopilot || isAudioAutopilotRunning) && (
-                                            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-500 animate-ping" />
-                                        )}
-                                    </div>
-                                    <span className="nav-label flex items-center justify-between flex-1">
-                                        <span>Live Progress</span>
-                                        {(loading || continuousAutopilot || isAudioAutopilotRunning) && (
-                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse ml-1" />
-                                        )}
-                                    </span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleAutopilot({ fromSetup: view === 'setup' })}
-                                    className={`nav-btn ${continuousAutopilot ? 'active text-gold-ink bg-gold-tint font-bold' : ''}`}
-                                    title={continuousAutopilot ? 'Stop Autonomous Novel Generation' : 'Start Continuous Novel Autopilot'}
-                                >
-                                    <div className="relative flex items-center">
-                                        <Play size={15} className={continuousAutopilot ? 'text-gold-ink fill-current animate-pulse' : ''} />
-                                        {continuousAutopilot && (
-                                            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-ping" />
-                                        )}
-                                    </div>
-                                    <span className="nav-label flex items-center justify-between flex-1">
-                                        <span>Autopilot</span>
-                                        {continuousAutopilot && (
-                                            <span className="text-[10px] font-mono font-bold bg-gold-tint text-gold-ink px-1.5 py-0.5 rounded-full border border-gold-edge">ON</span>
-                                        )}
-                                    </span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleToggleAudioAutopilot}
-                                    className={`nav-btn ${isAudioAutopilotRunning ? 'active text-gold-ink bg-gold-tint font-bold' : ''}`}
-                                    title={isAudioAutopilotRunning ? 'Stop Audio Autopilot' : 'Generate scene audio autonomously for offline listening & export'}
-                                >
-                                    <div className="relative flex items-center">
-                                        <Headphones size={15} className={isAudioAutopilotRunning ? 'text-gold-ink animate-pulse' : ''} />
-                                        {isAudioAutopilotRunning && (
-                                            <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-ping" />
-                                        )}
-                                    </div>
-                                    <span className="nav-label flex items-center justify-between flex-1 gap-1.5">
-                                        <span className="truncate">Audio Autopilot</span>
-                                        {isAudioAutopilotRunning ? (
-                                            <span className="text-[10px] font-mono font-bold bg-gold-tint text-gold-ink px-1.5 py-0.5 rounded-full border border-gold-edge shrink-0">
-                                                ON · {storyAudioSummary.readyCount}/{storyAudioSummary.totalDrafted}
-                                            </span>
-                                        ) : isAudioAutopilotQueued ? (
-                                            <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-700 px-1.5 py-0.5 rounded-full border border-amber-500/30 shrink-0">
-                                                QUEUED
-                                            </span>
-                                        ) : storyAudioSummary.totalDrafted > 0 ? (
-                                            <span className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-full border shrink-0 ${
-                                                storyAudioSummary.readyCount === storyAudioSummary.totalDrafted
-                                                    ? 'bg-sage-tint text-sage-800 border-sage-edge'
-                                                    : 'bg-wash text-ink-500 border-edge'
-                                            }`}>
-                                                {storyAudioSummary.readyCount}/{storyAudioSummary.totalDrafted}
-                                            </span>
-                                        ) : null}
-                                    </span>
-                                </button>
-                                <button onClick={() => {
-                                    if (selectedSequence !== null && selectedScene !== null) {
-                                        setView('writer');
-                                    } else {
-                                        setView('structure');
-                                    }
-                                }} className={`nav-btn ${['structure', 'sequence_dashboard', 'chapter_dashboard', 'writer', 'directive', 'editorial'].includes(view) ? 'active' : ''}`} title="Novel Structure">
-                                    <Layers size={15} /> <span className="nav-label">Novel Structure</span>
-                                </button>
-                                <button onClick={() => enterReaderMode()} className={`nav-btn ${view === 'reader' ? 'active' : ''}`} title="Reading & Listening Room">
-                                    <BookOpen size={15} /> <span className="nav-label">Reading Room</span>
-                                </button>
-                            </div>
-
-                            {/* SECTION 4: STORY HIERARCHY TREE */}
-                            {((story.acts && story.acts.length > 0) || (story.sequences && story.sequences.length > 0)) && (() => {
-                                const displayActs = (story.acts && story.acts.length > 0)
-                                    ? story.acts
-                                    : (story.sequences && story.sequences.length > 0)
-                                        ? [
-                                            { number: 1, title: "Act I: Setup & Departure", description: "Beginning" },
-                                            { number: 2, title: "Act II: Confrontation & Midpoint", description: "Middle" },
-                                            { number: 3, title: "Act III: Climax & Resolution", description: "End" }
-                                        ]
-                                        : [];
-                                if (displayActs.length === 0) return null;
-                                return (
-                                    <div className="sidebar-tree space-y-1 pt-2 border-t border-edge">
-                                        <div className="sidebar-section-label px-2 pb-1 text-xs font-bold text-gold-ink uppercase tracking-wider font-mono flex items-center justify-between">
-                                            <span>Manuscript Tree</span>
-                                            <span className="text-xs text-ink-400 font-mono font-medium">{displayActs.length} Acts</span>
-                                        </div>
-
-                                        {displayActs.map((act, actIdx) => {
-                                            const actNum = parseActNumber(act.number != null ? act.number : (actIdx + 1), actIdx + 1);
-                                            const actSequences = (story.sequences || []).map((seq, sIdx) => ({ ...seq, origIdx: sIdx })).filter(seq => {
-                                                const parentAct = parseActNumber(seq.parent_act != null ? seq.parent_act : actForSequence(seq.number != null ? seq.number : (seq.origIdx + 1)), actForSequence(seq.origIdx + 1));
-                                                return parentAct === actNum;
-                                            });
-                                            const cleanTitle = act.title ? act.title.replace(/^Act\s+[0-9IVXLCDM]+[:\s-]*/i, '').trim() : '';
-                                            const displayTitle = cleanTitle ? `Act ${actNum}: ${cleanTitle}` : (act.title ? (/^Act\s+/i.test(act.title) ? act.title : `Act ${actNum}: ${act.title}`) : `Act ${actNum}`);
-                                            return (
-                                                <div key={actIdx} className="ml-1">
-                                                    <button
-                                                        onClick={() => toggleAct(actIdx)}
-                                                        className="w-full flex items-center justify-between text-xs text-ink-800 font-bold px-2 py-1.5 rounded-lg hover:bg-wash transition-colors"
-                                                    >
-                                                        <span className="truncate">{displayTitle}</span>
-                                                        <div className="text-ink-400 shrink-0">
-                                                            {collapsedActs[actIdx] ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
-                                                        </div>
-                                                    </button>
-                                                    {!collapsedActs[actIdx] && (
-                                                        <div className="ml-2 pl-2 border-l border-edge-300 space-y-1 mt-0.5">
-                                                            {actSequences.map(sequence => {
-                                                                const seqIdx = sequence.origIdx;
-                                                                const sceneList = (story.scenes && (story.scenes[`${seqIdx}`] || story.scenes[seqIdx])) || (Array.isArray(story.scenes) ? story.scenes[seqIdx] : []) || [];
-                                                                let seqReadyCount = 0;
-                                                                let seqDraftedCount = 0;
-                                                                sceneList.forEach((_, si) => {
-                                                                    if (getSceneProseText(story, seqIdx, si)) seqDraftedCount++;
-                                                                    if (getSceneAudioStatus(seqIdx, si).status === 'ready') seqReadyCount++;
-                                                                });
-                                                                return (
-                                                                    <div key={seqIdx} className="mt-0.5">
-                                                                        <button
-                                                                            onClick={() => {
-                                                                                setSelectedSequence(seqIdx);
-                                                                                setView('sequence_dashboard');
-                                                                                setIsSidebarOpen(false);
-                                                                            }}
-                                                                            className={`w-full flex items-center justify-between text-xs font-semibold px-2 py-1 rounded text-left transition-colors ${(view === 'sequence_dashboard' || view === 'chapter_dashboard') && selectedSequence === seqIdx
-                                                                                ? 'text-gold-ink bg-gold-tint font-bold'
-                                                                                : 'text-ink-600 hover:text-ink-900 hover:bg-wash'
-                                                                                }`}
-                                                                        >
-                                                                            <span className="truncate">Seq {sequence.number || seqIdx + 1}: {sequence.title || `Sequence ${seqIdx + 1}`}</span>
-                                                                            <div className="flex items-center gap-1 shrink-0 ml-1">
-                                                                                {seqReadyCount > 0 && (
-                                                                                    <span
-                                                                                        className="text-[9.5px] font-mono px-1 rounded bg-sage-tint text-sage-800 border border-sage-edge"
-                                                                                        title={`${seqReadyCount} of ${seqDraftedCount || sceneList.length} scenes have saved offline audio`}
-                                                                                    >
-                                                                                        {seqReadyCount}/{seqDraftedCount || sceneList.length}
-                                                                                    </span>
-                                                                                )}
-                                                                                <span className="text-xs font-mono text-ink-400 font-medium">{sceneList.length}</span>
-                                                                            </div>
-                                                                        </button>
-
-                                                                        {sceneList.map((scene, sIdx) => {
-                                                                            const sceneKey = `${seqIdx}-${sIdx}`;
-                                                                            const isSelected = selectedSequence === seqIdx && selectedScene === sIdx;
-                                                                            const hasBeats = story.beats?.[sceneKey]?.length > 0;
-                                                                            const proseObj = story.prose?.[sceneKey];
-                                                                            const hasProse = Boolean(proseObj && (proseObj.final || proseObj.draft || (typeof proseObj === 'string' && proseObj.trim())));
-                                                                            const scAudio = getSceneAudioStatus(seqIdx, sIdx);
-                                                                            const seqNum = sequence.number || seqIdx + 1;
-                                                                            const sceneDisplayNum = `${seqNum}.${sIdx + 1}`;
-                                                                            if (scene && scene.number !== sceneDisplayNum) {
-                                                                                scene.number = sceneDisplayNum;
-                                                                                scene.id = sceneDisplayNum;
-                                                                            }
-
-                                                                            return (
-                                                                                <button
-                                                                                    key={sIdx}
-                                                                                    onClick={() => {
-                                                                                        setSelectedSequence(seqIdx);
-                                                                                        setSelectedScene(sIdx);
-                                                                                        setView('writer');
-                                                                                        setIsSidebarOpen(false);
-                                                                                    }}
-                                                                                    className={`w-full text-left pl-3 pr-2 py-1 rounded text-xs flex items-center justify-between gap-1 group transition-colors ${isSelected
-                                                                                        ? 'bg-gold-tint text-gold-ink font-semibold'
-                                                                                        : 'text-ink-500 hover:text-ink-800 hover:bg-wash'
-                                                                                        }`}
-                                                                                >
-                                                                                    <div className="flex items-center gap-1.5 truncate min-w-0">
-                                                                                        {hasProse ? (
-                                                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Prose written" />
-                                                                                        ) : hasBeats ? (
-                                                                                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" title="Beats planned" />
-                                                                                        ) : (
-                                                                                            <span className="w-1.5 h-1.5 rounded-full bg-mist-300 shrink-0" title="Outlined only" />
-                                                                                        )}
-                                                                                        <span className="truncate text-xs">{sceneDisplayNum}. {scene.title || `Scene ${sIdx + 1}`}</span>
-                                                                                    </div>
-                                                                                    {scAudio.status === 'ready' ? (
-                                                                                        <Headphones size={11} className="text-sage-600 shrink-0" title="Saved offline audio ready" />
-                                                                                    ) : scAudio.status === 'stale' ? (
-                                                                                        <Headphones size={11} className="text-amber-500 shrink-0" title="Saved audio outdated vs edited text" />
-                                                                                    ) : null}
-                                                                                </button>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                );
-                            })()}
-
-                            {/* SYSTEM & SETTINGS */}
-                            <div className="space-y-0.5 pt-2 border-t border-edge">
-                                <div className="sidebar-section-label px-2 pb-1 text-xs font-bold text-ink-400 uppercase tracking-wider font-mono">
-                                    System
-                                </div>
-                                <button onClick={() => setView('settings')} className={`nav-btn ${view === 'settings' ? 'active' : ''}`} title="Settings">
-                                    <Settings size={15} /> <span className="nav-label">Settings</span>
-                                </button>
-                                <button onClick={() => setView('logs')} className={`nav-btn ${view === 'logs' ? 'active' : ''}`} title="Author's Log (LLM Logs)">
-                                    <History size={15} /> <span className="nav-label">Author's Log</span>
-                                </button>
-                            </div>
-                        </div>
-
-
-
-                        {/* Bottom Quick Storage Controls */}
-                        <div className="sidebar-storage p-3 border-t border-edge bg-surface/70 flex gap-1.5 flex-wrap">
-                            <button
-                                onClick={handleExportEpub}
-                                className="flex-1 bg-gold-tint hover:bg-gold-tint border border-gold-edge text-gold-ink hover:text-gold-ink-deep py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                                title={storyAudioSummary.readyCount > 0 ? `Export EPUB (${storyAudioSummary.readyCount} audio scenes bundled)` : "Export Formatted EPUB"}
-                            >
-                                <Book size={13} /> <span className="nav-label">Export</span>
-                            </button>
-                            {story?.writing_mode === 'audio_drama' && (
-                                <button onClick={handleExportAudioDramaTxt} className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]" title="Export Full Audio Drama Script (.txt)">
-                                    <FileText size={13} /> <span className="nav-label">TXT</span>
-                                </button>
-                            )}
-                            <button onClick={() => fileInputRef.current.click()} className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]" title="Import .json or .epub">
-                                <Upload size={13} /> <span className="nav-label">Import</span>
-                            </button>
-                            <input type="file" ref={fileInputRef} onChange={handleImport} className="hidden" accept=".json,.epub" />
-                        </div>
-                    </div>
+                    <StudioSidebar
+                        view={view}
+                        setView={setView}
+                        story={story}
+                        selectedSequence={selectedSequence}
+                        setSelectedSequence={setSelectedSequence}
+                        selectedScene={selectedScene}
+                        setSelectedScene={setSelectedScene}
+                        isSidebarOpen={isSidebarOpen}
+                        setIsSidebarOpen={setIsSidebarOpen}
+                        isSidebarCollapsed={isSidebarCollapsed}
+                        setIsSidebarCollapsed={setIsSidebarCollapsed}
+                        collapsedActs={collapsedActs}
+                        toggleAct={toggleAct}
+                        loading={loading}
+                        continuousAutopilot={continuousAutopilot}
+                        isAudioAutopilotRunning={isAudioAutopilotRunning}
+                        isAudioAutopilotQueued={isAudioAutopilotQueued}
+                        storyAudioSummary={storyAudioSummary}
+                        refreshLibrary={refreshLibrary}
+                        handleAutopilot={handleAutopilot}
+                        handleToggleAudioAutopilot={handleToggleAudioAutopilot}
+                        enterReaderMode={enterReaderMode}
+                        getSceneProseText={getSceneProseText}
+                        getSceneAudioStatus={getSceneAudioStatus}
+                        handleExportEpub={handleExportEpub}
+                        handleExportAudioDramaTxt={handleExportAudioDramaTxt}
+                        handleImport={handleImport}
+                        fileInputRef={fileInputRef}
+                    />
 
                     {/* MAIN CONTENT WORKSPACE */}
                     <div className={`studio-main-workspace flex-1 flex flex-col h-full relative w-full min-w-0 max-w-full transition-all duration-300 ${view === 'reader' ? 'md:ml-0' : isSidebarCollapsed ? 'md:ml-16' : 'md:ml-72'} bg-void`}>
-                        {/* STUDIO APP HEADER (iOS Safe Region & Mobile Momentum Scrollable) */}
-                        {view !== 'reader' && (
-                            <header className="studio-top-header border-b border-edge backdrop-blur-md z-30 sticky top-0 shadow-2xs flex flex-col justify-center transition-all">
-                                <div
-                                    className="w-full flex items-center justify-between gap-3 overflow-x-auto overflow-y-hidden no-scrollbar touch-scroll touch-scroll-x py-2 px-2 md:px-6 min-w-0"
-                                    style={{
-                                        WebkitOverflowScrolling: 'touch',
-                                        touchAction: 'pan-x pan-y',
-                                        overscrollBehaviorX: 'contain'
-                                    }}
-                                    onWheel={(e) => {
-                                        if (e.deltaY && !e.deltaX && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) {
-                                            e.currentTarget.scrollLeft += e.deltaY;
-                                        }
-                                    }}
-                                >
-                                    <div className="flex items-center gap-2.5 shrink-0 min-w-0">
-                                        <button
-                                            onClick={() => setIsSidebarOpen(true)}
-                                            className="md:hidden text-ink-600 hover:text-ink-900 p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl bg-mist-100 hover:bg-wash border border-edge-strong transition-colors shrink-0 shadow-2xs cursor-pointer active:scale-95"
-                                            aria-label="Open Navigation Menu"
-                                        >
-                                            <Menu size={18} />
-                                        </button>
-
-                                        {/* Breadcrumbs */}
-                                        <div className="flex items-center gap-2 text-xs text-ink-500 shrink-0">
-                                            <span
-                                                onClick={() => { setView('library'); refreshLibrary(); }}
-                                                className="hover:text-gold-ink cursor-pointer font-medium transition-colors whitespace-nowrap"
-                                            >
-                                                Bookshelf
-                                            </span>
-                                            <ChevronRight size={12} className="text-ink-300 shrink-0" />
-                                            <span
-                                                onClick={() => setView('dashboard')}
-                                                className="font-serif font-bold text-ink-900 hover:text-gold-ink cursor-pointer max-w-[140px] sm:max-w-[240px] truncate transition-colors whitespace-nowrap"
-                                            >
-                                                {story.title || "Untitled Novel"}
-                                            </span>
-                                            {view !== 'writer' && (
-                                                <>
-                                                    <ChevronRight size={12} className="text-ink-300 shrink-0" />
-                                                    <span className="font-mono text-xs text-gold-ink bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 font-semibold whitespace-nowrap">
-                                                        {VIEW_LABELS[view] || view.replace('_', ' ')}
-                                                    </span>
-                                                </>
-                                            )}
-                                        </div>
-
-                                        <LiveCreationIsland
-                                            loading={loading}
-                                            loadingStep={loadingStep}
-                                            continuousAutopilot={continuousAutopilot}
-                                            isAudioAutopilotRunning={isAudioAutopilotRunning}
-                                            story={story}
-                                            setView={setView}
-                                            activePipelineWork={activePipelineWork}
-                                            novelProgress={novelProgress}
-                                            audioAutopilotProgress={audioAutopilotProgress}
-                                            audioProgress={audioProgress}
-                                            setPipelineDisplayMode={setPipelineDisplayMode}
-                                        />
-
-                                        {isMcpConnected && (
-                                            <span className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gold-tint text-gold-ink border border-gold-edge shadow-2xs whitespace-nowrap ml-1" title="Connected to Antigravity MCP Server (port 3002)">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                                                Antigravity MCP
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    {/* Header Actions: Reader Mode, Autopilot & Theme Switcher */}
-                                    <div className="flex items-center gap-2 shrink-0 ml-auto pl-2 pr-1">
-                                        <button
-                                            onClick={() => enterReaderMode()}
-                                            className="px-3 py-1.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 border shrink-0 bg-gold-tint hover:bg-gold-tint border-gold-edge text-gold-ink cursor-pointer"
-                                            title="Enter Ebook Reading Mode"
-                                        >
-                                            <BookOpen size={13} />
-                                            <span className="whitespace-nowrap">Reader</span>
-                                        </button>
-
-                                        <button
-                                            onClick={() => {
-                                                if (!continuousAutopilot && view === 'setup') {
-                                                    handleAutopilot({ fromSetup: true });
-                                                } else {
-                                                    setContinuousAutopilot(!continuousAutopilot);
-                                                }
-                                            }}
-                                            className={`px-3 py-1.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 border shrink-0 ${continuousAutopilot
-                                                ? 'bg-blush-tint border-blush-edge text-blush-800 hover:bg-blush-tint-strong'
-                                                : 'bg-surface border-edge-strong hover:border-edge-300 text-ink-800 shadow-2xs'
-                                                }`}
-                                            title="Toggle autonomous end-to-end generation across the entire novel"
-                                        >
-                                            {continuousAutopilot ? (
-                                                <>
-                                                    <Loader2 className="animate-spin text-blush-600" size={13} />
-                                                    <span className="whitespace-nowrap">Autopilot Active</span>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <Zap size={13} className="text-ember-600" />
-                                                    <span className="whitespace-nowrap">Autopilot</span>
-                                                </>
-                                            )}
-                                        </button>
-
-                                        {/* THEME SWITCH BUTTON */}
-                                        <button
-                                            onClick={toggleTheme}
-                                            className="p-2 min-h-[38px] min-w-[38px] rounded-full border border-edge-strong hover:border-edge-300 bg-surface text-ink-700 hover:text-ink-900 shadow-2xs hover:scale-105 active:scale-95 transition-all flex items-center justify-center shrink-0 cursor-pointer"
-                                            title={theme === 'dark' ? 'Switch to Light Theme (Folio Bianca)' : 'Switch to Dark Theme (Atelier Nuit)'}
-                                            aria-label="Toggle Theme"
-                                        >
-                                            {theme === 'dark' ? (
-                                                <Sun size={15} className="text-[#C9A96E]" />
-                                            ) : (
-                                                <Moon size={15} className="text-ink-600" />
-                                            )}
-                                        </button>
-                                    </div>
-                                </div>
-                            </header>
-                        )}
+                        <StudioHeader
+                            view={view}
+                            setView={setView}
+                            story={story}
+                            theme={theme}
+                            toggleTheme={toggleTheme}
+                            setIsSidebarOpen={setIsSidebarOpen}
+                            refreshLibrary={refreshLibrary}
+                            enterReaderMode={enterReaderMode}
+                            loading={loading}
+                            loadingStep={loadingStep}
+                            continuousAutopilot={continuousAutopilot}
+                            setContinuousAutopilot={setContinuousAutopilot}
+                            handleAutopilot={handleAutopilot}
+                            isAudioAutopilotRunning={isAudioAutopilotRunning}
+                            isMcpConnected={isMcpConnected}
+                            activePipelineWork={activePipelineWork}
+                            novelProgress={novelProgress}
+                            audioAutopilotProgress={audioAutopilotProgress}
+                            audioProgress={audioProgress}
+                            setPipelineDisplayMode={setPipelineDisplayMode}
+                        />
 
                         <main className={`flex-1 overflow-y-auto overflow-x-hidden ${view === 'reader' ? 'p-0 overflow-hidden' : 'p-4 md:p-8'}`}>
                             {view === 'reader' && (
@@ -21484,325 +21102,23 @@ ${auditLines}
                         onSubmit={formModalState.onSubmit}
                         onCancel={formModalState.onCancel}
                     />
-                    {/* GESM EDIT PROPOSITION MODAL */}
-                    {editingPropModal.isOpen && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-in">
-                            <div className="bg-surface border border-edge-strong w-full max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                                <div className="p-4 sm:p-5 border-b border-edge-strong flex justify-between items-center bg-mist-50/80">
-                                    <h3 className="text-sm font-bold text-ink-900 flex items-center gap-2 font-serif">
-                                        <Share2 size={16} className="text-gold-ink" />
-                                        {editingPropModal.isNew ? 'New Epistemic Proposition' : 'Edit Epistemic Proposition'}
-                                    </h3>
-                                    <button onClick={() => setEditingPropModal(prev => ({ ...prev, isOpen: false }))} className="text-ink-400 hover:text-ink-800 transition-colors">
-                                        <X size={18} />
-                                    </button>
-                                </div>
-                                <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-mono uppercase text-ink-600 font-bold">Proposition ID</label>
-                                        <input
-                                            type="text"
-                                            value={editingPropModal.id}
-                                            onChange={e => setEditingPropModal(prev => ({ ...prev, id: e.target.value }))}
-                                            placeholder="prop_vance_forged_letter"
-                                            className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-3 py-2 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                        />
-                                    </div>
-                                    <div className="space-y-1">
-                                        <label className="text-xs font-mono uppercase text-ink-600 font-bold">Claim Text</label>
-                                        <textarea
-                                            rows={3}
-                                            value={editingPropModal.claim_text}
-                                            onChange={e => setEditingPropModal(prev => ({ ...prev, claim_text: e.target.value }))}
-                                            placeholder="State the atomic claim clearly..."
-                                            className="w-full text-xs font-serif bg-inset border border-edge rounded-lg px-3 py-2 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-500 font-bold">Subject</label>
-                                            <input
-                                                type="text"
-                                                value={editingPropModal.subject_id}
-                                                onChange={e => setEditingPropModal(prev => ({ ...prev, subject_id: e.target.value }))}
-                                                placeholder="char_vance"
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-500 font-bold">Predicate</label>
-                                            <input
-                                                type="text"
-                                                value={editingPropModal.predicate}
-                                                onChange={e => setEditingPropModal(prev => ({ ...prev, predicate: e.target.value }))}
-                                                placeholder="FORGED"
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-500 font-bold">Object</label>
-                                            <input
-                                                type="text"
-                                                value={editingPropModal.object_id}
-                                                onChange={e => setEditingPropModal(prev => ({ ...prev, object_id: e.target.value }))}
-                                                placeholder="royal_decree"
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            />
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-500 font-bold">Objective Truth</label>
-                                            <select
-                                                value={editingPropModal.objective_truth}
-                                                onChange={e => setEditingPropModal(prev => ({ ...prev, objective_truth: e.target.value }))}
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            >
-                                                <option value="TRUE">TRUE</option>
-                                                <option value="FALSE">FALSE</option>
-                                                <option value="UNRESOLVED">UNRESOLVED</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-500 font-bold">Valid From</label>
-                                            <input
-                                                type="text"
-                                                value={editingPropModal.world_valid_from_scene}
-                                                onChange={e => setEditingPropModal(prev => ({ ...prev, world_valid_from_scene: e.target.value }))}
-                                                placeholder="0.0"
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-500 font-bold">Valid To (Optional)</label>
-                                            <input
-                                                type="text"
-                                                value={editingPropModal.world_valid_to_scene || ''}
-                                                onChange={e => setEditingPropModal(prev => ({ ...prev, world_valid_to_scene: e.target.value }))}
-                                                placeholder="leave blank"
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="p-3.5 border-t border-edge-strong bg-mist-50/80 flex justify-end gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setEditingPropModal(prev => ({ ...prev, isOpen: false }))}
-                                        className="px-4 py-1.5 rounded-xl bg-surface hover:bg-wash border border-edge-strong text-ink-700 text-xs font-bold transition-all shadow-2xs"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSaveProposition(editingPropModal)}
-                                        className="px-4 py-1.5 rounded-xl bg-btn text-btn-ink hover:opacity-90 text-xs font-bold transition-all shadow-2xs"
-                                    >
-                                        Save Proposition
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* GESM EDIT BELIEF MODAL */}
-                    {editingBeliefModal.isOpen && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-in">
-                            <div className="bg-surface border border-edge-strong w-full max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                                <div className="p-4 sm:p-5 border-b border-edge-strong flex justify-between items-center bg-mist-50/80">
-                                    <h3 className="text-sm font-bold text-ink-900 flex items-center gap-2 font-serif">
-                                        <User size={16} className="text-gold-ink" />
-                                        {editingBeliefModal.isNew ? 'Add Character Belief Edge' : 'Edit Character Belief Edge'}
-                                    </h3>
-                                    <button onClick={() => setEditingBeliefModal(prev => ({ ...prev, isOpen: false }))} className="text-ink-400 hover:text-ink-800 transition-colors">
-                                        <X size={18} />
-                                    </button>
-                                </div>
-                                <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto custom-scrollbar">
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-600 font-bold">Holder Agent</label>
-                                            <select
-                                                value={editingBeliefModal.holder_id}
-                                                onChange={e => setEditingBeliefModal(prev => ({ ...prev, holder_id: e.target.value }))}
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            >
-                                                <option value="meta_reader">Reader (Dramatic Irony)</option>
-                                                {(story.cast || []).map(c => (
-                                                    <option key={c.id || c.name} value={c.id || c.name}>{c.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-600 font-bold">Proposition</label>
-                                            <select
-                                                value={editingBeliefModal.proposition_id}
-                                                onChange={e => setEditingBeliefModal(prev => ({ ...prev, proposition_id: e.target.value }))}
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            >
-                                                {(Array.isArray(story.epistemic_graph?.propositions) ? story.epistemic_graph.propositions : Object.values(story.epistemic_graph?.propositions || {})).map(p => (
-                                                    <option key={p.id} value={p.id}>{p.id}: {String(p.claim_text || '').slice(0, 40)}...</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-600 font-bold">Epistemic Stance</label>
-                                            <select
-                                                value={editingBeliefModal.stance}
-                                                onChange={e => setEditingBeliefModal(prev => ({ ...prev, stance: e.target.value }))}
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            >
-                                                <option value="BELIEVES_TRUE">BELIEVES_TRUE (Firm Conviction)</option>
-                                                <option value="SUSPECTS_TRUE">SUSPECTS_TRUE (Leaning / Gut Feeling)</option>
-                                                <option value="DOUBTS">DOUBTS (Questioning / Hesitant)</option>
-                                                <option value="BELIEVES_FALSE">BELIEVES_FALSE (Firm Rejection / Deceived)</option>
-                                                <option value="UNAWARE">UNAWARE (Invalidate / Blind)</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-600 font-bold">
-                                                Confidence: {Math.round(editingBeliefModal.confidence * 100)}%
-                                            </label>
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="1"
-                                                step="0.05"
-                                                value={editingBeliefModal.confidence}
-                                                onChange={e => setEditingBeliefModal(prev => ({ ...prev, confidence: parseFloat(e.target.value) }))}
-                                                className="w-full accent-gold-ink cursor-pointer"
-                                            />
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-600 font-bold">Source Type</label>
-                                            <select
-                                                value={editingBeliefModal.source_type}
-                                                onChange={e => setEditingBeliefModal(prev => ({ ...prev, source_type: e.target.value }))}
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            >
-                                                <option value="DIRECT_OBSERVATION">DIRECT_OBSERVATION (Witnessed directly)</option>
-                                                <option value="TOLD_BY_AGENT">TOLD_BY_AGENT (Hearsay / Confession)</option>
-                                                <option value="INFERRED">INFERRED (Deduction / Clues)</option>
-                                                <option value="CORE_LIE">CORE_LIE (Psychological Trauma Anchor)</option>
-                                            </select>
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-600 font-bold">Source Agent (if told)</label>
-                                            <select
-                                                value={editingBeliefModal.source_agent_id || ''}
-                                                onChange={e => setEditingBeliefModal(prev => ({ ...prev, source_agent_id: e.target.value }))}
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            >
-                                                <option value="">None / Direct</option>
-                                                {(story.cast || []).map(c => (
-                                                    <option key={c.id || c.name} value={c.id || c.name}>{c.name}</option>
-                                                ))}
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-600 font-bold">Acquired At Scene</label>
-                                            <input
-                                                type="text"
-                                                value={editingBeliefModal.acquired_at_scene}
-                                                onChange={e => setEditingBeliefModal(prev => ({ ...prev, acquired_at_scene: e.target.value }))}
-                                                placeholder="1.1"
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            />
-                                        </div>
-                                        <div className="space-y-1">
-                                            <label className="text-[10px] font-mono uppercase text-ink-600 font-bold">Invalidated At (Optional)</label>
-                                            <input
-                                                type="text"
-                                                value={editingBeliefModal.invalidated_at_scene || ''}
-                                                onChange={e => setEditingBeliefModal(prev => ({ ...prev, invalidated_at_scene: e.target.value }))}
-                                                placeholder="leave blank if active"
-                                                className="w-full text-xs font-mono bg-inset border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="p-3.5 border-t border-edge-strong bg-mist-50/80 flex justify-end gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setEditingBeliefModal(prev => ({ ...prev, isOpen: false }))}
-                                        className="px-4 py-1.5 rounded-xl bg-surface hover:bg-wash border border-edge-strong text-ink-700 text-xs font-bold transition-all shadow-2xs"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleSaveBelief(editingBeliefModal)}
-                                        className="px-4 py-1.5 rounded-xl bg-btn text-btn-ink hover:opacity-90 text-xs font-bold transition-all shadow-2xs"
-                                    >
-                                        Save Belief Edge
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ICON PICKER MODAL */}
-                    {isIconPickerOpen && (
-                        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4 animate-fade-in">
-                            <div className="bg-surface border border-edge-strong w-full max-w-sm rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-                                <div className="p-4 sm:p-5 border-b border-edge-strong flex justify-between items-center bg-mist-50/80">
-                                    <h3 className="text-sm font-bold text-ink-900 flex items-center gap-2 font-serif">
-                                        <Sparkles size={16} className="text-gold-ink" />
-                                        Select Mode Icon
-                                    </h3>
-                                    <button onClick={() => setIsIconPickerOpen(false)} className="text-ink-400 hover:text-ink-800 transition-colors">
-                                        <X size={18} />
-                                    </button>
-                                </div>
-                                <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
-                                    <div className="grid grid-cols-9 gap-2">
-                                        {AVAILABLE_ICONS.map((ico) => {
-                                            const isSelected = newModeIcon === ico.value;
-                                            return (
-                                                <button
-                                                    key={ico.value}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setNewModeIcon(ico.value);
-                                                        setIsIconPickerOpen(false);
-                                                    }}
-                                                    title={ico.label}
-                                                    className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${isSelected
-                                                        ? 'bg-btn text-btn-ink scale-110 shadow-sm border border-[#1C1917]'
-                                                        : 'bg-inset hover:bg-wash text-ink-600 hover:text-ink-900 hover:scale-105 border border-edge-strong'
-                                                        }`}
-                                                >
-                                                    <Icon name={ico.value} className="w-4 h-4" />
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-                                    <div className="mt-4 text-center">
-                                        <p className="text-[10px] text-ink-500 font-medium font-mono">
-                                            Currently selected: <span className="text-gold-ink font-bold">{AVAILABLE_ICONS.find(ico => ico.value === newModeIcon)?.label || newModeIcon}</span>
-                                        </p>
-                                    </div>
-                                </div>
-                                <div className="p-3.5 border-t border-edge-strong bg-mist-50/80 flex justify-end">
-                                    <button
-                                        onClick={() => setIsIconPickerOpen(false)}
-                                        className="px-4 py-1.5 rounded-xl bg-surface hover:bg-wash border border-edge-strong text-ink-700 text-xs font-bold transition-all shadow-2xs"
-                                    >
-                                        Cancel
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    )}
+                    <GesmPropositionModal
+                        editingPropModal={editingPropModal}
+                        setEditingPropModal={setEditingPropModal}
+                        handleSaveProposition={handleSaveProposition}
+                    />
+                    <GesmBeliefModal
+                        editingBeliefModal={editingBeliefModal}
+                        setEditingBeliefModal={setEditingBeliefModal}
+                        handleSaveBelief={handleSaveBelief}
+                        story={story}
+                    />
+                    <IconPickerModal
+                        isIconPickerOpen={isIconPickerOpen}
+                        setIsIconPickerOpen={setIsIconPickerOpen}
+                        newModeIcon={newModeIcon}
+                        setNewModeIcon={setNewModeIcon}
+                    />
                 </div>
             );
         }
