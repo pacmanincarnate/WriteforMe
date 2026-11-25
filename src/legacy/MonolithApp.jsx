@@ -463,7 +463,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { useDebounce } from '@/hooks';
+import { useDebounce, useModelCatalog, useReaderController, useStoryImages } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -691,9 +691,7 @@ const ReactDOM = ReactDOMClient;
             const pendingSetupLoreRef = useRef({});
             const deletedStoryIdsRef = useRef(new Set());
 
-            // Image Store & States
-            const imageStore = useMemo(() => new ImageStore(), []);
-            window.imageStore = imageStore;
+            // ImageStore initialized inside useStoryImages below
             window.createDefaultStoryTemplate = createDefaultStoryTemplate;
             window.hasHydratedStory = hasHydratedStory;
             window.storyRef = storyRef;
@@ -711,6 +709,52 @@ const ReactDOM = ReactDOMClient;
 
             const formModalState = useUiStore(s => s.formModalState);
             const openFormModal = useUiStore(s => s.openFormModal);
+
+            const [toast, setToast] = useState(null);
+            const toastTimerRef = useRef(null);
+            const showToast = useCallback((message, type = 'success', options = null) => {
+                if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+                const toastId = Date.now();
+                const opts = (options && typeof options === 'object') ? options : {};
+                setToast({ id: toastId, message, type, ...opts });
+                const durationMs = typeof opts.durationMs === 'number'
+                    ? opts.durationMs
+                    : (opts.bookCard ? 14000 : (type === 'error' ? 5000 : 3500));
+                if (durationMs > 0) {
+                    toastTimerRef.current = setTimeout(() => {
+                        setToast(prev => (prev && prev.id === toastId ? null : prev));
+                    }, durationMs);
+                }
+            }, []);
+
+            const [selectedAct, setSelectedAct] = useState(() => {
+                const saved = localStorage.getItem("ellipsisprose_selectedAct");
+                return saved !== null ? parseInt(saved, 10) : null;
+            });
+            const [selectedSequence, setSelectedSequence] = useState(() => {
+                const saved = localStorage.getItem("ellipsisprose_selectedSequence") || localStorage.getItem("ellipsisprose_selectedChapter");
+                return saved !== null ? parseInt(saved, 10) : null;
+            });
+            const [selectedScene, setSelectedScene] = useState(() => {
+                const saved = localStorage.getItem("ellipsisprose_selectedScene");
+                return saved !== null ? parseInt(saved, 10) : null;
+            });
+
+            const promptLog = usePipelineStore(s => s.promptLog);
+            const setPromptLog = usePipelineStore(s => s.setPromptLog);
+            const currentPipelineStep = usePipelineStore(s => s.currentPipelineStep);
+            const setCurrentPipelineStep = usePipelineStore(s => s.setCurrentPipelineStep);
+            const logPipelineDelay = usePipelineStore(s => s.logPipelineDelay);
+            const logPipelineValidation = usePipelineStore(s => s.logPipelineValidation);
+            const logPipelineError = usePipelineStore(s => s.logPipelineError);
+            const logAudioDramaPipelineStageStart = usePipelineStore(s => s.logAudioDramaPipelineStageStart);
+            const logAudioDramaPipelineStageComplete = usePipelineStore(s => s.logAudioDramaPipelineStageComplete);
+            const logAudioDramaPipelineStageError = usePipelineStore(s => s.logAudioDramaPipelineStageError);
+            window.logAudioDramaPipelineStageStart = logAudioDramaPipelineStageStart;
+            window.logAudioDramaPipelineStageComplete = logAudioDramaPipelineStageComplete;
+            window.logAudioDramaPipelineStageError = logAudioDramaPipelineStageError;
+            window.logPipelineValidation = logPipelineValidation;
+            window.logPipelineError = logPipelineError;
             window.openFormModal = openFormModal;
 
             // Helper to list stories and update library metadata state
@@ -955,51 +999,56 @@ const ReactDOM = ReactDOMClient;
                     clearTimeout(loreSyncTimer);
                 };
             }, [activeStoryId]);
-            const [imageProvider, setImageProvider] = useState(() => localStorage.getItem("ellipsisprose_image_provider") || 'gemini');
-            const [imageModel, setImageModel] = useState(() => {
-                const saved = localStorage.getItem("ellipsisprose_image_model");
-                if (saved && saved !== 'imagen-3.0-generate-002') return saved;
-                return 'gemini-3.1-flash-image';
+            const callAIRef = useRef(async (..._args) => '');
+            const llmKeysRef = useRef({ apiKey: '', openRouterKey: '' });
+            const {
+                imageStore,
+                imageProvider, setImageProvider,
+                imageModel, setImageModel,
+                geminiImageModelsList, setGeminiImageModelsList,
+                isFetchingImageModels, setIsFetchingImageModels,
+                imageApiKey, setImageApiKey,
+                comfyUrl, setComfyUrl,
+                comfyUnet, setComfyUnet,
+                comfyClip, setComfyClip,
+                comfyVae, setComfyVae,
+                comfyLora, setComfyLora,
+                comfyLoraStrength, setComfyLoraStrength,
+                comfySteps, setComfySteps,
+                comfyCfg, setComfyCfg,
+                comfySampler, setComfySampler,
+                comfyScheduler, setComfyScheduler,
+                comfyTimeoutSec, setComfyTimeoutSec,
+                comfyStatus, setComfyStatus,
+                comfyOptions, setComfyOptions,
+                comfyRefreshId,
+                customImageStyles, setCustomImageStyles,
+                loadedImages, setLoadedImages,
+                portraitLoading,
+                setPortraitReload,
+                loadingCover,
+                loadingImages,
+                newStyleName, setNewStyleName,
+                newStyleDesc, setNewStyleDesc,
+                generateCoverImage,
+                generateCharacterPortrait,
+                uploadCharacterPortrait,
+                removeCharacterPortrait,
+                deleteCoverImage,
+                handleCoverUpload,
+                generateBeatImage,
+                deleteBeatImage,
+                generateSceneImage,
+                deleteSceneImage
+            } = useStoryImages({
+                story,
+                selectedSequence,
+                selectedScene,
+                getLlmKeys: () => llmKeysRef.current,
+                callAI: (...args) => callAIRef.current(...args),
+                showToast,
+                requestConfirm
             });
-            const [geminiImageModelsList, setGeminiImageModelsList] = useState(() => {
-                try {
-                    const cached = sessionStorage.getItem("ellipsisprose_gemini_image_models_cache");
-                    return cached ? JSON.parse(cached) : [];
-                } catch (_) {
-                    return [];
-                }
-            });
-            const [isFetchingImageModels, setIsFetchingImageModels] = useState(false);
-            const [imageApiKey, setImageApiKey] = useState(() => localStorage.getItem("ellipsisprose_image_api_key") || '');
-            const [comfyUrl, setComfyUrl] = useState(() => localStorage.getItem("ellipsisprose_comfy_url") || 'http://127.0.0.1:8188');
-            const [comfyUnet, setComfyUnet] = useState(() => localStorage.getItem("ellipsisprose_comfy_unet") || '');
-            const [comfyClip, setComfyClip] = useState(() => localStorage.getItem("ellipsisprose_comfy_clip") || '');
-            const [comfyVae, setComfyVae] = useState(() => localStorage.getItem("ellipsisprose_comfy_vae") || '');
-            const [comfyLora, setComfyLora] = useState(() => localStorage.getItem("ellipsisprose_comfy_lora") || '');
-            const [comfyLoraStrength, setComfyLoraStrength] = useState(() => Number(localStorage.getItem("ellipsisprose_comfy_lora_strength") ?? 0.8));
-            const [comfySteps, setComfySteps] = useState(() => Number(localStorage.getItem("ellipsisprose_comfy_steps") ?? 8));
-            const [comfyCfg, setComfyCfg] = useState(() => Number(localStorage.getItem("ellipsisprose_comfy_cfg") ?? 1));
-            const [comfySampler, setComfySampler] = useState(() => localStorage.getItem("ellipsisprose_comfy_sampler") || 'euler');
-            const [comfyScheduler, setComfyScheduler] = useState(() => localStorage.getItem("ellipsisprose_comfy_scheduler") || 'simple');
-            const [comfyTimeoutSec, setComfyTimeoutSec] = useState(() => Number(localStorage.getItem("ellipsisprose_comfy_timeout_sec") ?? 600));
-            const [comfyStatus, setComfyStatus] = useState({ online: false, version: '', device: '', error: '' });
-            const [comfyOptions, setComfyOptions] = useState({ unet: [], clip: [], vae: [], lora: [], sampler: [], scheduler: [] });
-            const comfyRefreshId = useRef(0);
-            const [customImageStyles, setCustomImageStyles] = useState(() => {
-                const saved = localStorage.getItem("ellipsisprose_custom_image_styles");
-                return saved ? JSON.parse(saved) : [];
-            });
-            const [loadedImages, setLoadedImages] = useState({});
-            const [portraitLoading, setPortraitLoading] = useState({});
-            const [portraitReload, setPortraitReload] = useState(0);
-            const portraitOperations = useRef(new Set());
-            const portraitRevisions = useRef(new Map());
-            const portraitStoryId = useRef(story?.id);
-            portraitStoryId.current = story?.id;
-            const [loadingCover, setLoadingCover] = useState(false);
-            const [loadingImages, setLoadingImages] = useState({});
-            const [newStyleName, setNewStyleName] = useState("");
-            const [newStyleDesc, setNewStyleDesc] = useState("");
 
             // Story Library Extended State
             const [librarySearchQuery, setLibrarySearchQuery] = useState("");
@@ -1157,73 +1206,8 @@ const ReactDOM = ReactDOMClient;
                     }
                 });
             };
-            // Settings State
-            const [enableReview, setEnableReview] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_enable_review");
-                return val !== null ? val === 'true' : true;
-            });
-            const [enableStylePolish, setEnableStylePolish] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_enable_style_polish");
-                return val !== null ? val === 'true' : true;
-            });
-            const [enableAudioDramaDirectionPass, setEnableAudioDramaDirectionPass] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_enable_audio_drama_direction");
-                return val !== null ? val === 'true' : true;
-            });
+            // Settings & Model Catalog Hook
             const [isDirectingVoices, setIsDirectingVoices] = useState(false);
-            const [apiProvider, setApiProvider] = useState(() => localStorage.getItem("ellipsisprose_api_provider") || 'gemini');
-            const [embeddingProvider, setEmbeddingProvider] = useState(() => localStorage.getItem("ellipsisprose_embedding_provider") || (apiProvider === 'codex' ? 'gemini' : apiProvider));
-            const [apiKey, setApiKey] = useState(() => localStorage.getItem("gemini_api_key") || "");
-            const [apiTimeout, setApiTimeout] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_api_timeout");
-                const parsed = val !== null ? parseInt(val, 10) : 120;
-                return (!isNaN(parsed) && parsed >= 5 && parsed <= 1800) ? parsed : 120;
-            });
-            const [geminiModel, setGeminiModel] = useState(() => localStorage.getItem("ellipsisprose_gemini_model") || "gemini-2.0-flash");
-            const [geminiModelsList, setGeminiModelsList] = useState([]);
-            const [openRouterKey, setOpenRouterKey] = useState(() => localStorage.getItem("ellipsisprose_openrouter_key") || "");
-            const [openRouterModel, setOpenRouterModel] = useState(() => localStorage.getItem("ellipsisprose_openrouter_model") || "google/gemini-2.0-flash-001");
-            const [openRouterMaxTokens, setOpenRouterMaxTokens] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_openrouter_max_tokens");
-                return val !== null ? parseInt(val, 10) : 65536;
-            });
-            const [nanoGptKey, setNanoGptKey] = useState(() => localStorage.getItem("ellipsisprose_nanogpt_key") || "");
-            const [nanoGptModel, setNanoGptModel] = useState(() => localStorage.getItem("ellipsisprose_nanogpt_model") || "gpt-4o");
-            const [koboldUrl, setKoboldUrl] = useState(() => localStorage.getItem("ellipsisprose_kobold_url") || "http://localhost:5001");
-            const [koboldModel, setKoboldModel] = useState(() => localStorage.getItem("ellipsisprose_kobold_model") || "koboldcpp");
-            const [codexUrl, setCodexUrl] = useState(() => localStorage.getItem("ellipsisprose_codex_url") || "http://localhost:5010");
-            const [codexModel, setCodexModel] = useState(() => localStorage.getItem("ellipsisprose_codex_model") ?? "gpt-5.6-luna");
-            const [codexModelsList, setCodexModelsList] = useState([]);
-            const [codexStatus, setCodexStatus] = useState({ online: false, model: null, error: null });
-            const [codexEmbeddingStatus, setCodexEmbeddingStatus] = useState(null);
-            const codexRefreshId = useRef(0);
-            const [savedModels, setSavedModels] = useState(() => {
-                const saved = localStorage.getItem("ellipsisprose_saved_models");
-                return saved ? JSON.parse(saved) : ["google/gemini-2.0-flash-001"];
-            });
-
-            // Model Catalog & Universal Search State
-            const [openRouterModelsList, setOpenRouterModelsList] = useState(() => {
-                const cached = localStorage.getItem("ellipsisprose_openrouter_models_cache");
-                return cached ? JSON.parse(cached) : [];
-            });
-            const [nanoGptModelsList, setNanoGptModelsList] = useState(() => {
-                const cached = localStorage.getItem("ellipsisprose_nanogpt_models_cache");
-                return cached ? JSON.parse(cached) : NANO_GPT_DEFAULT_MODELS;
-            });
-            const [koboldStatus, setKoboldStatus] = useState('idle');
-            const [koboldLoadedModel, setKoboldLoadedModel] = useState(koboldModel || "koboldcpp");
-            const [koboldError, setKoboldError] = useState(null);
-
-            // Three-Model System State: Development (Default/Master), Review, and Prose
-            const [devProvider, setDevProvider] = useState(() => localStorage.getItem("ellipsisprose_dev_provider") || localStorage.getItem("ellipsisprose_api_provider") || 'gemini');
-            const [devModel, setDevModel] = useState(() => localStorage.getItem("ellipsisprose_dev_model") || localStorage.getItem("ellipsisprose_gemini_model") || "gemini-2.0-flash");
-
-            const [reviewProvider, setReviewProvider] = useState(() => localStorage.getItem("ellipsisprose_review_provider") || "");
-            const [reviewModel, setReviewModel] = useState(() => localStorage.getItem("ellipsisprose_review_model") || "");
-
-            const [proseProvider, setProseProvider] = useState(() => localStorage.getItem("ellipsisprose_prose_provider") || "");
-            const [proseModel, setProseModel] = useState(() => localStorage.getItem("ellipsisprose_prose_model") || "");
             const [isMcpConnected, setIsMcpConnected] = useState(false);
             const [enableMcpBridge, setEnableMcpBridge] = useState(() => {
                 try {
@@ -1240,134 +1224,103 @@ const ReactDOM = ReactDOMClient;
                 } catch (e) {}
             }, [enableMcpBridge]);
 
-            // Effective Model Config Resolver
-            // Effective Model Config Resolver (delegated to src/services/llm/roleConfig)
-            const getModelSettingsSnapshot = () => ({
-                apiProvider, devProvider, devModel, reviewProvider, reviewModel,
-                proseProvider, proseModel, geminiModel, openRouterModel,
-                nanoGptModel, codexModel, koboldModel, koboldLoadedModel
-            });
-            const getDefaultModelForProvider = (prov) => resolveDefaultModelForProvider(prov, getModelSettingsSnapshot());
-            const sanitizeLocalKoboldModel = (candidate) => sanitizeKoboldModelName(candidate, getModelSettingsSnapshot());
-            const getEffectiveModelConfig = (role = "dev") => resolveEffectiveModelConfig(role, getModelSettingsSnapshot());
-            window.getEffectiveModelConfig = getEffectiveModelConfig;
-
-            // Debounced model-search hook per picker (dev, review, prose)
-            const useModelSearch = (label, targetProvider) => {
-                const [query, setQuery] = useState("");
-                const debouncedQuery = useDebounce(query, 300);
-                const [isSearching, setIsSearching] = useState(false);
-                const [results, setResults] = useState([]);
-                const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-
-                useEffect(() => {
-                    let active = true;
-
-                    const runSearch = async () => {
-                        const providerToUse = targetProvider || devProvider || 'gemini';
-                        if (providerToUse === 'koboldcpp' || providerToUse === 'codex') {
-                            setResults([]);
-                            setIsSearching(false);
-                            return;
-                        }
-
-                        setIsSearching(true);
-                        const q = debouncedQuery.trim();
-
-                        try {
-                            if (providerToUse === 'gemini') {
-                                let catalog = geminiModelsList;
-                                if (catalog.length === 0 && apiKey) {
-                                    await fetchGeminiModels();
-                                    catalog = geminiModelsList;
-                                }
-                                const formattedCatalog = catalog.map(m => (typeof m === 'string' ? { id: m, name: m } : m));
-                                if (active) setResults(filterModelsClientSide(formattedCatalog, q));
-                            } else if (providerToUse === 'openrouter') {
-                                let catalog = openRouterModelsList;
-                                if (catalog.length === 0) {
-                                    catalog = await fetchOpenRouterModels(openRouterKey).catch(() => []);
-                                }
-                                if (active) setResults(filterModelsClientSide(catalog, q));
-                            } else if (providerToUse === 'nanogpt') {
-                                const { results: found } = await searchNanoGPTModels(q, nanoGptKey, nanoGptModelsList);
-                                if (active) setResults(found);
-                            }
-                        } catch (e) {
-                            console.error(`${label} model search error:`, e);
-                            if (active) setResults([]);
-                        } finally {
-                            if (active) setIsSearching(false);
-                        }
-                    };
-
-                    runSearch();
-                    return () => { active = false; };
-                }, [debouncedQuery, targetProvider, devProvider, apiKey, openRouterKey, nanoGptKey, geminiModelsList, openRouterModelsList, nanoGptModelsList]);
-
-                return { query, setQuery, isSearching, results, setResults, isDropdownOpen, setIsDropdownOpen };
-            };
-
-            const devSearch = useModelSearch("Development", devProvider);
-            const reviewSearch = useModelSearch("Review", reviewProvider || devProvider);
-            const proseSearch = useModelSearch("Prose", proseProvider || devProvider);
-
             const {
-                query: modelSearchQuery, setQuery: setModelSearchQuery,
-                isSearching: isSearchingModels, results: searchResults, setResults: setSearchResults,
-                isDropdownOpen: isModelDropdownOpen, setIsDropdownOpen: setIsModelDropdownOpen
-            } = devSearch;
-
-            const {
-                query: reviewModelSearchQuery, setQuery: setReviewModelSearchQuery,
-                isSearching: isSearchingReviewModels, results: reviewSearchResults, setResults: setReviewSearchResults,
-                isDropdownOpen: isReviewModelDropdownOpen, setIsDropdownOpen: setIsReviewModelDropdownOpen
-            } = reviewSearch;
-
-            const {
-                query: proseModelSearchQuery, setQuery: setProseModelSearchQuery,
-                isSearching: isSearchingProseModels, results: proseSearchResults, setResults: setProseSearchResults,
-                isDropdownOpen: isProseModelDropdownOpen, setIsDropdownOpen: setIsProseModelDropdownOpen
-            } = proseSearch;
-
-            // Legacy dual-model compatibility state (preserved for backward compatibility)
-            const [useProseModel, setUseProseModel] = useState(() => localStorage.getItem("ellipsisprose_use_prose_model") === 'true');
-            const [geminiProseModel, setGeminiProseModel] = useState(() => localStorage.getItem("ellipsisprose_gemini_prose_model") || "");
-            const [openRouterProseModel, setOpenRouterProseModel] = useState(() => localStorage.getItem("ellipsisprose_openrouter_prose_model") || "");
-            const [nanoGptProseModel, setNanoGptProseModel] = useState(() => localStorage.getItem("ellipsisprose_nanogpt_prose_model") || "");
-            const [koboldProseModel, setKoboldProseModel] = useState(() => localStorage.getItem("ellipsisprose_kobold_prose_model") || "");
-            const [codexProseModel, setCodexProseModel] = useState(() => localStorage.getItem("ellipsisprose_codex_prose_model") || "");
-
-            // Thinking / Reasoning State variables
-            const [enableThinkingAct, setEnableThinkingAct] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_enable_thinking_act");
-                return val !== null ? val === 'true' : true;
+                enableReview, setEnableReview,
+                enableStylePolish, setEnableStylePolish,
+                enableAudioDramaDirectionPass, setEnableAudioDramaDirectionPass,
+                apiProvider, setApiProvider,
+                embeddingProvider, setEmbeddingProvider,
+                apiKey, setApiKey,
+                apiTimeout, setApiTimeout,
+                geminiModel, setGeminiModel,
+                geminiModelsList,
+                openRouterKey, setOpenRouterKey,
+                openRouterModel, setOpenRouterModel,
+                openRouterMaxTokens, setOpenRouterMaxTokens,
+                nanoGptKey, setNanoGptKey,
+                nanoGptModel, setNanoGptModel,
+                koboldUrl, setKoboldUrl,
+                koboldModel, setKoboldModel,
+                codexUrl, setCodexUrl,
+                codexModel, setCodexModel,
+                codexModelsList,
+                codexStatus,
+                codexEmbeddingStatus,
+                savedModels,
+                openRouterModelsList,
+                nanoGptModelsList,
+                koboldStatus,
+                koboldLoadedModel,
+                koboldError,
+                devProvider, setDevProvider,
+                devModel, setDevModel,
+                reviewProvider, setReviewProvider,
+                reviewModel, setReviewModel,
+                proseProvider, setProseProvider,
+                proseModel, setProseModel,
+                modelSearchQuery, setModelSearchQuery,
+                isSearchingModels,
+                searchResults, setSearchResults,
+                isModelDropdownOpen, setIsModelDropdownOpen,
+                reviewModelSearchQuery, setReviewModelSearchQuery,
+                isSearchingReviewModels,
+                reviewSearchResults, setReviewSearchResults,
+                isReviewModelDropdownOpen, setIsReviewModelDropdownOpen,
+                proseModelSearchQuery, setProseModelSearchQuery,
+                isSearchingProseModels,
+                proseSearchResults, setProseSearchResults,
+                isProseModelDropdownOpen, setIsProseModelDropdownOpen,
+                useProseModel, setUseProseModel,
+                geminiProseModel, setGeminiProseModel,
+                openRouterProseModel, setOpenRouterProseModel,
+                nanoGptProseModel, setNanoGptProseModel,
+                koboldProseModel, setKoboldProseModel,
+                codexProseModel, setCodexProseModel,
+                enableThinkingAct, setEnableThinkingAct,
+                enableThinkingScene, setEnableThinkingScene,
+                enableThinkingWriting, setEnableThinkingWriting,
+                thinkingBudgetStoryArc, setThinkingBudgetStoryArc,
+                thinkingBudgetAct, setThinkingBudgetAct,
+                thinkingBudgetScene, setThinkingBudgetScene,
+                thinkingBudgetWriting, setThinkingBudgetWriting,
+                getModelSettingsSnapshot,
+                getDefaultModelForProvider,
+                sanitizeLocalKoboldModel,
+                getEffectiveModelConfig,
+                saveModel,
+                deleteModel,
+                fetchGeminiModels,
+                fetchGeminiImageModels,
+                refreshOpenRouterModels,
+                refreshNanoGptModels,
+                checkKoboldStatus,
+                refreshCodexModels,
+                refreshComfyInfo,
+                handleCatalogRefresh,
+                callAI
+            } = useModelCatalog({
+                view,
+                story,
+                storyRef,
+                setCurrentPipelineStep,
+                setPromptLog,
+                showToast,
+                logPipelineDelay,
+                imageProvider,
+                imageApiKey,
+                geminiImageModelsList,
+                setGeminiImageModelsList,
+                setIsFetchingImageModels,
+                comfyUrl,
+                setComfyStatus,
+                setComfyOptions,
+                setComfyUnet,
+                setComfyClip,
+                setComfyVae,
+                comfyRefreshId
             });
-            const [enableThinkingScene, setEnableThinkingScene] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_enable_thinking_scene");
-                return val !== null ? val === 'true' : true;
-            });
-            const [enableThinkingWriting, setEnableThinkingWriting] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_enable_thinking_writing");
-                return val !== null ? val === 'true' : true;
-            });
-
-            const [thinkingBudgetStoryArc, setThinkingBudgetStoryArc] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_thinking_budget_story_arc");
-                return val !== null ? parseInt(val, 10) : 16384;
-            });
-            const [thinkingBudgetAct, setThinkingBudgetAct] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_thinking_budget_act");
-                return val !== null ? parseInt(val, 10) : 16384;
-            });
-            const [thinkingBudgetScene, setThinkingBudgetScene] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_thinking_budget_scene");
-                return val !== null ? parseInt(val, 10) : 16384;
-            });
-            const [thinkingBudgetWriting, setThinkingBudgetWriting] = useState(() => {
-                const val = localStorage.getItem("ellipsisprose_thinking_budget_writing");
-                return val !== null ? parseInt(val, 10) : 16384;
-            });
+            callAIRef.current = callAI;
+            llmKeysRef.current = { apiKey, openRouterKey };
             const [failedReviewCritiques, setFailedReviewCritiques] = useState([]);
 
             // Custom Narrative Modes State
@@ -1790,20 +1743,7 @@ const ReactDOM = ReactDOMClient;
                 }
             }, [continuousAutopilot]);
 
-            const [selectedAct, setSelectedAct] = useState(() => {
-                const saved = localStorage.getItem("ellipsisprose_selectedAct");
-                return saved !== null ? parseInt(saved, 10) : null;
-            });
 
-            const [selectedSequence, setSelectedSequence] = useState(() => {
-                const saved = localStorage.getItem("ellipsisprose_selectedSequence") || localStorage.getItem("ellipsisprose_selectedChapter");
-                return saved !== null ? parseInt(saved, 10) : null;
-            });
-
-            const [selectedScene, setSelectedScene] = useState(() => {
-                const saved = localStorage.getItem("ellipsisprose_selectedScene");
-                return saved !== null ? parseInt(saved, 10) : null;
-            });
 
             const [blueprintActiveTab, setBlueprintActiveTab] = useState('narrative'); // 'narrative' | 'sandbox' | 'atmosphere' | 'continuity'
             const [isBlueprintCollapsed, setIsBlueprintCollapsed] = useState(false);
@@ -1954,8 +1894,7 @@ const ReactDOM = ReactDOMClient;
             const loreInputRef = useRef(null);
             const coverUploadInputRef = useRef(null);
 
-            const promptLog = usePipelineStore(s => s.promptLog);
-            const setPromptLog = usePipelineStore(s => s.setPromptLog);
+
             const isLogHydrated = useRef(false);
 
             useEffect(() => {
@@ -2019,8 +1958,7 @@ const ReactDOM = ReactDOMClient;
                 }
             }, [promptLog, activeStoryId]);
 
-            const currentPipelineStep = usePipelineStore(s => s.currentPipelineStep);
-            const setCurrentPipelineStep = usePipelineStore(s => s.setCurrentPipelineStep);
+
             const [inspectedStepId, setInspectedStepId] = useState(null);
             const generatingSceneKey = usePipelineStore(s => s.generatingSceneKey);
             const setGeneratingSceneKey = usePipelineStore(s => s.setGeneratingSceneKey);
@@ -2030,34 +1968,8 @@ const ReactDOM = ReactDOMClient;
             const [audioAutopilotProgress, setAudioAutopilotProgress] = useState(null);
             const [logFilter, setLogFilter] = useState('all');
 
-            // --- EBOOK READER STATE & SETTINGS ---
-
-            const [readerSettings, setReaderSettings] = useState(() => {
-                try {
-                    const saved = localStorage.getItem("ellipsisprose_reader_settings");
-                    if (saved) {
-                        const parsed = JSON.parse(saved);
-                        // Migrate legacy 'auto' setting to 'wasm' so existing desktop sessions (Opera/Chrome) don't stay corrupted on WebGPU
-                        if (parsed.ttsDevice === 'auto') {
-                            parsed.ttsDevice = 'wasm';
-                        }
-                        return { ...DEFAULT_READER_SETTINGS, ...parsed };
-                    }
-                    return DEFAULT_READER_SETTINGS;
-                } catch (e) {
-                    return DEFAULT_READER_SETTINGS;
-                }
-            });
-
-            useEffect(() => {
-                safeLocalStorageSet("ellipsisprose_reader_settings", JSON.stringify(readerSettings));
-            }, [readerSettings]);
-            const readerSettingsRef = useRef(readerSettings);
-            readerSettingsRef.current = readerSettings;
-
-            const updateReaderSetting = (key, val) => {
-                setReaderSettings(prev => ({ ...prev, [key]: val }));
-            };
+            // --- EBOOK READER & AUDIO REFS ---
+            const ttsStatusRef = useRef('idle');
 
             // --- AUDIO DRAMA MULTI-VOICE ENGINE STATE & SETTINGS ---
             const [audioDramaSettings, setAudioDramaSettings] = useState(() => {
@@ -2080,7 +1992,7 @@ const ReactDOM = ReactDOMClient;
 
             const sessionTtsTierCapRef = useRef(null);
             const ttsProbeCacheRef = useRef(null);
-            const flatStoryScenesRef = useRef([]);
+
 
             const updateAudioDramaSetting = (key, val) => {
                 if (key === 'pipelineTier' || key === 'backend' || key === 'studioBridgeUrl' || key === 'endpoint') {
@@ -2287,197 +2199,74 @@ const ReactDOM = ReactDOMClient;
                 isAudioAutopilotRunning
             ), [story, availableSceneAudioMap, getSceneAudioStatus, audioAutopilotProgress, audioDramaSettings, isAudioAutopilotRunning]);
 
-            // Reading Progress per Story
-            const [readingProgress, setReadingProgress] = useState(() => {
-                try {
-                    const key = `ellipsisprose_reader_progress_${activeStoryId}`;
-                    const saved = localStorage.getItem(key);
-                    return saved ? JSON.parse(saved) : {};
-                } catch (e) {
-                    return {};
-                }
+            const {
+                readerSettings,
+                readerSettingsRef,
+                updateReaderSetting,
+                readingProgress,
+                readerPageIndex,
+                readerPageIndexRef,
+                readerTotalPages,
+                isReaderHudVisible,
+                isTocOpen, setIsTocOpen,
+                isAppearanceOpen, setIsAppearanceOpen,
+                tocSearchQuery, setTocSearchQuery,
+                isFullscreen,
+                pageSlideDirection,
+                isSceneTransitioning,
+                readerContainerWidth,
+                visibleScrollChapter, setVisibleScrollChapter,
+                readerScrollContainerRef,
+                readerColumnsContainerRef,
+                visibleScrollSceneRef,
+                isProgrammaticScrollRef,
+                flatStoryScenesRef,
+                touchDragOffset,
+                isTouchDragging,
+                touchHasDraggedRef,
+                justTappedRef,
+                storyChapters,
+                currentChapterIndex,
+                currentChapter,
+                flatStoryScenes,
+                currentFlatSceneIndex,
+                currentReaderSceneItem,
+                scrollReaderToElement,
+                toggleReaderHud,
+                resetReaderHudTimer,
+                saveReadingProgress,
+                jumpToReaderChapter,
+                goToNextReaderChapter,
+                goToPrevReaderChapter,
+                jumpToReaderScene,
+                goToNextReaderScene,
+                turnReaderPage,
+                returnToActiveAudio,
+                enterReaderMode,
+                toggleFullscreen,
+                handleReaderTouchStart,
+                handleReaderTouchMove,
+                handleReaderTouchEnd
+            } = useReaderController({
+                activeStoryId,
+                story,
+                selectedSequence,
+                setSelectedSequence,
+                selectedScene,
+                setSelectedScene,
+                view,
+                setView,
+                theme,
+                setIsSidebarOpen,
+                showToast,
+                ttsStatusRef,
+                ttsPlayingSceneRef,
+                setIsFollowingAudio,
+                isFollowingAudioRef,
+                setReturnToAudioNonce
             });
 
-            // Reload reading progress when activeStoryId changes
-            useEffect(() => {
-                try {
-                    const key = `ellipsisprose_reader_progress_${activeStoryId}`;
-                    const saved = localStorage.getItem(key);
-                    if (saved) {
-                        setReadingProgress(JSON.parse(saved));
-                    } else {
-                        setReadingProgress({});
-                    }
-                } catch (e) { }
-            }, [activeStoryId]);
 
-            const [readerPageIndex, setReaderPageIndex] = useState(0);
-            const readerPageIndexRef = useRef(readerPageIndex);
-            readerPageIndexRef.current = readerPageIndex;
-            const [readerTotalPages, setReaderTotalPages] = useState(1);
-            const [isReaderHudVisible, setIsReaderHudVisible] = useState(true);
-            const [isTocOpen, setIsTocOpen] = useState(false);
-            const [isAppearanceOpen, setIsAppearanceOpen] = useState(false);
-            const [tocSearchQuery, setTocSearchQuery] = useState("");
-            const [isFullscreen, setIsFullscreen] = useState(false);
-            const [pageSlideDirection, setPageSlideDirection] = useState(null);
-            const [isSceneTransitioning, setIsSceneTransitioning] = useState(false);
-            const [readerContainerWidth, setReaderContainerWidth] = useState(0);
-            const pendingTargetPageRef = useRef(null);
-            const pendingTargetSceneRef = useRef(null);
-            const pendingScrollTargetRef = useRef(null);
-            const pageSlideTimerRef = useRef(null);
-            const readerScrollContainerRef = useRef(null);
-            const readerColumnsContainerRef = useRef(null);
-            const visibleScrollSceneRef = useRef({ seqIdx: 0, sceneIdx: 0 });
-            const isProgrammaticScrollRef = useRef(false);
-            const hudTimeoutRef = useRef(null);
-
-            const scrollReaderToElement = useCallback((targetEl, smooth = true) => {
-                const container = readerScrollContainerRef.current;
-                if (!container || !targetEl) return;
-                isProgrammaticScrollRef.current = true;
-                setTimeout(() => { isProgrammaticScrollRef.current = false; }, 650);
-                const containerRect = container.getBoundingClientRect();
-                const targetRect = targetEl.getBoundingClientRect();
-                const targetScrollTop = container.scrollTop + (targetRect.top - containerRect.top) - 30;
-                container.scrollTo({
-                    top: Math.max(0, targetScrollTop),
-                    behavior: smooth ? 'smooth' : 'auto'
-                });
-            }, []);
-            const [touchDragOffset, setTouchDragOffset] = useState(0);
-            const [isTouchDragging, setIsTouchDragging] = useState(false);
-            const touchHasDraggedRef = useRef(false);
-            const touchStartXRef = useRef(null);
-            const touchStartYRef = useRef(null);
-            const touchStartTimeRef = useRef(0);
-            const justTappedRef = useRef(false);
-            const touchLastXRef = useRef(0);
-            const touchLastTimeRef = useRef(0);
-            const touchVelocityRef = useRef(0);
-            const touchIsHorizontalRef = useRef(null);
-
-            const triggerPageSlide = (dir) => {
-                setPageSlideDirection(dir);
-                if (pageSlideTimerRef.current) clearTimeout(pageSlideTimerRef.current);
-                pageSlideTimerRef.current = setTimeout(() => {
-                    setPageSlideDirection(null);
-                }, 300);
-            };
-
-            const toggleReaderHud = (forceState) => {
-                if (hudTimeoutRef.current) clearTimeout(hudTimeoutRef.current);
-                setIsReaderHudVisible(prev => {
-                    const next = typeof forceState === 'boolean' ? forceState : !prev;
-                    return next;
-                });
-            };
-
-            const resetReaderHudTimer = () => {
-                if (hudTimeoutRef.current) clearTimeout(hudTimeoutRef.current);
-                setIsReaderHudVisible(true);
-            };
-
-            const saveReadingProgress = (seqIdx, sceneIdx, pageIdx = 0, scrollRatio = 0) => {
-                if (seqIdx === null || sceneIdx === null) return;
-                const updated = {
-                    storyId: activeStoryId,
-                    sequenceIndex: seqIdx,
-                    sceneIndex: sceneIdx,
-                    pageIndex: pageIdx,
-                    scrollRatio: scrollRatio,
-                    timestamp: new Date().toISOString(),
-                    completedScenes: {
-                        ...(readingProgress.completedScenes || {}),
-                        [`${seqIdx}-${sceneIdx}`]: true
-                    }
-                };
-                setReadingProgress(updated);
-                safeLocalStorageSet(`ellipsisprose_reader_progress_${activeStoryId}`, JSON.stringify(updated));
-            };
-
-            const storyChapters = useMemo(() => {
-                const list = [];
-                if (!story || !Array.isArray(story.sequences)) return list;
-
-                story.sequences.forEach((seq, seqIdx) => {
-                    const seqScenes = story.scenes?.[`${seqIdx}`] || [];
-                    const scenesWithData = seqScenes.map((scene, sceneIdx) => {
-                        const sId = `${seqIdx}-${sceneIdx}`;
-                        const proseObj = story.prose?.[sId];
-                        const proseText = (proseObj && (proseObj.final || proseObj.draft)) ? (proseObj.final || proseObj.draft) : "";
-                        const words = countWords(proseText);
-                        const readTime = readingMinutes(words);
-                        return {
-                            sceneIdx,
-                            scene,
-                            sceneKey: sId,
-                            hasProse: !!proseText,
-                            proseText,
-                            wordCount: words,
-                            readingTime: readTime
-                        };
-                    });
-
-                    const totalWords = scenesWithData.reduce((sum, sc) => sum + sc.wordCount, 0);
-                    const totalReadingTime = scenesWithData.reduce((sum, sc) => sum + sc.readingTime, 0);
-                    const hasAnyProse = scenesWithData.some(sc => sc.hasProse);
-
-                    list.push({
-                        chapterIndex: seqIdx,
-                        seqIdx,
-                        chapterNumber: seq.number || (seqIdx + 1),
-                        title: seq.title || `Chapter ${seq.number || (seqIdx + 1)}`,
-                        summary: seq.summary || "",
-                        sequence: seq,
-                        scenes: scenesWithData,
-                        totalWords,
-                        totalReadingTime,
-                        hasAnyProse
-                    });
-                });
-                return list;
-            }, [story?.sequences, story?.scenes, story?.prose]);
-
-            const currentChapterIndex = useMemo(() => {
-                if (selectedSequence === null || selectedSequence === undefined) return 0;
-                return (selectedSequence >= 0 && selectedSequence < storyChapters.length) ? selectedSequence : 0;
-            }, [selectedSequence, storyChapters]);
-
-            const currentChapter = storyChapters[currentChapterIndex] || storyChapters[0] || null;
-
-            const [visibleScrollChapter, setVisibleScrollChapter] = useState(0);
-
-            const flatStoryScenes = useMemo(() => {
-                const list = [];
-                if (!story || !Array.isArray(story.sequences)) return list;
-
-                story.sequences.forEach((seq, seqIdx) => {
-                    const seqScenes = story.scenes?.[`${seqIdx}`] || [];
-                    seqScenes.forEach((scene, sceneIdx) => {
-                        const sId = `${seqIdx}-${sceneIdx}`;
-                        const proseObj = story.prose?.[sId];
-                        const proseText = (proseObj && (proseObj.final || proseObj.draft)) ? (proseObj.final || proseObj.draft) : "";
-                        const words = countWords(proseText);
-                        const readTime = readingMinutes(words);
-
-                        list.push({
-                            seqIdx,
-                            sceneIdx,
-                            scene,
-                            sequence: seq,
-                            sceneKey: sId,
-                            hasProse: !!proseText,
-                            proseText,
-                            wordCount: words,
-                            readingTime: readTime
-                        });
-                    });
-                });
-                return list;
-            }, [story?.sequences, story?.scenes, story?.prose]);
-            flatStoryScenesRef.current = flatStoryScenes;
 
             // Precompute O(1) act-to-scenes lookup map to eliminate combinatorial DOM bloat
             const scenesByAct = useMemo(() => {
@@ -2517,666 +2306,7 @@ const ReactDOM = ReactDOMClient;
                 setLorePage(1);
             }, [loreSearch]);
 
-            const currentFlatSceneIndex = useMemo(() => {
-                if (selectedSequence === null || selectedScene === null) return 0;
-                const idx = flatStoryScenes.findIndex(s => s.seqIdx === selectedSequence && s.sceneIdx === selectedScene);
-                return idx >= 0 ? idx : 0;
-            }, [flatStoryScenes, selectedSequence, selectedScene]);
 
-            const currentReaderSceneItem = flatStoryScenes[currentFlatSceneIndex] || null;
-
-            // Micro-Haptic Feedback Helper
-            const triggerMicroHaptic = (pattern) => {
-                try {
-                    if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
-                        navigator.vibrate(pattern);
-                    }
-                } catch (e) { }
-            };
-
-            // Screen Wake Lock API for Reader Mode
-            useEffect(() => {
-                if (view !== 'reader') return;
-                if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
-
-                let wakeLockSentinel = null;
-                let isMounted = true;
-
-                const requestWakeLock = async () => {
-                    try {
-                        if (document.visibilityState === 'visible' && !wakeLockSentinel && isMounted) {
-                            wakeLockSentinel = await navigator.wakeLock.request('screen');
-                            wakeLockSentinel.addEventListener('release', () => {
-                                wakeLockSentinel = null;
-                            });
-                        }
-                    } catch (err) {
-                        wakeLockSentinel = null;
-                    }
-                };
-
-                requestWakeLock();
-
-                const handleVisibilityChange = () => {
-                    if (document.visibilityState === 'visible' && view === 'reader') {
-                        requestWakeLock();
-                    }
-                };
-
-                document.addEventListener('visibilitychange', handleVisibilityChange);
-
-                return () => {
-                    isMounted = false;
-                    document.removeEventListener('visibilitychange', handleVisibilityChange);
-                    if (wakeLockSentinel) {
-                        wakeLockSentinel.release().catch(() => { });
-                        wakeLockSentinel = null;
-                    }
-                };
-            }, [view]);
-
-            // Dynamic <meta name="theme-color"> Status Bar Blending for Reader Mode
-            useEffect(() => {
-                let meta = document.querySelector('meta[name="theme-color"]');
-                if (!meta) {
-                    meta = document.createElement('meta');
-                    meta.name = 'theme-color';
-                    document.head.appendChild(meta);
-                }
-
-                if (view === 'reader') {
-                    const rt = readerSettings?.readerTheme;
-                    let color = '#FAF8F5'; // Folio (Light)
-                    if (rt === 'sepia') color = '#F5EEDB';
-                    else if (rt === 'dark') color = '#1C1917';
-                    else if (rt === 'oled') color = '#000000';
-                    meta.setAttribute('content', color);
-                } else {
-                    const defaultAppColor = theme === 'dark' ? '#141416' : '#F7F5F0';
-                    meta.setAttribute('content', defaultAppColor);
-                }
-
-                return () => {
-                    if (meta && view === 'reader') {
-                        meta.setAttribute('content', theme === 'dark' ? '#141416' : '#F7F5F0');
-                    }
-                };
-            }, [view, readerSettings?.readerTheme, theme]);
-
-            const isTtsSessionActive = () => (
-                ['playing', 'paused', 'generating', 'loading-model', 'loading-library'].includes(ttsStatusRef.current)
-                || Boolean(ttsPlayingSceneRef.current)
-            );
-
-            const jumpToReaderChapter = (chapterIdx, initialPage = 0, dir = 'next', isProgrammatic = false) => {
-                if (chapterIdx < 0 || chapterIdx >= storyChapters.length) return;
-                if (!isProgrammatic && isTtsSessionActive()) {
-                    setIsFollowingAudio(false);
-                    isFollowingAudioRef.current = false;
-                }
-                triggerMicroHaptic([6, 30, 6]);
-                setIsSceneTransitioning(true);
-                triggerPageSlide(dir);
-                setSelectedSequence(chapterIdx);
-                setSelectedScene(0);
-                setVisibleScrollChapter(chapterIdx);
-                setIsTocOpen(false);
-
-                if (readerSettings.readingMode === 'scroll') {
-                    setTimeout(() => {
-                        const targetEl = document.getElementById(`reader-chapter-${chapterIdx}`);
-                        if (targetEl) {
-                            scrollReaderToElement(targetEl, true);
-                        }
-                    }, 60);
-                    saveReadingProgress(chapterIdx, 0, 0);
-                } else {
-                    if (initialPage === -1 || initialPage === 'last') {
-                        pendingTargetPageRef.current = 'last';
-                    } else {
-                        pendingTargetPageRef.current = initialPage;
-                        readerPageIndexRef.current = initialPage;
-                        setReaderPageIndex(initialPage);
-                    }
-                    if (initialPage !== -1 && initialPage !== 'last') {
-                        saveReadingProgress(chapterIdx, 0, initialPage);
-                    }
-                }
-                setTimeout(() => setIsSceneTransitioning(false), 420);
-            };
-
-            const goToNextReaderChapter = (isProgrammatic = false) => {
-                if (currentChapterIndex < storyChapters.length - 1) {
-                    jumpToReaderChapter(currentChapterIndex + 1, 0, 'next', isProgrammatic);
-                } else {
-                    triggerMicroHaptic([6, 30, 6]);
-                    showToast("You've reached the end of the manuscript!", "info");
-                }
-            };
-
-            const goToPrevReaderChapter = (isProgrammatic = false) => {
-                if (currentChapterIndex > 0) {
-                    jumpToReaderChapter(currentChapterIndex - 1, 'last', 'prev', isProgrammatic);
-                } else {
-                    triggerMicroHaptic([6, 30, 6]);
-                }
-            };
-
-            const jumpToReaderScene = (seqIdx, sceneIdx, dir = 'next', isProgrammatic = false) => {
-                if (seqIdx < 0 || seqIdx >= storyChapters.length) return;
-                if (!isProgrammatic && isTtsSessionActive()) {
-                    setIsFollowingAudio(false);
-                    isFollowingAudioRef.current = false;
-                }
-                triggerMicroHaptic([6, 30, 6]);
-                setIsSceneTransitioning(true);
-                triggerPageSlide(dir);
-                setSelectedSequence(seqIdx);
-                setSelectedScene(sceneIdx);
-                setVisibleScrollChapter(seqIdx);
-                setIsTocOpen(false);
-
-                if (readerSettings.readingMode === 'scroll') {
-                    setTimeout(() => {
-                        const targetEl = document.getElementById(`reader-scene-${seqIdx}-${sceneIdx}`) || document.getElementById(`reader-chapter-${seqIdx}`);
-                        if (targetEl) {
-                            scrollReaderToElement(targetEl, true);
-                        }
-                    }, 60);
-                    saveReadingProgress(seqIdx, sceneIdx, 0);
-                } else {
-                    if (seqIdx === selectedSequence && readerColumnsContainerRef.current) {
-                        const sceneEl = document.getElementById(`reader-paginated-scene-${seqIdx}-${sceneIdx}`);
-                        const gap = window.innerWidth <= 640 ? 24 : 48;
-                        const width = readerContainerWidth || measureReaderPages(readerColumnsContainerRef.current)?.width || 600;
-                        if (sceneEl && width > 0 && (sceneIdx === 0 || sceneEl.offsetLeft > 0)) {
-                            const targetPage = Math.max(0, Math.min(Math.floor(sceneEl.offsetLeft / (width + gap)), Math.max(1, readerTotalPages) - 1));
-                            readerPageIndexRef.current = targetPage;
-                            setReaderPageIndex(targetPage);
-                            saveReadingProgress(seqIdx, sceneIdx, targetPage);
-                        } else {
-                            pendingTargetSceneRef.current = { seqIdx, sceneIdx };
-                        }
-                    } else {
-                        readerPageIndexRef.current = 0;
-                        setReaderPageIndex(0);
-                        pendingTargetSceneRef.current = { seqIdx, sceneIdx };
-                    }
-                }
-                setTimeout(() => setIsSceneTransitioning(false), 420);
-            };
-
-            const goToNextReaderScene = () => {
-                goToNextReaderChapter();
-            };
-
-            const turnReaderPage = (delta, isProgrammatic = false) => {
-                if (isReaderHudVisible && !isTocOpen && !isAppearanceOpen && !isProgrammatic) {
-                    setIsReaderHudVisible(false);
-                }
-                if (!isProgrammatic && isTtsSessionActive()) {
-                    setIsFollowingAudio(false);
-                    isFollowingAudioRef.current = false;
-                }
-                if (readerSettings.readingMode === 'scroll') {
-                    if (readerScrollContainerRef.current) {
-                        const el = readerScrollContainerRef.current;
-                        const scrollAmount = Math.max(150, el.clientHeight - 48);
-                        if (delta > 0) {
-                            el.scrollBy({ top: scrollAmount, behavior: 'smooth' });
-                        } else {
-                            el.scrollBy({ top: -scrollAmount, behavior: 'smooth' });
-                        }
-                    }
-                    return;
-                }
-
-                // Paginated Mode
-                const findSceneForPage = (targetPg) => {
-                    if (!readerColumnsContainerRef.current) return selectedScene || 0;
-                    const scenes = currentChapter?.scenes || [];
-                    const gap = window.innerWidth <= 640 ? 24 : 48;
-                    const width = readerContainerWidth || 600;
-                    const pageLeft = targetPg * (width + gap);
-                    let foundSc = 0;
-                    for (let i = 0; i < scenes.length; i++) {
-                        const s = scenes[i];
-                        const sEl = document.getElementById(`reader-paginated-scene-${selectedSequence}-${s.sceneIdx}`);
-                        if (sEl && sEl.offsetLeft <= pageLeft + (width / 2)) {
-                            foundSc = s.sceneIdx;
-                        }
-                    }
-                    return foundSc;
-                };
-
-                if (isProgrammatic || Math.abs(delta) > 1) {
-                    const currentPg = readerPageIndexRef.current;
-                    const nextPg = Math.max(0, Math.min(Math.max(1, readerTotalPages) - 1, currentPg + delta));
-                    if (nextPg !== currentPg) {
-                        triggerMicroHaptic(8);
-                        triggerPageSlide(delta > 0 ? 'next' : 'prev');
-                        readerPageIndexRef.current = nextPg;
-                        setReaderPageIndex(nextPg);
-                        const currentSc = findSceneForPage(nextPg);
-                        setSelectedScene(currentSc);
-                        saveReadingProgress(selectedSequence, currentSc, nextPg);
-                    }
-                    return;
-                }
-
-                if (delta > 0) {
-                    if (readerPageIndexRef.current + 1 < readerTotalPages) {
-                        triggerMicroHaptic(8);
-                        triggerPageSlide('next');
-                        const next = readerPageIndexRef.current + 1;
-                        readerPageIndexRef.current = next;
-                        setReaderPageIndex(next);
-                        const currentSc = findSceneForPage(next);
-                        setSelectedScene(currentSc);
-                        saveReadingProgress(selectedSequence, currentSc, next);
-                    } else {
-                        goToNextReaderChapter(false);
-                    }
-                } else if (delta < 0) {
-                    if (readerPageIndexRef.current > 0) {
-                        triggerMicroHaptic(8);
-                        triggerPageSlide('prev');
-                        const next = readerPageIndexRef.current - 1;
-                        readerPageIndexRef.current = next;
-                        setReaderPageIndex(next);
-                        const currentSc = findSceneForPage(next);
-                        setSelectedScene(currentSc);
-                        saveReadingProgress(selectedSequence, currentSc, next);
-                    } else {
-                        goToPrevReaderChapter(false);
-                    }
-                }
-            };
-
-            const returnToActiveAudio = () => {
-                const active = ttsPlayingSceneRef.current;
-                setIsFollowingAudio(true);
-                isFollowingAudioRef.current = true;
-                if (active) {
-                    if (readerSettingsRef.current?.readingMode === 'paginated') {
-                        if (active.seqIdx !== selectedSequence) {
-                            jumpToReaderScene(active.seqIdx, active.sceneIdx, 'next', true);
-                        }
-                    } else {
-                        const targetEl = document.getElementById(`reader-scene-${active.seqIdx}-${active.sceneIdx}`)
-                            || document.getElementById(`reader-chapter-${active.seqIdx}`);
-                        if (targetEl) {
-                            scrollReaderToElement(targetEl, true);
-                        }
-                    }
-                }
-                setReturnToAudioNonce(n => n + 1);
-            };
-
-            const enterReaderMode = (seqIdx = null, scIdx = null) => {
-                let targetSeq = seqIdx;
-                let targetSc = scIdx;
-                let targetPage = null;
-
-                if (targetSeq === null) {
-                    if (readingProgress.sequenceIndex !== undefined) {
-                        targetSeq = readingProgress.sequenceIndex;
-                        targetSc = readingProgress.sceneIndex !== undefined ? readingProgress.sceneIndex : 0;
-                        targetPage = readingProgress.pageIndex || 0;
-                    } else if (selectedSequence !== null && selectedSequence !== undefined) {
-                        targetSeq = selectedSequence;
-                        targetSc = selectedScene !== null && selectedScene !== undefined ? selectedScene : 0;
-                        targetPage = readerPageIndex || 0;
-                    } else {
-                        const firstWithProse = storyChapters.find(ch => ch.hasAnyProse) || storyChapters[0];
-                        targetSeq = firstWithProse ? firstWithProse.seqIdx : 0;
-                        targetSc = 0;
-                        targetPage = 0;
-                    }
-                }
-
-                setSelectedSequence(targetSeq);
-                setSelectedScene(targetSc !== null && targetSc !== undefined ? targetSc : 0);
-                setVisibleScrollChapter(targetSeq);
-
-                if (readerSettings.readingMode === 'scroll') {
-                    pendingScrollTargetRef.current = {
-                        seqIdx: targetSeq,
-                        scIdx: targetSc,
-                        scrollRatio: (seqIdx === null && readingProgress.scrollRatio) ? readingProgress.scrollRatio : 0
-                    };
-                } else {
-                    if (seqIdx === null) {
-                        // Resuming reading or general ReaderView entry: prioritize saved page
-                        if (targetPage !== null && targetPage !== undefined) {
-                            pendingTargetPageRef.current = targetPage;
-                            setReaderPageIndex(targetPage);
-                        } else {
-                            pendingTargetPageRef.current = 0;
-                            setReaderPageIndex(0);
-                        }
-                        pendingTargetSceneRef.current = null;
-                    } else {
-                        // Explicit navigation to specific sequence / scene
-                        if (targetSc !== null && targetSc !== undefined && targetSc > 0) {
-                            pendingTargetSceneRef.current = { seqIdx: targetSeq, sceneIdx: targetSc };
-                            pendingTargetPageRef.current = null;
-                        } else if (targetPage !== null && targetPage !== undefined) {
-                            pendingTargetPageRef.current = targetPage;
-                            setReaderPageIndex(targetPage);
-                            pendingTargetSceneRef.current = null;
-                        } else {
-                            pendingTargetPageRef.current = 0;
-                            setReaderPageIndex(0);
-                            pendingTargetSceneRef.current = null;
-                        }
-                    }
-                }
-
-                setView('reader');
-                setIsSidebarOpen(false);
-                resetReaderHudTimer();
-            };
-
-            const toggleFullscreen = () => {
-                if (!document.fullscreenElement) {
-                    document.documentElement.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => { });
-                } else {
-                    if (document.exitFullscreen) {
-                        document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => { });
-                    }
-                }
-            };
-
-            // Scroll Mode position restoration effect
-            useEffect(() => {
-                if (view !== 'reader') return;
-                if (readerSettings.readingMode === 'scroll') {
-                    let attempts = 0;
-                    const tryScroll = () => {
-                        if (!pendingScrollTargetRef.current) return;
-                        const { seqIdx, scIdx, scrollRatio } = pendingScrollTargetRef.current;
-                        let target = null;
-                        if (scIdx !== null && scIdx !== undefined) {
-                            target = document.getElementById(`reader-scene-${seqIdx}-${scIdx}`);
-                        }
-                        if (!target && seqIdx !== null && seqIdx !== undefined) {
-                            target = document.getElementById(`reader-chapter-${seqIdx}`);
-                        }
-                        if (target) {
-                            scrollReaderToElement(target, false);
-                            pendingScrollTargetRef.current = null;
-                        } else if (scrollRatio > 0 && readerScrollContainerRef.current) {
-                            const el = readerScrollContainerRef.current;
-                            const max = el.scrollHeight - el.clientHeight;
-                            if (max > 0) {
-                                el.scrollTop = Math.round(scrollRatio * max);
-                                pendingScrollTargetRef.current = null;
-                            } else if (attempts < 5) {
-                                attempts++;
-                                setTimeout(tryScroll, 60);
-                            }
-                        } else if (attempts < 5) {
-                            attempts++;
-                            setTimeout(tryScroll, 60);
-                        }
-                    };
-                    const timer = setTimeout(tryScroll, 60);
-                    return () => clearTimeout(timer);
-                }
-            }, [view, readerSettings.readingMode, selectedSequence]);
-
-            // Dynamic synchronous page count calculation in Paginated Mode (runs before browser paint)
-            useLayoutEffect(() => {
-                if (view !== 'reader' || readerSettings.readingMode !== 'paginated') return;
-
-                const calculatePages = () => {
-                    if (!readerColumnsContainerRef.current) return;
-                    const measured = measureReaderPages(readerColumnsContainerRef.current);
-                    if (!measured) return;
-                    setReaderContainerWidth(measured.width);
-                    setReaderTotalPages(measured.pages);
-                    if (pendingTargetSceneRef.current) {
-                        const { seqIdx, sceneIdx } = pendingTargetSceneRef.current;
-                        const sceneEl = document.getElementById(`reader-paginated-scene-${seqIdx}-${sceneIdx}`);
-                        const gap = window.innerWidth <= 640 ? 24 : 48;
-                        if (sceneEl && measured.width > 0) {
-                            if (sceneIdx > 0 && sceneEl.offsetLeft === 0 && (measured.pages > 1 || currentChapter?.totalWords > 150)) {
-                                requestAnimationFrame(() => calculatePages());
-                                return;
-                            }
-                            const targetPage = Math.max(0, Math.min(Math.floor(sceneEl.offsetLeft / (measured.width + gap)), measured.pages - 1));
-                            setReaderPageIndex(targetPage);
-                            saveReadingProgress(seqIdx, sceneIdx, targetPage);
-                            pendingTargetSceneRef.current = null;
-                            pendingTargetPageRef.current = null;
-                            return;
-                        }
-                    }
-
-                    if (pendingTargetPageRef.current === 'last') {
-                        if (measured.pages <= 1 && currentChapter?.totalWords > 150) {
-                            requestAnimationFrame(() => calculatePages());
-                            return;
-                        }
-                        const lastIdx = Math.max(0, measured.pages - 1);
-                        setReaderPageIndex(lastIdx);
-                        pendingTargetPageRef.current = null;
-                    } else if (typeof pendingTargetPageRef.current === 'number') {
-                        if (pendingTargetPageRef.current >= measured.pages && currentChapter?.totalWords > 150) {
-                            requestAnimationFrame(() => calculatePages());
-                            return;
-                        }
-                        const targetIdx = Math.max(0, Math.min(pendingTargetPageRef.current, measured.pages - 1));
-                        setReaderPageIndex(targetIdx);
-                        pendingTargetPageRef.current = null;
-                    } else if (readerPageIndex >= measured.pages) {
-                        if (measured.pages > 1 || !currentChapter?.totalWords || currentChapter.totalWords <= 150) {
-                            setReaderPageIndex(Math.max(0, measured.pages - 1));
-                        }
-                    }
-                };
-
-                calculatePages();
-            }, [view, readerSettings, selectedSequence, currentChapter?.totalWords, readerContainerWidth]);
-
-            // Window resize handler for reader mode
-            useEffect(() => {
-                if (view !== 'reader' || readerSettings.readingMode !== 'paginated') return;
-                const handleResize = () => {
-                    if (!readerColumnsContainerRef.current) return;
-                    const measured = measureReaderPages(readerColumnsContainerRef.current);
-                    if (!measured) return;
-                    setReaderContainerWidth(measured.width);
-                    setReaderTotalPages(measured.pages);
-                    if (readerPageIndex >= measured.pages) {
-                        setReaderPageIndex(Math.max(0, measured.pages - 1));
-                    }
-                };
-
-                window.addEventListener('resize', handleResize);
-                window.addEventListener('orientationchange', handleResize);
-
-                let ro = null;
-                if (typeof ResizeObserver !== 'undefined' && readerColumnsContainerRef.current?.parentElement) {
-                    ro = new ResizeObserver(() => {
-                        handleResize();
-                    });
-                    ro.observe(readerColumnsContainerRef.current.parentElement);
-                }
-
-                return () => {
-                    window.removeEventListener('resize', handleResize);
-                    window.removeEventListener('orientationchange', handleResize);
-                    if (ro) ro.disconnect();
-                };
-            }, [view, readerSettings, selectedSequence, currentChapter?.totalWords]);
-
-            // Keyboard listener for reader mode
-            useEffect(() => {
-                if (view !== 'reader') return;
-
-                const handleKeyDown = (e) => {
-                    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable) return;
-
-                    const isNextPage = e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === 'ArrowDown' || (e.key === ' ' && !e.shiftKey) || e.code === 'PageDown' || e.code === 'ArrowRight';
-                    const isPrevPage = e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'ArrowUp' || (e.key === ' ' && e.shiftKey) || e.code === 'PageUp' || e.code === 'ArrowLeft';
-
-                    if (isNextPage) {
-                        e.preventDefault();
-                        turnReaderPage(1);
-                    } else if (isPrevPage) {
-                        e.preventDefault();
-                        turnReaderPage(-1);
-                    } else if (e.key === 'Escape') {
-                        if (isTocOpen) setIsTocOpen(false);
-                        else if (isAppearanceOpen) setIsAppearanceOpen(false);
-                        else setView('writer');
-                    } else if (e.key === 't' || e.key === 'T') {
-                        setIsTocOpen(prev => !prev);
-                        setIsAppearanceOpen(false);
-                    } else if (e.key === 'a' || e.key === 'A') {
-                        setIsAppearanceOpen(prev => !prev);
-                        setIsTocOpen(false);
-                    }
-                };
-
-                window.addEventListener('keydown', handleKeyDown);
-                return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [view, readerPageIndex, readerTotalPages, isTocOpen, isAppearanceOpen, currentChapterIndex, storyChapters, readerSettings.readingMode]);
-
-            // Touch Swipe & Direct Manipulation Gestures
-            const handleReaderTouchStart = (e) => {
-                if (!e.touches || e.touches.length === 0) return;
-                const clientX = e.touches[0].clientX;
-                const clientY = e.touches[0].clientY;
-                touchStartXRef.current = clientX;
-                touchStartYRef.current = clientY;
-                touchStartTimeRef.current = Date.now();
-                touchLastXRef.current = clientX;
-                touchLastTimeRef.current = Date.now();
-                touchVelocityRef.current = 0;
-                touchIsHorizontalRef.current = null;
-                touchHasDraggedRef.current = false;
-            };
-
-            const handleReaderTouchMove = (e) => {
-                if (touchStartXRef.current === null || !e.touches || e.touches.length === 0) return;
-                const clientX = e.touches[0].clientX;
-                const clientY = e.touches[0].clientY;
-                const diffX = clientX - touchStartXRef.current;
-                const diffY = clientY - touchStartYRef.current;
-                const dist = Math.hypot(diffX, diffY);
-
-                if (dist > 8) {
-                    touchHasDraggedRef.current = true;
-                }
-
-                if (touchIsHorizontalRef.current === null) {
-                    if (dist > 8) {
-                        touchIsHorizontalRef.current = Math.abs(diffX) >= Math.abs(diffY);
-                        if (touchIsHorizontalRef.current && readerSettings.readingMode === 'paginated') {
-                            setIsTouchDragging(true);
-                            touchHasDraggedRef.current = true;
-                        }
-                    }
-                }
-
-                if (touchIsHorizontalRef.current && readerSettings.readingMode === 'paginated') {
-                    if (e.cancelable) e.preventDefault();
-                    touchHasDraggedRef.current = true;
-
-                    const width = readerContainerWidth || (typeof window !== 'undefined' ? window.innerWidth : 600);
-                    const atStart = readerPageIndex === 0 && currentChapterIndex === 0;
-                    const atEnd = readerPageIndex >= readerTotalPages - 1 && currentChapterIndex >= storyChapters.length - 1;
-
-                    let offset = diffX;
-                    if ((diffX > 0 && atStart) || (diffX < 0 && atEnd)) {
-                        // Apple progressive resistance rubber-band formula
-                        const constant = 0.35;
-                        offset = (diffX * width * constant) / (width + constant * Math.abs(diffX));
-                    }
-
-                    setTouchDragOffset(offset);
-
-                    const now = Date.now();
-                    const dt = Math.max(1, now - touchLastTimeRef.current);
-                    touchVelocityRef.current = (clientX - touchLastXRef.current) / dt;
-                    touchLastXRef.current = clientX;
-                    touchLastTimeRef.current = now;
-                }
-            };
-
-            const handleReaderTouchEnd = (e) => {
-                if (touchStartXRef.current === null) return;
-                const endX = (e.changedTouches && e.changedTouches.length > 0) ? e.changedTouches[0].clientX : touchLastXRef.current;
-                const endY = (e.changedTouches && e.changedTouches.length > 0) ? e.changedTouches[0].clientY : touchStartYRef.current;
-                const diffX = endX - touchStartXRef.current;
-                const diffY = endY - (touchStartYRef.current || endY);
-                const totalDist = Math.hypot(diffX, diffY);
-                const dt = Date.now() - (touchStartTimeRef.current || 0);
-                const isHorizontal = touchIsHorizontalRef.current ?? (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 20);
-                const velocity = touchVelocityRef.current || 0;
-                const width = readerContainerWidth || (typeof window !== 'undefined' ? window.innerWidth : 600);
-
-                setIsTouchDragging(false);
-                setTouchDragOffset(0);
-
-                // Tap detection: minimal movement (< 16px) and short duration (< 450ms)
-                const wasTap = !touchHasDraggedRef.current && totalDist < 16 && dt < 450;
-                const tappedInteractive = e.target && e.target.closest && e.target.closest('button, a, input, select, .reader-ui-card, .studio-top-header');
-
-                if (wasTap && !tappedInteractive) {
-                    if (e.cancelable) {
-                        e.preventDefault();
-                    }
-                    const screenW = (typeof window !== 'undefined' ? window.innerWidth : 400);
-                    const screenH = (typeof window !== 'undefined' ? window.innerHeight : 800);
-                    const isMiddleX = endX >= screenW * 0.20 && endX <= screenW * 0.80;
-                    const isMiddleY = endY >= screenH * 0.12 && endY <= screenH * 0.88;
-
-                    justTappedRef.current = true;
-                    setTimeout(() => { justTappedRef.current = false; }, 400);
-
-                    if (readerSettings.readingMode === 'paginated') {
-                        if (isMiddleX && isMiddleY) {
-                            toggleReaderHud();
-                        } else if (endX < screenW * 0.20) {
-                            turnReaderPage(-1);
-                        } else if (endX > screenW * 0.80) {
-                            turnReaderPage(1);
-                        }
-                    } else {
-                        // Continuous Scroll Mode: single tap in middle portion brings up HUD consistently
-                        if (isMiddleX && isMiddleY) {
-                            toggleReaderHud();
-                        }
-                    }
-                } else if (!wasTap) {
-                    if (readerSettings.readingMode === 'paginated' && isHorizontal) {
-                        // Paginated Mode: flick detection or drag distance threshold
-                        const threshold = Math.min(60, Math.max(35, width * 0.15));
-                        const isFlickNext = velocity < -0.25 || (diffX < -threshold && velocity <= 0.1);
-                        const isFlickPrev = velocity > 0.25 || (diffX > threshold && velocity >= -0.1);
-
-                        if (isFlickNext) {
-                            turnReaderPage(1);
-                        } else if (isFlickPrev) {
-                            turnReaderPage(-1);
-                        }
-                    }
-                    // In continuous scroll mode, sideways swipes DO NOT jump chapters.
-                }
-
-                touchStartXRef.current = null;
-                touchStartYRef.current = null;
-                touchIsHorizontalRef.current = null;
-                touchVelocityRef.current = 0;
-
-                setTimeout(() => {
-                    touchHasDraggedRef.current = false;
-                }, 120);
-            };
 
             // --- KOKORO TTS ENGINE CONTROLLER & STREAMING AUDIO QUEUE ---
             const [ttsStatus, setTtsStatus] = useState('idle'); // 'idle' | 'loading-library' | 'loading-model' | 'initializing-hardware' | 'ready' | 'generating' | 'playing' | 'paused' | 'error'
@@ -3201,7 +2331,6 @@ const ReactDOM = ReactDOMClient;
             const ttsAudioRef = useRef(null);
             const ttsQueueRef = useRef([]);
             const ttsCurrentChunkIndexRef = useRef(0);
-            const ttsStatusRef = useRef('idle');
             const isAudioDramaModeActiveRef = useRef(false);
             const ttsSuppressSceneEffectRef = useRef(false);
             const ttsPendingRequestsRef = useRef(new Set());
@@ -6333,18 +5462,7 @@ const ReactDOM = ReactDOMClient;
             }, [loading]);
 
 
-            const logPipelineDelay = usePipelineStore(s => s.logPipelineDelay);
-            const logPipelineValidation = usePipelineStore(s => s.logPipelineValidation);
-            const logPipelineError = usePipelineStore(s => s.logPipelineError);
-            const logAudioDramaPipelineStageStart = usePipelineStore(s => s.logAudioDramaPipelineStageStart);
-            const logAudioDramaPipelineStageComplete = usePipelineStore(s => s.logAudioDramaPipelineStageComplete);
-            const logAudioDramaPipelineStageError = usePipelineStore(s => s.logAudioDramaPipelineStageError);
 
-            window.logAudioDramaPipelineStageStart = logAudioDramaPipelineStageStart;
-            window.logAudioDramaPipelineStageComplete = logAudioDramaPipelineStageComplete;
-            window.logAudioDramaPipelineStageError = logAudioDramaPipelineStageError;
-            window.logPipelineValidation = logPipelineValidation;
-            window.logPipelineError = logPipelineError;
             const fileInputRef = useRef(null);
 
             // RAG & Graph State
@@ -7302,23 +6420,7 @@ const ReactDOM = ReactDOMClient;
             const [collapsedActs, setCollapsedActs] = useState({});
             const [collapsedBeats, setCollapsedBeats] = useState({});
             const [expandedBeatAnalysis, setExpandedBeatAnalysis] = useState({});
-            const [toast, setToast] = useState(null); // { id, message, type: 'success'|'error'|'warning'|'info', bookCard?, actionLabel?, onAction? }
-            const toastTimerRef = useRef(null);
 
-            const showToast = (message, type = 'success', options = null) => {
-                if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-                const toastId = Date.now();
-                const opts = (options && typeof options === 'object') ? options : {};
-                setToast({ id: toastId, message, type, ...opts });
-                const durationMs = typeof opts.durationMs === 'number'
-                    ? opts.durationMs
-                    : (opts.bookCard ? 14000 : (type === 'error' ? 5000 : 3500));
-                if (durationMs > 0) {
-                    toastTimerRef.current = setTimeout(() => {
-                        setToast(prev => (prev && prev.id === toastId ? null : prev));
-                    }, durationMs);
-                }
-            };
 
 
             const toggleAct = (idx) => {
@@ -7333,49 +6435,6 @@ const ReactDOM = ReactDOMClient;
                 setExpandedBeatAnalysis(prev => ({ ...prev, [bId]: !prev[bId] }));
             };
 
-            // Persistence Effects
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_enable_review", enableReview); }, [enableReview]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_enable_style_polish", enableStylePolish); }, [enableStylePolish]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_enable_audio_drama_direction", enableAudioDramaDirectionPass); }, [enableAudioDramaDirectionPass]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_dev_provider", devProvider); }, [devProvider]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_dev_model", devModel); }, [devModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_review_provider", reviewProvider); }, [reviewProvider]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_review_model", reviewModel); }, [reviewModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_prose_provider", proseProvider); }, [proseProvider]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_prose_model", proseModel); }, [proseModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_api_provider", apiProvider); }, [apiProvider]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_embedding_provider", embeddingProvider); }, [embeddingProvider]);
-            useEffect(() => { safeLocalStorageSet("gemini_api_key", apiKey); }, [apiKey]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_api_timeout", apiTimeout); }, [apiTimeout]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_gemini_model", geminiModel); }, [geminiModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_openrouter_key", openRouterKey); }, [openRouterKey]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_openrouter_model", openRouterModel); }, [openRouterModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_openrouter_max_tokens", openRouterMaxTokens); }, [openRouterMaxTokens]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_nanogpt_key", nanoGptKey); }, [nanoGptKey]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_nanogpt_model", nanoGptModel); }, [nanoGptModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_nanogpt_prose_model", nanoGptProseModel); }, [nanoGptProseModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_kobold_url", koboldUrl); }, [koboldUrl]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_kobold_model", koboldModel); }, [koboldModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_codex_url", codexUrl); }, [codexUrl]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_codex_model", codexModel); }, [codexModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_codex_prose_model", codexProseModel); }, [codexProseModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_saved_models", savedModels); }, [savedModels]);
-            useEffect(() => {
-                if (openRouterModelsList.length > 0) {
-                    safeSessionStorageSet("ellipsisprose_openrouter_models_cache", openRouterModelsList);
-                }
-            }, [openRouterModelsList]);
-            useEffect(() => {
-                if (nanoGptModelsList.length > 0) {
-                    safeSessionStorageSet("ellipsisprose_nanogpt_models_cache", nanoGptModelsList);
-                }
-            }, [nanoGptModelsList]);
-
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_use_prose_model", useProseModel); }, [useProseModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_gemini_prose_model", geminiProseModel); }, [geminiProseModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_openrouter_prose_model", openRouterProseModel); }, [openRouterProseModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_kobold_prose_model", koboldProseModel); }, [koboldProseModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_custom_modes", customModes); }, [customModes]);
             useEffect(() => {
                 safeLocalStorageSet("ellipsisprose_enable_narrative_lenses_v2", enableNarrativeLenses);
                 safeLocalStorageSet("ellipsisprose_enable_narrative_lenses", enableNarrativeLenses);
@@ -7383,13 +6442,7 @@ const ReactDOM = ReactDOMClient;
             useEffect(() => { safeLocalStorageSet("ellipsisprose_banned_phrases", bannedPhrases); }, [bannedPhrases]);
             useEffect(() => { safeLocalStorageSet("ellipsisprose_slop_config_v1", slopConfig); }, [slopConfig]);
 
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_enable_thinking_act", enableThinkingAct); }, [enableThinkingAct]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_enable_thinking_scene", enableThinkingScene); }, [enableThinkingScene]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_enable_thinking_writing", enableThinkingWriting); }, [enableThinkingWriting]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_thinking_budget_story_arc", thinkingBudgetStoryArc); }, [thinkingBudgetStoryArc]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_thinking_budget_act", thinkingBudgetAct); }, [thinkingBudgetAct]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_thinking_budget_scene", thinkingBudgetScene); }, [thinkingBudgetScene]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_thinking_budget_writing", thinkingBudgetWriting); }, [thinkingBudgetWriting]);
+
 
             // Story persistence solely via IndexedDB (handles gigabytes, no quota limits, non-blocking)
             useEffect(() => {
@@ -7430,22 +6483,7 @@ const ReactDOM = ReactDOMClient;
                 else { try { localStorage.removeItem("ellipsisprose_selectedScene"); } catch (_) { } }
             }, [selectedScene]);
 
-            // Image Persistence Effects
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_image_provider", imageProvider); }, [imageProvider]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_image_model", imageModel); }, [imageModel]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_image_api_key", imageApiKey); }, [imageApiKey]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_url", comfyUrl); }, [comfyUrl]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_unet", comfyUnet); }, [comfyUnet]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_clip", comfyClip); }, [comfyClip]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_vae", comfyVae); }, [comfyVae]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_lora", comfyLora); }, [comfyLora]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_lora_strength", comfyLoraStrength); }, [comfyLoraStrength]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_steps", comfySteps); }, [comfySteps]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_cfg", comfyCfg); }, [comfyCfg]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_sampler", comfySampler); }, [comfySampler]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_scheduler", comfyScheduler); }, [comfyScheduler]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_comfy_timeout_sec", comfyTimeoutSec); }, [comfyTimeoutSec]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_custom_image_styles", customImageStyles); }, [customImageStyles]);
+
 
             // Ensure story has a unique ID and sync activeStoryId
             useEffect(() => {
@@ -7462,102 +6500,7 @@ const ReactDOM = ReactDOMClient;
                 }
             }, [story]);
 
-            // Load Cover Image from IndexedDB
-            useEffect(() => {
-                if (story && story.id) {
-                    imageStore.getImage(`cover_${story.id}`).then(dataUrl => {
-                        setLoadedImages(prev => ({ ...prev, cover: dataUrl }));
-                    }).catch(err => console.error("Error loading cover image:", err));
-                } else {
-                    setLoadedImages(prev => {
-                        const copy = { ...prev };
-                        delete copy.cover;
-                        return copy;
-                    });
-                }
-            }, [story?.id]);
 
-            // Clear portraits on story switches, then load the cast after story hydration.
-            useEffect(() => {
-                setLoadedImages(prev => ({ ...prev, portraits: {} }));
-                const pending = {};
-                (story?.cast || []).forEach(c => {
-                    if (portraitOperations.current.has(`portrait_${story.id}_${c.id}`)) pending[c.id] = true;
-                });
-                setPortraitLoading(pending);
-            }, [story?.id]);
-
-            const portraitCastIds = JSON.stringify((story?.cast || []).map(c => c.id).filter(id => id != null));
-            useEffect(() => {
-                if (!story?.id) return;
-                let cancelled = false;
-                const storyId = story.id;
-                const ids = JSON.parse(portraitCastIds);
-                Promise.all(ids.map(async id => {
-                    const key = `portrait_${storyId}_${id}`;
-                    const revision = portraitRevisions.current.get(key) || 0;
-                    const dataUrl = await imageStore.getImage(key);
-                    return { id, key, revision, dataUrl };
-                })).then(results => {
-                    if (cancelled || portraitStoryId.current !== storyId) return;
-                    setLoadedImages(prev => {
-                        if (cancelled || portraitStoryId.current !== storyId) return prev;
-                        const portraits = { ...prev.portraits };
-                        results.forEach(({ id, key, revision, dataUrl }) => {
-                            if (portraitOperations.current.has(key) || revision !== (portraitRevisions.current.get(key) || 0)) return;
-                            if (dataUrl) portraits[id] = dataUrl;
-                            else delete portraits[id];
-                        });
-                        return { ...prev, portraits };
-                    });
-                }).catch(err => {
-                    if (!cancelled) showToast('Failed to load character portraits: ' + err.message, 'error');
-                });
-                return () => { cancelled = true; };
-            }, [story?.id, portraitCastIds, portraitReload, imageStore]);
-
-            // Load Beat Images and Scene Illustration for the active scene from IndexedDB
-            const activeBeatsKey = `${selectedSequence !== null && selectedSequence !== undefined ? selectedSequence : 0}-${selectedScene !== null && selectedScene !== undefined ? selectedScene : 0}`;
-            const activeBeatsLength = Array.isArray(story?.beats?.[activeBeatsKey]) ? story.beats[activeBeatsKey].length : 0;
-            useEffect(() => {
-                if (story && story.id && selectedSequence !== null && selectedScene !== null) {
-                    const sId = `${selectedSequence}-${selectedScene}`;
-                    const beats = Array.isArray(story?.beats?.[sId]) ? story.beats[sId] : [];
-
-                    const promises = beats.map((_, bi) => {
-                        const imgKey = `beat_${story.id}_${sId}_${bi}`;
-                        return imageStore.getImage(imgKey).then(dataUrl => ({ type: 'beat', idx: bi, dataUrl }));
-                    });
-
-                    // Also fetch scene illustration
-                    const sceneImgPromise = imageStore.getImage(`scene_${story.id}_${sId}`).then(dataUrl => ({ type: 'scene', sId, dataUrl }));
-                    promises.push(sceneImgPromise);
-
-                    Promise.all(promises).then(results => {
-                        const newLoaded = {};
-                        results.forEach(res => {
-                            if (!res.dataUrl) return;
-                            if (res.type === 'beat') {
-                                newLoaded[`${sId}-${res.idx}`] = res.dataUrl;
-                            } else if (res.type === 'scene') {
-                                newLoaded[`scene_${res.sId}`] = res.dataUrl;
-                            }
-                        });
-                        setLoadedImages(prev => {
-                            const cleared = { cover: prev.cover, portraits: prev.portraits };
-                            Object.keys(prev).forEach(k => {
-                                if (k.startsWith('scene_') && k !== `scene_${sId}`) {
-                                    cleared[k] = prev[k];
-                                }
-                            });
-                            Object.keys(newLoaded).forEach(key => {
-                                cleared[key] = newLoaded[key];
-                            });
-                            return cleared;
-                        });
-                    }).catch(err => console.error("Error loading scene/beat images:", err));
-                }
-            }, [story?.id, selectedSequence, selectedScene, activeBeatsLength]);
 
             // ============================================================================
             // TIER 6.5: LORE EXTRACTION AGENT
@@ -7916,424 +6859,7 @@ const ReactDOM = ReactDOMClient;
                 });
             };
 
-            const callImageAPI = (prompt, aspectRatio = "1:1") => generateImage(prompt, aspectRatio, {
-                provider: imageProvider,
-                model: imageModel,
-                apiKey: imageApiKey,
-                fallbackGeminiKey: apiKey,
-                fallbackOpenRouterKey: openRouterKey,
-                onModelMigrated: setImageModel,
-                comfy: {
-                    url: comfyUrl,
-                    unet: comfyUnet,
-                    clip: comfyClip,
-                    vae: comfyVae,
-                    lora: comfyLora,
-                    loraStrength: comfyLoraStrength,
-                    steps: comfySteps,
-                    cfg: comfyCfg,
-                    sampler: comfySampler,
-                    scheduler: comfyScheduler,
-                    timeoutSec: comfyTimeoutSec
-                }
-            });
 
-            const generateCoverImage = async () => {
-                if (loadingCover) return;
-                setLoadingCover(true);
-                try {
-                    const sysPrompt = `You are an expert graphic designer and book cover artist. Your task is to design a distinctive, professional book cover design concept.
-You will take a novel's title, concept, status quo, inciting incident, and genre, and create a single highly detailed and symbolic image generation prompt for a book cover.
-Focus on composition, central imagery, symbolic representations of the themes, lighting, and mood. The cover image should be designed for a vertical format.
-Do not ask the image generator to print text on the cover (like the title or author name) to avoid scrambled AI text. Focus on the artwork itself.
-
-## Input Schema Definition
-You will receive the following novel information:
-- Title: The novel title
-- Genre: The genre
-- Concept: The novel concept
-- Status Quo: The world baseline
-- Inciting Incident: The disruption
-
-Output ONLY the raw image generation prompt itself. Do not include any intros or explanations. Wrap prompt text in standard envelope: <response><image_prompt>...</image_prompt></response>`;
-
-                    const userPrompt = `NOVEL INFORMATION:
-Title: ${story.title || "Untitled Novel"}
-Genre: ${story.style?.genre || "Not specified"}
-Concept: ${story.concept || "Not specified"}
-Status Quo: ${story.status_quo || "Not specified"}
-Inciting Incident: ${story.inciting_incident || "Not specified"}
-
-Please write a highly detailed and symbolic cover art image generation prompt. It must be optimized for a vertical aspect ratio. Describe the scene, layout, central motif, atmospheric colors, lighting, and symbolic imagery. Return ONLY the prompt text.
-
-BEGIN GENERATING IMAGE PROMPT`;
-
-                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Cover Image Prompt Agent", "dev");
-
-                    const selectedStyleId = story.imageStyle || 'none';
-                    const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
-                    const styleObj = combinedStyles.find(s => s.id === selectedStyleId);
-                    const styleDescription = styleObj ? styleObj.description : "";
-                    const finalPrompt = cleanImagePrompt(promptBase) + (styleDescription ? ", " + styleDescription : "");
-
-                    const dataUrl = await callImageAPI(finalPrompt, "3:4");
-                    await imageStore.saveImage(`cover_${story.id}`, dataUrl);
-                    setLoadedImages(prev => ({ ...prev, cover: dataUrl }));
-                    showToast("Cover image generated successfully!");
-                } catch (err) {
-                    console.error(err);
-                    alert("Cover Image Generation failed: " + err.message);
-                } finally {
-                    setLoadingCover(false);
-                }
-            };
-
-            // Serialize portrait edits per story/character and keep late results in their own story.
-            const updateCharacterPortrait = async (c, createDataUrl, successMessage, errorPrefix) => {
-                if (!story?.id || !c?.id) {
-                    showToast('A saved story and character are required for portraits.', 'error');
-                    return;
-                }
-                const storyId = story.id;
-                const key = `portrait_${storyId}_${c.id}`;
-                if (portraitOperations.current.has(key)) return;
-                portraitOperations.current.add(key);
-                portraitRevisions.current.set(key, (portraitRevisions.current.get(key) || 0) + 1);
-                setPortraitLoading(prev => ({ ...prev, [c.id]: true }));
-                try {
-                    const dataUrl = await createDataUrl();
-                    if (dataUrl === null) await imageStore.deleteImage(key);
-                    else await imageStore.saveImage(key, dataUrl);
-                    if (portraitStoryId.current === storyId) {
-                        setLoadedImages(prev => {
-                            if (portraitStoryId.current !== storyId) return prev;
-                            const portraits = { ...prev.portraits };
-                            if (dataUrl === null) delete portraits[c.id];
-                            else portraits[c.id] = dataUrl;
-                            return { ...prev, portraits };
-                        });
-                        showToast(successMessage, 'success');
-                    }
-                } catch (err) {
-                    showToast(errorPrefix + err.message, 'error');
-                } finally {
-                    portraitOperations.current.delete(key);
-                    if (portraitStoryId.current === storyId) {
-                        setPortraitLoading(prev => {
-                            if (portraitStoryId.current !== storyId) return prev;
-                            const next = { ...prev };
-                            delete next[c.id];
-                            return next;
-                        });
-                    }
-                }
-            };
-
-            const generateCharacterPortrait = async (c) => {
-                return updateCharacterPortrait(c, async () => {
-                    const sysPrompt = `You are a character portrait artist. Write a detailed image generation prompt grounded in the supplied character's appearance, role and temperament.
-Describe a waist-up, three-quarter view portrait, an expression that fits the character's temperament, and a plain softly lit background. Preserve any supplied physical traits. No text, no watermark.
-Output only <response><image_prompt>...</image_prompt></response>.`;
-                    const characterInfo = ['name', 'role', 'description', 'appearance', 'history', 'core_flaw', 'core_desire', 'vocal_cadence', 'voice_sample']
-                        .map(field => `${field}: ${c[field] || c.details?.[field] || 'Not specified'}`).join('\n');
-                    const userPrompt = `CHARACTER INFORMATION:
-${characterInfo}
-STORY GENRE: ${story.style?.genre || 'Not specified'}
-STORY MOOD: ${story.style?.mood || 'Not specified'}
-Create a waist-up, three-quarter view portrait prompt with an expression that fits this character's temperament, a plain softly lit background, no text, and no watermark.`;
-                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Character Portrait Prompt Agent", "dev");
-                    const selectedStyleId = story.imageStyle || 'none';
-                    const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
-                    const styleObj = combinedStyles.find(s => s.id === selectedStyleId);
-                    const styleDescription = styleObj ? styleObj.description : "";
-                    const finalPrompt = cleanImagePrompt(promptBase) + (styleDescription ? ", " + styleDescription : "");
-                    return callImageAPI(finalPrompt, "3:4");
-                }, `Portrait generated for ${c?.name || 'character'}.`, 'Character portrait generation failed: ');
-            };
-
-            const uploadCharacterPortrait = async (c, file) => {
-                if (!file) return;
-                if (!file.type.startsWith('image/')) {
-                    showToast('Please select an image file.', 'error');
-                    return;
-                }
-                return updateCharacterPortrait(c, () => new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onload = () => resolve(reader.result);
-                    reader.onerror = () => reject(new Error('Failed to read the selected file.'));
-                    reader.onabort = () => reject(new Error('Image upload was cancelled.'));
-                    reader.readAsDataURL(file);
-                }), `Portrait uploaded for ${c?.name || 'character'}.`, 'Character portrait upload failed: ');
-            };
-
-            const removeCharacterPortrait = async (c) => updateCharacterPortrait(c, async () => null,
-                `Portrait removed for ${c?.name || 'character'}.`, 'Failed to remove character portrait: ');
-
-            const deleteCoverImage = async () => {
-                requestConfirm({
-                    title: "Remove Cover Image?",
-                    message: "Are you sure you want to remove the cover illustration?",
-                    confirmLabel: "Remove Cover",
-                    danger: true,
-                    onConfirm: async () => {
-                        try {
-                            await imageStore.deleteImage(`cover_${story.id}`);
-                            setLoadedImages(prev => {
-                                const copy = { ...prev };
-                                delete copy.cover;
-                                return copy;
-                            });
-                            showToast("Cover image removed.");
-                        } catch (err) {
-                            console.error(err);
-                            showToast("Failed to delete cover image: " + err.message, "error");
-                        }
-                    }
-                });
-            };
-
-            const handleCoverUpload = (event) => {
-                const file = event.target.files[0];
-                if (!file) return;
-
-                if (!file.type.startsWith('image/')) {
-                    alert('Please select an image file.');
-                    return;
-                }
-
-                const reader = new FileReader();
-                reader.onload = async (e) => {
-                    const dataUrl = e.target.result;
-                    try {
-                        await imageStore.saveImage(`cover_${story.id}`, dataUrl);
-                        setLoadedImages(prev => ({ ...prev, cover: dataUrl }));
-                        showToast("Cover image uploaded successfully!");
-                        event.target.value = '';
-                    } catch (err) {
-                        alert("Failed to save uploaded cover image: " + err.message);
-                    }
-                };
-                reader.onerror = () => {
-                    alert("Failed to read the selected file.");
-                };
-                reader.readAsDataURL(file);
-            };
-
-            const generateBeatImage = async (seqIdx, sceneIdx, beatIdx) => {
-                let seq = seqIdx, s = sceneIdx, b = beatIdx;
-                if (b === undefined && typeof seq === 'number' && typeof s === 'number') {
-                    b = s;
-                    s = seq;
-                    seq = selectedSequence !== null ? selectedSequence : 0;
-                }
-                if (seq === undefined || seq === null) seq = selectedSequence !== null ? selectedSequence : 0;
-                if (s === undefined || s === null) s = selectedScene !== null ? selectedScene : 0;
-
-                const sId = `${seq}-${s}`;
-                const bId = `${sId}-${b}`;
-
-                setLoadingImages(prev => ({ ...prev, [bId]: true }));
-                try {
-                    const scene = (story.scenes[`${seq}`] || [])[s];
-                    const beats = story.beats[sId] || [];
-                    const beat = beats[b];
-                    if (!beat) throw new Error("Beat not found.");
-
-                    const sceneCast = (scene.cast_ids || []).map(id => (story.cast || []).find(c => c.id === id)).filter(Boolean);
-                    const castInfo = sceneCast.map(c => `- ${c.name}: ${c.role || 'No role details'}. Core Desire: ${c.core_desire || 'Unknown'}. Core Flaw: ${c.core_flaw || 'Unknown'}.`).join('\n');
-
-                    const sysPrompt = `You are a visual design agent. Your task is to take a narrative beat description and details about the characters present in the scene, and create a highly detailed, evocative, and specific image generation prompt.
-Focus on describing the visual scene: composition, characters (appearance, clothing, expression, posture), setting, lighting, and mood.
-Do not use buzzwords like "photorealistic", "ultra realistic", "8k", etc. Instead, write descriptive sentences that imply high quality and style.
-Avoid long-winded meta-explanations.
-
-## Input Schema Definition
-You will receive the following context blocks:
-- SCENE CONTEXT: Title and description of the scene.
-- CHARACTERS PRESENT IN SCENE: Details of characters present.
-- NARRATIVE BEAT TO VISUALIZE: Description and emotional subtext of the beat.
-
-Output ONLY the raw image generation prompt itself. Do not include any intro or wrap in JSON. Wrap prompt text in standard envelope: <response><image_prompt>...</image_prompt></response>`;
-
-                    const userPrompt = `SCENE CONTEXT:
-Title: ${scene.title}
-Blueprint Summary:
-${formatSceneSummary(scene) || scene.scene_events || scene.objective || ''}
-
-CHARACTERS PRESENT IN SCENE:
-${castInfo}
-
-NARRATIVE BEAT TO VISUALIZE:
-Description: ${beat.description}
-Emotional Subtext: ${beat.emotional_shift || 'None'}
-
-Please write a highly descriptive and specific image generation prompt focusing on the visual elements of this beat. Make it a single paragraph, rich in sensory details, character details, composition, and lighting. Do not include style-specific instructions, as a style will be appended later. Return ONLY the description.
-
-BEGIN GENERATING IMAGE PROMPT`;
-
-                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Beat Image Prompt Agent", "dev");
-
-                    const selectedStyleId = story.imageStyle || 'none';
-                    const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
-                    const styleObj = combinedStyles.find(s => s.id === selectedStyleId);
-                    const styleDescription = styleObj ? styleObj.description : "";
-                    const finalPrompt = cleanImagePrompt(promptBase) + (styleDescription ? ", " + styleDescription : "");
-
-                    const dataUrl = await callImageAPI(finalPrompt, "1:1");
-                    await imageStore.saveImage(`beat_${story.id}_${sId}_${b}`, dataUrl);
-                    setLoadedImages(prev => ({ ...prev, [bId]: dataUrl }));
-                    showToast(`Beat ${b + 1} image generated successfully!`);
-                } catch (err) {
-                    console.error(err);
-                    alert(`Beat Image Generation failed: ` + err.message);
-                } finally {
-                    setLoadingImages(prev => ({ ...prev, [bId]: false }));
-                }
-            };
-
-            const deleteBeatImage = async (seqIdx, sceneIdx, beatIdx) => {
-                let seq = seqIdx, s = sceneIdx, b = beatIdx;
-                if (b === undefined && typeof seq === 'number' && typeof s === 'number') {
-                    b = s;
-                    s = seq;
-                    seq = selectedSequence !== null ? selectedSequence : 0;
-                }
-                if (seq === undefined || seq === null) seq = selectedSequence !== null ? selectedSequence : 0;
-                if (s === undefined || s === null) s = selectedScene !== null ? selectedScene : 0;
-                requestConfirm({
-                    title: `Remove Image for Beat ${b + 1}?`,
-                    message: "Are you sure you want to remove this beat illustration?",
-                    confirmLabel: "Remove Image",
-                    danger: true,
-                    onConfirm: async () => {
-                        const sId = `${seq}-${s}`;
-                        const bId = `${sId}-${b}`;
-                        try {
-                            await imageStore.deleteImage(`beat_${story.id}_${sId}_${b}`);
-                            setLoadedImages(prev => {
-                                const copy = { ...prev };
-                                delete copy[bId];
-                                return copy;
-                            });
-                            showToast(`Beat ${b + 1} image removed.`);
-                        } catch (err) {
-                            console.error(err);
-                            showToast("Failed to delete beat image: " + err.message, "error");
-                        }
-                    }
-                });
-            };
-
-            const generateSceneImage = async (seqIdx, sceneIdx) => {
-                let seq = seqIdx !== undefined && seqIdx !== null ? seqIdx : (selectedSequence !== null ? selectedSequence : 0);
-                let s = sceneIdx !== undefined && sceneIdx !== null ? sceneIdx : (selectedScene !== null ? selectedScene : 0);
-                const sId = `${seq}-${s}`;
-
-                if (!story?.id) {
-                    showToast("Please save your story project before generating illustrations.", "error");
-                    return;
-                }
-
-                const sceneProse = story.prose?.[sId];
-                const proseText = (sceneProse?.final || sceneProse?.draft || "").trim();
-                if (!proseText) {
-                    showToast("Scene narrative prose is required to generate an illustration. Draft or write the scene first.", "error");
-                    return;
-                }
-
-                const sceneKey = `scene_${sId}`;
-                setLoadingImages(prev => ({ ...prev, [sceneKey]: true }));
-
-                try {
-                    const scene = (story.scenes?.[`${seq}`] || [])[s];
-                    const sceneTitle = scene?.title || `Scene ${s + 1}`;
-                    const sceneDesc = scene ? (formatSceneSummary(scene) || "No description provided") : "No description provided";
-
-                    const resolvedCast = scene ? getSceneActiveCast(scene, story) : [];
-                    const sceneCast = resolvedCast.length > 0
-                        ? resolvedCast
-                        : (scene?.cast_ids || []).map(id => (story.cast || []).find(c => c.id === id)).filter(Boolean);
-                    const castInfo = sceneCast.length > 0
-                        ? sceneCast.map(c => `- ${c.name}: ${c.role || 'No role details'}. Visual traits: ${c.visual_description || c.appearance || 'Not specified'}.`).join('\n')
-                        : "No specific cast defined for this scene.";
-
-                    // Supply up to 3500 chars of narrative prose for rich visual grounding
-                    const proseExcerpt = proseText.length > 3500 ? proseText.slice(0, 3500) + "..." : proseText;
-
-                    const sysPrompt = `You are a master cinematic concept artist and visual design agent for publishing. Your task is to analyze the narrative prose of a scene, along with the scene setting and characters, and create a highly detailed, evocative, cinematic image generation prompt capturing the scene's key dramatic climax or most visually striking moment.
-Focus on describing the visual scene: composition, camera angle, character positioning, facial expressions, attire, environment/setting, atmosphere, dramatic lighting, color palette, and mood.
-Do not use buzzwords like "photorealistic", "ultra realistic", "8k", or "trending on artstation". Instead, write vivid descriptive sentences that establish cinematic texture, depth, and emotional gravity.
-Avoid long-winded meta-explanations.
-
-## Input Schema Definition
-You will receive:
-- SCENE CONTEXT: Title, sequence, and narrative purpose.
-- CHARACTERS PRESENT: Cast details and visual traits.
-- SCENE NARRATIVE PROSE: The actual prose text from the manuscript.
-
-Output ONLY the raw image generation prompt itself. Wrap the prompt text in standard envelope: <response><image_prompt>...</image_prompt></response>`;
-
-                    const userPrompt = `SCENE CONTEXT:
-Title: ${sceneTitle}
-Description: ${sceneDesc}
-
-CHARACTERS IN SCENE:
-${castInfo}
-
-SCENE NARRATIVE PROSE:
-${proseExcerpt}
-
-Please craft a single, highly evocative and descriptive widescreen (16:9) cinematic concept art prompt that captures the dramatic peak and visual atmosphere of this scene. Focus on concrete visuals, environment details, character actions/expressions, and lighting. Do not include style-specific instructions as a global art style will be appended. Return ONLY the prompt wrapped in <response><image_prompt>...</image_prompt></response>.
-
-BEGIN GENERATING IMAGE PROMPT`;
-
-                    const promptBase = await callAI(userPrompt, sysPrompt, false, "Scene Image Prompt Agent", "dev");
-
-                    const selectedStyleId = story.imageStyle || 'none';
-                    const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
-                    const styleObj = combinedStyles.find(st => st.id === selectedStyleId);
-                    const styleDescription = styleObj ? styleObj.description : "";
-                    const finalPrompt = cleanImagePrompt(promptBase) + (styleDescription ? ", " + styleDescription : "");
-
-                    const dataUrl = await callImageAPI(finalPrompt, "16:9");
-                    await imageStore.saveImage(`scene_${story.id}_${sId}`, dataUrl);
-                    setLoadedImages(prev => ({ ...prev, [sceneKey]: dataUrl }));
-                    showToast(`${sceneTitle} illustration generated successfully!`);
-                } catch (err) {
-                    console.error(err);
-                    alert(`Scene Illustration Generation failed: ` + err.message);
-                } finally {
-                    setLoadingImages(prev => ({ ...prev, [sceneKey]: false }));
-                }
-            };
-
-            const deleteSceneImage = async (seqIdx, sceneIdx) => {
-                let seq = seqIdx !== undefined && seqIdx !== null ? seqIdx : (selectedSequence !== null ? selectedSequence : 0);
-                let s = sceneIdx !== undefined && sceneIdx !== null ? sceneIdx : (selectedScene !== null ? selectedScene : 0);
-                const sId = `${seq}-${s}`;
-                const sceneKey = `scene_${sId}`;
-
-                requestConfirm({
-                    title: "Remove Scene Illustration?",
-                    message: "Are you sure you want to remove the illustration for this scene?",
-                    confirmLabel: "Remove Illustration",
-                    danger: true,
-                    onConfirm: async () => {
-                        try {
-                            await imageStore.deleteImage(`scene_${story.id}_${sId}`);
-                            setLoadedImages(prev => {
-                                const copy = { ...prev };
-                                delete copy[sceneKey];
-                                return copy;
-                            });
-                            showToast("Scene illustration removed.");
-                        } catch (err) {
-                            console.error(err);
-                            showToast("Failed to delete scene illustration: " + err.message, "error");
-                        }
-                    }
-                });
-            };
 
 
             const handleExport = () => {
@@ -8470,35 +6996,7 @@ BEGIN GENERATING IMAGE PROMPT`;
                 }
             };
 
-            // Note: mapLogNameToStepId is hoisted to top-level scope alongside PIPELINE_STEPS
-            const callAI = async (prompt, systemPrompt, isJson = true, logName = "AI Task", modelRoleOrSize = "dev") => {
-                if (typeof window.callAI === 'function' && window.callAI !== callAI) {
-                    return await window.callAI(prompt, systemPrompt, isJson, logName, modelRoleOrSize);
-                }
-                return dispatchAI(
-                    { prompt, systemPrompt, isJson, logName, modelRoleOrSize },
-                    {
-                        modelSettings: {
-                            apiProvider, devProvider, devModel, reviewProvider, reviewModel,
-                            proseProvider, proseModel, geminiModel, openRouterModel,
-                            nanoGptModel, codexModel, koboldModel, koboldLoadedModel
-                        },
-                        thinkingSettings: {
-                            enableThinkingAct, enableThinkingScene, enableThinkingWriting,
-                            thinkingBudgetAct, thinkingBudgetStoryArc, thinkingBudgetScene, thinkingBudgetWriting
-                        },
-                        apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl,
-                        openRouterMaxTokens, apiTimeout,
-                        activeStory: (typeof storyRef !== 'undefined' && storyRef?.current) ? storyRef.current : story
-                    },
-                    {
-                        setCurrentPipelineStep,
-                        setPromptLog,
-                        showToast,
-                        logPipelineDelay
-                    }
-                );
-            };
+
 
             // ============================================================================
             // TIER 0.2: CHARACTER DEVELOPMENT AGENT - ON DEMAND
@@ -10142,176 +8640,7 @@ BEGIN GENERATING IMAGE PROMPT`;
 
             const handleDirectSceneVoices = (seqIdx = selectedSequence, sceneIdx = selectedScene) => orchestrateHandleDirectSceneVoices(getPipelineCtx(), seqIdx, sceneIdx);
 
-            const saveModel = (modelToSave) => {
-                const target = typeof modelToSave === 'string' ? modelToSave : (openRouterModel || geminiModel || nanoGptModel);
-                if (target && typeof target === 'string' && !savedModels.includes(target.trim())) {
-                    setSavedModels([...savedModels, target.trim()]);
-                }
-            };
 
-            const deleteModel = (modelToDelete) => {
-                setSavedModels(savedModels.filter(m => m !== modelToDelete));
-            };
-
-            const fetchGeminiModels = async () => {
-                if (!apiKey) return;
-                try {
-                    const { models, imageModels } = await fetchGeminiCatalog(apiKey);
-                    setGeminiModelsList(models);
-                    if (imageModels.length > 0) {
-                        setGeminiImageModelsList(imageModels);
-                        safeSessionStorageSet("ellipsisprose_gemini_image_models_cache", imageModels);
-                    }
-                } catch (e) {
-                    console.error("Error fetching Gemini models:", e);
-                }
-            };
-
-            const fetchGeminiImageModels = async (showFeedback = false) => {
-                const keyToUse = (imageApiKey || apiKey || '').trim();
-                if (!keyToUse) {
-                    if (showFeedback) showToast("Please configure your Gemini API Key first.", "info");
-                    return [];
-                }
-                setIsFetchingImageModels(true);
-                try {
-                    const imgModels = await fetchGeminiImageModelsCatalog(keyToUse);
-                    if (imgModels.length > 0) {
-                        setGeminiImageModelsList(imgModels);
-                        safeSessionStorageSet("ellipsisprose_gemini_image_models_cache", imgModels);
-                        if (showFeedback) showToast(`Loaded ${imgModels.length} Gemini image models on the fly!`, "success");
-                        return imgModels;
-                    } else if (showFeedback) {
-                        showToast("No dedicated image models found for this API key.", "info");
-                    }
-                } catch (err) {
-                    console.error("Error fetching Gemini image models:", err);
-                    if (showFeedback) showToast(`Failed to fetch image models: ${err.message}`, "error");
-                } finally {
-                    setIsFetchingImageModels(false);
-                }
-                return [];
-            };
-
-            const refreshOpenRouterModels = async (force = false) => {
-                try {
-                    const models = await fetchOpenRouterModels(openRouterKey);
-                    if (models && models.length > 0) {
-                        setOpenRouterModelsList(models);
-                        safeSessionStorageSet("ellipsisprose_openrouter_models_cache", models);
-                        try { localStorage.removeItem("ellipsisprose_openrouter_models_cache"); } catch (_) { }
-                    }
-                } catch (e) {
-                    console.warn("Failed to fetch OpenRouter model catalog:", e);
-                }
-            };
-
-            const refreshNanoGptModels = async (force = false) => {
-                try {
-                    const models = await fetchNanoGPTModels(nanoGptKey);
-                    if (models && models.length > 0) {
-                        setNanoGptModelsList(models);
-                        safeSessionStorageSet("ellipsisprose_nanogpt_models_cache", models);
-                        try { localStorage.removeItem("ellipsisprose_nanogpt_models_cache"); } catch (_) { }
-                    }
-                } catch (e) {
-                    console.warn("Failed to fetch nano-GPT model catalog:", e);
-                }
-            };
-
-            const checkKoboldStatus = async () => {
-                setKoboldStatus('checking');
-                setKoboldError(null);
-                try {
-                    const res = await checkKoboldCPPStatus(koboldUrl);
-                    if (res.online) {
-                        setKoboldStatus('connected');
-                        const mName = res.model || "KoboldCPP Loaded Model";
-                        setKoboldLoadedModel(mName);
-                        setKoboldModel(mName);
-                        window.koboldLoadedModelGlobal = mName;
-                    } else {
-                        setKoboldStatus('offline');
-                        setKoboldError(res.error || "Connection Refused / Server Offline");
-                    }
-                } catch (err) {
-                    setKoboldStatus('offline');
-                    setKoboldError(err.message || "Failed to connect to KoboldCPP");
-                }
-            };
-
-            const refreshCodexModels = async () => {
-                const refreshId = ++codexRefreshId.current;
-                setCodexStatus({ online: false, model: null, error: null });
-                setCodexEmbeddingStatus(null);
-                setCodexModelsList([]);
-                const result = await fetchCodexCatalog(codexUrl);
-                if (refreshId !== codexRefreshId.current) return;
-                setCodexEmbeddingStatus(result.embeddingStatus);
-                setCodexModelsList(result.models);
-                setCodexStatus(result.status);
-            };
-
-            const refreshComfyInfo = async () => {
-                const refreshId = ++comfyRefreshId.current;
-                setComfyStatus({ online: false, version: '', device: '', error: 'Checking ComfyUI...' });
-                setComfyOptions({ unet: [], clip: [], vae: [], lora: [], sampler: [], scheduler: [] });
-                const result = await fetchComfyInfoCatalog(comfyUrl);
-                if (refreshId !== comfyRefreshId.current) return;
-                if (result.status.online) {
-                    setComfyOptions(result.options);
-                    if (result.defaults.unet) setComfyUnet(value => value || result.defaults.unet);
-                    if (result.defaults.clip) setComfyClip(value => value || result.defaults.clip);
-                    if (result.defaults.vae) setComfyVae(value => value || result.defaults.vae);
-                }
-                setComfyStatus(result.status);
-            };
-
-            const handleCatalogRefresh = async (targetProvider = null) => {
-                const prov = targetProvider || devProvider || apiProvider;
-                if (prov === 'gemini') {
-                    await fetchGeminiModels();
-                    await fetchGeminiImageModels(false);
-                } else if (prov === 'openrouter') {
-                    await refreshOpenRouterModels(true);
-                } else if (prov === 'nanogpt') {
-                    await refreshNanoGptModels(true);
-                } else if (prov === 'codex') {
-                    await refreshCodexModels();
-                } else if (prov === 'koboldcpp') {
-                    await checkKoboldStatus();
-                }
-            };
-
-            // Trigger catalog fetch when entering settings or changing provider/key
-            useEffect(() => {
-                if (view === 'settings') {
-                    const activeProviders = new Set([
-                        devProvider || apiProvider,
-                        reviewProvider || devProvider || apiProvider,
-                        proseProvider || devProvider || apiProvider,
-                        embeddingProvider
-                    ]);
-                    if (activeProviders.has('gemini') && apiKey && geminiModelsList.length === 0) {
-                        fetchGeminiModels();
-                    }
-                    if (imageProvider === 'gemini' && (imageApiKey || apiKey) && geminiImageModelsList.length === 0) {
-                        fetchGeminiImageModels(false);
-                    }
-                    if (activeProviders.has('openrouter') && openRouterModelsList.length === 0) {
-                        refreshOpenRouterModels();
-                    }
-                    if (activeProviders.has('nanogpt') && nanoGptModelsList.length === 0) {
-                        refreshNanoGptModels();
-                    }
-                    if (activeProviders.has('koboldcpp')) {
-                        checkKoboldStatus();
-                    }
-                    if (activeProviders.has('codex') || embeddingProvider === 'codex') refreshCodexModels();
-                    if (imageProvider === 'comfyui') refreshComfyInfo();
-                }
-                return () => { codexRefreshId.current++; comfyRefreshId.current++; };
-            }, [view, devProvider, reviewProvider, proseProvider, apiProvider, embeddingProvider, apiKey, imageApiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl, imageProvider, comfyUrl]);
 
             const handleSelectLibraryStory = (targetItem, targetView = 'dashboard') => {
                 if (!targetItem) return;
