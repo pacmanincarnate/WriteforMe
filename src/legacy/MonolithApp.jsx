@@ -464,7 +464,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useEpistemicEditors, useMcpBridge, useModelCatalog, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -1451,7 +1451,15 @@ const ReactDOM = ReactDOMClient;
             const [editorialToolName, setEditorialToolName] = useState('inspect_narrative_hierarchy');
             const [editorialToolArgs, setEditorialToolArgs] = useState({ scene_id: 'sc_0_0', pattern: '', query: '', character_id: '', topic_or_entity_id: '' });
             const [editorialToolOutput, setEditorialToolOutput] = useState(null);
-            const [novelIgnoreDraftRule, setNovelIgnoreDraftRule] = useState({ rule_type: 'ALLOW_PHRASE', pattern: '', scope: 'GLOBAL', reason: 'Intentional stylistic choice' });
+            // .novelignore rule form and handlers (Phase 6E-3).
+            const {
+                novelIgnoreDraftRule, setNovelIgnoreDraftRule,
+                handleAddNovelIgnoreRule,
+                handleRemoveNovelIgnoreRule
+            } = useNovelIgnoreRules({
+                setStory, showToast,
+                saveStory: storyStore?.saveStory ? (id, value) => storyStore.saveStory(id, value) : undefined
+            });
 
             // Archetype State
             const [archetypeOptions, setArchetypeOptions] = useState([]);
@@ -2645,150 +2653,19 @@ const ReactDOM = ReactDOMClient;
             // ============================================================================
             const runDirectivePlanner = (refinementRequest = '') => orchestrateRunDirectivePlanner(getPipelineCtx(), refinementRequest);
 
-            const handleUpdateActionField = (actionIdx, field, value) => {
-                setDirectivePlan(prev => {
-                    if (!prev) return prev;
-                    const nextActions = [...prev.actions];
-                    if (nextActions[actionIdx]) {
-                        nextActions[actionIdx] = {
-                            ...nextActions[actionIdx],
-                            [field]: value,
-                            ...(['target_seq_idx', 'target_sequence_idx'].includes(field)
-                                ? { target_seq_idx: value, target_sequence_idx: value } : {})
-                        };
-                    }
-                    return { ...prev, actions: nextActions };
-                });
-            };
-
-            const handleUpdateActionDetail = (actionIdx, detailField, value) => {
-                setDirectivePlan(prev => {
-                    if (!prev) return prev;
-                    const nextActions = [...prev.actions];
-                    if (nextActions[actionIdx]) {
-                        nextActions[actionIdx] = {
-                            ...nextActions[actionIdx],
-                            details: {
-                                ...(nextActions[actionIdx].details || {}),
-                                [detailField]: value
-                            }
-                        };
-                    }
-                    return { ...prev, actions: nextActions };
-                });
-            };
-
-            const handleUpdateAppliedEdit = (actionIdx, editIdx, updates, isCascade = false) => {
-                setDirectivePlan(prev => prev ? {
-                    ...prev,
-                    actions: prev.actions.map((action, index) => index === actionIdx && action.result ? {
-                        ...action,
-                        result: {
-                            ...action.result,
-                            ...(isCascade ? {
-                                cascade: { ...action.result.cascade, appliedEdits: action.result.cascade.appliedEdits.map((edit, index) => index === editIdx ? { ...edit, ...updates } : edit) }
-                            } : {
-                                appliedEdits: action.result.appliedEdits.map((edit, index) => index === editIdx ? { ...edit, ...updates } : edit)
-                            })
-                        }
-                    } : action)
-                } : prev);
-            };
-
-            const handleToggleDirectiveActionSkip = (actionIdx) => {
-                setDirectivePlan(prev => prev ? {
-                    ...prev,
-                    actions: prev.actions.map((action, idx) => idx === actionIdx ? { ...action, skipped: !action.skipped } : action)
-                } : prev);
-            };
-
-            const handleRemoveDirectiveAction = (actionIdx) => {
-                setDirectivePlan(prev => {
-                    if (!prev) return prev;
-                    const nextActions = prev.actions.filter((_, idx) => idx !== actionIdx);
-                    return { ...prev, actions: nextActions };
-                });
-                setExpandedDirectiveActions(prev => {
-                    const next = {};
-                    Object.entries(prev || {}).forEach(([k, v]) => {
-                        const n = parseInt(k, 10);
-                        if (n < actionIdx && v) next[n] = true;
-                        else if (n > actionIdx && v) next[n - 1] = true;
-                    });
-                    return next;
-                });
-            };
-
-            const handleAddManualDirectiveAction = () => {
-                if (isPlanningDirective || isExecutingDirective) return;
-                const stats = computeDirectiveStoryStats(story);
-                const newAction = stats.firstUnwrittenSeq
-                    ? {
-                        action_type: 'PERSIST_FUTURE_MANDATE',
-                        target_act_idx: Math.max(0, parseActNumber(story.sequences?.[stats.firstUnwrittenSeq.seqIdx]?.parent_act, 1) - 1),
-                        target_seq_idx: stats.firstUnwrittenSeq.seqIdx,
-                        target_sequence_idx: stats.firstUnwrittenSeq.seqIdx,
-                        target_scene_idx: 0,
-                        description: `Guide future scenes in Sequence ${stats.firstUnwrittenSeq.number}`,
-                        details: { target_scope: 'sequence', mandate_label: 'Direction', mandate_text: '' }
-                    }
-                    : stats.hasOutline
-                        ? {
-                            action_type: 'ADD_SCENE',
-                            target_act_idx: 0,
-                            target_seq_idx: 0,
-                            target_sequence_idx: 0,
-                            target_scene_idx: 0,
-                            description: 'Add new scene blueprint to Sequence 1',
-                            details: { title: '', scene_type: 'PROACTIVE', pov_character: stats.firstCastName || '', objective: '', scene_events: '' }
-                        }
-                        : {
-                            action_type: 'MODIFY_STORY_METADATA',
-                            target_act_idx: 0,
-                            target_seq_idx: 0,
-                            target_sequence_idx: 0,
-                            target_scene_idx: 0,
-                            description: "Update global Author's Note",
-                            details: { author_note: story.author_note || '' }
-                        };
-                const nextIdx = directivePlan?.actions?.length || 0;
-                setExpandedDirectiveActions(exp => ({ ...exp, [nextIdx]: true }));
-                setDirectivePlan(prev => {
-                    const base = prev || { evaluation: 'Custom manual directive plan.', scope_kind: 'local', consistency_notes: '', actions: [] };
-                    return { ...base, actions: [...base.actions, newAction] };
-                });
-            };
-
-            const handleUndoSurgicalEdit = (actionIdx, editIdx, isCascade = false) => {
-                if (isPlanningDirective || isExecutingDirective) return;
-                const result = directivePlan?.actions[actionIdx]?.result;
-                const edit = (isCascade ? result?.cascade : result)?.appliedEdits?.[editIdx];
-                if (!edit || edit.undone) return;
-                // Keep the scene used at execution, even if the action's target controls were later edited.
-                const sId = result.proseSceneId;
-                if (!sId) return;
-                const currentProse = story.prose?.[sId]?.final || '';
-                const match = locateNeedle(currentProse, edit.after);
-                if (!match) return;
-                const restored = currentProse.slice(0, match.start) + edit.before + currentProse.slice(match.end);
-                setStory(prev => ({
-                    ...prev,
-                    prose: {
-                        ...prev.prose, [sId]: {
-                            ...prev.prose[sId], final: restored,
-                            ...(isCascade ? { stale: { reason: 'A scene-to-prose cascade edit was undone.', at: Date.now() } } : {})
-                        }
-                    }
-                }));
-                handleUpdateAppliedEdit(actionIdx, editIdx, { undone: true }, isCascade);
-                // User-driven undo never launches verification; prior verdicts no longer describe this prose.
-                setDirectivePlan(prev => prev ? {
-                    ...prev, consistencyReview: undefined,
-                    actions: prev.actions.map(action => action.result?.proseSceneId === sId ? {
-                        ...action, result: { ...action.result, review: undefined }
-                    } : action)
-                } : prev);
-            };
+            // Manual edits to the directive plan (Phase 6E-3).
+            const {
+                handleUpdateActionField,
+                handleUpdateActionDetail,
+                handleUpdateAppliedEdit,
+                handleToggleDirectiveActionSkip,
+                handleRemoveDirectiveAction,
+                handleAddManualDirectiveAction,
+                handleUndoSurgicalEdit
+            } = useDirectivePlanEditors({
+                story, setStory, directivePlan, setDirectivePlan, setExpandedDirectiveActions,
+                isPlanningDirective, isExecutingDirective
+            });
 
             const retryFailedSurgicalEdits = (opts) => orchestrateRetryFailedSurgicalEdits(getPipelineCtx(), opts);
 
@@ -2808,62 +2685,6 @@ const ReactDOM = ReactDOMClient;
             const revertHarnessTransaction = (transactionId) => orchestrateRevertHarnessTransaction(getPipelineCtx(), transactionId);
 
             const revertAllHarnessTransactions = () => orchestrateRevertAllHarnessTransactions(getPipelineCtx());
-
-            const handleAddNovelIgnoreRule = () => {
-                if (!novelIgnoreDraftRule.pattern.trim()) {
-                    showToast("Enter a phrase or rule pattern for .novelignore.", "warning");
-                    return;
-                }
-                setStory(prev => {
-                    const existingRules = normalizeIntentionalOverrides(
-                        prev.editorial_harness?.constitution?.intentionalOverrides || 
-                        prev.editorial_harness?.customConstitutionOverrides || 
-                        prev.editorial_harness?.novelignore
-                    );
-                    const nextRules = [...existingRules, {
-                        rule_type: novelIgnoreDraftRule.rule_type || "ALLOW_PHRASE",
-                        scope: novelIgnoreDraftRule.scope || "GLOBAL",
-                        pattern: novelIgnoreDraftRule.pattern.trim(),
-                        reason: novelIgnoreDraftRule.reason || "Intentional stylistic exemption"
-                    }];
-                    const nextConstitution = compileAestheticConstitution(prev, nextRules);
-                    const nextHarness = {
-                        ...(prev.editorial_harness || {}),
-                        customConstitutionOverrides: nextRules,
-                        constitution: nextConstitution
-                    };
-                    const updated = { ...prev, editorial_harness: nextHarness };
-                    if (storyStore?.saveStory && updated.id) {
-                        storyStore.saveStory(updated.id, updated).catch(() => {});
-                    }
-                    return updated;
-                });
-                setNovelIgnoreDraftRule(prev => ({ ...prev, pattern: '' }));
-                showToast("Added rule to .novelignore constitution.", "success");
-            };
-
-            const handleRemoveNovelIgnoreRule = (idx) => {
-                setStory(prev => {
-                    const existingRules = normalizeIntentionalOverrides(
-                        prev.editorial_harness?.constitution?.intentionalOverrides || 
-                        prev.editorial_harness?.customConstitutionOverrides || 
-                        prev.editorial_harness?.novelignore
-                    );
-                    const nextRules = existingRules.filter((_, i) => i !== idx);
-                    const nextConstitution = compileAestheticConstitution(prev, nextRules);
-                    const nextHarness = {
-                        ...(prev.editorial_harness || {}),
-                        customConstitutionOverrides: nextRules,
-                        constitution: nextConstitution
-                    };
-                    const updated = { ...prev, editorial_harness: nextHarness };
-                    if (storyStore?.saveStory && updated.id) {
-                        storyStore.saveStory(updated.id, updated).catch(() => {});
-                    }
-                    return updated;
-                });
-                showToast("Removed .novelignore exemption rule.", "info");
-            };
 
             const handleRunHarnessInspectorTool = () => {
                 const currentStory = storyRef.current || story;

@@ -10,3 +10,5 @@ export * from './useStoryEditors';
 export * from './useSlopConfig';
 export * from './useCustomNarrativeModes';
 export * from './useEpistemicEditors';
+export * from './useDirectivePlanEditors';
+export * from './useNovelIgnoreRules';
