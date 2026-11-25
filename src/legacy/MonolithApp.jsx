@@ -464,7 +464,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -2072,38 +2072,8 @@ const ReactDOM = ReactDOMClient;
             initTtsEngineRef.current = initTtsEngine;
             isTtsBusyOrPlayingRef.current = isTtsBusyOrPlaying || isAuditioningVoice;
 
-            const [expandedSequences, setExpandedSequences] = useState({});
-
-            const toggleSequence = (seqIdx) => {
-                setExpandedSequences(prev => ({
-                    ...prev,
-                    [seqIdx]: !prev[seqIdx]
-                }));
-            };
-
-            const toggleAllSequencesInAct = (actIdx, expand = true, targetSeqIndices = null) => {
-                if (Array.isArray(targetSeqIndices)) {
-                    setExpandedSequences(prev => {
-                        const next = { ...prev };
-                        targetSeqIndices.forEach(sIdx => {
-                            next[sIdx] = expand;
-                        });
-                        return next;
-                    });
-                    return;
-                }
-                const actNumber = (story.acts && story.acts[actIdx] && parseActNumber(story.acts[actIdx].number, actIdx + 1)) || (actIdx + 1);
-                setExpandedSequences(prev => {
-                    const next = { ...prev };
-                    (story.sequences || []).forEach((seq, sIdx) => {
-                        const seqNum = seq.number != null ? seq.number : (sIdx + 1);
-                        if (parseActNumber(seq.parent_act != null ? seq.parent_act : actForSequence(seqNum), actForSequence(seqNum)) === actNumber) {
-                            next[sIdx] = expand;
-                        }
-                    });
-                    return next;
-                });
-            };
+            // Outline expand / collapse state (Phase 6E-3).
+            const { expandedSequences, toggleSequence, toggleAllSequencesInAct } = useOutlineExpansion({ story });
 
             useEffect(() => {
                 if (!loading) {
@@ -2173,100 +2143,8 @@ const ReactDOM = ReactDOMClient;
                 critique: ""
             });
 
-            // Prompt Log Detail Modal State (for Verbose Dossier, Thinking, and Response)
-            const [logModalState, setLogModalState] = useState({
-                isOpen: false,
-                type: 'verbose', // 'verbose' | 'prompt' | 'thinking' | 'response'
-                title: '',
-                functionName: '',
-                timestamp: '',
-                model: '',
-                tokens: null,
-                content: '',
-                entry: null
-            });
-
-            const openLogDetailModal = (typeOrEntry, maybeEntry) => {
-                let type = typeOrEntry;
-                let entry = maybeEntry;
-                if (typeof typeOrEntry === 'object' && typeOrEntry !== null) {
-                    entry = typeOrEntry;
-                    type = typeof maybeEntry === 'string' ? maybeEntry : 'verbose';
-                } else if (typeof maybeEntry === 'object' && maybeEntry !== null) {
-                    entry = maybeEntry;
-                    type = typeof typeOrEntry === 'string' ? typeOrEntry : 'verbose';
-                } else if (typeof typeOrEntry === 'string' && typeof maybeEntry === 'string') {
-                    entry = promptLog.find(l => l && (String(l.id) === String(typeOrEntry) || String(l.id) === String(maybeEntry))) || null;
-                    type = (typeOrEntry === 'verbose' || typeOrEntry === 'thinking' || typeOrEntry === 'prompt' || typeOrEntry === 'response') ? typeOrEntry : (maybeEntry || 'verbose');
-                }
-                if (!entry) return;
-                if (type === 'verbose') {
-                    const verboseContent = formatVerboseLogEntry(entry);
-                    setLogModalState({
-                        isOpen: true,
-                        type: 'verbose',
-                        title: 'Complete Verbose Dossier & Parameters',
-                        functionName: entry.function,
-                        timestamp: entry.timestamp,
-                        model: entry.modelUsed || '',
-                        tokens: entry.tokensUsed,
-                        content: verboseContent,
-                        entry: entry
-                    });
-                } else if (type === 'thinking') {
-                    const thinkingContent = entry.reasoningText || "(No internal thinking/reasoning trace was returned for this prompt execution.)";
-                    const tokens = entry.thinkingTokens ?? entry.reasoningTokensUsed ?? 0;
-                    setLogModalState({
-                        isOpen: true,
-                        type: 'thinking',
-                        title: 'AI Thinking & Reasoning Trace',
-                        functionName: entry.function,
-                        timestamp: entry.timestamp,
-                        model: entry.modelUsed || '',
-                        tokens: tokens,
-                        content: thinkingContent,
-                        entry: entry
-                    });
-                } else if (type === 'prompt') {
-                    let promptContent = "";
-                    const effectiveSys = entry.finalSystemPrompt || entry.systemPrompt || "";
-                    if (effectiveSys.trim()) {
-                        promptContent += `=== SYSTEM PROMPT ===\n\n${effectiveSys.trim()}\n\n`;
-                    }
-                    if (entry.prompt && entry.prompt.trim()) {
-                        promptContent += `=== USER PROMPT & INPUT DATA ===\n\n${entry.prompt.trim()}`;
-                    }
-                    if (!promptContent.trim()) {
-                        promptContent = "(No prompt context recorded for this step.)";
-                    }
-                    const tokens = entry.promptTokens ?? (promptContent ? Math.round(promptContent.trim().split(/\s+/).length * 1.33) : null);
-                    setLogModalState({
-                        isOpen: true,
-                        type: 'prompt',
-                        title: 'Sent Prompt & Input Context',
-                        functionName: entry.function,
-                        timestamp: entry.timestamp,
-                        model: entry.modelUsed || '',
-                        tokens: tokens,
-                        content: promptContent,
-                        entry: entry
-                    });
-                } else {
-                    const respContent = entry.response || entry.responseSnippet || "(No response output recorded.)";
-                    const tokens = entry.responseTokens ?? (entry.tokensUsed ? Math.max(0, entry.tokensUsed - (entry.thinkingTokens || 0)) : null);
-                    setLogModalState({
-                        isOpen: true,
-                        type: 'response',
-                        title: 'AI Generated Response Output',
-                        functionName: entry.function,
-                        timestamp: entry.timestamp,
-                        model: entry.modelUsed || '',
-                        tokens: tokens,
-                        content: respContent,
-                        entry: entry
-                    });
-                }
-            };
+            // Prompt-log detail dialog (Phase 6E-3).
+            const { logModalState, setLogModalState, openLogDetailModal } = useLogDetailModal({ promptLog });
 
             const openCritiqueModal = (beatNumber, critique) => {
                 setCritiqueState({
@@ -2832,22 +2710,6 @@ const ReactDOM = ReactDOMClient;
             window.handleWorldUpdates = handleWorldUpdates;
             window.applyWorldUpdates = applyWorldUpdates;
 
-            const handleDeleteLore = (index) => {
-                requestConfirm({
-                    title: "Delete Lore Item?",
-                    message: "Are you sure you want to delete this lore item from world memory?",
-                    confirmLabel: "Delete Lore",
-                    danger: true,
-                    onConfirm: () => {
-                        setStory(prev => {
-                            const newLore = [...prev.lore];
-                            newLore.splice(index, 1);
-                            return { ...prev, lore: newLore };
-                        });
-                        showToast("Lore item deleted.", "info");
-                    }
-                });
-            };
 
 
             const handleResetStoryStage = (stage, targetStoryObj = null) => {
@@ -3184,7 +3046,8 @@ const ReactDOM = ReactDOMClient;
                 handleAddScene,
                 handleMoveScene,
                 handleAddStoryAllowlistItem,
-                handleRemoveStoryAllowlistItem
+                handleRemoveStoryAllowlistItem,
+                handleDeleteLore
             } = useStoryEditors({
                 story,
                 setStory,

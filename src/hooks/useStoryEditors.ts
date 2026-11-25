@@ -17,6 +17,7 @@ import {
     removeBeatAt,
     removeSceneAt,
     type SceneBlueprintUpdateOptions,
+    removeLoreAt,
     type SceneEditableStory
 } from '@/domain/story';
 import { addStoryAllowlistTerm, removeStoryAllowlistTerm } from '@/domain/slop';
@@ -77,6 +78,8 @@ export interface UseStoryEditorsResult<TStory extends EditorStory = EditorStory>
     /** Lets the slop audit ignore a term in this story only. */
     handleAddStoryAllowlistItem: (term: unknown) => void;
     handleRemoveStoryAllowlistItem: (term: unknown) => void;
+    /** Asks for confirmation, then removes the lore item at `index` from world memory. */
+    handleDeleteLore: (index: number) => void;
 }
 
 export function useStoryEditors<TStory extends EditorStory = EditorStory>({
@@ -273,6 +276,19 @@ export function useStoryEditors<TStory extends EditorStory = EditorStory>({
         });
     };
 
+    const handleDeleteLore = (index: number): void => {
+        requestConfirm({
+            title: 'Delete Lore Item?',
+            message: 'Are you sure you want to delete this lore item from world memory?',
+            confirmLabel: 'Delete Lore',
+            danger: true,
+            onConfirm: () => {
+                setStory((prev) => removeLoreAt(prev as TStory & { lore?: unknown[] }, index));
+                showToast('Lore item deleted.', 'info');
+            }
+        });
+    };
+
     return {
         handleBeatChange,
         handleAddBeat,
@@ -283,6 +299,7 @@ export function useStoryEditors<TStory extends EditorStory = EditorStory>({
         handleAddScene,
         handleMoveScene,
         handleAddStoryAllowlistItem,
-        handleRemoveStoryAllowlistItem
+        handleRemoveStoryAllowlistItem,
+        handleDeleteLore
     };
 }

@@ -10,3 +10,5 @@ export * from './stats';
 export * from './directivePlanning';
 export * from './sceneEditing';
 export * from './customNarrativeModes';
+export * from './logDetail';
+export * from './outlineExpansion';

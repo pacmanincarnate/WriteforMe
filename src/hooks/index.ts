@@ -12,3 +12,5 @@ export * from './useCustomNarrativeModes';
 export * from './useEpistemicEditors';
 export * from './useDirectivePlanEditors';
 export * from './useNovelIgnoreRules';
+export * from './useLogDetailModal';
+export * from './useOutlineExpansion';
