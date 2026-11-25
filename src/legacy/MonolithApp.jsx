@@ -466,7 +466,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSetupDraft, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -1222,30 +1222,16 @@ const ReactDOM = ReactDOMClient;
                 };
             }, [activeSceneDropdown]);
 
-            const [inputTitle, setInputTitle] = useState(() => {
-                try { return localStorage.getItem("ellipsisprose_draft_title") || ""; } catch (_) { return ""; }
-            });
-            const [inputConcept, setInputConcept] = useState(() => {
-                try { return localStorage.getItem("ellipsisprose_draft_concept") || ""; } catch (_) { return ""; }
-            });
-            const [inputAuthorNote, setInputAuthorNote] = useState(() => {
-                try { return localStorage.getItem("ellipsisprose_draft_author_note") || ""; } catch (_) { return ""; }
-            });
-            const [inputWritingMode, setInputWritingMode] = useState(() => {
-                try {
-                    const saved = localStorage.getItem("ellipsisprose_draft_writing_mode");
-                    return saved === "audio_drama" ? "audio_drama" : "novel";
-                } catch (_) { return "novel"; }
-            });
-            const [inputBookType, setInputBookType] = useState(() => {
-                try { return localStorage.getItem("ellipsisprose_draft_book_type") || "popular"; } catch (_) { return "popular"; }
-            });
-            const [inputCustomWords, setInputCustomWords] = useState(() => {
-                try {
-                    const parsed = parseInt(localStorage.getItem("ellipsisprose_draft_custom_words"), 10);
-                    return (Number.isFinite(parsed) && parsed >= 1000) ? parsed : 80000;
-                } catch (_) { return 80000; }
-            });
+            // Unsaved Setup form fields, restored from and written to localStorage (Phase 7).
+            const {
+                inputTitle, setInputTitle,
+                inputConcept, setInputConcept,
+                inputAuthorNote, setInputAuthorNote,
+                inputWritingMode, setInputWritingMode,
+                inputBookType, setInputBookType,
+                inputCustomWords, setInputCustomWords,
+                resetSetupDraftFields
+            } = useSetupDraft();
             const [worldPrimer, setWorldPrimer] = useState(null);
             // World-building document import: Setup drafts and post-generation lore (Phase 6E-3).
             const {
@@ -1267,34 +1253,6 @@ const ReactDOM = ReactDOMClient;
             const [loreSearch, setLoreSearch] = useState('');
             const [lorePage, setLorePage] = useState(1);
             const LORE_PAGE_SIZE = 25;
-
-            useEffect(() => {
-                try {
-                    if (inputTitle) safeLocalStorageSet("ellipsisprose_draft_title", inputTitle);
-                    else localStorage.removeItem("ellipsisprose_draft_title");
-                } catch (_) {}
-            }, [inputTitle]);
-            useEffect(() => {
-                try {
-                    if (inputConcept) safeLocalStorageSet("ellipsisprose_draft_concept", inputConcept);
-                    else localStorage.removeItem("ellipsisprose_draft_concept");
-                } catch (_) {}
-            }, [inputConcept]);
-            useEffect(() => {
-                try {
-                    if (inputAuthorNote) safeLocalStorageSet("ellipsisprose_draft_author_note", inputAuthorNote);
-                    else localStorage.removeItem("ellipsisprose_draft_author_note");
-                } catch (_) {}
-            }, [inputAuthorNote]);
-            useEffect(() => {
-                safeLocalStorageSet("ellipsisprose_draft_writing_mode", inputWritingMode || "novel");
-            }, [inputWritingMode]);
-            useEffect(() => {
-                safeLocalStorageSet("ellipsisprose_draft_book_type", inputBookType || "popular");
-            }, [inputBookType]);
-            useEffect(() => {
-                safeLocalStorageSet("ellipsisprose_draft_custom_words", inputCustomWords);
-            }, [inputCustomWords]);
 
             const loreInputRef = useRef(null);
             const coverUploadInputRef = useRef(null);
@@ -1929,22 +1887,11 @@ const ReactDOM = ReactDOMClient;
             };
 
             const clearSetupDraft = () => {
-                setInputTitle("");
-                setInputConcept("");
-                setInputAuthorNote("");
-                setInputWritingMode("novel");
-                setInputBookType("popular");
-                setInputCustomWords(80000);
+                resetSetupDraftFields();
                 // Clear imported lore files without wiping the newly created story's active worldPrimer
                 discardImportedLore();
                 if (loreInputRef.current) loreInputRef.current.value = '';
                 try {
-                    localStorage.removeItem("ellipsisprose_draft_title");
-                    localStorage.removeItem("ellipsisprose_draft_concept");
-                    localStorage.removeItem("ellipsisprose_draft_author_note");
-                    localStorage.removeItem("ellipsisprose_draft_writing_mode");
-                    localStorage.removeItem("ellipsisprose_draft_book_type");
-                    localStorage.removeItem("ellipsisprose_draft_custom_words");
                     localStorage.removeItem("ellipsisprose_draft_lore_files");
                 } catch (_) {}
             };
