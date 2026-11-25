@@ -442,7 +442,8 @@ async function launchChromeSession(userDataDir, cdpPort) {
     const exitPromise = new Promise((resolve) => chrome.once('exit', resolve));
 
     let pages = null;
-    for (let i = 0; i < 30; i++) {
+    // A cold Chrome start on a CI runner can take well over 10s; poll for up to 45s.
+    for (let i = 0; i < 150; i++) {
         await sleep(300);
         try {
             const list = await fetchJson(`http://127.0.0.1:${cdpPort}/json`);
