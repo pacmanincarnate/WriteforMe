@@ -17,3 +17,4 @@ export * from './useOutlineExpansion';
 export * from './useStoryLibrary';
 export * from './useStoryTransfer';
 export * from './useStoryReset';
+export * from './useLoreImport';

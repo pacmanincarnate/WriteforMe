@@ -464,7 +464,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -1424,15 +1424,22 @@ const ReactDOM = ReactDOMClient;
                     return (Number.isFinite(parsed) && parsed >= 1000) ? parsed : 80000;
                 } catch (_) { return 80000; }
             });
-            const [importedLoreFiles, setImportedLoreFiles] = useState(() => {
-                try {
-                    const raw = localStorage.getItem("ellipsisprose_draft_lore_files");
-                    if (!raw) return [];
-                    const parsed = JSON.parse(raw);
-                    return Array.isArray(parsed) ? parsed : [];
-                } catch (_) { return []; }
+            const [worldPrimer, setWorldPrimer] = useState(null);
+            // World-building document import: Setup drafts and post-generation lore (Phase 6E-3).
+            const {
+                importedLoreFiles,
+                importingLore,
+                importedLoreText,
+                loreImportVersionRef,
+                discardImportedLore,
+                handleUpdateLoreFile,
+                handleRemoveLoreFile,
+                handleLoreImport,
+                handlePostGenLoreImport
+            } = useLoreImport({
+                story, setStory, setWorldPrimer, showToast, setLoading, setLoadingStep,
+                ingestLoreBatch: (loreList, options) => ingestLoreBatch(loreList, options)
             });
-            const [importingLore, setImportingLore] = useState(false);
             const [isDraggingSetupLore, setIsDraggingSetupLore] = useState(false);
             const [isDraggingLoreTab, setIsDraggingLoreTab] = useState(false);
             const [loreSearch, setLoreSearch] = useState('');
@@ -1466,34 +1473,7 @@ const ReactDOM = ReactDOMClient;
             useEffect(() => {
                 safeLocalStorageSet("ellipsisprose_draft_custom_words", inputCustomWords);
             }, [inputCustomWords]);
-            useEffect(() => {
-                try {
-                    if (!importedLoreFiles || importedLoreFiles.length === 0) {
-                        localStorage.removeItem("ellipsisprose_draft_lore_files");
-                    } else {
-                        const serialized = JSON.stringify(importedLoreFiles);
-                        if (serialized.length <= 1500000) {
-                            safeLocalStorageSet("ellipsisprose_draft_lore_files", serialized);
-                        }
-                    }
-                } catch (_) {}
-            }, [importedLoreFiles]);
 
-            const handleUpdateLoreFile = useCallback((fileId, newText) => {
-                setImportedLoreFiles(previous => previous.map(item => item.id === fileId ? { ...item, text: newText } : item));
-                setWorldPrimer(null);
-            }, []);
-
-            const handleRemoveLoreFile = useCallback((fileId) => {
-                setImportedLoreFiles(previous => previous.filter(item => item.id !== fileId));
-                setWorldPrimer(null);
-            }, []);
-
-            const loreImportVersionRef = useRef(0);
-            const importedLoreText = useMemo(() => importedLoreFiles.map(file =>
-                importedLoreFiles.length === 1 ? file.text : `## Source: ${file.name}\n\n${file.text}`
-            ).join('\n\n'), [importedLoreFiles]);
-            const [worldPrimer, setWorldPrimer] = useState(null);
             const loreInputRef = useRef(null);
             const coverUploadInputRef = useRef(null);
 
@@ -2146,9 +2126,7 @@ const ReactDOM = ReactDOMClient;
 
             const clearImportedLore = () => {
                 // Ignore pending reads if the user clears the files or starts another story.
-                loreImportVersionRef.current++;
-                setImportedLoreFiles([]);
-                setImportingLore(false);
+                discardImportedLore();
                 setWorldPrimer(null);
                 if (loreInputRef.current) loreInputRef.current.value = '';
             };
@@ -2161,9 +2139,7 @@ const ReactDOM = ReactDOMClient;
                 setInputBookType("popular");
                 setInputCustomWords(80000);
                 // Clear imported lore files without wiping the newly created story's active worldPrimer
-                loreImportVersionRef.current++;
-                setImportedLoreFiles([]);
-                setImportingLore(false);
+                discardImportedLore();
                 if (loreInputRef.current) loreInputRef.current.value = '';
                 try {
                     localStorage.removeItem("ellipsisprose_draft_title");
@@ -2174,107 +2150,6 @@ const ReactDOM = ReactDOMClient;
                     localStorage.removeItem("ellipsisprose_draft_custom_words");
                     localStorage.removeItem("ellipsisprose_draft_lore_files");
                 } catch (_) {}
-            };
-
-            const handleLoreImport = async (eventOrFiles) => {
-                const files = eventOrFiles?.target
-                    ? Array.from(eventOrFiles.target.files || [])
-                    : Array.from(eventOrFiles || []);
-                if (eventOrFiles?.target) eventOrFiles.target.value = ''; // Allow adding the same file again after removal.
-                if (!files.length) return;
-                const importVersion = ++loreImportVersionRef.current;
-                setImportingLore(true);
-                try {
-                    const results = await Promise.allSettled(files.map(async (file, index) => {
-                        const text = await extractTextFromFile(file, (p) => {
-                            if (p?.message) setLoadingStep(p.message);
-                        });
-                        if (!text || !text.trim()) throw new Error('Document contains no extractable text');
-                        return {
-                            id: `${importVersion}-${index}`,
-                            name: file.name || `Document ${index + 1}`,
-                            size: file.size || text.length,
-                            text: text.trim()
-                        };
-                    }));
-                    if (importVersion !== loreImportVersionRef.current) return;
-                    const loaded = results.filter(result => result.status === 'fulfilled').map(result => result.value);
-                    const failedNames = files.filter((file, index) => results[index].status === 'rejected').map(file => file.name || 'file');
-                    if (loaded.length) {
-                        setImportedLoreFiles(previous => [...previous, ...loaded]);
-                        setWorldPrimer(null);
-                    }
-                    if (failedNames.length) {
-                        showToast(`Added ${loaded.length} file${loaded.length === 1 ? '' : 's'}. Could not load: ${failedNames.join(', ')}. Supported formats: .txt, .md, .docx, .pdf, .epub, .json, .csv.`, 'error');
-                    } else {
-                        showToast(`${loaded.length} document${loaded.length === 1 ? '' : 's'} imported successfully!`, 'success');
-                    }
-                } catch (err) {
-                    showToast(`Document import error: ${err.message}`, 'error');
-                } finally {
-                    if (importVersion === loreImportVersionRef.current) setImportingLore(false);
-                }
-            };
-
-            // Handle Post-Generation Lore Document Import into RAG
-            const handlePostGenLoreImport = async (fileOrFiles) => {
-                const files = fileOrFiles?.target
-                    ? Array.from(fileOrFiles.target.files || [])
-                    : (Array.isArray(fileOrFiles) ? fileOrFiles : [fileOrFiles]).filter(Boolean);
-                if (fileOrFiles?.target) fileOrFiles.target.value = null;
-                if (!files.length) return;
-
-                setLoading(true);
-                try {
-                    let totalChunksAdded = 0;
-                    const newChunks = [];
-
-                    for (const file of files) {
-                        const filename = file.name || "Document";
-                        setLoadingStep(`Extracting text from '${filename}'...`);
-                        showToast(`Reading and parsing '${filename}'...`, "info");
-                        const text = await extractTextFromFile(file, (p) => {
-                            if (p?.message) setLoadingStep(p.message);
-                        });
-
-                        if (!text || !text.trim()) {
-                            showToast(`Document '${filename}' contains no readable text.`, "warn");
-                            continue;
-                        }
-
-                        setLoadingStep(`Chunking and indexing '${filename}' for vector memory...`);
-                        const docName = filename.replace(/\.[^/.]+$/, "");
-                        const chunks = chunkLoreText(text, null, null, `Imported from ${filename}`, docName);
-                        newChunks.push(...chunks);
-                        totalChunksAdded += chunks.length;
-                    }
-
-                    if (newChunks.length === 0) {
-                        showToast("No readable text found in selected document(s).", "warn");
-                        return;
-                    }
-
-                    setLoadingStep(`Indexing ${totalChunksAdded} segments into RAG vector store...`);
-                    const currentLore = story.lore || [];
-                    const combinedList = [...currentLore, ...newChunks];
-                    const processedList = await ingestLoreBatch(combinedList, { clearExisting: true, fingerprintProcessed: true });
-
-                    const finalLore = processedList && processedList.length > 0 ? processedList : combinedList;
-                    setStory(prev => {
-                        const updated = { ...prev, lore: finalLore };
-                        if (storyStore?.saveStory && updated.id) {
-                            storyStore.saveStory(updated.id, updated).catch(err => console.warn("Failed saving post-gen lore import to storyStore:", err));
-                        }
-                        return updated;
-                    });
-
-                    showToast(`Successfully ingested ${files.length} document${files.length === 1 ? '' : 's'} (${totalChunksAdded} RAG segments) into World Lore!`, "success");
-                } catch (err) {
-                    console.error("Failed to import lore document:", err);
-                    showToast(`Document ingestion failed: ${err.message}`, "error");
-                } finally {
-                    setLoading(false);
-                }
             };
 
             // ============================================================================
