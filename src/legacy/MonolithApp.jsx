@@ -464,7 +464,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useDebounce, useMcpBridge, useModelCatalog, useReaderController, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useDebounce, useMcpBridge, useModelCatalog, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -1334,201 +1334,27 @@ const ReactDOM = ReactDOMClient;
             });
 
 
-            const [bannedPhrases, setBannedPhrases] = useState(() => {
-                try {
-                    const saved = localStorage.getItem("ellipsisprose_banned_phrases");
-                    return saved ? JSON.parse(saved) : DEFAULT_BANNED_PHRASES;
-                } catch (_) {
-                    return DEFAULT_BANNED_PHRASES;
-                }
-            });
-            const [slopConfig, setSlopConfig] = useState(() => {
-                try {
-                    const rawSlop = localStorage.getItem("ellipsisprose_slop_config_v1");
-                    const rawLegacy = localStorage.getItem("ellipsisprose_banned_phrases");
-                    const parsedSlop = rawSlop ? JSON.parse(rawSlop) : null;
-                    const parsedLegacy = rawLegacy ? JSON.parse(rawLegacy) : null;
-                    if (typeof window.normalizeSlopConfig === 'function') {
-                        return window.normalizeSlopConfig(parsedSlop, parsedLegacy);
-                    }
-                } catch (err) {
-                    console.warn("Failed loading slopConfig, using defaults:", err);
-                }
-                return typeof window.normalizeSlopConfig === 'function'
-                    ? window.normalizeSlopConfig(null, DEFAULT_BANNED_PHRASES)
-                    : { schemaVersion: 1, enableSlopAudit: true, enableUpstreamNameAudit: true, emDashMode: 'density', emDashMaxPer1k: 3, categorySeverities: { smart_quotes: 'off', custom_user: 'flag' }, customItemsByCategory: { custom_user: [] }, removedDefaultItems: {}, importedPack: null, importedPackMeta: null };
-            });
-            const [newBannedPhraseInput, setNewBannedPhraseInput] = useState("");
-            const [slopSearchQuery, setSlopSearchQuery] = useState("");
-            const [expandedSlopGroups, setExpandedSlopGroups] = useState({ prose_style: true, names_places: false, patterns_rhythm: false, custom: true });
-            const [expandedSlopCategories, setExpandedSlopCategories] = useState({ custom_user: true });
-            const [newCategoryItemInputs, setNewCategoryItemInputs] = useState({});
+            // AI Slop & Naming configuration (Phase 6E-3): state, persistence and editor handlers.
+            const {
+                bannedPhrases, setBannedPhrases,
+                slopConfig, setSlopConfig,
+                newBannedPhraseInput, setNewBannedPhraseInput,
+                slopSearchQuery, setSlopSearchQuery,
+                expandedSlopGroups, setExpandedSlopGroups,
+                expandedSlopCategories, setExpandedSlopCategories,
+                newCategoryItemInputs, setNewCategoryItemInputs,
+                handleAddBannedPhrase,
+                handleSetSlopCategorySeverity,
+                handleAddSlopCategoryItem,
+                handleRemoveSlopCategoryItem,
+                handleResetSlopConfig,
+                handleImportSlopJson,
+                handleExportSlopJson
+            } = useSlopConfig({ showToast });
             const [slopAuditDrawerOpen, setSlopAuditDrawerOpen] = useState(false);
             const [slopAuditFilter, setSlopAuditFilter] = useState('all'); // 'all' | 'hard' | 'flag' | 'closer' | 'rhetoric'
             const [isRunningManualSlopClean, setIsRunningManualSlopClean] = useState(false);
             const [slopAllowlistExpanded, setSlopAllowlistExpanded] = useState(false);
-
-            const handleAddBannedPhrase = () => {
-                const val = newBannedPhraseInput.trim();
-                if (!val) return;
-                if (bannedPhrases.some(p => p.toLowerCase() === val.toLowerCase())) {
-                    showToast(`"${val}" is already in custom phrases.`, "info");
-                    return;
-                }
-                setBannedPhrases(prev => [...prev, val]);
-                setSlopConfig(prev => {
-                    const existing = Array.isArray(prev?.customItemsByCategory?.custom_user) ? prev.customItemsByCategory.custom_user : [];
-                    if (existing.some(p => p.toLowerCase() === val.toLowerCase())) return prev;
-                    return {
-                        ...prev,
-                        customItemsByCategory: {
-                            ...(prev?.customItemsByCategory || {}),
-                            custom_user: [...existing, val]
-                        }
-                    };
-                });
-                setNewBannedPhraseInput("");
-                showToast(`Added "${val}" to custom phrases.`, "success");
-            };
-
-            const handleSetSlopCategorySeverity = (catId, severity) => {
-                if (!['hard', 'flag', 'off'].includes(severity)) return;
-                setSlopConfig(prev => ({
-                    ...prev,
-                    categorySeverities: {
-                        ...(prev?.categorySeverities || {}),
-                        [catId]: severity
-                    }
-                }));
-            };
-
-            const handleAddSlopCategoryItem = (catId, rawVal) => {
-                const val = String(rawVal || '').trim();
-                if (!val) return;
-                const valLow = val.toLowerCase();
-                if (catId === 'custom_user') {
-                    setBannedPhrases(prev => prev.some(p => p.toLowerCase() === valLow) ? prev : [...prev, val]);
-                }
-                setSlopConfig(prev => {
-                    const customList = Array.isArray(prev?.customItemsByCategory?.[catId]) ? prev.customItemsByCategory[catId] : [];
-                    const removedList = Array.isArray(prev?.removedDefaultItems?.[catId]) ? prev.removedDefaultItems[catId] : [];
-                    const nextRemoved = removedList.filter(x => x.toLowerCase() !== valLow);
-                    const nextCustom = customList.some(x => x.toLowerCase() === valLow) ? customList : [...customList, val];
-                    return {
-                        ...prev,
-                        customItemsByCategory: { ...(prev?.customItemsByCategory || {}), [catId]: nextCustom },
-                        removedDefaultItems: { ...(prev?.removedDefaultItems || {}), [catId]: nextRemoved }
-                    };
-                });
-                setNewCategoryItemInputs(prev => ({ ...prev, [catId]: '' }));
-                showToast(`Added "${val}" to ${catId.replace(/_/g, ' ')}.`, "success");
-            };
-
-            const handleRemoveSlopCategoryItem = (catId, itemText) => {
-                const targetLow = String(itemText || '').trim().toLowerCase();
-                if (!targetLow) return;
-                if (catId === 'custom_user') {
-                    setBannedPhrases(prev => prev.filter(p => p.toLowerCase() !== targetLow));
-                }
-                setSlopConfig(prev => {
-                    const customList = Array.isArray(prev?.customItemsByCategory?.[catId]) ? prev.customItemsByCategory[catId] : [];
-                    const nextCustom = customList.filter(x => x.toLowerCase() !== targetLow);
-                    const removedList = Array.isArray(prev?.removedDefaultItems?.[catId]) ? prev.removedDefaultItems[catId] : [];
-                    const isBuiltIn = Boolean(window.AI_SLOP_REGISTRY?.categories?.find(c => c.id === catId)?.items?.some(i => i.toLowerCase() === targetLow));
-                    const nextRemoved = isBuiltIn && !removedList.some(x => x.toLowerCase() === targetLow)
-                        ? [...removedList, itemText]
-                        : removedList;
-                    return {
-                        ...prev,
-                        customItemsByCategory: { ...(prev?.customItemsByCategory || {}), [catId]: nextCustom },
-                        removedDefaultItems: { ...(prev?.removedDefaultItems || {}), [catId]: nextRemoved }
-                    };
-                });
-            };
-
-            const handleResetSlopConfig = () => {
-                const reset = typeof window.normalizeSlopConfig === 'function'
-                    ? window.normalizeSlopConfig(null, DEFAULT_BANNED_PHRASES)
-                    : { ...window.DEFAULT_SLOP_CONFIG, _migratedLegacy: true };
-                setSlopConfig(reset);
-                setBannedPhrases(DEFAULT_BANNED_PHRASES);
-                showToast("Restored default AI Slop & Naming configuration.", "info");
-            };
-
-            const handleImportSlopJson = async (file) => {
-                if (!file) return;
-                try {
-                    const text = await file.text();
-                    const parsed = JSON.parse(text);
-                    const validation = typeof window.validateImportedSlopJson === 'function'
-                        ? window.validateImportedSlopJson(parsed)
-                        : { valid: true };
-                    if (!validation.valid) {
-                        showToast(validation.error || "Invalid ai-slop JSON file.", "error");
-                        return;
-                    }
-                    setSlopConfig(prev => ({
-                        ...(prev || window.DEFAULT_SLOP_CONFIG),
-                        importedPack: parsed,
-                        importedPackMeta: {
-                            name: parsed.name || file.name,
-                            version: parsed.version || '',
-                            importedAt: Date.now(),
-                            categoryCount: (parsed.categories || []).length
-                        }
-                    }));
-                    showToast(`Imported slop dictionary "${parsed.name || file.name}" (${(parsed.categories || []).length} categories).`, "success");
-                } catch (err) {
-                    showToast(`Failed to import slop JSON: ${err.message}`, "error");
-                }
-            };
-
-            const handleExportSlopJson = () => {
-                try {
-                    const payload = typeof window.exportSlopConfigAsJson === 'function'
-                        ? window.exportSlopConfigAsJson(slopConfig)
-                        : slopConfig;
-                    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `ellipsisprose-ai-slop-${new Date().toISOString().slice(0, 10)}.json`;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    setTimeout(() => URL.revokeObjectURL(url), 1000);
-                    showToast("Exported AI Slop dictionary JSON.", "success");
-                } catch (err) {
-                    showToast(`Export failed: ${err.message}`, "error");
-                }
-            };
-
-            const handleAddStoryAllowlistItem = (term) => {
-                const clean = String(term || '').trim();
-                if (!clean) return;
-                setStory(prev => {
-                    const existing = Array.isArray(prev.slop_allowlist) ? prev.slop_allowlist : [];
-                    if (existing.some(x => x.toLowerCase() === clean.toLowerCase())) return prev;
-                    const next = { ...prev, slop_allowlist: [...existing, clean] };
-                    if (storyStore?.saveStory && next.id) {
-                        storyStore.saveStory(next.id, next).catch(() => {});
-                    }
-                    return next;
-                });
-                showToast(`Allowed "${clean}" in this story.`, "info");
-            };
-
-            const handleRemoveStoryAllowlistItem = (term) => {
-                const targetLow = String(term || '').trim().toLowerCase();
-                setStory(prev => {
-                    const existing = Array.isArray(prev.slop_allowlist) ? prev.slop_allowlist : [];
-                    const next = { ...prev, slop_allowlist: existing.filter(x => x.toLowerCase() !== targetLow) };
-                    if (storyStore?.saveStory && next.id) {
-                        storyStore.saveStory(next.id, next).catch(() => {});
-                    }
-                    return next;
-                });
-            };
 
             const allNarrativeModes = useMemo(() => ({
                 ...NARRATIVE_MODES,
@@ -3277,8 +3103,6 @@ const ReactDOM = ReactDOMClient;
                 safeLocalStorageSet("ellipsisprose_enable_narrative_lenses_v2", enableNarrativeLenses);
                 safeLocalStorageSet("ellipsisprose_enable_narrative_lenses", enableNarrativeLenses);
             }, [enableNarrativeLenses]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_banned_phrases", bannedPhrases); }, [bannedPhrases]);
-            useEffect(() => { safeLocalStorageSet("ellipsisprose_slop_config_v1", slopConfig); }, [slopConfig]);
 
 
 
@@ -3821,7 +3645,9 @@ const ReactDOM = ReactDOMClient;
                 updateSceneBlueprint,
                 handleDismissStaleProse,
                 handleAddScene,
-                handleMoveScene
+                handleMoveScene,
+                handleAddStoryAllowlistItem,
+                handleRemoveStoryAllowlistItem
             } = useStoryEditors({
                 story,
                 setStory,

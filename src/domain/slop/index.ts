@@ -20,3 +20,14 @@ export {
     auditEntityNamesAndPlaces,
     applyCascadingNameReplacements
 } from './nameAudit';
+export {
+    isSlopSeverity,
+    setSlopCategorySeverity,
+    addCustomSlopPhrase,
+    addSlopCategoryItem,
+    removeSlopCategoryItem,
+    withImportedSlopPack,
+    addStoryAllowlistTerm,
+    removeStoryAllowlistTerm,
+    type SlopAllowlistStory
+} from './configEditing';

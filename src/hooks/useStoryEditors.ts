@@ -1,9 +1,9 @@
 /**
  * @module hooks/useStoryEditors
- * Manual editing handlers for the story structure (Phase 6E-3). This first slice owns the scene
- * and beat editors; the story transforms themselves are pure functions in
- * `@/domain/story/sceneEditing`, and this hook adds what React owns: selection, confirmation
- * dialogs, toasts and persistence.
+ * Manual editing handlers for the story (Phase 6E-3): the scene and beat editors and the
+ * per-story slop allowlist. The story transforms themselves are pure functions in `@/domain`
+ * (`story/sceneEditing`, `slop/configEditing`); this hook adds what React owns: selection,
+ * confirmation dialogs, toasts and persistence.
  */
 
 import type { Dispatch, SetStateAction } from 'react';
@@ -19,9 +19,10 @@ import {
     type SceneBlueprintUpdateOptions,
     type SceneEditableStory
 } from '@/domain/story';
+import { addStoryAllowlistTerm, removeStoryAllowlistTerm } from '@/domain/slop';
 import { storyStore as defaultStoryStore } from '@/services/storage';
 
-export type EditorStory = SceneEditableStory & { id?: string };
+export type EditorStory = SceneEditableStory & { id?: string; slop_allowlist?: unknown };
 
 type ToastVariant = 'success' | 'error' | 'info' | 'warning';
 
@@ -73,6 +74,9 @@ export interface UseStoryEditorsResult<TStory extends EditorStory = EditorStory>
     handleDismissStaleProse: (seqIdx?: number | null, sceneIdx?: number | null) => void;
     handleAddScene: (seqIdx?: number | null, insertAtIdx?: number | null) => void;
     handleMoveScene: (seqIdx: number | null | undefined, fromIdx: number, direction: number) => void;
+    /** Lets the slop audit ignore a term in this story only. */
+    handleAddStoryAllowlistItem: (term: unknown) => void;
+    handleRemoveStoryAllowlistItem: (term: unknown) => void;
 }
 
 export function useStoryEditors<TStory extends EditorStory = EditorStory>({
@@ -250,6 +254,25 @@ export function useStoryEditors<TStory extends EditorStory = EditorStory>({
         showToast(`Moved "${movedTitle}" ${direction < 0 ? 'up' : 'down'}`, 'info');
     };
 
+    const handleAddStoryAllowlistItem = (term: unknown): void => {
+        const clean = String(term || '').trim();
+        if (!clean) return;
+        setStory((prev) => {
+            const next = addStoryAllowlistTerm(prev, clean);
+            if (next !== prev && next.id) store.saveStory(next.id, next).catch(() => undefined);
+            return next;
+        });
+        showToast(`Allowed "${clean}" in this story.`, 'info');
+    };
+
+    const handleRemoveStoryAllowlistItem = (term: unknown): void => {
+        setStory((prev) => {
+            const next = removeStoryAllowlistTerm(prev, String(term || ''));
+            if (next.id) store.saveStory(next.id, next).catch(() => undefined);
+            return next;
+        });
+    };
+
     return {
         handleBeatChange,
         handleAddBeat,
@@ -258,6 +281,8 @@ export function useStoryEditors<TStory extends EditorStory = EditorStory>({
         updateSceneBlueprint,
         handleDismissStaleProse,
         handleAddScene,
-        handleMoveScene
+        handleMoveScene,
+        handleAddStoryAllowlistItem,
+        handleRemoveStoryAllowlistItem
     };
 }
