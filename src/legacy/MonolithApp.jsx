@@ -464,7 +464,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useStoryLibrary, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useStoryLibrary, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -2689,107 +2689,16 @@ const ReactDOM = ReactDOMClient;
                 });
             };
 
-            const handleExport = () => {
-                try {
-                    exportStoryJson(story);
-                } catch (err) { alert("Export failed: " + err.message); }
-            };
-
-            const handleExportAudioDramaTxt = () => {
-                try {
-                    const result = exportAudioDramaTxt(story);
-                    if (result.sceneCount === 0) {
-                        showToast("No drafted scenes found to export yet.", "info");
-                        return;
-                    }
-                    showToast(`Exported full audio drama script (${result.sceneCount} scenes).`, "success");
-                } catch (err) {
-                    console.error("Audio drama export error:", err);
-                    showToast("Export failed: " + err.message, "error");
-                }
-            };
-
-            const handleExportEpub = async () => {
-                try {
-                    await exportStoryEpub(story, { imageStore, audioStore: window.audioStore });
-                } catch (e) {
-                    const msg = e instanceof Error ? e.message : String(e);
-                    if (msg.startsWith('Could not load the EPUB library')) {
-                        showToast(msg, 'error');
-                        return;
-                    }
-                    console.error(e);
-                    showToast("EPUB Generation failed: " + msg, "error");
-                }
-            };
-
-            const handleImport = async (event) => {
-                const file = event.target.files?.[0];
-                if (!file) return;
-                try {
-                    const payload = await parseStoryImportFile(file);
-                    const result = await persistImportedStory(payload, {
-                        confirmOverwrite: ({ existingStoryId }) => requestConfirm({
-                            title: "Story Already Exists",
-                            message: `A story with ID "${existingStoryId}" already exists. Do you want to overwrite it, or import it as a new copy?`,
-                            confirmLabel: "Overwrite",
-                            cancelLabel: "Import as Copy",
-                            danger: true
-                        }),
-                        storyStore,
-                        imageStore,
-                        audioStore: window.audioStore,
-                        onAfterAudioImport: (newId) => refreshAvailableSceneAudio(newId)
-                    });
-
-                    storyRef.current = result.story;
-                    setActiveStoryId(result.storyId);
-                    setStory(result.story);
-                    setLoadedImages({ cover: result.coverUrl || null });
-                    setPortraitReload(value => value + 1);
-                    setView('dashboard');
-
-                    await refreshLibrary();
-
-                    const { seqIdx: startSeq, sceneIdx: startSc } = result.firstSceneCoord;
-                    showToast(
-                        result.importedAudioCount > 0
-                            ? `Ready with ${result.importedAudioCount} offline audio scene${result.importedAudioCount === 1 ? '' : 's'}`
-                            : "Story imported and ready",
-                        "success",
-                        {
-                            bookCard: {
-                                title: result.story.title || 'Untitled Story',
-                                coverSrc: result.coverUrl,
-                                badge: 'Imported to Bookshelf',
-                                story: result.story,
-                                audioCount: result.importedAudioCount,
-                                totalScenes: result.totalDraftedScenes || result.importedAudioCount || 0,
-                                onRead: () => {
-                                    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-                                    setToast(null);
-                                    enterReaderMode(startSeq, startSc);
-                                },
-                                onListen: () => {
-                                    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-                                    setToast(null);
-                                    enterReaderMode(startSeq, startSc);
-                                    setTimeout(() => playSceneAudio(startSeq, startSc, { autoplay: true, follow: true }), 120);
-                                },
-                                onStudio: () => {
-                                    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-                                    setToast(null);
-                                    setView('dashboard');
-                                }
-                            }
-                        }
-                    );
-                } catch (error) {
-                    showToast(error instanceof Error ? error.message : String(error), "error");
-                } finally {
-                    event.target.value = null;
-                }
-            };
+            // Export (JSON, audio-drama script, EPUB) and file import (Phase 6E-3).
+            const { handleExport, handleExportAudioDramaTxt, handleExportEpub, handleImport } = useStoryTransfer({
+                story, storyRef, setStory, setActiveStoryId, setLoadedImages, setPortraitReload, setView,
+                refreshLibrary, refreshAvailableSceneAudio, showToast, requestConfirm,
+                dismissToast: () => {
+                    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+                    setToast(null);
+                },
+                enterReaderMode, playSceneAudio
+            });
             window.handleImport = handleImport;
 
             // RAG Retrieval Engine with BM25 Lexical Fallback & Knowledge Graph Traversal (delegated to src/services/rag)

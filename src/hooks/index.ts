@@ -15,3 +15,4 @@ export * from './useNovelIgnoreRules';
 export * from './useLogDetailModal';
 export * from './useOutlineExpansion';
 export * from './useStoryLibrary';
+export * from './useStoryTransfer';
