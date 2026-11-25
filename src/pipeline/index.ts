@@ -12,3 +12,7 @@ export * from './arcAndActs';
 export * from './sceneBlueprints';
 export * from './initStory';
 export * from './prosePipeline';
+export * from './directivePlanner';
+export * from './directiveExecutor';
+export * from './editorialHarness';
+export * from './autopilot';

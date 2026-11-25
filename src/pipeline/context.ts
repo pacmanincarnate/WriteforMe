@@ -26,6 +26,7 @@ import type {
     ProcessedLoreEntry,
     WorldUpdatesPayload
 } from '@/domain/continuity';
+import type { DirectivePlan } from '@/domain/story';
 
 export type PipelineStory = Record<string, unknown>;
 export type PipelineRecord = Record<string, unknown>;
@@ -211,6 +212,59 @@ export interface PipelineRuntimeContext {
         codexUrl?: string;
         openRouterMaxTokens?: number;
     };
+
+    // Phase 6D Directive, Editorial Harness & Autopilot Hooks
+    getDirectiveInput?: () => string;
+    getDirectivePlan?: () => DirectivePlan | null;
+    setDirectivePlan?: (
+        updater:
+            | DirectivePlan
+            | null
+            | ((prev: DirectivePlan | null) => DirectivePlan | null)
+    ) => void;
+    setDirectivePlanHistory?: (
+        updater: DirectivePlan[] | ((prev: DirectivePlan[]) => DirectivePlan[])
+    ) => void;
+    getIsPlanningDirective?: () => boolean;
+    setIsPlanningDirective?: (planning: boolean) => void;
+    setDirectivePlanPhase?: (phase: string | null) => void;
+    getIsExecutingDirective?: () => boolean;
+    setIsExecutingDirective?: (executing: boolean) => void;
+    setDirectiveProgress?: (progress: number) => void;
+    setDirectiveExecutionLogs?: (
+        updater:
+            | Array<{ id: number; text: string; status: string }>
+            | ((
+                  prev: Array<{ id: number; text: string; status: string }>
+              ) => Array<{ id: number; text: string; status: string }>)
+    ) => void;
+    setDirectiveUndoSnapshot?: (snapshot: PipelineStory | null) => void;
+    setDirectiveRefinement?: (refinement: string) => void;
+    setExpandedDirectiveActions?: (expanded: Record<number, boolean>) => void;
+    getProtectWrittenProse?: () => boolean;
+    getCascadeSceneChanges?: () => boolean;
+    getVerifyDirectiveEdits?: () => boolean;
+    getEditorialScopeSceneId?: () => string;
+    getEditorialUseDeepLLM?: () => boolean;
+    getEnableEditorialHarnessAutopilot?: () => boolean;
+    setIsRunningEditorialHarness?: (running: boolean) => void;
+    setEditorialHarnessPhase?: (phase: string) => void;
+    setEditorialHarnessProgress?: (progress: number) => void;
+    getContinuousAutopilot?: () => boolean;
+    setContinuousAutopilot?: (running: boolean) => void;
+    getContinuousAutopilotRef?: () => { current: boolean };
+    toggleContinuousAutopilot?: () => void;
+    getPrefetchCacheRef?: () => { current: Map<string, Promise<PipelineStory | null>> };
+    requestConfirm?: (options: {
+        title: string;
+        message: string;
+        confirmLabel?: string;
+        cancelLabel?: string;
+        danger?: boolean;
+        warning?: boolean;
+        onConfirm?: () => void | Promise<void>;
+        onCancel?: () => void;
+    }) => void | Promise<unknown>;
 }
 
 export function asRecord(val: unknown): PipelineRecord {
