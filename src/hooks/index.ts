@@ -24,3 +24,5 @@ export * from './useSetupDraft';
 export * from './usePersistedBoolean';
 export * from './useDirectiveWorkspaceState';
 export * from './useEditorialHarnessState';
+export * from './useSceneWorkspaceState';
+export * from './usePanelState';

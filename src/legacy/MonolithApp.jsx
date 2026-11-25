@@ -466,7 +466,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSetupDraft, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -983,10 +983,23 @@ const ReactDOM = ReactDOMClient;
                 handleImportSlopJson,
                 handleExportSlopJson
             } = useSlopConfig({ showToast });
-            const [slopAuditDrawerOpen, setSlopAuditDrawerOpen] = useState(false);
-            const [slopAuditFilter, setSlopAuditFilter] = useState('all'); // 'all' | 'hard' | 'flag' | 'closer' | 'rhetoric'
-            const [isRunningManualSlopClean, setIsRunningManualSlopClean] = useState(false);
-            const [slopAllowlistExpanded, setSlopAllowlistExpanded] = useState(false);
+            // Writer scene workspace UI state, closed/reset on scene or view change (Phase 7).
+            const {
+                isWriterFocusMode, setIsWriterFocusMode,
+                isEditingProseInline, setIsEditingProseInline,
+                inlineProseDraft, setInlineProseDraft,
+                blueprintActiveTab, setBlueprintActiveTab,
+                isBlueprintCollapsed, setIsBlueprintCollapsed,
+                isEditingSceneBlueprint, setIsEditingSceneBlueprint,
+                sceneBlueprintDraft, setSceneBlueprintDraft,
+                sceneWorkspaceTab, setSceneWorkspaceTab,
+                isSceneSplitView, setIsSceneSplitView,
+                activeSceneDropdown, setActiveSceneDropdown,
+                slopAuditDrawerOpen, setSlopAuditDrawerOpen,
+                slopAuditFilter, setSlopAuditFilter,
+                isRunningManualSlopClean, setIsRunningManualSlopClean,
+                slopAllowlistExpanded, setSlopAllowlistExpanded
+            } = useSceneWorkspaceState({ selectedSequence, selectedScene, view });
 
             // Selected relationship for editing
             const [selectedRel, setSelectedRel] = useState(null);
@@ -1105,14 +1118,7 @@ const ReactDOM = ReactDOMClient;
             const setIsSidebarOpen = useUiStore(s => s.setIsSidebarOpen);
             const isSidebarCollapsed = useUiStore(s => s.isSidebarCollapsed);
             const setIsSidebarCollapsed = useUiStore(s => s.setIsSidebarCollapsed);
-            const [isWriterFocusMode, setIsWriterFocusMode] = useState(false);
-            const [isEditingProseInline, setIsEditingProseInline] = useState(false);
-            const [inlineProseDraft, setInlineProseDraft] = useState("");
-
-            useEffect(() => {
-                try { localStorage.setItem('ellipsisprose_sidebar_collapsed', String(isSidebarCollapsed)); }
-                catch { /* Keep the toggle usable when storage is unavailable. */ }
-            }, [isSidebarCollapsed]);
+            // Sidebar collapse is persisted by the UI store.
 
             useEffect(() => {
                 const handleSidebarShortcut = (event) => {
@@ -1143,22 +1149,6 @@ const ReactDOM = ReactDOMClient;
 
 
 
-            const [blueprintActiveTab, setBlueprintActiveTab] = useState('narrative'); // 'narrative' | 'sandbox' | 'atmosphere' | 'continuity'
-            const [isBlueprintCollapsed, setIsBlueprintCollapsed] = useState(false);
-            const [isEditingSceneBlueprint, setIsEditingSceneBlueprint] = useState(false);
-            const [sceneBlueprintDraft, setSceneBlueprintDraft] = useState(null);
-            const [sceneWorkspaceTab, setSceneWorkspaceTab] = useState('blueprint'); // 'blueprint' | 'manuscript'
-            const [isSceneSplitView, setIsSceneSplitView] = useState(false); // Desktop side-by-side Split View
-            const [activeSceneDropdown, setActiveSceneDropdown] = useState(null); // 'write' | 'audio' | null
-
-            useEffect(() => {
-                setIsEditingProseInline(false);
-                setIsEditingSceneBlueprint(false);
-                setSceneBlueprintDraft(null);
-                setActiveSceneDropdown(null);
-                setSlopAuditDrawerOpen(false);
-            }, [selectedSequence, selectedScene, view]);
-
             // Live scene slop audit for Writer Manuscript pane (computed top-level to obey Rules of Hooks)
             const writerSlopAudit = useMemo(() => {
                 if (view !== 'writer' || selectedSequence === null || selectedScene === null) return null;
@@ -1177,23 +1167,6 @@ const ReactDOM = ReactDOMClient;
                 });
             }, [view, selectedSequence, selectedScene, story?.prose, story?.slop_allowlist, story?.writing_mode, story?.cast, story?.concept, slopConfig, bannedPhrases]);
 
-            useEffect(() => {
-                if (!activeSceneDropdown) return;
-                const handleOutsideClick = (e) => {
-                    if (!e.target.closest('.scene-action-tiles-wrap')) {
-                        setActiveSceneDropdown(null);
-                    }
-                };
-                const handleKeyDown = (e) => {
-                    if (e.key === 'Escape') setActiveSceneDropdown(null);
-                };
-                document.addEventListener('mousedown', handleOutsideClick);
-                document.addEventListener('keydown', handleKeyDown);
-                return () => {
-                    document.removeEventListener('mousedown', handleOutsideClick);
-                    document.removeEventListener('keydown', handleKeyDown);
-                };
-            }, [activeSceneDropdown]);
 
             // Unsaved Setup form fields, restored from and written to localStorage (Phase 7).
             const {
@@ -1295,14 +1268,17 @@ const ReactDOM = ReactDOMClient;
             }, [promptLog, activeStoryId]);
 
 
-            const [inspectedStepId, setInspectedStepId] = useState(null);
+            // Pipeline view UI state (Phase 7).
+            const {
+                inspectedStepId, setInspectedStepId,
+                pipelineViewMode, setPipelineViewMode,
+                pipelineDisplayMode, setPipelineDisplayMode,
+                activePipelineWork, setActivePipelineWork,
+                audioAutopilotProgress, setAudioAutopilotProgress,
+                logFilter, setLogFilter
+            } = usePipelineViewState();
             const generatingSceneKey = usePipelineStore(s => s.generatingSceneKey);
             const setGeneratingSceneKey = usePipelineStore(s => s.setGeneratingSceneKey);
-            const [pipelineViewMode, setPipelineViewMode] = useState('detailed');
-            const [pipelineDisplayMode, setPipelineDisplayMode] = useState('stage'); // 'stage' (Novel Control Center) | 'audio' (Audio Production) | 'graph' (Technical Flowchart)
-            const [activePipelineWork, setActivePipelineWork] = useState(null);
-            const [audioAutopilotProgress, setAudioAutopilotProgress] = useState(null);
-            const [logFilter, setLogFilter] = useState('all');
 
             // --- EBOOK READER & AUDIO REFS ---
             const ttsStatusRef = useRef('idle');
@@ -1625,13 +1601,14 @@ const ReactDOM = ReactDOMClient;
             if (!graphManager.current) graphManager.current = new GraphManager();
             const embeddingService = useRef(null);
             const ragIndexRevision = useRef(0);
-            const [ragStatus, setRagStatus] = useState("idle"); // idle, indexing, ready
-            const [isRebuildingRag, setIsRebuildingRag] = useState(false);
-
-            // RAG Inspector State
-            const [ragTestQuery, setRagTestQuery] = useState("");
-            const [ragTestResults, setRagTestResults] = useState([]);
-            const [ragTestLoading, setRagTestLoading] = useState(false);
+            // RAG index status and RAG inspector test query (Phase 7).
+            const {
+                ragStatus, setRagStatus,
+                isRebuildingRag, setIsRebuildingRag,
+                ragTestQuery, setRagTestQuery,
+                ragTestResults, setRagTestResults,
+                ragTestLoading, setRagTestLoading
+            } = useRagPanelState();
 
             // GESM (Graph-Based Epistemic State Machine) tab state and manual editors (Phase 6E-3).
             const {
