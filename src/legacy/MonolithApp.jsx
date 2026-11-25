@@ -464,7 +464,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useMcpBridge, useModelCatalog, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useEpistemicEditors, useMcpBridge, useModelCatalog, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -2124,163 +2124,19 @@ const ReactDOM = ReactDOMClient;
             const [ragTestResults, setRagTestResults] = useState([]);
             const [ragTestLoading, setRagTestLoading] = useState(false);
 
-            // GESM (Graph-Based Epistemic State Machine) UI States & Handlers
-            const [epistemicViewTab, setEpistemicViewTab] = useState('gesm'); // 'gesm' | 'vault' | 'log'
-            const [epistemicScrubberCoord, setEpistemicScrubberCoord] = useState('1.1');
-            const [epistemicFilterChar, setEpistemicFilterChar] = useState('ALL');
-            const [epistemicSearchQuery, setEpistemicSearchQuery] = useState('');
-            const [editingPropModal, setEditingPropModal] = useState({
-                isOpen: false,
-                isNew: false,
-                id: '',
-                claim_text: '',
-                subject_id: '',
-                predicate: 'FACT',
-                object_id: '',
-                objective_truth: 'TRUE',
-                world_valid_from_scene: '0.0',
-                world_valid_to_scene: ''
-            });
-            const [editingBeliefModal, setEditingBeliefModal] = useState({
-                isOpen: false,
-                isNew: false,
-                holder_id: '',
-                proposition_id: '',
-                stance: 'BELIEVES_TRUE',
-                confidence: 0.85,
-                source_type: 'DIRECT_OBSERVATION',
-                source_agent_id: '',
-                acquired_at_scene: '1.1',
-                invalidated_at_scene: ''
-            });
-
-            const handleSaveProposition = (propData) => {
-                setStory(prev => {
-                    const currentGraph = ensureEpistemicGraph(prev);
-                    const propId = propData.id ? String(propData.id).trim() : `prop_${Date.now()}`;
-                    const nextProp = {
-                        id: propId,
-                        claim_text: propData.claim_text || "Unspecified proposition",
-                        subject_id: normalizeEntityId(propData.subject_id || "world"),
-                        predicate: (propData.predicate || "FACT").toUpperCase().trim(),
-                        object_id: normalizeEntityId(propData.object_id || ""),
-                        objective_truth: propData.objective_truth || "TRUE",
-                        world_valid_from_scene: propData.world_valid_from_scene || "0.0",
-                        world_valid_to_scene: propData.world_valid_to_scene || null
-                    };
-                    const nextProps = normalizeEpistemicPropositionsMap(currentGraph.propositions);
-                    nextProps[propId] = { ...(nextProps[propId] || {}), ...nextProp };
-                    return {
-                        ...prev,
-                        epistemic_graph: ensureEpistemicGraphAccessors({
-                            ...currentGraph,
-                            propositions: nextProps
-                        })
-                    };
-                });
-                setEditingPropModal(prev => ({ ...prev, isOpen: false }));
-                showToast("Proposition saved to Epistemic Graph.", "success");
-            };
-
-            const handleDeleteProposition = (propId) => {
-                requestConfirm({
-                    title: `Delete Proposition "${propId}"?`,
-                    message: `Are you sure you want to delete proposition "${propId}" and its associated character beliefs?`,
-                    confirmLabel: "Delete Proposition",
-                    danger: true,
-                    onConfirm: () => {
-                        setStory(prev => {
-                            const currentGraph = ensureEpistemicGraph(prev);
-                            const nextProps = normalizeEpistemicPropositionsMap(currentGraph.propositions);
-                            delete nextProps[propId];
-                            const sourceHolds = Array.isArray(currentGraph.holds_belief_edges)
-                                ? currentGraph.holds_belief_edges
-                                : (Array.isArray(currentGraph.first_order_edges) ? currentGraph.first_order_edges : []);
-                            const nextFirstOrder = sourceHolds.filter(e => e.proposition_id !== propId);
-                            const nextSecondOrder = (currentGraph.second_order_edges || []).filter(e => e.proposition_id !== propId);
-                            return {
-                                ...prev,
-                                epistemic_graph: ensureEpistemicGraphAccessors({
-                                    ...currentGraph,
-                                    propositions: nextProps,
-                                    holds_belief_edges: nextFirstOrder,
-                                    second_order_edges: nextSecondOrder
-                                })
-                            };
-                        });
-                        showToast(`Proposition "${propId}" deleted.`, "info");
-                    }
-                });
-            };
-
-            const handleSaveBelief = (beliefData) => {
-                setStory(prev => {
-                    const currentGraph = ensureEpistemicGraph(prev);
-                    const holderId = normalizeEntityId(beliefData.holder_id || "meta_reader");
-                    const propId = beliefData.proposition_id;
-                    const acquiredAt = beliefData.acquired_at_scene || "1.1";
-                    const stance = beliefData.stance || "BELIEVES_TRUE";
-                    const conf = typeof beliefData.confidence === 'number' ? Math.max(0, Math.min(1, beliefData.confidence)) : 0.85;
-
-                    const sourceEdges = Array.isArray(currentGraph.holds_belief_edges)
-                        ? currentGraph.holds_belief_edges
-                        : (Array.isArray(currentGraph.first_order_edges) ? currentGraph.first_order_edges : []);
-                    // Close any active edges for this holder and prop
-                    const nextEdges = sourceEdges.map(e => {
-                        if (e.holder_id === holderId && e.proposition_id === propId && (!e.invalidated_at_scene || compareSceneCoordinates(e.invalidated_at_scene, acquiredAt, prev) > 0)) {
-                            return { ...e, invalidated_at_scene: acquiredAt };
-                        }
-                        return e;
-                    });
-
-                    if (stance !== 'UNAWARE') {
-                        nextEdges.push({
-                            holder_id: holderId,
-                            proposition_id: propId,
-                            stance,
-                            confidence: conf,
-                            source_type: beliefData.source_type || 'DIRECT_OBSERVATION',
-                            source_agent_id: beliefData.source_agent_id ? normalizeEntityId(beliefData.source_agent_id) : null,
-                            acquired_at_scene: acquiredAt,
-                            invalidated_at_scene: beliefData.invalidated_at_scene || null,
-                            emotional_charge: 0.5
-                        });
-                    }
-
-                    return {
-                        ...prev,
-                        epistemic_graph: ensureEpistemicGraphAccessors({
-                            ...currentGraph,
-                            holds_belief_edges: nextEdges
-                        })
-                    };
-                });
-                setEditingBeliefModal(prev => ({ ...prev, isOpen: false }));
-                showToast("Character belief saved to Epistemic Graph.", "success");
-            };
-
-            const handleInvalidateBelief = (edge, sceneCoord) => {
-                setStory(prev => {
-                    const currentGraph = ensureEpistemicGraph(prev);
-                    const sourceEdges = Array.isArray(currentGraph.holds_belief_edges)
-                        ? currentGraph.holds_belief_edges
-                        : (Array.isArray(currentGraph.first_order_edges) ? currentGraph.first_order_edges : []);
-                    const nextEdges = sourceEdges.map(e => {
-                        if (e === edge || (e.holder_id === edge.holder_id && e.proposition_id === edge.proposition_id && e.acquired_at_scene === edge.acquired_at_scene)) {
-                            return { ...e, invalidated_at_scene: sceneCoord };
-                        }
-                        return e;
-                    });
-                    return {
-                        ...prev,
-                        epistemic_graph: ensureEpistemicGraphAccessors({
-                            ...currentGraph,
-                            holds_belief_edges: nextEdges
-                        })
-                    };
-                });
-                showToast(`Belief invalidated at Scene ${sceneCoord}.`, "info");
-            };
+            // GESM (Graph-Based Epistemic State Machine) tab state and manual editors (Phase 6E-3).
+            const {
+                epistemicViewTab, setEpistemicViewTab,
+                epistemicScrubberCoord, setEpistemicScrubberCoord,
+                epistemicFilterChar, setEpistemicFilterChar,
+                epistemicSearchQuery, setEpistemicSearchQuery,
+                editingPropModal, setEditingPropModal,
+                editingBeliefModal, setEditingBeliefModal,
+                handleSaveProposition,
+                handleDeleteProposition,
+                handleSaveBelief,
+                handleInvalidateBelief
+            } = useEpistemicEditors({ setStory, showToast, requestConfirm });
 
             // Global Edit Modal State
             const [editingState, setEditingState] = useState({

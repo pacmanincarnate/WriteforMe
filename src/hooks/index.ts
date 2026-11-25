@@ -9,3 +9,4 @@ export * from './useMcpBridge';
 export * from './useStoryEditors';
 export * from './useSlopConfig';
 export * from './useCustomNarrativeModes';
+export * from './useEpistemicEditors';
