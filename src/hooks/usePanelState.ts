@@ -1,9 +1,10 @@
 /**
  * @module hooks/usePanelState
- * Plain UI state for two panels, extracted from the legacy shell in Phase 7:
+ * Plain UI state for three panels, extracted from the legacy shell in Phase 7:
  *   - `usePipelineViewState`: the Pipeline view (inspected step, layout modes, live work
  *     indicator, audio autopilot progress, log filter).
  *   - `useRagPanelState`: the RAG index status and the RAG inspector's test query.
+ *   - `useOutlineCollapseState`: folded acts and beats in the outline.
  * State only; the pipeline and the index are driven from `@/pipeline` and the shell.
  */
 
@@ -84,5 +85,30 @@ export function useRagPanelState(): UseRagPanelStateResult {
         setRagTestResults,
         ragTestLoading,
         setRagTestLoading
+    };
+}
+
+export interface UseOutlineCollapseStateResult {
+    /** Collapsed acts in the sidebar outline, keyed by act index. */
+    collapsedActs: Record<string, boolean>;
+    setCollapsedActs: Setter<Record<string, boolean>>;
+    collapsedBeats: Record<string, boolean>;
+    setCollapsedBeats: Setter<Record<string, boolean>>;
+    expandedBeatAnalysis: Record<string, boolean>;
+    setExpandedBeatAnalysis: Setter<Record<string, boolean>>;
+}
+
+/** Which acts and beats are folded, and which beat analyses are open. Everything starts unfolded. */
+export function useOutlineCollapseState(): UseOutlineCollapseStateResult {
+    const [collapsedActs, setCollapsedActs] = useState<Record<string, boolean>>({});
+    const [collapsedBeats, setCollapsedBeats] = useState<Record<string, boolean>>({});
+    const [expandedBeatAnalysis, setExpandedBeatAnalysis] = useState<Record<string, boolean>>({});
+    return {
+        collapsedActs,
+        setCollapsedActs,
+        collapsedBeats,
+        setCollapsedBeats,
+        expandedBeatAnalysis,
+        setExpandedBeatAnalysis
     };
 }

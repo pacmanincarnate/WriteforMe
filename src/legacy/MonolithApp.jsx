@@ -466,7 +466,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -1194,11 +1194,15 @@ const ReactDOM = ReactDOMClient;
                 story, setStory, setWorldPrimer, showToast, setLoading, setLoadingStep,
                 ingestLoreBatch: (loreList, options) => ingestLoreBatch(loreList, options)
             });
-            const [isDraggingSetupLore, setIsDraggingSetupLore] = useState(false);
-            const [isDraggingLoreTab, setIsDraggingLoreTab] = useState(false);
-            const [loreSearch, setLoreSearch] = useState('');
-            const [lorePage, setLorePage] = useState(1);
-            const LORE_PAGE_SIZE = 25;
+            // Lore tab search, paging and drop-zone flags (Phase 7).
+            const {
+                loreSearch, setLoreSearch,
+                lorePage, setLorePage,
+                lorePageSize: LORE_PAGE_SIZE,
+                filteredLore, paginatedLore, totalLorePages,
+                isDraggingSetupLore, setIsDraggingSetupLore,
+                isDraggingLoreTab, setIsDraggingLoreTab
+            } = useLoreBrowser(story?.lore);
 
             const loreInputRef = useRef(null);
             const coverUploadInputRef = useRef(null);
@@ -1506,24 +1510,6 @@ const ReactDOM = ReactDOMClient;
                 return map;
             }, [story?.acts, story?.sequences, story?.scenes]);
 
-            // Memoized search filtering & pagination for Lore Tab
-            const filteredLore = useMemo(() => {
-                const allLore = story?.lore || [];
-                if (!loreSearch || !loreSearch.trim()) return allLore;
-                const q = loreSearch.toLowerCase().trim();
-                return allLore.filter(l => (l.topic || '').toLowerCase().includes(q) || (l.detail || '').toLowerCase().includes(q));
-            }, [story?.lore, loreSearch]);
-
-            const totalLorePages = Math.ceil(filteredLore.length / LORE_PAGE_SIZE) || 1;
-
-            const paginatedLore = useMemo(() => {
-                const start = (lorePage - 1) * LORE_PAGE_SIZE;
-                return filteredLore.slice(start, start + LORE_PAGE_SIZE);
-            }, [filteredLore, lorePage, LORE_PAGE_SIZE]);
-
-            useEffect(() => {
-                setLorePage(1);
-            }, [loreSearch]);
 
 
 
@@ -1624,56 +1610,19 @@ const ReactDOM = ReactDOMClient;
                 handleInvalidateBelief
             } = useEpistemicEditors({ setStory, showToast, requestConfirm });
 
-            // Global Edit Modal State
-            const [editingState, setEditingState] = useState({
-                isOpen: false,
-                title: "",
-                value: "",
-                onConfirm: null
-            });
+            // Edit, escalation-intervention and critique dialogs (Phase 7).
+            const {
+                editingState, setEditingState,
+                interventionState, setInterventionState,
+                critiqueState, setCritiqueState,
+                openEditModal, openCritiqueModal
+            } = useShellModals({ showToast });
 
             // Feedback Ledger State for Rollbacks
             const [feedbackLedger, setFeedbackLedger] = useState({});
 
-            // Intervention Modal State for Escalation Failures
-            const [interventionState, setInterventionState] = useState({
-                isOpen: false,
-                tierName: "",
-                deviationReasons: [],
-                rawOutput: "",
-                onResolve: null
-            });
-
-            // Critique Modal State for failed beats
-            const [critiqueState, setCritiqueState] = useState({
-                isOpen: false,
-                beatNumber: null,
-                critique: ""
-            });
-
             // Prompt-log detail dialog (Phase 6E-3).
             const { logModalState, setLogModalState, openLogDetailModal } = useLogDetailModal({ promptLog });
-
-            const openCritiqueModal = (beatNumber, critique) => {
-                setCritiqueState({
-                    isOpen: true,
-                    beatNumber,
-                    critique: critique || "No critique available."
-                });
-            };
-
-            const openEditModal = (title, value, onConfirm) => {
-                setEditingState({
-                    isOpen: true,
-                    title,
-                    value: value || "",
-                    onConfirm: (newValue) => {
-                        onConfirm(newValue);
-                        setEditingState(prev => ({ ...prev, isOpen: false }));
-                        showToast(`${title} updated!`, "success");
-                    }
-                });
-            };
 
             openEditModalRef.current = openEditModal;
 
@@ -1983,9 +1932,11 @@ const ReactDOM = ReactDOMClient;
             }, [story.lore]);
 
             // UI State
-            const [collapsedActs, setCollapsedActs] = useState({});
-            const [collapsedBeats, setCollapsedBeats] = useState({});
-            const [expandedBeatAnalysis, setExpandedBeatAnalysis] = useState({});
+            const {
+                collapsedActs, setCollapsedActs,
+                collapsedBeats, setCollapsedBeats,
+                expandedBeatAnalysis, setExpandedBeatAnalysis
+            } = useOutlineCollapseState();
 
 
 

@@ -26,3 +26,5 @@ export * from './useDirectiveWorkspaceState';
 export * from './useEditorialHarnessState';
 export * from './useSceneWorkspaceState';
 export * from './usePanelState';
+export * from './useLoreBrowser';
+export * from './useShellModals';
