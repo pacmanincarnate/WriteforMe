@@ -1,4 +1,7 @@
 export * from './cast';
+export * from './dashboard';
+export * from './directive';
+export * from './editorial';
 export * from './inspector';
 export * from './library';
 export * from './logs';
