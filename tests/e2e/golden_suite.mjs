@@ -1384,21 +1384,27 @@ async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label })
             for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
             return ('0000000' + h.toString(16)).slice(-8);
         };
-        // The pipeline shuffles sensory "modality hands" with Math.random, which lands in
-        // the Writing Agent prompt. Seed it so two runs (and both builds) see the same deal.
-        let seed = 0x2f6e2b1;
-        Math.random = () => {
-            seed = (seed + 0x6d2b79f5) >>> 0;
-            let t = seed;
-            t = Math.imul(t ^ (t >>> 15), t | 1);
-            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-        };
+        // The pipeline shuffles sensory "modality hands" with `sort(() => 0.5 - Math.random())`, and the
+        // result lands in the Writing Agent prompt. Other code draws from Math.random too (ids, retry
+        // jitter), in an order that differs between runs and between the two builds, so a seeded
+        // generator is not enough. Returning values just above 0.5 makes that comparator always
+        // negative, so the shuffle is the same whatever was drawn before it, while every value is
+        // still distinct (ids built from Math.random stay unique).
+        let draws = 0;
+        Math.random = () => 0.5 + (++draws) * 1e-9;
         window.__goldenTranscript = [];
         window.__goldenPrompts = [];
         window.__callAIOverride = async (prompt, systemPrompt, isJson, logName, role) => {
             const out = await window.__goldenMockLlm(prompt, systemPrompt, isJson, logName);
-            const np = normalize(prompt);
+            // Known, intended difference: the Lore Extraction prompt embeds the story's status quo and
+            // lore topics. The legacy app read them from a stale render closure (usually empty); the
+            // modular pipeline reads the live story. Compare the rest of that prompt only.
+            const comparable = String(logName || '') === 'Lore Extraction Agent'
+                ? String(prompt || '')
+                    .replace(/<current_status_quo>[\\s\\S]*?<\\/current_status_quo>/, '<current_status_quo/>')
+                    .replace(/<current_lore_topics>[\\s\\S]*?<\\/current_lore_topics>/, '<current_lore_topics/>')
+                : prompt;
+            const np = normalize(comparable);
             const ns = normalize(systemPrompt);
             window.__goldenPrompts.push({ prompt: np, system: ns });
             window.__goldenTranscript.push({
