@@ -9,6 +9,7 @@ import {
     readStorageBool,
     readStorageNullableString,
     readStorageString,
+    removeStorageKey,
     writeStorageValue
 } from './storageHelpers';
 
@@ -78,6 +79,13 @@ export interface FormModalState {
     onCancel: (() => void) | null;
 }
 
+export interface ShowToastOptions {
+    /** Milliseconds before the toast hides itself; 0 or less keeps it until dismissed. */
+    durationMs?: number;
+    bookCard?: ToastBookCard | null;
+    [key: string]: unknown;
+}
+
 export interface OpenFormModalOptions {
     title: string;
     subtitle?: string;
@@ -126,6 +134,10 @@ export interface UiStoreActions {
     setLibrarySearchQuery: (query: string) => void;
     setMatrixView: (mode: 'grid' | 'list') => void;
     setToast: (toast: ToastState | null) => void;
+    /** Shows a toast and schedules its dismissal; a newer toast replaces the current one. */
+    showToast: (message: string, type?: ToastState['type'], options?: ShowToastOptions | null) => void;
+    /** Hides the current toast and cancels its timer. */
+    dismissToast: () => void;
     setConfirmModalState: (
         nextOrUpdater: ConfirmModalState | ((prev: ConfirmModalState) => ConfirmModalState)
     ) => void;
@@ -153,6 +165,27 @@ function resolveDefaultMatrixView(): 'grid' | 'list' {
         return window.matchMedia('(max-width: 767px)').matches ? 'list' : 'grid';
     }
     return 'grid';
+}
+
+/** Selection indices are stored as their number, or removed when cleared. */
+function writeNullableInt(key: string, value: number | null): void {
+    if (value !== null) {
+        writeStorageValue(key, String(value));
+        return;
+    }
+    removeStorageKey(key);
+}
+
+function defaultToastDurationMs(type: ToastState['type'], options: ShowToastOptions): number {
+    if (typeof options.durationMs === 'number') return options.durationMs;
+    if (options.bookCard) return 14000;
+    return type === 'error' ? 5000 : 3500;
+}
+
+let toastTimer: ReturnType<typeof setTimeout> | null = null;
+function clearToastTimer(): void {
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = null;
 }
 
 const DEFAULT_CONFIRM_MODAL_STATE: ConfirmModalState = {
@@ -237,6 +270,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
         const next =
             typeof nextOrUpdater === 'function' ? nextOrUpdater(get().selectedAct) : nextOrUpdater;
         set({ selectedAct: next });
+        writeNullableInt('ellipsisprose_selectedAct', next);
     },
 
     setSelectedSequence: (nextOrUpdater) => {
@@ -245,12 +279,14 @@ export const useUiStore = create<UiStore>((set, get) => ({
                 ? nextOrUpdater(get().selectedSequence)
                 : nextOrUpdater;
         set({ selectedSequence: next });
+        writeNullableInt('ellipsisprose_selectedSequence', next);
     },
 
     setSelectedScene: (nextOrUpdater) => {
         const next =
             typeof nextOrUpdater === 'function' ? nextOrUpdater(get().selectedScene) : nextOrUpdater;
         set({ selectedScene: next });
+        writeNullableInt('ellipsisprose_selectedScene', next);
     },
 
     setIsInspectorMode: (nextOrUpdater) => {
@@ -316,6 +352,25 @@ export const useUiStore = create<UiStore>((set, get) => ({
 
     setToast: (toast) => {
         set({ toast });
+    },
+
+    showToast: (message, type = 'success', options = null) => {
+        clearToastTimer();
+        const opts: ShowToastOptions = options && typeof options === 'object' ? options : {};
+        const id = Date.now();
+        set({ toast: { id, message, type, ...opts } });
+        const durationMs = defaultToastDurationMs(type, opts);
+        if (durationMs > 0) {
+            toastTimer = setTimeout(() => {
+                toastTimer = null;
+                if (get().toast?.id === id) set({ toast: null });
+            }, durationMs);
+        }
+    },
+
+    dismissToast: () => {
+        clearToastTimer();
+        set({ toast: null });
     },
 
     setConfirmModalState: (nextOrUpdater) => {

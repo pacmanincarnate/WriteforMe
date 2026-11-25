@@ -718,35 +718,17 @@ const ReactDOM = ReactDOMClient;
             const formModalState = useUiStore(s => s.formModalState);
             const openFormModal = useUiStore(s => s.openFormModal);
 
-            const [toast, setToast] = useState(null);
-            const toastTimerRef = useRef(null);
-            const showToast = useCallback((message, type = 'success', options = null) => {
-                if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-                const toastId = Date.now();
-                const opts = (options && typeof options === 'object') ? options : {};
-                setToast({ id: toastId, message, type, ...opts });
-                const durationMs = typeof opts.durationMs === 'number'
-                    ? opts.durationMs
-                    : (opts.bookCard ? 14000 : (type === 'error' ? 5000 : 3500));
-                if (durationMs > 0) {
-                    toastTimerRef.current = setTimeout(() => {
-                        setToast(prev => (prev && prev.id === toastId ? null : prev));
-                    }, durationMs);
-                }
-            }, []);
+            // Toasts and the Act / Sequence / Scene selection live in the UI store (Phase 7).
+            const toast = useUiStore(s => s.toast);
+            const showToast = useUiStore(s => s.showToast);
+            const dismissToast = useUiStore(s => s.dismissToast);
 
-            const [selectedAct, setSelectedAct] = useState(() => {
-                const saved = localStorage.getItem("ellipsisprose_selectedAct");
-                return saved !== null ? parseInt(saved, 10) : null;
-            });
-            const [selectedSequence, setSelectedSequence] = useState(() => {
-                const saved = localStorage.getItem("ellipsisprose_selectedSequence") || localStorage.getItem("ellipsisprose_selectedChapter");
-                return saved !== null ? parseInt(saved, 10) : null;
-            });
-            const [selectedScene, setSelectedScene] = useState(() => {
-                const saved = localStorage.getItem("ellipsisprose_selectedScene");
-                return saved !== null ? parseInt(saved, 10) : null;
-            });
+            const selectedAct = useUiStore(s => s.selectedAct);
+            const setSelectedAct = useUiStore(s => s.setSelectedAct);
+            const selectedSequence = useUiStore(s => s.selectedSequence);
+            const setSelectedSequence = useUiStore(s => s.setSelectedSequence);
+            const selectedScene = useUiStore(s => s.selectedScene);
+            const setSelectedScene = useUiStore(s => s.setSelectedScene);
 
             const promptLog = usePipelineStore(s => s.promptLog);
             const setPromptLog = usePipelineStore(s => s.setPromptLog);
@@ -766,19 +748,16 @@ const ReactDOM = ReactDOMClient;
             window.openFormModal = openFormModal;
 
             // Declared before useStoryLibrary, which reads it.
-            const [view, setViewRaw] = useState(() => localStorage.getItem("ellipsisprose_view") || 'setup');
-            const viewRef = useRef(view);
-            const setView = useCallback((nextView) => {
-                const resolved = typeof nextView === 'function' ? nextView(viewRef.current) : nextView;
-                viewRef.current = resolved;
-                setViewRaw(resolved);
-            }, []);
-            useEffect(() => {
-                viewRef.current = view;
-            }, [view]);
+            const view = useUiStore(s => s.view);
+            const setView = useUiStore(s => s.setView);
+            // Always the store's current view, including between a setView call and the next render.
+            const viewRef = useMemo(() => ({
+                get current() { return useUiStore.getState().view; },
+                set current(_next) { /* the store is the source of truth */ }
+            }), []);
             window.setView = setView;
             // Views where autonomous background generation must NEVER pull the user away
-            const isAutopilotProtectedView = (v = viewRef.current) => v === 'reader' || v === 'pipeline';
+            const isAutopilotProtectedView = useUiStore(s => s.isAutopilotProtectedView);
             window.isAutopilotProtectedView = isAutopilotProtectedView;
 
             // Story Library (Phase 6E-3): list, covers, preferences and duplicate / delete / cover-style actions.
@@ -2153,24 +2132,6 @@ const ReactDOM = ReactDOMClient;
                 embeddingService.current = new EmbeddingService(key, embeddingProvider, koboldUrl, codexUrl);
             }, [apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl, embeddingProvider]);
 
-            useEffect(() => {
-                safeLocalStorageSet("ellipsisprose_view", view);
-            }, [view]);
-
-            useEffect(() => {
-                if (selectedAct !== null) safeLocalStorageSet("ellipsisprose_selectedAct", selectedAct);
-                else { try { localStorage.removeItem("ellipsisprose_selectedAct"); } catch (_) { } }
-            }, [selectedAct]);
-
-            useEffect(() => {
-                if (selectedSequence !== null) safeLocalStorageSet("ellipsisprose_selectedSequence", selectedSequence);
-                else { try { localStorage.removeItem("ellipsisprose_selectedSequence"); } catch (_) { } }
-            }, [selectedSequence]);
-
-            useEffect(() => {
-                if (selectedScene !== null) safeLocalStorageSet("ellipsisprose_selectedScene", selectedScene);
-                else { try { localStorage.removeItem("ellipsisprose_selectedScene"); } catch (_) { } }
-            }, [selectedScene]);
 
 
 
@@ -2208,10 +2169,7 @@ const ReactDOM = ReactDOMClient;
             const { handleExport, handleExportAudioDramaTxt, handleExportEpub, handleImport } = useStoryTransfer({
                 story, storyRef, setStory, setActiveStoryId, setLoadedImages, setPortraitReload, setView,
                 refreshLibrary, refreshAvailableSceneAudio, showToast, requestConfirm,
-                dismissToast: () => {
-                    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-                    setToast(null);
-                },
+                dismissToast,
                 enterReaderMode, playSceneAudio
             });
             window.handleImport = handleImport;
@@ -3497,7 +3455,7 @@ const ReactDOM = ReactDOMClient;
                             />
                         </main>
                         {/* TOAST NOTIFICATION */}
-                        <ToastNotification toast={toast} theme={theme} position={view === 'reader' && ttsIsMiniPlayerVisible && !toast?.bookCard ? 'top' : 'bottom'} onDismiss={() => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); setToast(null); }} />
+                        <ToastNotification toast={toast} theme={theme} position={view === 'reader' && ttsIsMiniPlayerVisible && !toast?.bookCard ? 'top' : 'bottom'} onDismiss={dismissToast} />
                     </div >
                     {/* GLOBAL EDIT MODAL */}
                     <EditModal
