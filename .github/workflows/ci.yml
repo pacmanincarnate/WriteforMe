@@ -66,6 +66,12 @@ jobs:
       - name: E2E upgrade (legacy data survives the new build)
         run: npm run test:upgrade
 
+      # Informational: runs the same golden suite against the pre-refactor single-file app, so the
+      # characterisation tests are proven to describe legacy behaviour too. Never blocks the gate.
+      - name: E2E legacy baseline (informational)
+        continue-on-error: true
+        run: npm run test:legacy
+
       - name: Upload portable build
         if: success()
         uses: actions/upload-artifact@v4

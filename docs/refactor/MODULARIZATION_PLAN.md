@@ -85,7 +85,7 @@ Import direction (see `eslint.config.mjs`; `import-x/no-cycle` maxDepth 10):
 
 - `src/legacy/MonolithApp.jsx`: **~6,045 lines** (was ~15,900 before Phase 6C).
 - Vitest: **33 files / 170 tests passing.**
-- E2E (all must stay green): `golden` **34/34**, `subpath` **35/35**, `singlefile` **35/35**, `upgrade` **1/1**.
+- E2E (all must stay green): `golden` **45/45**, `subpath` **46/46**, `singlefile` **46/46**, `upgrade` **1/1**.
 - Hooks present in `src/hooks/`: `useDebounce`, `useReaderController`, `useStoryImages`, `useModelCatalog`, `useVoiceManagement`, `useAudioProduction`, `useTtsPlayback`.
 - Pipeline orchestrators present in `src/pipeline/` (context, escalation, lore, continuity, story structure, prose, voice director, surgical patch, directive planner/executor, editorial harness, autopilot, …).
 
@@ -163,9 +163,9 @@ npm run lint -- --max-warnings=0
 npm test                      # Vitest — currently 33 files / 170 tests
 npm run build
 npm run build:singlefile
-npm run test:golden           # 34/34
-npm run test:subpath          # 35/35
-npm run test:singlefile       # 35/35
+npm run test:golden           # 45/45
+npm run test:subpath          # 46/46
+npm run test:singlefile       # 46/46
 npm run test:upgrade          # 1/1  (IDB + localStorage data survives upgrade)
 ```
 

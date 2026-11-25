@@ -19,6 +19,7 @@
     "test:subpath": "node tests/e2e/golden_suite.mjs --mode subpath",
     "test:singlefile": "node tests/e2e/golden_suite.mjs --mode singlefile",
     "test:upgrade": "node tests/e2e/golden_suite.mjs --mode upgrade",
+    "test:legacy": "node tests/e2e/golden_suite.mjs --mode legacy",
     "verify": "npm run typecheck && npm run lint -- --max-warnings=0 && npm test && npm run build",
     "test:e2e": "npm run test:golden && npm run test:subpath && npm run test:singlefile && npm run test:upgrade",
     "gate": "npm run verify && npm run build:singlefile && npm run test:e2e",

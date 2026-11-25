@@ -42,6 +42,9 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '../..');
+// Full page loads performed by runCoreSuite (initial mount, post-seed reload, and the two reloads in
+// runPersistenceEditorSuite). The subpath check allows one /api/storage/status probe per load.
+const CORE_SUITE_PAGE_LOADS = 4;
 const LEGACY_BASELINE_REL = 'scratch/legacy_baseline_index.html';
 // Last commit of the single-file app: the commit refactor/modular-architecture was branched from.
 const DEFAULT_LEGACY_BASELINE_REF = 'fd3b70f4ace06b8f8757ed5efee5287ab808ca1a';
@@ -1050,9 +1053,270 @@ async function runCoreSuite({ cdp, exceptions, badStaticResponses, baseUrl, scre
     assert('Documents: txt/md/json/csv/epub extraction work', ioReport.basicDocsOk && ioReport.epubOk, JSON.stringify(ioReport));
     assert('Audio: MP3 encoding produces valid audio/mpeg Blob', ioReport.mp3Type === 'audio/mpeg' && ioReport.mp3Size > 500, JSON.stringify(ioReport));
 
-    // 7. Zero exceptions & zero static 404s
+    // 7. Persistence & editor characterisation (story switch, autosave, scene CRUD, reset, import)
+    await runPersistenceEditorSuite({ cdp, baseUrl, assert });
+
+    // 8. Zero exceptions & zero static 404s
     assert('Zero uncaught runtime exceptions', exceptions.length === 0, exceptions.join(' | '));
     assert('Zero static asset HTTP >=400 errors', badStaticResponses.length === 0, JSON.stringify(badStaticResponses));
+}
+
+/**
+ * Characterisation tests for the story persistence and editor handlers (the Phase 6E-3 extraction
+ * targets). They only use window hooks that exist in BOTH the legacy single-file app and the modular
+ * build (storyRef, setStory, storyStore, handleAddScene, handleMoveScene, updateSceneBlueprint,
+ * handleResetStoryStage, handleImport, EllipsisProseBridge), so the same assertions pin behaviour
+ * before and after the extraction. Runs last in the core suite because it mutates the seeded story.
+ */
+async function runPersistenceEditorSuite({ cdp, baseUrl, assert }) {
+    const PRELUDE = `
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        const live = () => window.storyRef.current;
+        const saved = (id) => window.storyStore.loadStory(id);
+        const until = async (fn, timeoutMs = 4000) => {
+            const start = Date.now();
+            while (Date.now() - start < timeoutMs) {
+                try { if (await fn()) return true; } catch (_) {}
+                await wait(100);
+            }
+            return false;
+        };
+        const sceneTitles = (st, key = '0') => ((st && st.scenes && st.scenes[key]) || []).map((sc) => sc.title);
+        const proseText = (st, key) => {
+            const p = st && st.prose ? st.prose[key] : null;
+            if (!p) return '';
+            return typeof p === 'string' ? p : (p.final || p.draft || p.prose || p.text || '');
+        };
+    `;
+    const run = (body) => cdp.eval(`(async () => { ${PRELUDE} ${body} })()`, true);
+    const ORIGINAL_SCENE = 'The Salt-Stained Page';
+
+    // Make sure the seeded story is the live one before mutating anything.
+    const ready = await run(`
+        const ok = await until(() => live() && live().id === 'golden_story_1' && sceneTitles(live()).length === 1);
+        return { ok, id: live() && live().id, titles: sceneTitles(live()), hasProse: proseText(live(), '0-0').length > 100 };
+    `);
+    assert('Persistence: seeded story is live before editor tests', ready.ok && ready.hasProse, JSON.stringify(ready));
+
+    // 7a. A plain setStory edit is autosaved by the persistence effect.
+    const autosave = await run(`
+        window.setStory((prev) => ({ ...prev, logline: 'GOLDEN-AUTOSAVE-LOGLINE' }));
+        const ok = await until(async () => ((await saved('golden_story_1')) || {}).logline === 'GOLDEN-AUTOSAVE-LOGLINE');
+        return { ok, liveLogline: live().logline };
+    `);
+    assert('Persistence: setStory edit autosaves to storage', autosave.ok && autosave.liveLogline === 'GOLDEN-AUTOSAVE-LOGLINE', JSON.stringify(autosave));
+
+    // 7b. Append a scene: existing scene, beats and prose keep their keys.
+    const append = await run(`
+        window.handleAddScene(0);
+        await until(() => sceneTitles(live()).length === 2);
+        const persisted = await until(async () => sceneTitles(await saved('golden_story_1')).length === 2);
+        return {
+            titles: sceneTitles(live()),
+            proseAt00: proseText(live(), '0-0').length,
+            beatsAt00: ((live().beats || {})['0-0'] || []).length,
+            otherSequenceScenes: sceneTitles(live(), '1').length,
+            persisted
+        };
+    `);
+    assert('Editors: handleAddScene appends a scene and persists it',
+        append.titles.length === 2 && append.titles[0] === ORIGINAL_SCENE && append.proseAt00 > 100 && append.beatsAt00 >= 1 && append.otherSequenceScenes === 1 && append.persisted,
+        JSON.stringify(append));
+
+    // 7c. Insert at index 0: the original scene shifts to index 1 and its beats/prose are re-keyed with it.
+    const insert = await run(`
+        window.handleAddScene(0, 0);
+        await until(() => sceneTitles(live()).length === 3);
+        const persisted = await until(async () => {
+            const st = await saved('golden_story_1');
+            return sceneTitles(st).length === 3 && proseText(st, '0-1').length > 100;
+        });
+        return {
+            titles: sceneTitles(live()),
+            proseAt00: proseText(live(), '0-0').length,
+            proseAt01: proseText(live(), '0-1').length,
+            beatsAt01: ((live().beats || {})['0-1'] || []).length,
+            persisted
+        };
+    `);
+    assert('Editors: handleAddScene insert re-keys prose and beats of shifted scenes',
+        insert.titles.length === 3 && insert.titles[1] === ORIGINAL_SCENE && insert.proseAt00 === 0 && insert.proseAt01 > 100 && insert.beatsAt01 >= 1 && insert.persisted,
+        JSON.stringify(insert));
+
+    // 7d. Move the original scene back up: prose and beats travel with the scene.
+    const move = await run(`
+        window.handleMoveScene(0, 1, -1);
+        await until(() => sceneTitles(live())[0] === ${JSON.stringify(ORIGINAL_SCENE)});
+        const persisted = await until(async () => {
+            const st = await saved('golden_story_1');
+            return sceneTitles(st)[0] === ${JSON.stringify(ORIGINAL_SCENE)} && proseText(st, '0-0').length > 100;
+        });
+        return {
+            titles: sceneTitles(live()),
+            proseAt00: proseText(live(), '0-0').length,
+            proseAt01: proseText(live(), '0-1').length,
+            beatsAt00: ((live().beats || {})['0-0'] || []).length,
+            persisted
+        };
+    `);
+    assert('Editors: handleMoveScene swaps scenes together with their prose and beats',
+        move.titles.length === 3 && move.titles[0] === ORIGINAL_SCENE && move.proseAt00 > 100 && move.proseAt01 === 0 && move.beatsAt00 >= 1 && move.persisted,
+        JSON.stringify(move));
+
+    // 7e. Blueprint field edit on a scene is applied and persisted.
+    const blueprint = await run(`
+        window.updateSceneBlueprint(0, 2, { title: 'Golden Renamed Scene' });
+        await until(() => sceneTitles(live())[2] === 'Golden Renamed Scene');
+        const persisted = await until(async () => sceneTitles(await saved('golden_story_1'))[2] === 'Golden Renamed Scene');
+        return { titles: sceneTitles(live()), persisted };
+    `);
+    assert('Editors: updateSceneBlueprint edits a scene field and persists it',
+        blueprint.titles[2] === 'Golden Renamed Scene' && blueprint.titles[0] === ORIGINAL_SCENE && blueprint.persisted,
+        JSON.stringify(blueprint));
+
+    // 7f. Everything above survives a full page reload (hydration path).
+    await waitForAppMount(cdp, baseUrl);
+    const reloaded = await run(`
+        const ok = await until(() => live() && live().id === 'golden_story_1' && sceneTitles(live()).length === 3);
+        return {
+            ok,
+            id: live() && live().id,
+            titles: sceneTitles(live()),
+            logline: live() && live().logline,
+            proseAt00: proseText(live(), '0-0').length,
+            castLen: ((live() && live().cast) || []).length,
+            worldPrimer: String((live() && live().world_primer) || '').includes('Oakhaven')
+        };
+    `);
+    assert('Persistence: scene edits and autosaved fields survive a full reload',
+        reloaded.ok && reloaded.titles[0] === ORIGINAL_SCENE && reloaded.titles[2] === 'Golden Renamed Scene' && reloaded.logline === 'GOLDEN-AUTOSAVE-LOGLINE' && reloaded.proseAt00 > 100 && reloaded.castLen === 2 && reloaded.worldPrimer,
+        JSON.stringify(reloaded));
+
+    // 7g. Story switching: each story keeps its own data, edits land on the right record, nothing bleeds across.
+    const switching = await run(`
+        const second = {
+            id: 'golden_story_2',
+            title: 'Second Shelf',
+            writing_mode: 'novel',
+            concept: 'A lamplighter maps a city that rearranges itself every night.',
+            logline: 'Second shelf logline.',
+            cast: [{ id: 'char_ives', name: 'Ives Marrow', role: 'Protagonist' }],
+            acts: [{ number: 1, title: 'Act I: Wicks', description: 'Ives notices the streets no longer match his route book.' }],
+            sequences: [{ number: 1, parent_act: 1, title: 'Wrong Turnings', dramatic_question: 'Who is moving the streets?', function: 'Inciting Discovery' }],
+            scenes: { '0': [{ id: '1.1', number: '1.1', title: 'Lamp Thirty-One', pov_character: 'Ives Marrow', characters_present: ['Ives Marrow'], synopsis: 'Ives finds lamp thirty-one on the wrong corner.' }] },
+            beats: {},
+            prose: { '0-0': { final: 'Ives counted the lamps twice along Tallow Row and came up one short, then one over, as though the street itself were breathing in the dark and could not decide how long it wished to be tonight.', draft: '' } },
+            lore: [],
+            relationships: {},
+            graph_edges: []
+        };
+        await window.storyStore.saveStory(second.id, second);
+        const out = {};
+
+        await window.EllipsisProseBridge.switchStory('golden_story_2');
+        out.switchedTo2 = await until(() => live() && live().id === 'golden_story_2' && live().title === 'Second Shelf');
+        out.activeIdAfterSwitch = await until(() => localStorage.getItem('ellipsisprose_active_story_id') === 'golden_story_2');
+        await wait(600); // let the hydration + autosave effects of the switch settle
+
+        window.setStory((prev) => ({ ...prev, logline: 'EDITED-ON-STORY-2' }));
+        out.edit2Persisted = await until(async () => ((await saved('golden_story_2')) || {}).logline === 'EDITED-ON-STORY-2');
+        const one = await saved('golden_story_1');
+        out.story1UntouchedWhileOn2 = Boolean(one) && one.title === 'The Salt Clock' && one.logline === 'GOLDEN-AUTOSAVE-LOGLINE' && sceneTitles(one).length === 3;
+
+        await window.EllipsisProseBridge.switchStory('golden_story_1');
+        out.switchedBack = await until(() => live() && live().id === 'golden_story_1' && live().title === 'The Salt Clock' && sceneTitles(live()).length === 3);
+        await wait(600);
+
+        const one2 = await saved('golden_story_1');
+        const two2 = await saved('golden_story_2');
+        out.story1Intact = Boolean(one2) && one2.id === 'golden_story_1' && one2.title === 'The Salt Clock' && sceneTitles(one2).length === 3 && proseText(one2, '0-0').length > 100 && (one2.cast || []).length === 2;
+        out.story2Intact = Boolean(two2) && two2.id === 'golden_story_2' && two2.title === 'Second Shelf' && two2.logline === 'EDITED-ON-STORY-2' && sceneTitles(two2).length === 1 && (two2.cast || []).length === 1;
+        const listed = await window.storyStore.listStories();
+        out.listedIds = (listed || []).map((s) => s.id).filter((id) => id.indexOf('golden_story_') === 0).sort();
+        return out;
+    `);
+    assert('Persistence: switching stories keeps each story intact and edits on the right record',
+        switching.switchedTo2 && switching.activeIdAfterSwitch && switching.edit2Persisted && switching.story1UntouchedWhileOn2 && switching.switchedBack && switching.story1Intact && switching.story2Intact && switching.listedIds.join(',') === 'golden_story_1,golden_story_2',
+        JSON.stringify(switching));
+
+    // 7h. Reset stage "prose" (confirm modal -> rollback -> forced save): prose is cleared, structure stays.
+    const reset = await run(`
+        const confirmLabel = 'Delete All Prose';
+        const pending = window.handleResetStoryStage('prose');
+        const clicked = await until(() => {
+            const matches = Array.from(document.querySelectorAll('button')).filter((b) => (b.innerText || '').trim() === confirmLabel);
+            if (matches.length === 0) return false;
+            matches[matches.length - 1].click();
+            return true;
+        });
+        await Promise.race([Promise.resolve(pending), wait(6000)]);
+        const cleared = await until(() => proseText(live(), '0-0').length === 0);
+        const persisted = await until(async () => {
+            const st = await saved('golden_story_1');
+            return Boolean(st) && proseText(st, '0-0').length === 0 && sceneTitles(st).length === 3;
+        });
+        return {
+            clicked,
+            cleared,
+            persisted,
+            titles: sceneTitles(live()),
+            castLen: (live().cast || []).length,
+            actsLen: (live().acts || []).length,
+            modalClosed: await until(() => !Array.from(document.querySelectorAll('button')).some((b) => (b.innerText || '').trim() === confirmLabel))
+        };
+    `);
+    assert('Persistence: reset stage "prose" clears prose, keeps structure, and persists the regression',
+        reset.clicked && reset.cleared && reset.persisted && reset.titles.length === 3 && reset.castLen === 2 && reset.actsLen === 3 && reset.modalClosed,
+        JSON.stringify(reset));
+
+    // 7i. JSON import: the imported story becomes active, is persisted, and existing stories are untouched.
+    const imported = await run(`
+        const payload = {
+            id: 'golden_import_1',
+            title: 'Imported Tide',
+            writing_mode: 'novel',
+            concept: 'A ferryman keeps a ledger of every passenger who never reached the far bank.',
+            cast: [{ id: 'char_orla', name: 'Orla Finch', role: 'Protagonist' }],
+            acts: [{ number: 1, title: 'Act I: Crossing', description: 'Orla inherits the ferry and its unfinished ledger.' }],
+            sequences: [{ number: 1, parent_act: 1, title: 'The Ledger', dramatic_question: 'Whose names are missing?', function: 'Inciting Discovery' }],
+            scenes: { '0': [{ id: '1.1', number: '1.1', title: 'First Fare', pov_character: 'Orla Finch', characters_present: ['Orla Finch'], synopsis: 'Orla takes her first passenger across in fog.' }] },
+            beats: {},
+            prose: { '0-0': { final: 'Orla poled the ferry out from the reeds before dawn, the ledger wrapped in oilcloth under the thwart, and did not look back at the landing where her uncle had stood for forty years counting heads.', draft: '' } },
+            lore: []
+        };
+        const file = new File([JSON.stringify(payload)], 'golden_import.json', { type: 'application/json' });
+        await window.handleImport({ target: { files: [file], value: '' } });
+        const out = {};
+        out.live = await until(() => live() && live().id === 'golden_import_1' && live().title === 'Imported Tide');
+        out.activeId = await until(() => localStorage.getItem('ellipsisprose_active_story_id') === 'golden_import_1');
+        out.persisted = await until(async () => {
+            const st = await saved('golden_import_1');
+            return Boolean(st) && st.title === 'Imported Tide' && proseText(st, '0-0').length > 100;
+        });
+        await wait(600);
+        const one = await saved('golden_story_1');
+        const two = await saved('golden_story_2');
+        out.othersIntact = Boolean(one) && one.title === 'The Salt Clock' && sceneTitles(one).length === 3
+            && Boolean(two) && two.title === 'Second Shelf' && two.logline === 'EDITED-ON-STORY-2';
+        out.liveCast = ((live() && live().cast) || []).map((c) => c.name);
+        return out;
+    `);
+    assert('Persistence: JSON import activates and persists the story without touching others',
+        imported.live && imported.activeId && imported.persisted && imported.othersIntact && imported.liveCast.join(',') === 'Orla Finch',
+        JSON.stringify(imported));
+
+    // 7j. The imported story is the one that hydrates after a reload, and the bridge sees the full library.
+    await waitForAppMount(cdp, baseUrl);
+    const finalState = await run(`
+        const ok = await until(() => live() && live().id === 'golden_import_1' && live().title === 'Imported Tide');
+        const stories = await window.EllipsisProseBridge.listStories();
+        const list = Array.isArray(stories && stories.stories) ? stories.stories : (Array.isArray(stories) ? stories : []);
+        const ids = list.map((s) => s.id).filter((id) => /^golden_/.test(String(id))).sort();
+        return { ok, id: live() && live().id, ids };
+    `);
+    assert('Persistence: last active story hydrates after reload and the library lists every story',
+        finalState.ok && finalState.ids.join(',') === 'golden_import_1,golden_story_1,golden_story_2',
+        JSON.stringify(finalState));
 }
 
 async function runMode(opts) {
@@ -1092,7 +1356,7 @@ async function runMode(opts) {
             await runCoreSuite({ ...session, baseUrl: `http://127.0.0.1:${port}/WriteforMe/`, screenshotDir: opts.screenshots, results });
             const nonStatusApi404s = session.api404Responses.filter((r) => !String(r.url || '').endsWith('/api/storage/status'));
             const api404CheckName = 'Subpath mode emits at most 1 /api/storage/status probe per load and 0 other /api/storage/* 404s';
-            if (session.api404Responses.length <= 2 && nonStatusApi404s.length === 0) {
+            if (session.api404Responses.length <= CORE_SUITE_PAGE_LOADS && nonStatusApi404s.length === 0) {
                 results.passed.push(api404CheckName);
                 console.log(`  [PASS] ${api404CheckName} (observed ${session.api404Responses.length} status probe(s))`);
             } else {
