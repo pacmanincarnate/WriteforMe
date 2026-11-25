@@ -9,6 +9,7 @@ export * from './lore';
 export * from './pipeline';
 export * from './reader';
 export * from './relationships';
+export * from './settings';
 export * from './setup';
 export * from './structure';
 export * from './writer';
