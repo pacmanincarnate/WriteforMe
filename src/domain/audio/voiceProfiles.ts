@@ -1007,15 +1007,27 @@ export function getVoiceReferenceTextForCharacter(
     return RAIN_SENTENCE;
 }
 
+let liveStoryProvider: (() => AudioStoryLike | null | undefined) | null = null;
+
 /**
- * Always resolves the freshest active React story state if the job's story ID matches window.storyRef.current.
+ * Registers the source of the live (in-editor) story. The app shell calls this once with a getter
+ * for its current story so long-running audio jobs can pick up edits made while they run.
+ * Pass `null` to unregister (tests).
+ */
+export function setLiveStoryProviderForAudio(
+    provider: (() => AudioStoryLike | null | undefined) | null
+): void {
+    liveStoryProvider = provider;
+}
+
+/**
+ * Always resolves the freshest active story state if the job's story ID matches the live story
+ * (see `setLiveStoryProviderForAudio`); otherwise returns the story it was given.
  */
 export function getLiveStoryForAudio<T extends AudioStoryLike | null | undefined>(storyObj: T): T {
-    if (typeof window !== 'undefined') {
-        const win = window as unknown as { storyRef?: { current?: AudioStoryLike } };
-        if (win.storyRef?.current && storyObj?.id && win.storyRef.current.id === storyObj.id) {
-            return win.storyRef.current as T;
-        }
+    const live = liveStoryProvider ? liveStoryProvider() : null;
+    if (live && storyObj?.id && live.id === storyObj.id) {
+        return live as T;
     }
     return storyObj;
 }

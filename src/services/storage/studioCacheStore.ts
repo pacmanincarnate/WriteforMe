@@ -4,6 +4,7 @@
  * and rendered audio segments (`renders` store) with LRU RAM caching and quota pruning.
  */
 
+import { ensureMp3AudioBlob } from '@/services/audio/codec';
 import { ResilientIdbStore, isQuotaExceededIdbError } from './idbBase';
 
 export interface StudioVoiceRecord {
@@ -25,14 +26,6 @@ interface RenderMetaEntry {
     timestamp: number;
     size: number;
 }
-
-const getWindowMp3Encoder = (): ((blob: Blob, bitrateKbps?: number) => Promise<Blob>) | null => {
-    if (typeof window === 'undefined') return null;
-    const fn = (window as unknown as { ensureMp3AudioBlob?: unknown }).ensureMp3AudioBlob;
-    return typeof fn === 'function'
-        ? (fn as (blob: Blob, bitrateKbps?: number) => Promise<Blob>)
-        : null;
-};
 
 /** IndexedDB cache for hybrid studio masters, anchors, and rendered chunks. */
 export class StudioCacheStore extends ResilientIdbStore {
@@ -243,14 +236,8 @@ export class StudioCacheStore extends ResilientIdbStore {
     async putRender(id: string, data: Record<string, unknown>): Promise<void> {
         let preparedData = data;
         const rawBlob = preparedData?.audioBlob;
-        const mp3Encoder = getWindowMp3Encoder();
-        if (
-            rawBlob instanceof Blob &&
-            rawBlob.size > 0 &&
-            rawBlob.type !== 'audio/mpeg' &&
-            mp3Encoder
-        ) {
-            const mp3Blob = await mp3Encoder(rawBlob, 128);
+        if (rawBlob instanceof Blob && rawBlob.size > 0 && rawBlob.type !== 'audio/mpeg') {
+            const mp3Blob = await ensureMp3AudioBlob(rawBlob, 128);
             preparedData = { ...preparedData, audioBlob: mp3Blob };
         }
         const record: StudioRenderRecord = { id, ...preparedData, timestamp: Date.now() };

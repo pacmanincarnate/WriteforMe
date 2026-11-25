@@ -7,11 +7,11 @@
 import React from 'react';
 import { ChevronDown, RefreshCw, RotateCcw, UniversalModelSearch } from '@/components';
 import { DEFAULT_GEMINI_IMAGE_MODELS, DEFAULT_OPENROUTER_IMAGE_MODELS } from '@/config';
+import { getKoboldLoadedModelName } from '@/services/llm';
 import type { SettingsModelsTabProps } from './types';
 
 function readKoboldGlobalModel(): string | undefined {
-    if (typeof window === 'undefined') return undefined;
-    return (window as Window & { koboldLoadedModelGlobal?: string }).koboldLoadedModelGlobal;
+    return getKoboldLoadedModelName() || undefined;
 }
 
 const PROVIDER_TABS = [

@@ -301,6 +301,34 @@ import {
     splitProseIntoSentences
 } from '@/domain/editorial';
 
+/**
+ * `window.*` callers (DevTools, the golden suite, external scripts) historically relied on these
+ * three functions falling back to `window.callAI` when no LLM function was passed. The domain layer
+ * no longer reaches for globals, so the fallback lives here, at the window boundary.
+ */
+type WindowCallAI = NonNullable<Parameters<typeof surgicallyRepairBeatMRUs>[4]>;
+const readWindowCallAI = (): WindowCallAI | null => {
+    const fn = (window as unknown as { callAI?: unknown }).callAI;
+    return typeof fn === 'function' ? (fn as WindowCallAI) : null;
+};
+const withWindowCallAI = {
+    auditor: (params: Parameters<typeof runContinuityAuditor>[0] = {}) =>
+        runContinuityAuditor({
+            ...params,
+            callAIFn:
+                params?.callAIFn ||
+                (readWindowCallAI() as NonNullable<typeof params>['callAIFn'] | null)
+        }),
+    beats: (...args: Parameters<typeof surgicallyRepairBeatMRUs>) => {
+        const [defective, all, context, genOutput, callAIFn] = args;
+        return surgicallyRepairBeatMRUs(defective, all, context, genOutput, callAIFn || readWindowCallAI());
+    },
+    valueShifts: (...args: Parameters<typeof surgicallyRepairValueShifts>) => {
+        const [defective, all, context, genOutput, callAIFn] = args;
+        return surgicallyRepairValueShifts(defective, all, context, genOutput, callAIFn || readWindowCallAI());
+    }
+};
+
 registerWindowGlobals({
     // Text Utils
     safeEscapeRegex,
@@ -554,7 +582,7 @@ registerWindowGlobals({
     applyWorldUpdates,
     querySemanticEventLog,
     compileActiveState,
-    runContinuityAuditor,
+    runContinuityAuditor: withWindowCallAI.auditor,
     buildSequencePromptContext,
     extractProseTextTail,
     getSequenceScenesList,
@@ -568,8 +596,8 @@ registerWindowGlobals({
     // Story Log Formatting & Structural Repair
     formatVerboseLogEntry,
     formatAllVerboseLogs,
-    surgicallyRepairBeatMRUs,
-    surgicallyRepairValueShifts,
+    surgicallyRepairBeatMRUs: withWindowCallAI.beats,
+    surgicallyRepairValueShifts: withWindowCallAI.valueShifts,
 
     // Lifecycle Domain (Rollback & Migration)
     STORY_RESET_STAGES,

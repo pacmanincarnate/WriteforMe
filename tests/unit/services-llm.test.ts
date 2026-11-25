@@ -14,7 +14,9 @@ import {
     formatOpenAITools,
     getOpenRouterModelLimits,
     getOpenRouterSmartRouting,
+    getKoboldLoadedModelName,
     isCloudModelName,
+    setKoboldLoadedModelName,
     parseNanoGPTModelMetadata,
     searchNanoGPTModels,
     supportsExplicitOpenRouterCacheControl
@@ -26,7 +28,7 @@ beforeEach(() => {
     clearOpenRouterRoutingState();
     sessionStorage.clear();
     localStorage.clear();
-    delete (window as unknown as { koboldLoadedModelGlobal?: string }).koboldLoadedModelGlobal;
+    setKoboldLoadedModelName('');
 });
 
 afterEach(() => {
@@ -34,7 +36,7 @@ afterEach(() => {
     clearOpenRouterRoutingState();
     sessionStorage.clear();
     localStorage.clear();
-    delete (window as unknown as { koboldLoadedModelGlobal?: string }).koboldLoadedModelGlobal;
+    setKoboldLoadedModelName('');
     vi.restoreAllMocks();
 });
 
@@ -329,8 +331,11 @@ describe('services/llm nano-GPT, KoboldCPP & formatOpenAITools', () => {
         expect(isCloudModelName('gemini-2.5-flash')).toBe(true);
         expect(isCloudModelName('local-gguf-q4')).toBe(false);
 
-        (window as unknown as { koboldLoadedModelGlobal?: string }).koboldLoadedModelGlobal =
-            'gemma-3-local';
+        setKoboldLoadedModelName('gemma-3-local');
+        expect(getKoboldLoadedModelName()).toBe('gemma-3-local');
+        expect((window as unknown as { koboldLoadedModelGlobal?: string }).koboldLoadedModelGlobal).toBe(
+            'gemma-3-local'
+        );
         const sent: Array<{ url: string; body: Record<string, unknown> }> = [];
         globalThis.fetch = vi.fn<typeof fetch>(async (url, init) => {
             sent.push({

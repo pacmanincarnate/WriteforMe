@@ -600,11 +600,8 @@ export async function runContinuityAuditor({
     }
 
     try {
-        const winCallAI =
-            typeof window !== 'undefined'
-                ? (window as unknown as { callAI?: ContinuityAuditCallAIFn }).callAI
-                : undefined;
-        const effectiveCallAI = callAIFn || winCallAI;
+        // The LLM entry point must be passed in (`callAIFn`); the domain layer does not reach for globals.
+        const effectiveCallAI = callAIFn;
         if (!effectiveCallAI) return { prose: proseText, status: 'SKIPPED', patchesApplied: 0 };
 
         const isAudioDramaMode = Boolean(isAudioDrama || isAudioDramaScriptText(proseText));

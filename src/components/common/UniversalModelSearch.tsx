@@ -5,7 +5,7 @@
 
 import { useEffect, useRef } from 'react';
 import { Bookmark, Loader2, RefreshCw, Search, X } from '@/components/icons';
-import { isCloudModelName } from '@/services/llm';
+import { getKoboldLoadedModelName, isCloudModelName } from '@/services/llm';
 
 export interface SearchableModelEntry {
     id?: string;
@@ -71,11 +71,10 @@ export function UniversalModelSearch({
 
     useEffect(() => {
         if (apiProvider === 'koboldcpp' && onSelectModel) {
-            const win = window as Window & { koboldLoadedModelGlobal?: string };
             const candidate =
                 koboldLoadedModel && koboldLoadedModel !== 'koboldcpp'
                     ? koboldLoadedModel
-                    : win.koboldLoadedModelGlobal || 'koboldcpp';
+                    : getKoboldLoadedModelName() || 'koboldcpp';
             if (
                 !activeModel ||
                 isCloudModelName(activeModel) ||
@@ -87,12 +86,11 @@ export function UniversalModelSearch({
     }, [apiProvider, koboldLoadedModel, activeModel, onSelectModel]);
 
     if (apiProvider === 'koboldcpp') {
-        const win = window as Window & { koboldLoadedModelGlobal?: string };
         const isConnected = koboldStatus === 'connected';
         const isChecking = koboldStatus === 'checking';
         const displayModel =
             koboldLoadedModel ||
-            win.koboldLoadedModelGlobal ||
+            getKoboldLoadedModelName() ||
             (activeModel && !isCloudModelName(activeModel) && activeModel !== 'koboldcpp'
                 ? activeModel
                 : 'koboldcpp');

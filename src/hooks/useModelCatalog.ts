@@ -23,6 +23,7 @@ import {
     getEffectiveModelConfig as resolveEffectiveModelConfig,
     sanitizeLocalKoboldModel as resolveSanitizedKoboldModel,
     searchNanoGPTModels,
+    setKoboldLoadedModelName,
     type CodexModelInfo,
     type EffectiveModelConfig,
     type GeminiImageModelInfo,
@@ -782,10 +783,7 @@ export function useModelCatalog({
                 const mName = res.model || 'KoboldCPP Loaded Model';
                 setKoboldLoadedModel(mName);
                 setKoboldModel(mName);
-                if (typeof window !== 'undefined') {
-                    (window as unknown as { koboldLoadedModelGlobal?: string }).koboldLoadedModelGlobal =
-                        mName;
-                }
+                setKoboldLoadedModelName(mName);
             } else {
                 setKoboldStatus('offline');
                 setKoboldError(res.error || 'Connection Refused / Server Offline');

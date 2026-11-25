@@ -84,7 +84,7 @@ Import direction (see `eslint.config.mjs`; `import-x/no-cycle` maxDepth 10):
 ### 3.2 Current state snapshot
 
 - `src/legacy/MonolithApp.jsx`: **~5,640 lines** (was ~15,900 before Phase 6C).
-- Vitest: **34 files / 201 tests passing.**
+- Vitest: **35 files / 205 tests passing.**
 - E2E (all must stay green): `golden` **45/45**, `subpath` **46/46**, `singlefile` **46/46**, `upgrade` **1/1**.
 - Hooks present in `src/hooks/`: `useDebounce`, `useReaderController`, `useStoryImages`, `useModelCatalog`, `useVoiceManagement`, `useAudioProduction`, `useTtsPlayback`.
 - Pipeline orchestrators present in `src/pipeline/` (context, escalation, lore, continuity, story structure, prose, voice director, surgical patch, directive planner/executor, editorial harness, autopilot, …).
@@ -149,6 +149,7 @@ Create `src/hooks/useStoryPersistence.ts` and `src/hooks/useStoryEditors.ts`; ex
 ### 4.4 Hardening & release
 
 - Remove dead code and unused exports; prune `window.*` bindings that nothing reads (**only** after a repo-wide search incl. `mcp-server/` and `audio-studio-bridge.js`).
+- **Hidden `window` channels (done for the typed layers' data paths):** `src/domain/**` no longer reads `window` at all (enforced by an ESLint `no-restricted-globals` rule). Replacements: the LLM entry point is passed in (`callAIFn`; the `window.callAI` fallback for window callers lives in `src/legacy/registerDomainGlobals.ts`), the live story comes from `setLiveStoryProviderForAudio`, the KoboldCPP loaded model from `services/llm/koboldRuntime.ts` (still mirrored to `window.koboldLoadedModelGlobal` for external readers), storage imports `ensureMp3AudioBlob` directly, and `lorePipeline` imports `storyStore`. Still reading `window` on purpose: the `__callAIOverride` test seam, `window.alert` fallbacks in the pipeline, and the Kokoro worker hooks / audio stage loggers / `window.StudioPipeline` in `services/audio` (these are set by the monolith and move with it in Phase 7).
 - Manual QA pass on desktop + phone-sized viewport: library → setup → full pipeline run (all four providers: Gemini, OpenRouter, NanoGPT, KoboldCpp), reader, audio drama, import/export.
 - Merge `refactor/modular-architecture` → `dev` via PR once Phase 7 is green; promote to `main` only at a verified milestone (existing two-tier policy: `dev` = work, `main` = release).
 
@@ -162,7 +163,7 @@ All nine must exit 0 (PowerShell, from repo root; Node 22 on `PATH`):
 $env:PATH = "C:\Users\cshai\AppData\Local\hermes\node;$env:PATH"
 npm run typecheck
 npm run lint -- --max-warnings=0
-npm test                      # Vitest — currently 34 files / 201 tests
+npm test                      # Vitest — currently 35 files / 205 tests
 npm run build
 npm run build:singlefile
 npm run test:golden           # 45/45

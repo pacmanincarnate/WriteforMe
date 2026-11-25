@@ -61,6 +61,18 @@ export default tseslint.config(
         }
     },
     {
+        // The domain layer is pure logic: anything it needs from the running app (LLM entry point,
+        // live story, encoders) is passed in or registered through an explicit setter, never read
+        // off `window`.
+        files: ['src/domain/**/*.ts'],
+        rules: {
+            'no-restricted-globals': [
+                'error',
+                { name: 'window', message: 'src/domain must not read window; inject the dependency instead.' }
+            ]
+        }
+    },
+    {
         files: ['src/prompts/tiers/**/*.ts'],
         rules: {
             'no-useless-escape': 'off'

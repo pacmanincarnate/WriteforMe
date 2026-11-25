@@ -20,6 +20,7 @@ import {
     partitionLoreIntoSemanticSections
 } from '@/domain/lore';
 import { PROMPTS } from '@/prompts';
+import { storyStore } from '@/services/storage';
 import type { LoreItem } from '@/types';
 import { extractAllTags, extractTag, safeLocalStorageSet } from '@/utils';
 import {
@@ -110,20 +111,9 @@ export async function distillLore(
             }));
             const updatedId = asString(updatedStory.id);
             if (updatedId) {
-                const winStore = (
-                    typeof window !== 'undefined'
-                        ? (window as unknown as {
-                              storyStore?: {
-                                  saveStory?: (id: string, data: PipelineStory) => Promise<unknown>;
-                              };
-                          }).storyStore
-                        : undefined
-                );
-                if (winStore?.saveStory) {
-                    winStore.saveStory(updatedId, updatedStory).catch((err) => {
-                        console.warn('[distillLore] Failed to persist primer to storyStore:', err);
-                    });
-                }
+                storyStore.saveStory(updatedId, updatedStory).catch((err) => {
+                    console.warn('[distillLore] Failed to persist primer to storyStore:', err);
+                });
             }
         }
     };

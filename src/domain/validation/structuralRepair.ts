@@ -44,11 +44,8 @@ export async function surgicallyRepairBeatMRUs(
         return { success: false, genOutput };
     }
 
-    const effectiveCallAI =
-        callAIFn ||
-        (typeof window !== 'undefined'
-            ? (window as unknown as { callAI?: StructuralRepairCallAIFn }).callAI
-            : undefined);
+    // The LLM entry point must be passed in; the domain layer does not reach for globals.
+    const effectiveCallAI = callAIFn;
     if (typeof effectiveCallAI !== 'function') {
         return { success: false, genOutput };
     }
@@ -216,11 +213,8 @@ export async function surgicallyRepairValueShifts(
         return { success: false, genOutput };
     }
 
-    const effectiveCallAI =
-        callAIFn ||
-        (typeof window !== 'undefined'
-            ? (window as unknown as { callAI?: StructuralRepairCallAIFn }).callAI
-            : undefined);
+    // The LLM entry point must be passed in; the domain layer does not reach for globals.
+    const effectiveCallAI = callAIFn;
     if (typeof effectiveCallAI !== 'function') {
         return { success: false, genOutput };
     }

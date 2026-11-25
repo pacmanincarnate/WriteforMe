@@ -5,6 +5,7 @@
  */
 
 import { isCloudModelName } from './koboldcpp';
+import { getKoboldLoadedModelName } from './koboldRuntime';
 import { getOpenRouterModelLimits } from './openrouter';
 import type { LlmThinkingConfig } from './types';
 
@@ -60,10 +61,7 @@ export interface KoboldSamplerSettings {
 }
 
 function getGlobalKoboldLoadedModel(): string {
-    if (typeof window === 'undefined') return '';
-    return String(
-        (window as unknown as { koboldLoadedModelGlobal?: unknown }).koboldLoadedModelGlobal || ''
-    );
+    return getKoboldLoadedModelName();
 }
 
 /** Returns the default model ID for the requested API provider using current settings. */

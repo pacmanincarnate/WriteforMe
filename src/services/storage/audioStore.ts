@@ -3,6 +3,7 @@
  * Hybrid Disk-Vault + IndexedDB store for Audio Drama scene and full-sequence MP3 renders.
  */
 
+import { ensureMp3AudioBlob } from '@/services/audio/codec';
 import { ResilientIdbStore, isQuotaExceededIdbError } from './idbBase';
 import { toAsciiHeaderJson } from './imageStore';
 import { studioCacheStore } from './studioCacheStore';
@@ -100,14 +101,6 @@ export interface SequenceAudioMeta {
     sizeBytes?: number;
     updatedAt?: number;
 }
-
-const getWindowMp3Encoder = (): ((blob: Blob, bitrateKbps?: number) => Promise<Blob>) | null => {
-    if (typeof window === 'undefined') return null;
-    const fn = (window as unknown as { ensureMp3AudioBlob?: unknown }).ensureMp3AudioBlob;
-    return typeof fn === 'function'
-        ? (fn as (blob: Blob, bitrateKbps?: number) => Promise<Blob>)
-        : null;
-};
 
 /** Hybrid Disk-Vault + IndexedDB audio drama scene & sequence audio persistence. */
 export class AudioStore extends ResilientIdbStore {
@@ -335,9 +328,8 @@ export class AudioStore extends ResilientIdbStore {
             throw new Error('AudioStore.saveSceneAudio requires a non-empty audio Blob.');
         }
 
-        const mp3Encoder = getWindowMp3Encoder();
-        if (blob.type !== 'audio/mpeg' && blob.type !== 'audio/mp3' && mp3Encoder) {
-            blob = await mp3Encoder(blob, 128);
+        if (blob.type !== 'audio/mpeg' && blob.type !== 'audio/mp3') {
+            blob = await ensureMp3AudioBlob(blob, 128);
         }
 
         const mimeType = blob.type || configuredMime || 'audio/mpeg';
@@ -598,9 +590,8 @@ export class AudioStore extends ResilientIdbStore {
         if (!(blob instanceof Blob) || blob.size <= 0) {
             throw new Error('AudioStore.saveSequenceAudio requires a non-empty audio Blob.');
         }
-        const mp3Encoder = getWindowMp3Encoder();
-        if (blob.type !== 'audio/mpeg' && blob.type !== 'audio/mp3' && mp3Encoder) {
-            blob = await mp3Encoder(blob, 128);
+        if (blob.type !== 'audio/mpeg' && blob.type !== 'audio/mp3') {
+            blob = await ensureMp3AudioBlob(blob, 128);
         }
         const resolvedMime = blob.type || mimeType || 'audio/mpeg';
         const id = `${storyId}:seq:${safeSeqIdx}`;

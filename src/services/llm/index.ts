@@ -8,3 +8,4 @@ export * from './tools';
 export * from './agenticLoop';
 export * from './roleConfig';
 export * from './catalogs';
+export * from './koboldRuntime';

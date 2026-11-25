@@ -6,6 +6,7 @@
 
 import { fetchWithTimeout } from '@/services/http';
 import { cleanJson, extractReasoningAndContent } from '@/utils';
+import { getKoboldLoadedModelName } from './koboldRuntime';
 import {
     formatOpenAITools,
     type LlmCallOptions,
@@ -36,12 +37,7 @@ interface KoboldApiResponse {
     };
 }
 
-const getGlobalKoboldLoadedModel = (): string => {
-    if (typeof window === 'undefined') return '';
-    return String(
-        (window as unknown as { koboldLoadedModelGlobal?: unknown }).koboldLoadedModelGlobal || ''
-    );
-};
+const getGlobalKoboldLoadedModel = (): string => getKoboldLoadedModelName();
 
 export function isCloudModelName(m: unknown): boolean {
     if (!m || typeof m !== 'string') return false;

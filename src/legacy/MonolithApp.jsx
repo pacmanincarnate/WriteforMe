@@ -181,6 +181,7 @@ import {
     getDeterministicVoiceSeed,
     getHumanReadableTtsError,
     getLiveStoryForAudio,
+    setLiveStoryProviderForAudio,
     getVoiceDescriptionForCharacter,
     getVoiceReferenceTextForCharacter,
     integerToEnglishWords,
@@ -699,6 +700,7 @@ const ReactDOM = ReactDOMClient;
             window.createDefaultStoryTemplate = createDefaultStoryTemplate;
             window.hasHydratedStory = hasHydratedStory;
             window.storyRef = storyRef;
+            setLiveStoryProviderForAudio(() => storyRef.current);
             window.setStory = setStory;
 
             // Inspector Mode State (Toggled in Sidebar Footer)
