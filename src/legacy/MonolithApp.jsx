@@ -675,7 +675,11 @@ const ReactDOM = ReactDOMClient;
 
             const [story, setStoryRaw] = useState(() => createDefaultStoryTemplate(activeStoryId));
             const storyRef = useRef(story);
-            storyRef.current = story;
+            // storyRef is written ONLY by setStory below (and the few handlers that pre-seed it before calling
+            // setStory). Do NOT re-sync it from `story` during render: Zustand store updates re-render this
+            // component synchronously (useSyncExternalStore) BEFORE a pending setStoryRaw has been applied, so a
+            // render-time `storyRef.current = story` rolls the ref back one update and the next functional
+            // setStory(prev => ...) silently drops it (observed: freshly written scene prose discarded).
             const setStory = useCallback((updaterOrValue) => {
                 const prev = storyRef.current;
                 const next = typeof updaterOrValue === 'function' ? updaterOrValue(prev) : updaterOrValue;
