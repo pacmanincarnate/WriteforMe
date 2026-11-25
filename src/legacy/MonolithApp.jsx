@@ -990,13 +990,8 @@ const ReactDOM = ReactDOMClient;
 
             // Selected relationship for editing
             const [selectedRel, setSelectedRel] = useState(null);
-            const [matrixView, setMatrixView] = useState(() => {
-                try {
-                    const saved = localStorage.getItem('ellipsisprose_matrix_view');
-                    if (saved === 'grid' || saved === 'list') return saved;
-                } catch { /* Use the viewport default when storage is unavailable. */ }
-                return window.matchMedia('(max-width: 767px)').matches ? 'list' : 'grid';
-            });
+            const matrixView = useUiStore(s => s.matrixView);
+            const setMatrixView = useUiStore(s => s.setMatrixView);
             const [matrixScroll, setMatrixScroll] = useState({ left: false, right: false });
             const matrixScrollRef = useRef(null);
             const measureMatrixScroll = () => {
@@ -1119,10 +1114,8 @@ const ReactDOM = ReactDOMClient;
 
             const toggleTheme = useSettingsStore(s => s.toggleTheme);
 
-            const [settingsTab, setSettingsTab] = useState(() => localStorage.getItem("ellipsisprose_settings_tab") || 'models');
-            useEffect(() => {
-                try { localStorage.setItem("ellipsisprose_settings_tab", settingsTab); } catch (e) {}
-            }, [settingsTab]);
+            const settingsTab = useUiStore(s => s.settingsTab);
+            const setSettingsTab = useUiStore(s => s.setSettingsTab);
 
             // Streamlined Settings UX disclosures
             const [showAdvancedModelRouting, setShowAdvancedModelRouting] = useState(() => Boolean(
