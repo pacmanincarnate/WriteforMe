@@ -12,6 +12,13 @@ import {
     type PipelineStory
 } from '@/pipeline';
 import { DEFAULT_SLOP_CONFIG } from '@/domain/slop';
+import * as validation from '@/domain/validation';
+
+// Wraps one validation helper in a spy (same behaviour) so a test can check what the pipeline passes to it.
+vi.mock('@/domain/validation', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@/domain/validation')>();
+    return { ...actual, ensureActOutputCompleteness: vi.fn(actual.ensureActOutputCompleteness) };
+});
 
 function makeTestContext(
     initialStory: PipelineStory,
@@ -255,6 +262,43 @@ describe('pipeline core orchestrators (Phase 6A)', () => {
         expect(charStates['Nadia Okafor'].emotional_state).toBe('Alert');
         expect(charStates['Nadia Okafor'].location).toBe('Eastgate Station');
     });
+
+    it('runAgentWithEscalation passes the story context to the Act Agent completeness repair', async () => {
+        // Regression: escalation called ensureActOutputCompleteness(genOutput) without the
+        // validation context that the legacy app passes. Missing act headings were then filled
+        // with "the central thematic argument" / "the protagonist" instead of the story's own.
+        const spy = vi.mocked(validation.ensureActOutputCompleteness);
+        spy.mockClear();
+        const stop = new Error('stop after the first generation');
+        let calls = 0;
+        const callAI = vi.fn(async () => {
+            calls++;
+            if (calls > 1) throw stop;
+            return '<acts><act><number>1</number><title>Low Tide</title></act></acts>';
+        });
+        const { ctx } = makeTestContext({ id: 'story_acts', writing_mode: 'novel', cast: [], lore: [] }, callAI);
+        const context = {
+            writing_mode: 'novel',
+            slopConfig: { ...DEFAULT_SLOP_CONFIG, enableSlopAudit: false },
+            cast: [],
+            core_thematic_argument: 'Time sold is never bought back'
+        };
+
+        await runAgentWithEscalation(ctx, {
+            tierName: 'Act Agent',
+            generatorPromptFn: () => 'Plan the three acts.',
+            systemPrompt: 'Act system prompt',
+            parserFn: (raw) => ({ raw }),
+            context
+        }).catch(() => undefined);
+
+        expect(spy).toHaveBeenCalled();
+        const [output, passedContext] = spy.mock.calls[0];
+        expect(String(output)).toContain('Low Tide');
+        expect(passedContext).toBe(context);
+        const repaired = spy.mock.results[0].value as { rawOutput: string };
+        expect(repaired.rawOutput).toContain('Time sold is never bought back');
+    }, 30000);
 
     it('runAgentWithEscalation retries review FAIL via surgical editor and passes on re-review', async () => {
         const proseV1 =

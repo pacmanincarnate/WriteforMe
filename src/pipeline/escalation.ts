@@ -489,7 +489,7 @@ FINAL ESCALATION PROTOCOL:
         const validationContext = (context || currentStory) as ValidationContext;
 
         if (tierName === 'Act Agent' || tierName === 'Act Planner') {
-            const actFix = ensureActOutputCompleteness(genOutput);
+            const actFix = ensureActOutputCompleteness(genOutput, validationContext as CompletenessContext);
             if (actFix.repaired) {
                 console.log(
                     '[Act Agent] Auto-completed missing fields/headings in generator output:',
