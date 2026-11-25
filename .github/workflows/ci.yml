@@ -1,0 +1,76 @@
+name: CI
+
+# Runs the refactor Verification Gate (docs/refactor/MODULARIZATION_PLAN.md §5) on every push and PR.
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+      - 'refactor/**'
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    name: Verification gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint (zero warnings)
+        run: npm run lint -- --max-warnings=0
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Build portable single file
+        run: npm run build:singlefile
+
+      # The golden suite drives the Chrome preinstalled on the runner over CDP.
+      # CHROME_PATH is auto-detected; --no-sandbox is added automatically under CI.
+      - name: E2E golden (server.js + dist)
+        run: npm run test:golden
+
+      - name: E2E subpath (GitHub Pages simulation)
+        run: npm run test:subpath
+
+      - name: E2E singlefile (portable HTML)
+        run: npm run test:singlefile
+
+      # Needs internet: the legacy baseline page loads its libraries from public CDNs.
+      - name: E2E upgrade (legacy data survives the new build)
+        run: npm run test:upgrade
+
+      - name: Upload portable build
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: EllipsisProse-portable
+          path: dist-singlefile/EllipsisProse-portable.html
+          if-no-files-found: error
+          retention-days: 14
