@@ -10,6 +10,7 @@ import type {
     LoreItem,
     SlopConfig
 } from '@/types';
+import type { NarrativeModeDefinition } from '@/config';
 import type { PipelineLogMeta } from '@/stores';
 import type {
     EffectiveModelConfig,
@@ -158,6 +159,41 @@ export interface PipelineRuntimeContext {
         text: string,
         renameMap: Record<string, string>
     ) => string;
+    extractCandidatePlaceNames?: (
+        text: string,
+        excludeCast?: Array<CastMember | string> | null
+    ) => string[];
+
+    // Phase 6B Setup, Hydration & UI Navigation Hooks
+    getSetupDraft?: () => {
+        inputConcept?: string;
+        inputTitle?: string;
+        inputAuthorNote?: string;
+        inputWritingMode?: string;
+        inputBookType?: string;
+        inputCustomWords?: string | number;
+        importedLoreText?: string;
+    };
+    clearSetupDraft?: () => void;
+    getPendingSetupLoreMap?: () => Record<string, string>;
+    getStorySnapshotsByIdMap?: () => Record<string, PipelineStory>;
+    getInitializingStoryIdRef?: () => { current: string | null };
+    setInitializingStoryId?: (id: string | null) => void;
+    getSkipNextIdbHydrationIdRef?: () => { current: string | null };
+    getIsInitialMountRef?: () => { current: boolean };
+    getIsLogHydratedRef?: () => { current: boolean };
+    getHasHydratedStoryRef?: () => { current: boolean };
+    getImportingLore?: () => boolean;
+    setActiveStoryId?: (id: string) => void;
+    setPromptLog?: (logs: unknown[]) => void;
+    setSelectedAct?: (act: number | null) => void;
+    setActiveActTab?: (tab: number) => void;
+    getSelectedSequence?: () => number | null;
+    getView?: () => string;
+    isAutopilotProtectedView?: (v?: string) => boolean;
+    logPipelineDelay?: (stageName: string, durationMs: number, reason?: string) => void;
+    getAllNarrativeModes?: () => Record<string, NarrativeModeDefinition>;
+    notifyAlert?: (message: string) => void;
 }
 
 export function asRecord(val: unknown): PipelineRecord {
