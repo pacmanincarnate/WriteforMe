@@ -1395,10 +1395,12 @@ async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label })
             return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
         };
         window.__goldenTranscript = [];
+        window.__goldenPrompts = [];
         window.__callAIOverride = async (prompt, systemPrompt, isJson, logName, role) => {
             const out = await window.__goldenMockLlm(prompt, systemPrompt, isJson, logName);
             const np = normalize(prompt);
             const ns = normalize(systemPrompt);
+            window.__goldenPrompts.push({ prompt: np, system: ns });
             window.__goldenTranscript.push({
                 logName: String(logName || ''),
                 role: String(role || ''),
@@ -1503,11 +1505,12 @@ async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label })
             activeId: localStorage.getItem('ellipsisprose_active_story_id'),
             digest: digestOf(s),
             savedDigest: saved ? digestOf(saved) : null,
-            transcript: window.__goldenTranscript
+            transcript: window.__goldenTranscript,
+            prompts: window.__goldenPrompts
         };
     })()`, true);
 
-    const { digest, savedDigest, transcript } = report;
+    const { digest, savedDigest, transcript, prompts } = report;
     const names = transcript.map((t) => t.logName);
     const firstIndex = (prefix) => names.findIndex((n) => n.startsWith(prefix));
     const stageIdx = PIPELINE_STAGE_ORDER.map(firstIndex);
@@ -1536,7 +1539,7 @@ async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label })
 
     assert(`Pipeline[${label}]: zero uncaught runtime exceptions`, exceptions.length === 0, exceptions.join(' | '));
 
-    return { transcript, digest };
+    return { transcript, digest, prompts };
 }
 
 /** Compare two pipeline runs (legacy vs modular). Reports the first divergence. */
@@ -1565,10 +1568,24 @@ function comparePipelineRuns(legacy, modern, results) {
         firstNameDiff >= 0 ? JSON.stringify({ index: firstNameDiff, legacy: a[firstNameDiff].logName, modular: b[firstNameDiff].logName }) : `compared ${n} calls`);
     record('Parity: legacy and modular builds send byte-identical prompts to every agent', n > 0 && firstNameDiff < 0 && promptDiffs === 0,
         firstPromptDiff >= 0 ? JSON.stringify({ differingCalls: promptDiffs, of: n, first: { index: firstPromptDiff, legacy: a[firstPromptDiff], modular: b[firstPromptDiff] } }) : '');
+    // Full text of every differing prompt pair, for the --out report (a CI artifact), so drift can be diffed offline.
+    const promptDiffList = [];
+    if (firstNameDiff < 0) {
+        for (let i = 0; i < n; i++) {
+            if (a[i].promptHash === b[i].promptHash && a[i].systemHash === b[i].systemHash) continue;
+            promptDiffList.push({
+                index: i,
+                logName: a[i].logName,
+                legacy: (legacy.prompts || [])[i] || null,
+                modular: (modern.prompts || [])[i] || null
+            });
+        }
+    }
     const strip = (d) => d ? { ...d, proseWords: undefined, characterStates: undefined } : d;
     record('Parity: legacy and modular builds produce the same story structure',
         JSON.stringify(strip(legacy.digest)) === JSON.stringify(strip(modern.digest)),
         JSON.stringify({ legacy: strip(legacy.digest), modular: strip(modern.digest) }));
+    return promptDiffList;
 }
 
 async function runMode(opts) {
@@ -1658,10 +1675,13 @@ async function runMode(opts) {
             const runs = {};
             if (opts.mode !== 'pipeline') runs.legacy = await runOn('legacy');
             if (opts.mode !== 'pipeline-legacy') runs.modular = await runOn('modular');
-            if (opts.mode === 'pipeline-parity') comparePipelineRuns(runs.legacy, runs.modular, results);
+            const promptDiffs = opts.mode === 'pipeline-parity' ? comparePipelineRuns(runs.legacy, runs.modular, results) : undefined;
             if (opts.out) {
+                const report = {};
+                for (const [label, run] of Object.entries(runs)) report[label] = { transcript: run.transcript, digest: run.digest };
+                if (promptDiffs) report.promptDiffs = promptDiffs;
                 fs.mkdirSync(path.dirname(opts.out), { recursive: true });
-                fs.writeFileSync(opts.out, JSON.stringify(runs, null, 2));
+                fs.writeFileSync(opts.out, JSON.stringify(report, null, 2));
                 console.log(`[golden] Wrote pipeline transcript -> ${opts.out}`);
             }
         } else if (opts.mode === 'upgrade') {
