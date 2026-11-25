@@ -6,3 +6,4 @@ export * from './imageStore';
 export * from './logStore';
 export * from './audioStore';
 export * from './storyStore';
+export * from './storyLibrary';

@@ -464,7 +464,7 @@ import {
     toDrama3HttpBody,
     trimTrailingAudioStatic
 } from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useEpistemicEditors, useLogDetailModal, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineExpansion, useReaderController, useSlopConfig, useStoryEditors, useStoryImages, useStoryLibrary, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -672,7 +672,6 @@ const ReactDOM = ReactDOMClient;
 
         function EllipsisProsef() {
             const [activeStoryId, setActiveStoryId] = useState(() => localStorage.getItem("ellipsisprose_active_story_id") || "story_default");
-            const [libraryStories, setLibraryStories] = useState([]);
 
             const [story, setStoryRaw] = useState(() => createDefaultStoryTemplate(activeStoryId));
             const storyRef = useRef(story);
@@ -763,65 +762,7 @@ const ReactDOM = ReactDOMClient;
             window.logPipelineError = logPipelineError;
             window.openFormModal = openFormModal;
 
-            // Helper to list stories and update library metadata state
-            const refreshLibrary = async () => {
-                try {
-                    let list = [];
-                    try {
-                        list = await storyStore.listStories();
-                    } catch (idbErr) {
-                        console.warn("Failed to read from IndexedDB, falling back to active story.", idbErr);
-                    }
-
-                    // Filter out legacy "current_story" to keep library clean
-                    let filtered = list.filter(s => s.id !== 'current_story');
-
-                    // Always ensure the currently active story is in the list
-                    const activeInMemStory = storyRef.current || story;
-                    if (activeInMemStory && activeInMemStory.id) {
-                        const exists = filtered.find(s => s.id === activeInMemStory.id);
-                        if (!exists) {
-                            filtered.push({
-                                id: activeInMemStory.id,
-                                data: activeInMemStory,
-                                timestamp: Date.now()
-                            });
-                        } else {
-                            // Update it with the latest in-memory data just in case
-                            exists.data = activeInMemStory;
-                        }
-                    }
-
-                    setLibraryStories(filtered);
-
-                    // Fetch cover images and saved offline audio scene counts for the library
-                    const covers = {};
-                    const audioCounts = {};
-                    for (const item of filtered) {
-                        try {
-                            const coverData = await imageStore.getImage(`cover_${item.id}`);
-                            if (coverData) {
-                                covers[item.id] = coverData;
-                            }
-                        } catch (err) {
-                            console.warn("Failed to load cover for", item.id, err);
-                        }
-                        if (window.audioStore && typeof window.audioStore.countStoryAudio === 'function') {
-                            try {
-                                audioCounts[item.id] = await window.audioStore.countStoryAudio(item.id);
-                            } catch (err) {
-                                console.warn("Failed to count saved audio for", item.id, err);
-                            }
-                        }
-                    }
-                    setLibraryCovers(covers);
-                    setLibraryAudioCounts(audioCounts);
-                } catch (e) {
-                    console.warn("Failed to update library list:", e);
-                }
-            };
-
-            // Declared here because the library effect below reads it; with native const this is a TDZ otherwise.
+            // Declared before useStoryLibrary, which reads it.
             const [view, setViewRaw] = useState(() => localStorage.getItem("ellipsisprose_view") || 'setup');
             const viewRef = useRef(view);
             const setView = useCallback((nextView) => {
@@ -837,12 +778,22 @@ const ReactDOM = ReactDOMClient;
             const isAutopilotProtectedView = (v = viewRef.current) => v === 'reader' || v === 'pipeline';
             window.isAutopilotProtectedView = isAutopilotProtectedView;
 
-            // Fetch library when viewing library or activeStoryId changes
-            useEffect(() => {
-                if (view === 'library') {
-                    refreshLibrary();
-                }
-            }, [view, activeStoryId]);
+            // Story Library (Phase 6E-3): list, covers, preferences and duplicate / delete / cover-style actions.
+            const {
+                libraryStories, setLibraryStories,
+                libraryCovers, setLibraryCovers,
+                libraryAudioCounts,
+                librarySearchQuery, setLibrarySearchQuery,
+                libraryViewMode, setLibraryViewMode,
+                librarySortBy, setLibrarySortBy,
+                refreshLibrary,
+                handleUpdateStoryCoverStyle,
+                handleDuplicateStory,
+                handleDeleteLibraryStory
+            } = useStoryLibrary({
+                getActiveStory: () => storyRef.current || story,
+                setStory, activeStoryId, setActiveStoryId, view, deletedStoryIdsRef, showToast, requestConfirm
+            });
 
             // Sync activeStoryId to localStorage
             useEffect(() => {
@@ -1056,162 +1007,9 @@ const ReactDOM = ReactDOMClient;
                 requestConfirm
             });
 
-            // Story Library Extended State
-            const [librarySearchQuery, setLibrarySearchQuery] = useState("");
-            const [libraryCovers, setLibraryCovers] = useState({});
-            const [libraryAudioCounts, setLibraryAudioCounts] = useState({});
-            const [libraryViewMode, setLibraryViewMode] = useState(() => localStorage.getItem("ellipsisprose_library_view_mode") || 'grid');
-            const [librarySortBy, setLibrarySortBy] = useState(() => localStorage.getItem("ellipsisprose_library_sort_by") || 'recent');
             const isInitialMount = useRef(true);
 
-            useEffect(() => {
-                safeLocalStorageSet("ellipsisprose_library_view_mode", libraryViewMode);
-            }, [libraryViewMode]);
 
-            useEffect(() => {
-                safeLocalStorageSet("ellipsisprose_library_sort_by", librarySortBy);
-            }, [librarySortBy]);
-
-
-            // Helper to cycle/update typographic cover style on blank covers
-            const handleUpdateStoryCoverStyle = async (storyId, nextStyleIdx) => {
-                try {
-                    const fullStory = await storyStore.loadStory(storyId);
-                    if (fullStory) {
-                        fullStory.coverStyle = nextStyleIdx;
-                        await storyStore.saveStory(storyId, fullStory);
-                        if (activeStoryId === storyId) {
-                            setStory(prev => ({ ...prev, coverStyle: nextStyleIdx }));
-                        }
-                        await refreshLibrary();
-                    }
-                } catch (e) {
-                    console.error("Failed to update cover style", e);
-                }
-            };
-
-            // Helper to duplicate a story (scenario branching)
-            const handleDuplicateStory = async (storyItem) => {
-                if (!storyItem || !storyItem.data) return;
-                try {
-                    const original = storyItem.data;
-                    const newId = `story_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-                    const cloned = JSON.parse(JSON.stringify(original));
-                    cloned.id = newId;
-                    cloned.title = `${cloned.title || "Untitled"} (Copy)`;
-                    await storyStore.saveStory(newId, cloned);
-                    try {
-                        const existingCover = await imageStore.getImage(`cover_${storyItem.id}`);
-                        if (existingCover) {
-                            await imageStore.saveImage(`cover_${newId}`, existingCover);
-                        }
-                        const sourcePortraits = await imageStore.getImagesByPrefix(`portrait_${storyItem.id}_`);
-                        for (const p of sourcePortraits) {
-                            if (p && p.dataUrl) {
-                                const charSuffix = p.id.slice(`portrait_${storyItem.id}_`.length);
-                                await imageStore.saveImage(`portrait_${newId}_${charSuffix}`, p.dataUrl);
-                            }
-                        }
-                    } catch (coverErr) {
-                        console.warn("Cover/portrait copy skipped:", coverErr);
-                    }
-                    try {
-                        if (window.audioStore) {
-                            const audioRecords = await window.audioStore.getAllStoryAudioRecords(storyItem.id);
-                            for (const rec of audioRecords) {
-                                await window.audioStore.saveSceneAudio({
-                                    storyId: newId,
-                                    seqIdx: rec.seqIdx,
-                                    sceneIdx: rec.sceneIdx,
-                                    blob: rec.blob,
-                                    mimeType: rec.mimeType,
-                                    durationSec: rec.durationSec,
-                                    textHash: rec.textHash,
-                                    cueCount: rec.cueCount
-                                });
-                            }
-                            if (typeof window.audioStore.getAllStorySequenceAudioRecords === 'function') {
-                                const seqAudioRecords = await window.audioStore.getAllStorySequenceAudioRecords(storyItem.id);
-                                for (const srec of seqAudioRecords) {
-                                    await window.audioStore.saveSequenceAudio({
-                                        storyId: newId,
-                                        seqIdx: srec.seqIdx,
-                                        blob: srec.blob,
-                                        mimeType: srec.mimeType,
-                                        durationSec: srec.durationSec,
-                                        includedSceneIndices: srec.includedSceneIndices,
-                                        totalScenesInStructure: srec.totalScenesInStructure,
-                                        sceneHashes: srec.sceneHashes
-                                    });
-                                }
-                            }
-                        }
-                    } catch (audioCopyErr) {
-                        console.warn("Audio copy skipped on story duplication:", audioCopyErr);
-                    }
-                    await refreshLibrary();
-                    showToast(`Duplicated as "${cloned.title}"`, "success");
-                } catch (err) {
-                    console.error("Failed to duplicate story:", err);
-                    showToast("Failed to duplicate story: " + err.message, "error");
-                }
-            };
-
-            // Helper to delete an individual story from the library
-            const handleDeleteLibraryStory = async (storyItem, e) => {
-                if (e) e.stopPropagation();
-                if (!storyItem || !storyItem.id) return;
-                const storyTitle = storyItem.data?.title || "Untitled Story";
-
-                requestConfirm({
-                    title: `Permanently delete "${storyTitle}"?`,
-                    message: "This will erase this story's configuration, characters, outline, and generated prose from your library. This action cannot be undone.",
-                    confirmLabel: "Delete Story",
-                    danger: true,
-                    onConfirm: async () => {
-                        try {
-                            const deletedId = storyItem.id;
-                            deletedStoryIdsRef.current.add(deletedId);
-                            await storyStore.deleteStory(deletedId);
-                            await logStore.clearLogs(deletedId);
-                            try {
-                                await imageStore.deleteImage(`cover_${deletedId}`);
-                            } catch (imgErr) {
-                                console.warn("Cover deletion skipped:", imgErr);
-                            }
-                            try {
-                                if (window.audioStore) await window.audioStore.deleteStoryAudio(deletedId);
-                            } catch (audioDelErr) {
-                                console.warn("Story audio deletion skipped:", audioDelErr);
-                            }
-
-                            if (activeStoryId === deletedId) {
-                                const allStories = await storyStore.listStories();
-                                const validRemaining = allStories.filter(s => s.id !== 'current_story' && s.id !== deletedId);
-                                if (validRemaining.length > 0) {
-                                    validRemaining.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-                                    const nextStory = validRemaining[0];
-                                    setActiveStoryId(nextStory.id);
-                                    setStory(nextStory.data);
-                                    localStorage.setItem("ellipsisprose_active_story_id", nextStory.id);
-                                } else {
-                                    const defaultTemplate = createDefaultStoryTemplate('story_default');
-                                    setActiveStoryId('story_default');
-                                    setStory(defaultTemplate);
-                                    localStorage.setItem("ellipsisprose_active_story_id", 'story_default');
-                                    await storyStore.saveStory('story_default', defaultTemplate);
-                                }
-                            }
-
-                            await refreshLibrary();
-                            showToast(`Deleted "${storyTitle}"`, "success");
-                        } catch (err) {
-                            console.error("Failed to delete story:", err);
-                            showToast("Failed to delete story: " + err.message, "error");
-                        }
-                    }
-                });
-            };
             // Settings & Model Catalog Hook
             const [isDirectingVoices, setIsDirectingVoices] = useState(false);
 
