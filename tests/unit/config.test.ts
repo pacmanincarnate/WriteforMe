@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    APP_VERSION,
     ARCH_CONCEPTS,
     ARCH_GENRES,
     ARCH_STYLES,
@@ -77,5 +78,11 @@ describe('Config Banks & Audio Settings Migration', () => {
         expect(mapLogNameToStepId('Tier 3.2 Sequence Reviewer')).toBe(10);
         expect(mapLogNameToStepId('Tier 7.0 Audio Drama')).toBe(22);
         expect(getPipelineStepInfo('Archivist')?.stepTitle).toBe('Archivist (End of Scene)');
+    });
+
+    it('matches the root package.json version', async () => {
+        const rootPkg = (await import('../../package.json')).default;
+        expect(APP_VERSION).toBe(rootPkg.version);
+        expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+/);
     });
 });

@@ -24,6 +24,7 @@ import {
     Workflow,
     X
 } from '@/components/icons';
+import { APP_VERSION } from '@/config';
 import { actForSequence, parseActNumber } from '@/domain/story';
 import type { Act, ProseEntry, SceneBlueprint, Sequence, Story } from '@/types';
 
@@ -143,7 +144,7 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                             <h2 className="font-bold text-sm text-ink-900 tracking-tight flex items-center gap-1.5 font-display">
                                 EllipsisProse{' '}
                                 <span className="text-xs font-mono font-bold bg-mist-200/80 text-ink-700 px-2 py-0.5 rounded-full">
-                                    2.11
+                                    {APP_VERSION}
                                 </span>
                             </h2>
                             <p className="text-xs text-ink-500 font-medium">AI Story Architect &amp; Studio</p>

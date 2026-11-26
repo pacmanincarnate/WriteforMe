@@ -17,3 +17,5 @@ interface Window {
     DOMPurify?: unknown;
     deferredPWAInstallPrompt?: Event | null;
 }
+
+declare const __APP_VERSION__: string;

@@ -9,11 +9,12 @@
  * WebSocket connection never acts on a stale closure.
  */
 
+import { APP_VERSION } from '@/config';
 import { countStoryWords } from '@/domain/story';
 import { migrateStoryToSequences } from '@/domain/lifecycle';
 import { safeLocalStorageSet } from '@/utils';
 
-export const BRIDGE_VERSION = '2.1.1';
+export const BRIDGE_VERSION = APP_VERSION;
 export const DEFAULT_MCP_BRIDGE_URL = 'ws://127.0.0.1:3002';
 export const MCP_BRIDGE_MAX_RETRIES = 3;
 

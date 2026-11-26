@@ -5,6 +5,7 @@ import { useMcpBridge } from '@/hooks';
 import {
     BRIDGE_ACTIONS,
     BRIDGE_PIPELINE_STEPS,
+    BRIDGE_VERSION,
     connectMcpBridge,
     createBridgeApi,
     createBridgeDispatcher,
@@ -463,7 +464,7 @@ describe('window.EllipsisProseBridge surface', () => {
         const dispatch = vi.fn(async () => 'ok');
         const api = createBridgeApi(dispatch);
         expect(Object.keys(api).sort()).toEqual(['version', ...BRIDGE_ACTIONS].sort());
-        expect(api.version).toBe('2.1.1');
+        expect(api.version).toBe(BRIDGE_VERSION);
         await api.switchStory('s9');
         await api.triggerPipelineStep('scenes', { sequenceIndex: 2 });
         await api.getChapter(1, 2);
