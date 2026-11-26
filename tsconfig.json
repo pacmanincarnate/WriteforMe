@@ -18,5 +18,5 @@
     }
   },
   "include": ["src", "tests/unit", "vite.config.ts", "vite.singlefile.config.ts", "vitest.config.ts"],
-  "exclude": ["src/legacy/**", "dist", "dist-singlefile", "node_modules", "scratch"]
+  "exclude": ["dist", "dist-singlefile", "node_modules", "scratch"]
 }

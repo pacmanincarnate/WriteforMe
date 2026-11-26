@@ -62,8 +62,7 @@ export default defineConfig({
                 if (warning.code === 'CIRCULAR_DEPENDENCY') {
                     const msg = String(warning.message || '');
                     const isNodeModules = msg.includes('node_modules');
-                    const isLegacy = msg.includes('src/legacy') || msg.includes('src\\legacy');
-                    if (!isNodeModules && !isLegacy) {
+                    if (!isNodeModules) {
                         throw new Error(`Circular dependency detected in modular source: ${msg}`);
                     }
                     return;

@@ -6,7 +6,7 @@ import boundaries from 'eslint-plugin-boundaries';
 
 export default tseslint.config(
     {
-        ignores: ['dist/**', 'dist-singlefile/**', 'node_modules/**', 'scratch/**', 'src/legacy/**', 'tests/e2e/**']
+        ignores: ['dist/**', 'dist-singlefile/**', 'node_modules/**', 'scratch/**', 'tests/e2e/**']
     },
     js.configs.recommended,
     ...tseslint.configs.recommended,
@@ -24,7 +24,7 @@ export default tseslint.config(
                 })
             ],
             'boundaries/files': [
-                { pattern: ['src/main.tsx', 'src/App.tsx', 'src/sw.ts'], category: 'entry' }
+                { pattern: ['src/main.tsx', 'src/App.tsx', 'src/windowApi.ts', 'src/sw.ts'], category: 'entry' }
             ],
             'boundaries/elements': [
                 { type: 'ui', pattern: ['src/views/**', 'src/components/**', 'src/hooks/**'] },

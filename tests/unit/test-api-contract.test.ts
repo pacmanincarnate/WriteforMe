@@ -22,13 +22,7 @@ function windowNamesUsedBy(files: string[]): string[] {
 
 describe('public window contract (src/compat/testApi.ts)', () => {
     beforeAll(async () => {
-        await import('@/legacy/setupGlobals');
-        await import('@/legacy/registerFoundationGlobals');
-        await import('@/legacy/registerDomainGlobals');
-        await import('@/legacy/registerServiceGlobals');
-        await import('@/legacy/registerStoreGlobals');
-        await import('@/legacy/registerPipelineGlobals');
-        await import('@/legacy/registerUiGlobals');
+        await import('@/windowApi');
     }, 60000);
 
     it('lists exactly the globals the golden suite uses', () => {

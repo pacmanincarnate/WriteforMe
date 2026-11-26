@@ -5,13 +5,10 @@ import './styles/sidebar.css';
 import './styles/library.css';
 import './styles/reader.css';
 import './styles/components.css';
-import './legacy/setupGlobals';
-import './legacy/registerFoundationGlobals';
-import './legacy/registerDomainGlobals';
-import './legacy/registerServiceGlobals';
-import './legacy/registerStoreGlobals';
-import './legacy/registerPipelineGlobals';
-import './legacy/registerUiGlobals';
+import { installDefaultAudioStageLoggers } from '@/services/audio';
+import './windowApi';
+
+installDefaultAudioStageLoggers();
 import './App';
 
 const PRELOAD_RELOAD_GUARD_KEY = 'ellipsisprose_preload_reload_once';

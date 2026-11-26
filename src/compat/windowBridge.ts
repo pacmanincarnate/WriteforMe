@@ -1,6 +1,6 @@
 /**
- * Controlled global compatibility bridge for E2E suites, MCP tools,
- * and incremental Strangler-Fig migration of legacy modules.
+ * The one place that writes app names onto `window`, for the E2E suites, the MCP bridge and
+ * DevTools. What may be published is listed in `./testApi`.
  */
 export function registerWindowGlobals(entries: Record<string, unknown>): void {
     if (typeof window === 'undefined') return;

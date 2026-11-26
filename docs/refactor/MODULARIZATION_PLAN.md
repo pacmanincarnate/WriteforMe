@@ -38,7 +38,7 @@ src/
   hooks/         React hooks that wrap stores/services/pipeline for the UI
   components/    shared UI (modals, cards, layout, ui primitives)
   views/         one folder per app view (library, setup, writer, reader, …)
-  legacy/        MonolithApp.jsx — the shrinking remainder of the old App component
+  App.tsx        the app shell (was legacy/MonolithApp.jsx); windowApi.ts publishes the public window contract
   compat/        window.* compatibility shims
   styles/        compiled Tailwind + CSS tokens
 ```
@@ -48,7 +48,7 @@ Import direction (see `eslint.config.mjs`; `import-x/no-cycle` maxDepth 10):
 - `ui` = `views/**`, `components/**`, `hooks/**`
 - `pipeline` = `pipeline/**` **and** `services/bridge/**` → may import `pipeline, stores, services, domain, foundation`; **never** `hooks`, `views`, `components`, `legacy`.
 - `stores`, `services`, `domain`, `foundation` each only import downwards.
-- `src/legacy/**` is ignored by ESLint (it is being drained, not polished) but **must still typecheck/build**.
+- `src/legacy/` no longer exists (removed in Phase 7); every file in `src/` is linted and type-checked.
 - Hooks inside `src/hooks/` must stay **acyclic** among themselves (see §6, "late-bound refs").
 
 ---
@@ -83,7 +83,7 @@ Import direction (see `eslint.config.mjs`; `import-x/no-cycle` maxDepth 10):
 
 ### 3.2 Current state snapshot
 
-- `src/legacy/MonolithApp.jsx`: **~3,600 lines** (was ~15,900 before Phase 6C).
+- `src/App.tsx` (was `src/legacy/MonolithApp.jsx`): **~2,800 lines**, typed (was ~15,900 before Phase 6C).
 - Vitest: **38 files / 242 tests passing.**
 - E2E (all must stay green): `golden` **46/46**, `subpath` **47/47**, `singlefile` **47/47**, `upgrade` **1/1**.
 - Hooks present in `src/hooks/`: `useDebounce`, `useReaderController`, `useStoryImages`, `useModelCatalog`, `useVoiceManagement`, `useAudioProduction`, `useTtsPlayback`.
@@ -143,7 +143,7 @@ Create `src/hooks/useStoryPersistence.ts` and `src/hooks/useStoryEditors.ts`; ex
 ### 4.3 Phase 7 — `src/App.tsx`, legacy removal, CI/CD
 
 1. Convert the residual `MonolithApp.jsx` into typed `src/App.tsx` composed of hooks + views (move remaining state/effects into hooks or stores; the file should become a thin composition root). Delete `src/legacy/` and `src/compat/` shims no longer needed (keep any `window.*` contract that is documented as public).
-   **Status:** the shell is `src/App.tsx`, type-checked and linted like the rest of `src/` (no `any`, no `@ts-` comments). Shell `useState` went from 91 to 19. Where two modules still declare the same value differently, the shell re-labels it through `src/compat/shellBoundary.ts`; `tests/unit/shell-boundary-budget.test.ts` holds the count (104 generic hand-offs, 26 story re-labels) so it can only go down. Reconciling those shared types (one `Story`, one log entry, one relationship record) is the follow-up. Still to do: delete `src/legacy/` (the `register*Globals.ts` shims).
+   **Status:** the shell is `src/App.tsx`, type-checked and linted like the rest of `src/` (no `any`, no `@ts-` comments). Shell `useState` went from 91 to 19. Where two modules still declare the same value differently, the shell re-labels it through `src/compat/shellBoundary.ts`; `tests/unit/shell-boundary-budget.test.ts` holds the count (104 generic hand-offs, 26 story re-labels) so it can only go down. Reconciling those shared types (one `Story`, one log entry, one relationship record) is the follow-up. `src/legacy/` is deleted: `src/windowApi.ts` publishes only the documented contract in `src/compat/testApi.ts` (44 module-level names, down from 493 registered), and the shell publishes its own handles through `publishAppGlobal`.
 2. `.github/workflows/`:
    - `ci.yml`: Node 22, `npm ci`, typecheck, lint (`--max-warnings=0`), `npm test`, build, singlefile build, all four E2E modes.
    - `deploy-pages.yml`: build with base `/WriteforMe/`, deploy `dist/` to GitHub Pages.
