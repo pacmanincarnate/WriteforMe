@@ -42,7 +42,7 @@ import {
 } from '@/services/storage';
 import { EmbeddingService, VectorStore } from '@/services/rag';
 
-import { findCastIndexForChar, useActiveStory, useArchetypeOptions, useAudioFollowState, useGenerationStatus, useNarrativeLensesToggle, useRelationshipMatrix, useSettingsDisclosures, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useActiveStory, useAutopilotControl, useAutopilotLoop, useArchetypeOptions, useAudioFollowState, useGenerationStatus, useNarrativeLensesToggle, useRelationshipMatrix, useSettingsDisclosures, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -520,17 +520,10 @@ import {
                 expandedBeatAnalysis, setExpandedBeatAnalysis,
                 activeActTab, setActiveActTab
             } = useOutlineCollapseState();
-            const continuousAutopilotRef = useRef(false);
-            const isAutopilotStepRunningRef = useRef(false);
-            const prefetchCacheRef = useRef(new Map());
-            useEffect(() => {
-                continuousAutopilotRef.current = continuousAutopilot;
-                if (!continuousAutopilot) {
-                    isAutopilotStepRunningRef.current = false;
-                    setLoading(false);
-                    prefetchCacheRef.current.clear();
-                }
-            }, [continuousAutopilot]);
+            // Continuous Autopilot switch and run bookkeeping (Phase 7); the loop itself starts further down.
+            const {
+                continuousAutopilotRef, isAutopilotStepRunningRef, prefetchCacheRef, toggleContinuousAutopilot
+            } = useAutopilotControl<Promise<Record<string, unknown> | null>>({ continuousAutopilot, setContinuousAutopilot, setLoading });
 
 
 
@@ -1608,100 +1601,25 @@ import {
 
             const runContinuousAutopilotStep = () => orchestrateRunContinuousAutopilotStep(getPipelineCtx());
 
-            const toggleContinuousAutopilot = () => {
-                setContinuousAutopilot(prev => {
-                    const next = !prev;
-                    continuousAutopilotRef.current = next;
-                    if (!next) {
-                        isAutopilotStepRunningRef.current = false;
-                        setLoading(false);
-                        prefetchCacheRef.current.clear();
-                    }
-                    return next;
-                });
-            };
-
             publishAppGlobal('runContinuousAutopilotStep', runContinuousAutopilotStep);
             publishAppGlobal('toggleContinuousAutopilot', toggleContinuousAutopilot);
             publishAppGlobal('handleAutopilot', handleAutopilot);
 
-            useEffect(() => {
-                let cancelled = false;
-                const runLoop = async () => {
-                    if (!continuousAutopilot) return;
-                    continuousAutopilotRef.current = true;
-
-                    // Pre-flight connectivity check for local endpoints (e.g. KoboldCPP)
-                    if (apiProvider === 'koboldcpp') {
-                        const targetUrl = (koboldUrl || 'http://localhost:5001').replace(/\/+$/, '');
-                        try {
-                            const testCtrl = new AbortController();
-                            const testTimer = setTimeout(() => testCtrl.abort(), 2000);
-                            const pingResp = await fetch(`${targetUrl}/v1/models`, { method: 'GET', signal: testCtrl.signal });
-                            clearTimeout(testTimer);
-                            if (!pingResp.ok) throw new Error(`HTTP ${pingResp.status}`);
-                        } catch {
-                            showToast(`Could not connect to KoboldCPP at ${targetUrl}. Please ensure KoboldCPP is running locally before starting Autopilot.`, 'error');
-                            setContinuousAutopilot(false);
-                            continuousAutopilotRef.current = false;
-                            return;
-                        }
-                    }
-
-                    while (!cancelled && continuousAutopilotRef.current) {
-                        if (isAutopilotStepRunningRef.current) {
-                            await new Promise(r => setTimeout(r, 200));
-                            continue;
-                        }
-                        isAutopilotStepRunningRef.current = true;
-                        let hasMore;
-                        try {
-                            hasMore = await runContinuousAutopilotStep();
-                        } catch (err) {
-                            console.error("Continuous Autopilot error:", err);
-                            showToast(`Autopilot error: ${(err as Error).message}`, "error");
-                            setContinuousAutopilot(false);
-                            continuousAutopilotRef.current = false;
-                            break;
-                        } finally {
-                            isAutopilotStepRunningRef.current = false;
-                            setLoading(false);
-                        }
-
-                        if (!hasMore || !continuousAutopilotRef.current || cancelled) {
-                            break;
-                        }
-
-                        // Brief non-blocking yield between steps
-                        await new Promise(r => setTimeout(r, 500));
-                    }
-
-                    // Autopilot has halted or completed; reset active state so UI is never stuck
-                    setContinuousAutopilot(false);
-                    continuousAutopilotRef.current = false;
-                    isAutopilotStepRunningRef.current = false;
-                    setLoading(false);
-
+            // Keeps running pipeline steps while Continuous Autopilot is on (Phase 7).
+            useAutopilotLoop({
+                continuousAutopilot, setContinuousAutopilot, setLoading,
+                continuousAutopilotRef, isAutopilotStepRunningRef, prefetchCacheRef,
+                apiProvider, koboldUrl, showToast,
+                runStep: runContinuousAutopilotStep,
+                onRunEnded: () => {
                     if (isAudioAutopilotQueuedRef.current) {
                         isAudioAutopilotQueuedRef.current = false;
                         setIsAudioAutopilotQueued(false);
                         showToast("Story generation complete! Starting queued Audio Drama Autopilot...", "success");
                         setIsAudioAutopilotRunning(true);
                     }
-                };
-
-                if (continuousAutopilot) {
-                    runLoop();
-                } else {
-                    continuousAutopilotRef.current = false;
-                    isAutopilotStepRunningRef.current = false;
-                    prefetchCacheRef.current.clear();
                 }
-
-                return () => {
-                    cancelled = true;
-                };
-            }, [continuousAutopilot]);
+            });
 
 
             // ─────────────────────────────────────────────────────────────────────────────

@@ -32,3 +32,4 @@ export * from './useActiveStory';
 export * from './useGenerationStatus';
 export * from './useRelationshipMatrix';
 export * from './useShellViewState';
+export * from './useContinuousAutopilot';
