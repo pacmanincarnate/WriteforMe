@@ -73,9 +73,66 @@ local `FAILED`.
 | `pipeline` | A whole Autopilot run from the Setup form through two written scenes, with a scripted fake LLM. Checks agent order and the story it produces. |
 | `upgrade` | Stories and settings saved by the old single-file app still open in the new build. Needs internet, because the old page loads libraries from CDNs. Skipped automatically when you are offline; CI always runs it. |
 
-Two things no automated step covers, so check them by hand when you touch them: real provider
-calls (Gemini, OpenRouter, NanoGPT, Codex, Kobold) with real keys, and real audio generation
-through the audio bridge. The tests replace both with fakes.
+Two things no step in `npm run check` covers: real model output, and real audio generation through
+the audio bridge. The tests replace both with fakes. For real model output there is an opt-in
+live test, described next.
+
+## Live model test (opt-in, costs money)
+
+Everything above uses a scripted fake LLM, so it proves the plumbing but not that a real model's
+output gets through the parsers. The live test runs the same UI paths with a real Anthropic model
+answering:
+
+```
+export ANTHROPIC_API_KEY=...        # PowerShell: $env:ANTHROPIC_API_KEY = "..."
+npm run build
+npm run test:live
+```
+
+It is never part of `npm run check`, and CI does not run it on pushes or pull requests. Without
+`ANTHROPIC_API_KEY` it prints `SKIPPED` and exits successfully.
+
+What it does, in order:
+
+1. **Connection.** One tiny call, so a wrong key or model name fails in seconds.
+2. **One agent through the app.** Distils a short lore passage into a world primer.
+3. **Short Autopilot run.** Fills in the Setup form, starts Autopilot, and lets it run from
+   concept through cast, arc, acts, sequences and scene plans until the first scene has prose,
+   then stops it.
+
+The checks are about structure, never wording: each stage ran in order, the model's output
+parsed into a cast, acts, sequences and scenes, the scene is real prose with no leftover tags,
+the story was saved, and nothing threw. The run prints each agent as it is called and ends with
+the number of calls, retries and tokens used, so you can see what it cost.
+
+Settings (all optional environment variables):
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LIVE_LLM_MODEL` | `claude-opus-5-5` | Model id. `claude-haiku-5-5` is the cheap, fast choice. |
+| `LIVE_LLM_EFFORT` | `low` | `low`, `medium`, `high`, `xhigh` or `max`. |
+| `LIVE_LLM_MAX_CALLS` | `120` | Hard stop for the run. A healthy run is roughly 25 to 60 calls. |
+| `LIVE_LLM_MAX_TOKENS` | `16000` | Output cap per call. |
+| `LIVE_LLM_TIMEOUT_MINUTES` | `30` | How long Autopilot may take to reach the first scene. |
+
+`npm run test:live -- --out scratch/live-run.json` saves the agent list, timings and the story
+outline (no prompts, no key).
+
+About the key: it is read from the environment by the Anthropic SDK in the Node test process.
+The page under test never receives it. The page sends each LLM call to a relay on `127.0.0.1`
+that only exists for the run, and the relay makes the API call. The key is not logged, not
+written to the transcript, and must not be committed: keep it in your shell or a secret manager,
+not in a file in this repository.
+
+To run it on GitHub, add a repository secret named `ANTHROPIC_API_KEY`, then start the
+"Live model test" workflow by hand from the Actions tab (`.github/workflows/live-llm.yml`).
+
+What this does not test: the app's own provider code (Gemini, OpenRouter, NanoGPT, Codex,
+Kobold). The app has no Anthropic provider, so the live test answers at the same seam the fake
+LLM uses. Checking a provider end to end still means trying it by hand with that provider's key.
+
+To test the live plumbing itself without a key or any cost, `LIVE_LLM_SCRIPTED=1 npm run test:live`
+runs the same scenarios against the scripted model.
 
 ## If a step fails
 

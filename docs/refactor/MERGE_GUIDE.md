@@ -12,7 +12,7 @@ Nothing has been pushed to, opened on, or commented on your repository.
 git remote add vanta https://github.com/vantaloomin/WriteforMe.git
 git fetch vanta
 git checkout refactor/modular-architecture
-git merge --ff-only vanta/refactor/merge-ready
+git merge --ff-only vanta/test/live-model
 npm ci
 npm run check
 git push origin refactor/modular-architecture
@@ -23,7 +23,7 @@ you half-merged. `npm run check` is the full test gate (see `docs/TESTING.md`); 
 with `ALL GOOD`.
 
 If you would rather review on GitHub, ask Vanta to open one pull request from
-`vantaloomin:refactor/merge-ready` into your `refactor/modular-architecture`. Use
+`vantaloomin:test/live-model` into your `refactor/modular-architecture`. Use
 "Rebase and merge" or "Create a merge commit". Avoid "Squash", which would flatten 40-odd
 reviewable commits into one.
 
@@ -49,6 +49,7 @@ The fork PR number is where the description and CI run for that step live
 | 11 | `refactor/phase-7d-thin-shell` | 12 | Last shell state into typed hooks |
 | 12 | `refactor/phase-7e-autopilot-hooks` | 13 | Continuous Autopilot into hooks |
 | 13 | `refactor/merge-ready` | 14 | `npm run check`, `docs/TESTING.md`, this guide, Autopilot decision tests |
+| 14 | `test/live-model` | 15 | Opt-in live test against the real Anthropic API (`npm run test:live`) |
 
 Good stopping points if you want to pause and use the app for a while: after 6 (Phase 6 done),
 after 7 (deploy and offline), after 10 (legacy gone).
@@ -62,7 +63,8 @@ after 7 (deploy and offline), after 10 (legacy gone).
 2. **Actions enabled.** Settings, Actions, General, allow actions to run. `ci.yml` then runs the
    gate on every push to `main`, `dev` and `refactor/**`, and on pull requests.
 
-Nothing else: no secrets, no environment variables, no branch protection changes.
+Nothing else is required. Optional: add a repository secret named `ANTHROPIC_API_KEY` if you want
+to run the "Live model test" workflow from the Actions tab. It only ever runs when started by hand.
 
 ## After it is on your refactor branch
 
@@ -80,8 +82,9 @@ it back exactly where you left it, as long as you have not pushed.
 
 Fork PR 7 (`claude/project-thread-n9ulla`) adds a provider that uses a local `claude -p` login.
 It is a new feature, not part of the refactor, and it has not been tried on Windows or through a
-full Autopilot run. Merge it after everything above, or skip it. See its PR description for the
-current state.
+full Autopilot run. Its branch already contains the stack up to step 12 and passes the gate, so
+it merges cleanly after everything above (`git merge vanta/claude/project-thread-n9ulla`, a
+normal merge, not `--ff-only`). Or skip it. See its PR description for the current state.
 
 ## Decisions left for you
 

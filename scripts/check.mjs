@@ -10,6 +10,7 @@
  *   npm run check -- --bail                stop at the first failure
  *   npm run check -- --verbose             stream every step's full output
  *   npm run check -- --list                show the steps and exit
+ *   npm run check -- --only build,live     opt-in: real Anthropic API run (see docs/TESTING.md)
  *
  * Each step prints one line. The full output of every step is saved under scratch/check/
  * (gitignored), and a failing step prints the part of its output that matters.
@@ -37,7 +38,9 @@ const STEPS = [
     { id: 'subpath', label: 'Browser: GitHub Pages', command: 'npm run test:subpath', needs: ['build'], what: 'Same checks served from /WriteforMe/ with no backend' },
     { id: 'singlefile', label: 'Browser: portable file', command: 'npm run test:singlefile', needs: ['build-singlefile'], what: 'Portable HTML over http and file://' },
     { id: 'pipeline', label: 'Browser: Autopilot', command: 'npm run test:pipeline', needs: ['build'], what: 'Full Autopilot run with a scripted LLM' },
-    { id: 'upgrade', label: 'Browser: old data', command: 'npm run test:upgrade', needs: ['build'], online: true, what: 'Stories saved by the old app still open (needs internet)' }
+    { id: 'upgrade', label: 'Browser: old data', command: 'npm run test:upgrade', needs: ['build'], online: true, what: 'Stories saved by the old app still open (needs internet)' },
+    // Opt-in only: real model calls cost money. Runs only when named with --only live.
+    { id: 'live', label: 'Browser: live model', command: 'npm run test:live', needs: ['build'], optIn: true, what: 'Opt-in: Autopilot against the real Anthropic API (needs ANTHROPIC_API_KEY, costs money)' }
 ];
 
 const useColor = process.stdout.isTTY && !process.env.NO_COLOR;
@@ -108,6 +111,7 @@ function summarize(step, output, passed) {
         }
         if (failedOnly) return `${failedOnly[1]} failed`;
     }
+    if (/^Skipped: no ANTHROPIC_API_KEY/m.test(output)) return 'not run: no ANTHROPIC_API_KEY';
     const browser = output.match(/Passed: (\d+) \| Failed: (\d+)/);
     if (browser) return Number(browser[2]) ? `${browser[2]} failed, ${browser[1]} passed` : `${browser[1]} checks`;
     if (step.id === 'typecheck' && !passed) {
@@ -127,7 +131,7 @@ function failureExcerpt(step, output) {
     let picked = [];
     if (step.id === 'typecheck') picked = lines.filter((l) => /error TS\d+/.test(l));
     else if (step.id === 'unit') picked = lines.filter((l) => /^\s*(FAIL|×|✗|AssertionError|Error:|TypeError:|ReferenceError:)/.test(l) || /^\s*❯ .*\.test\./.test(l));
-    else if (/^(golden|subpath|singlefile|pipeline|upgrade)$/.test(step.id)) picked = lines.filter((l) => /\[FAIL\]|Chrome not found|Error:/.test(l));
+    else if (/^(golden|subpath|singlefile|pipeline|upgrade|live)$/.test(step.id)) picked = lines.filter((l) => /\[FAIL\]|Chrome not found|Error:/.test(l));
     if (!picked.length) picked = lines.filter((l) => l.trim()).slice(-FAILURE_LINES_SHOWN);
     const shown = picked.slice(0, FAILURE_LINES_SHOWN);
     if (picked.length > shown.length) shown.push(`... ${picked.length - shown.length} more line(s)`);
@@ -149,7 +153,7 @@ async function isOnline() {
 function printStepList() {
     console.log('Steps, in the order they run:\n');
     for (const step of STEPS) {
-        console.log(`  ${step.id.padEnd(17)} ${step.what}${step.quick ? dim('  [quick]') : ''}`);
+        console.log(`  ${step.id.padEnd(17)} ${step.what}${step.quick ? dim('  [quick]') : ''}${step.optIn ? dim('  [only with --only]') : ''}`);
     }
     console.log('\nnpm run check            all steps');
     console.log('npm run check:quick      the [quick] steps');
@@ -165,7 +169,7 @@ async function main() {
 
     const selected = STEPS.filter((step) => {
         if (opts.only) return opts.only.has(step.id);
-        if (opts.skip.has(step.id)) return false;
+        if (opts.skip.has(step.id) || step.optIn) return false;
         return opts.quick ? Boolean(step.quick) : true;
     });
     fs.mkdirSync(LOG_DIR, { recursive: true });
