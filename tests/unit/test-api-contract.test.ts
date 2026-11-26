@@ -26,7 +26,7 @@ describe('public window contract (src/compat/testApi.ts)', () => {
     }, 60000);
 
     it('lists exactly the globals the golden suite uses', () => {
-        const used = windowNamesUsedBy(['tests/e2e/golden_suite.mjs', 'tests/e2e/fixtures/mockLlm.js']);
+        const used = windowNamesUsedBy(['tests/e2e/golden_suite.mjs', 'tests/e2e/liveLlm.mjs', 'tests/e2e/fixtures/mockLlm.js']);
         // A failure here means the suite started (or stopped) using a window global: add it to
         // (or remove it from) src/compat/testApi.ts so the dependency stays visible.
         expect(used).toEqual([...PUBLIC_WINDOW_CONTRACT].sort());

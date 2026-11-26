@@ -163,15 +163,15 @@ export function startLiveRelay({ llm, allowedOrigin }) {
 
 /**
  * Page-side half: routes every app LLM call through the relay and keeps a transcript of
- * agent names (no prompts) in window.__liveTranscript. Evaluated in the page.
+ * agent names (no prompts) in window.__goldenLiveTranscript. Evaluated in the page.
  */
 export function liveOverrideSource(relayUrl) {
     return `(() => {
-        window.__liveTranscript = [];
-        window.__liveErrors = [];
+        window.__goldenLiveTranscript = [];
+        window.__goldenLiveErrors = [];
         window.__callAIOverride = async (prompt, systemPrompt, isJson, logName) => {
             const entry = { logName: String(logName || ''), isJson: Boolean(isJson), startedAt: Date.now() };
-            window.__liveTranscript.push(entry);
+            window.__goldenLiveTranscript.push(entry);
             const res = await fetch(${JSON.stringify(relayUrl)}, {
                 method: 'POST',
                 headers: { 'content-type': 'application/json' },
@@ -181,7 +181,7 @@ export function liveOverrideSource(relayUrl) {
             entry.ms = Date.now() - entry.startedAt;
             if (!res.ok || typeof data.text !== 'string') {
                 entry.error = data.error || ('relay status ' + res.status);
-                window.__liveErrors.push(entry.logName + ': ' + entry.error);
+                window.__goldenLiveErrors.push(entry.logName + ': ' + entry.error);
                 throw new Error(entry.error);
             }
             entry.chars = data.text.length;

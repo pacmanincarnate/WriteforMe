@@ -1826,7 +1826,7 @@ async function runLiveScenarios({ cdp, exceptions, baseUrl, results, relay, llm,
     const lore = await cdp.eval(`(async () => {
         try {
             const primer = await window.distillLore(${JSON.stringify(LIVE_LORE_SAMPLE)});
-            return { primer: String(primer || ''), errors: window.__liveErrors.slice() };
+            return { primer: String(primer || ''), errors: window.__goldenLiveErrors.slice() };
         } catch (e) { return { primer: '', errors: [String(e && e.message || e)] }; }
     })()`, true);
     assert('Live: lore distillation returns a world primer that keeps the source names',
@@ -1834,7 +1834,7 @@ async function runLiveScenarios({ cdp, exceptions, baseUrl, results, relay, llm,
         JSON.stringify({ words: words(lore.primer), errors: lore.errors, sample: lore.primer.slice(0, 160) }));
 
     // 3. Autopilot from the Setup form until the first scene has prose.
-    await cdp.eval('window.__liveTranscript.length = 0; window.__liveErrors.length = 0;', false);
+    await cdp.eval('window.__goldenLiveTranscript.length = 0; window.__goldenLiveErrors.length = 0;', false);
     const started = await cdp.eval(startAutopilotFromSetupExpr('Live Model Run',
         'A lamplighter in a marsh city finds that someone is putting out the causeway lamps one by one. Keep it a short story.'), true);
     assert('Live: Setup form starts Autopilot through the confirm modal', started.ok, JSON.stringify(started));
@@ -1852,8 +1852,8 @@ async function runLiveScenarios({ cdp, exceptions, baseUrl, results, relay, llm,
         await sleep(2000);
         proseScenes = await cdp.eval(proseCountExpr, false);
         const progress = await cdp.eval(`(() => {
-            const t = window.__liveTranscript;
-            return { calls: t.length, last: t.length ? t[t.length - 1].logName : '', errors: window.__liveErrors.slice(-3) };
+            const t = window.__goldenLiveTranscript;
+            return { calls: t.length, last: t.length ? t[t.length - 1].logName : '', errors: window.__goldenLiveErrors.slice(-3) };
         })()`, false);
         if (progress.last && progress.last !== lastName) {
             lastName = progress.last;
@@ -1887,8 +1887,8 @@ async function runLiveScenarios({ cdp, exceptions, baseUrl, results, relay, llm,
             activeId: localStorage.getItem('ellipsisprose_active_story_id'),
             digest: digestOf(s),
             savedDigest: saved ? digestOf(saved) : null,
-            transcript: window.__liveTranscript.map((t) => ({ logName: t.logName, ms: t.ms, chars: t.chars, error: t.error })),
-            errors: window.__liveErrors.slice()
+            transcript: window.__goldenLiveTranscript.map((t) => ({ logName: t.logName, ms: t.ms, chars: t.chars, error: t.error })),
+            errors: window.__goldenLiveErrors.slice()
         };
     })()`, true);
     const { digest, savedDigest, transcript } = report;
