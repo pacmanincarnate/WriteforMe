@@ -51,7 +51,16 @@ import {
 import { ensureAudioDramaVoicesRegistered } from '@/services/audio';
 import { callAgenticLoop, resolveRole } from '@/services/llm';
 import { storyStore } from '@/services/storage';
-import type { Act, CastMember, LoreItem, SceneBlueprint, Sequence, Story } from '@/types';
+import {
+    CLI_BRIDGE_DEFAULT_URLS,
+    isLocalProvider,
+    type Act,
+    type CastMember,
+    type LoreItem,
+    type SceneBlueprint,
+    type Sequence,
+    type Story
+} from '@/types';
 import {
     decodeXmlEntities,
     extractTag,
@@ -1482,7 +1491,9 @@ ${dynamicBannedList.map((p) => `- ${p}`).join('\n')}
         else if (targetProvider === 'koboldcpp') {
             effectiveBaseUrl = creds.koboldUrl || 'http://localhost:5001';
         } else if (targetProvider === 'codex') {
-            effectiveBaseUrl = creds.codexUrl || 'http://localhost:5010';
+            effectiveBaseUrl = creds.codexUrl || CLI_BRIDGE_DEFAULT_URLS.codex;
+        } else if (targetProvider === 'claude') {
+            effectiveBaseUrl = creds.claudeUrl || CLI_BRIDGE_DEFAULT_URLS.claude;
         }
 
         const toolContext = {
@@ -1543,7 +1554,7 @@ ${isAudioDramaStory ? 'Begin writing current scene audio drama script.' : 'Begin
                     max_tokens:
                         targetProvider === 'openrouter'
                             ? creds.openRouterMaxTokens || 65536
-                            : targetProvider === 'koboldcpp' || targetProvider === 'codex'
+                            : isLocalProvider(targetProvider)
                               ? 32768
                               : 16384,
                     temperature:

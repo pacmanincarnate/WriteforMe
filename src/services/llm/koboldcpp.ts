@@ -5,6 +5,7 @@
  */
 
 import { fetchWithTimeout } from '@/services/http';
+import { isCliBridgeProvider } from '@/types';
 import { cleanJson, extractReasoningAndContent } from '@/utils';
 import { getKoboldLoadedModelName } from './koboldRuntime';
 import {
@@ -135,7 +136,7 @@ export async function callKoboldCPP(
 
         let sanitizedKoboldModel = model;
         const globalLoaded = getGlobalKoboldLoadedModel();
-        if (opts.provider !== 'codex') {
+        if (!isCliBridgeProvider(opts.provider)) {
             if (
                 !sanitizedKoboldModel ||
                 sanitizedKoboldModel === 'koboldcpp' ||
@@ -144,7 +145,7 @@ export async function callKoboldCPP(
                 sanitizedKoboldModel = globalLoaded || 'koboldcpp';
             }
         }
-        const modelId = opts.provider === 'codex' ? model || undefined : sanitizedKoboldModel;
+        const modelId = isCliBridgeProvider(opts.provider) ? model || undefined : sanitizedKoboldModel;
 
         const messages: LlmChatMessage[] =
             opts.messages && Array.isArray(opts.messages)
@@ -430,14 +431,14 @@ export async function callKoboldCPP(
             '';
 
         const actualKoboldReportedModel =
-            opts.provider !== 'codex'
+            !isCliBridgeProvider(opts.provider)
                 ? globalLoaded ||
                   (data.model && !isCloudModelName(data.model) && data.model !== 'koboldcpp'
                       ? data.model
                       : modelId && !isCloudModelName(modelId)
                         ? modelId
                         : 'koboldcpp')
-                : data.model || modelId || 'codex';
+                : data.model || modelId || opts.provider || 'codex';
 
         if (toolCalls.length > 0 || opts.returnFullData) {
             if (opts.onSuccess) {

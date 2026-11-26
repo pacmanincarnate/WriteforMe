@@ -23,6 +23,7 @@ export interface ProviderModelSettings {
     openRouterModel?: string;
     nanoGptModel?: string;
     codexModel?: string;
+    claudeModel?: string;
     koboldModel?: string;
     koboldLoadedModel?: string;
 }
@@ -73,6 +74,7 @@ export function getDefaultModelForProvider(
     if (prov === 'openrouter') return settings.openRouterModel || 'google/gemini-2.0-flash-001';
     if (prov === 'nanogpt') return settings.nanoGptModel || 'gpt-4o';
     if (prov === 'codex') return settings.codexModel || 'gpt-5.6-luna';
+    if (prov === 'claude') return settings.claudeModel || 'sonnet';
     if (prov === 'koboldcpp') {
         return (
             settings.koboldLoadedModel ||

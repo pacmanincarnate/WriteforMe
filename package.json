@@ -34,6 +34,7 @@
     "launch": "node launch.js",
     "audio-bridge": "node audio-studio-bridge.js",
     "codex-bridge": "node codex-bridge.js",
+    "claude-bridge": "node claude-bridge.js",
     "mcp-server": "node mcp-server/index.mjs"
   },
   "optionalDependencies": {

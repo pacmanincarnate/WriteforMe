@@ -303,6 +303,10 @@ import {
                 codexModelsList,
                 codexStatus,
                 codexEmbeddingStatus,
+                claudeUrl, setClaudeUrl,
+                claudeModel, setClaudeModel,
+                claudeModelsList,
+                claudeStatus,
                 savedModels,
                 koboldStatus,
                 koboldLoadedModel,
@@ -339,6 +343,7 @@ import {
                 deleteModel,
                 fetchGeminiImageModels,
                 refreshCodexModels,
+                refreshClaudeModels,
                 refreshComfyInfo,
                 handleCatalogRefresh,
                 callAI
@@ -1108,6 +1113,7 @@ import {
                     nanoGptKey,
                     koboldUrl,
                     codexUrl,
+                    claudeUrl,
                     openRouterMaxTokens
                 }),
                 getDirectiveInput: () => directiveInput,
@@ -1650,11 +1656,13 @@ import {
                     nanoGptModel,
                     koboldModel,
                     codexModel,
+                    claudeModel,
                     apiKey,
                     openRouterKey,
                     nanoGptKey,
                     koboldUrl,
                     codexUrl,
+                    claudeUrl,
                     loading,
                     loadingStep,
                     continuousAutopilot,
@@ -1678,11 +1686,13 @@ import {
                     setNanoGptModel,
                     setKoboldModel,
                     setCodexModel,
+                    setClaudeModel,
                     setApiKey,
                     setOpenRouterKey,
                     setNanoGptKey,
                     setKoboldUrl,
                     setCodexUrl,
+                    setClaudeUrl,
                     setInputTitle,
                     setInputConcept,
                     setInputAuthorNote,
@@ -2407,9 +2417,16 @@ import {
                                 codexModel={codexModel}
                                 setCodexModel={setCodexModel}
                                 codexModelsList={codexModelsList}
-                                codexStatus={handOff(codexStatus)}
+                                codexStatus={codexStatus}
                                 codexEmbeddingStatus={codexEmbeddingStatus}
                                 refreshCodexModels={refreshCodexModels}
+                                claudeUrl={claudeUrl}
+                                setClaudeUrl={setClaudeUrl}
+                                claudeModel={claudeModel}
+                                setClaudeModel={setClaudeModel}
+                                claudeModelsList={claudeModelsList}
+                                claudeStatus={claudeStatus}
+                                refreshClaudeModels={refreshClaudeModels}
                                 showOtherApiKeys={showOtherApiKeys}
                                 setShowOtherApiKeys={setShowOtherApiKeys}
                                 savedModels={savedModels}

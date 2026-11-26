@@ -8,6 +8,7 @@ import React from 'react';
 import { ChevronDown, RefreshCw, RotateCcw, UniversalModelSearch } from '@/components';
 import { DEFAULT_GEMINI_IMAGE_MODELS, DEFAULT_OPENROUTER_IMAGE_MODELS } from '@/config';
 import { getKoboldLoadedModelName } from '@/services/llm';
+import { CLI_BRIDGE_DEFAULT_URLS, isCliBridgeProvider } from '@/types';
 import type { SettingsModelsTabProps } from './types';
 
 function readKoboldGlobalModel(): string | undefined {
@@ -19,8 +20,12 @@ const PROVIDER_TABS = [
     { id: 'openrouter', label: 'OpenRouter' },
     { id: 'nanogpt', label: 'nano-GPT' },
     { id: 'koboldcpp', label: 'KoboldCPP' },
-    { id: 'codex', label: 'Codex Bridge' }
+    { id: 'codex', label: 'Codex Bridge' },
+    { id: 'claude', label: 'Claude Code' }
 ] as const;
+
+/** Claude Code has no embedding endpoint, so it is not offered for RAG. */
+const EMBEDDING_PROVIDER_TABS = PROVIDER_TABS.filter((p) => p.id !== 'claude');
 
 const OVERRIDE_PROVIDER_TABS = [
     { id: '', label: 'Inherit (Primary)' },
@@ -62,6 +67,13 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
     codexStatus,
     codexEmbeddingStatus,
     refreshCodexModels,
+    claudeUrl,
+    setClaudeUrl,
+    claudeModel,
+    setClaudeModel,
+    claudeModelsList,
+    claudeStatus,
+    refreshClaudeModels,
     showOtherApiKeys,
     setShowOtherApiKeys,
     savedModels,
@@ -144,6 +156,29 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
 
     const prsConfig = getEffectiveModelConfig('prose');
     const effPrsProv = proseProvider || devProvider || 'gemini';
+
+    /** The Codex and Claude Code bridges share one model picker; this is what differs between them. */
+    const cliBridgeFor = (provider: string) =>
+        provider === 'claude'
+            ? {
+                  name: 'Claude Code Bridge',
+                  cli: 'Claude Code',
+                  model: claudeModel,
+                  setModel: setClaudeModel,
+                  models: claudeModelsList,
+                  status: claudeStatus
+              }
+            : {
+                  name: 'Codex Bridge',
+                  cli: 'Codex CLI',
+                  model: codexModel,
+                  setModel: setCodexModel,
+                  models: codexModelsList,
+                  status: codexStatus
+              };
+    const devBridge = cliBridgeFor(devProvider);
+    const revBridge = cliBridgeFor(effRevProv);
+    const prsBridge = cliBridgeFor(effPrsProv);
     const isPrsInherited = !proseModel && !proseProvider;
 
     const availableGeminiImageModels =
@@ -196,7 +231,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                     <label className="block text-xs font-bold text-ink-500 uppercase tracking-wider mb-1.5 font-mono">
                         Active Provider
                     </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                         {PROVIDER_TABS.map((p) => (
                             <button
                                 key={p.id}
@@ -213,6 +248,8 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                         setDevModel(km);
                                         setKoboldModel(km);
                                     }
+                                    // Another provider's model id means nothing to the Claude CLI.
+                                    if (p.id === 'claude' && devProvider !== 'claude') setDevModel(claudeModel);
                                 }}
                                 className={`py-2 px-2 min-h-[38px] flex items-center justify-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                     devProvider === p.id
@@ -425,6 +462,46 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             </p>
                         </div>
                     )}
+
+                    {devProvider === 'claude' && (
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold uppercase tracking-wider text-ink-700 font-mono">
+                                    Claude Code Bridge Endpoint (Local)
+                                </span>
+                                <span className="text-xs px-2.5 py-0.5 rounded-full bg-sage-tint border border-sage-edge text-sage-800 font-mono font-semibold">
+                                    Active Provider
+                                </span>
+                            </div>
+                            <input
+                                type="text"
+                                value={claudeUrl}
+                                onChange={(e) => setClaudeUrl(e.target.value)}
+                                className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
+                                placeholder={CLI_BRIDGE_DEFAULT_URLS.claude}
+                            />
+                            <div className="flex items-center justify-between gap-3 pt-1">
+                                <p className="text-[11px] text-ink-500 font-mono" role="status">
+                                    {claudeStatus.online
+                                        ? 'Online (signed in)'
+                                        : claudeStatus.error || 'Checking bridge...'}
+                                </p>
+                                <button
+                                    type="button"
+                                    onClick={refreshClaudeModels}
+                                    className="text-xs text-gold-ink hover:text-ink-900 font-medium flex items-center gap-1 transition-colors"
+                                >
+                                    <RefreshCw size={11} /> Refresh
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-ink-400">
+                                Run <code className="text-ink-700 font-semibold font-mono">npm run claude-bridge</code>{' '}
+                                in the project folder first. Uses your local Claude Code login (
+                                <code className="text-ink-700 font-semibold font-mono">claude -p</code>), so usage
+                                counts against your Claude plan.
+                            </p>
+                        </div>
+                    )}
                 </div>
 
                 {/* Expandable Other Provider Keys Disclosure */}
@@ -517,6 +594,20 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                     />
                                 </div>
                             )}
+                            {devProvider !== 'claude' && (
+                                <div className="p-3 bg-inset border border-edge-strong rounded-xl space-y-1.5">
+                                    <span className="text-xs font-bold uppercase tracking-wider text-ink-700 font-mono block">
+                                        Claude Code Bridge URL
+                                    </span>
+                                    <input
+                                        type="text"
+                                        value={claudeUrl}
+                                        onChange={(e) => setClaudeUrl(e.target.value)}
+                                        className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 focus:border-gold outline-none font-mono"
+                                        placeholder={CLI_BRIDGE_DEFAULT_URLS.claude}
+                                    />
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
@@ -541,7 +632,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
 
                 {/* Primary Model Card */}
                 <div className="p-4 rounded-xl border border-edge-strong bg-surface space-y-3 shadow-2xs">
-                    {devProvider !== 'codex' ? (
+                    {!isCliBridgeProvider(devProvider) ? (
                         <UniversalModelSearch
                             label="Primary Model Selection"
                             apiProvider={devProvider}
@@ -581,31 +672,31 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                     ) : (
                         <div className="space-y-2">
                             <label
-                                htmlFor="codex-dev-model"
+                                htmlFor={`${devProvider}-dev-model`}
                                 className="block text-xs font-bold uppercase tracking-wider text-ink-600 font-mono"
                             >
-                                Primary Model (Codex Bridge)
+                                Primary Model ({devBridge.name})
                             </label>
                             <select
-                                id="codex-dev-model"
-                                value={devModel || codexModel || ''}
+                                id={`${devProvider}-dev-model`}
+                                value={devModel || devBridge.model || ''}
                                 onChange={(e) => {
                                     setDevModel(e.target.value);
-                                    setCodexModel(e.target.value);
+                                    devBridge.setModel(e.target.value);
                                 }}
                                 className="w-full bg-surface border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
                             >
-                                <option value="">Bridge default ({codexStatus.model || 'Default'})</option>
-                                {devModel && !codexModelsList.some((m) => m.id === devModel) && (
+                                <option value="">Bridge default ({devBridge.status.model || 'Default'})</option>
+                                {devModel && !devBridge.models.some((m) => m.id === devModel) && (
                                     <option value={devModel}>{devModel}</option>
                                 )}
-                                {codexModelsList.map((m) => (
+                                {devBridge.models.map((m) => (
                                     <option key={m.id} value={m.id}>
                                         {String(m.display_name || m.id)}
                                     </option>
                                 ))}
                             </select>
-                            <p className="text-[11px] text-ink-400">Uses your local Codex CLI bridge session.</p>
+                            <p className="text-[11px] text-ink-400">Uses your local {devBridge.cli} bridge session.</p>
                         </div>
                     )}
                 </div>
@@ -678,7 +769,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 <label className="block text-xs font-bold text-ink-500 uppercase tracking-wider mb-1.5 font-mono">
                                     Provider
                                 </label>
-                                <div className="grid grid-cols-2 sm:grid-cols-6 gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                                <div className="grid grid-cols-2 sm:grid-cols-7 gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                                     {OVERRIDE_PROVIDER_TABS.map((p) => (
                                         <button
                                             key={p.id}
@@ -692,6 +783,9 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                                         koboldModel ||
                                                         'koboldcpp';
                                                     setReviewModel(km);
+                                                }
+                                                if (p.id === 'claude' && reviewProvider !== 'claude') {
+                                                    setReviewModel('');
                                                 }
                                             }}
                                             className={`py-2 px-1.5 min-h-[38px] flex items-center justify-center rounded-lg text-xs font-bold transition-all text-center truncate cursor-pointer ${
@@ -734,7 +828,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 </div>
                             )}
 
-                            {effRevProv !== 'codex' ? (
+                            {!isCliBridgeProvider(effRevProv) ? (
                                 <UniversalModelSearch
                                     label="Review Model Selection"
                                     apiProvider={effRevProv}
@@ -757,22 +851,22 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             ) : (
                                 <div className="space-y-2">
                                     <label
-                                        htmlFor="codex-review-model"
+                                        htmlFor={`${effRevProv}-review-model`}
                                         className="block text-xs font-bold uppercase tracking-wider text-ink-600 font-mono"
                                     >
-                                        Review Model (Codex Bridge)
+                                        Review Model ({revBridge.name})
                                     </label>
                                     <select
-                                        id="codex-review-model"
+                                        id={`${effRevProv}-review-model`}
                                         value={reviewModel || ''}
                                         onChange={(e) => setReviewModel(e.target.value)}
                                         className="w-full bg-surface border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
                                     >
                                         <option value="">Inherit Primary Default ({revConfig.model})</option>
-                                        {reviewModel && !codexModelsList.some((m) => m.id === reviewModel) && (
+                                        {reviewModel && !revBridge.models.some((m) => m.id === reviewModel) && (
                                             <option value={reviewModel}>{reviewModel}</option>
                                         )}
-                                        {codexModelsList.map((m) => (
+                                        {revBridge.models.map((m) => (
                                             <option key={m.id} value={m.id}>
                                                 {String(m.display_name || m.id)}
                                             </option>
@@ -818,7 +912,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 <label className="block text-xs font-bold text-ink-500 uppercase tracking-wider mb-1.5 font-mono">
                                     Provider
                                 </label>
-                                <div className="grid grid-cols-2 sm:grid-cols-6 gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                                <div className="grid grid-cols-2 sm:grid-cols-7 gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                                     {OVERRIDE_PROVIDER_TABS.map((p) => (
                                         <button
                                             key={p.id}
@@ -832,6 +926,9 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                                         koboldModel ||
                                                         'koboldcpp';
                                                     setProseModel(km);
+                                                }
+                                                if (p.id === 'claude' && proseProvider !== 'claude') {
+                                                    setProseModel('');
                                                 }
                                             }}
                                             className={`py-2 px-1.5 min-h-[38px] flex items-center justify-center rounded-lg text-xs font-bold transition-all text-center truncate cursor-pointer ${
@@ -874,7 +971,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 </div>
                             )}
 
-                            {effPrsProv !== 'codex' ? (
+                            {!isCliBridgeProvider(effPrsProv) ? (
                                 <UniversalModelSearch
                                     label="Prose Model Selection"
                                     apiProvider={effPrsProv}
@@ -897,22 +994,22 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             ) : (
                                 <div className="space-y-2">
                                     <label
-                                        htmlFor="codex-prose-model"
+                                        htmlFor={`${effPrsProv}-prose-model`}
                                         className="block text-xs font-bold uppercase tracking-wider text-ink-600 font-mono"
                                     >
-                                        Prose Model (Codex Bridge)
+                                        Prose Model ({prsBridge.name})
                                     </label>
                                     <select
-                                        id="codex-prose-model"
+                                        id={`${effPrsProv}-prose-model`}
                                         value={proseModel || ''}
                                         onChange={(e) => setProseModel(e.target.value)}
                                         className="w-full bg-surface border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
                                     >
                                         <option value="">Inherit Primary Default ({prsConfig.model})</option>
-                                        {proseModel && !codexModelsList.some((m) => m.id === proseModel) && (
+                                        {proseModel && !prsBridge.models.some((m) => m.id === proseModel) && (
                                             <option value={proseModel}>{proseModel}</option>
                                         )}
-                                        {codexModelsList.map((m) => (
+                                        {prsBridge.models.map((m) => (
                                             <option key={m.id} value={m.id}>
                                                 {String(m.display_name || m.id)}
                                             </option>
@@ -928,7 +1025,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 Embedding Provider (RAG)
                             </label>
                             <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
-                                {PROVIDER_TABS.map((p) => (
+                                {EMBEDDING_PROVIDER_TABS.map((p) => (
                                     <button
                                         key={p.id}
                                         type="button"

@@ -46,7 +46,7 @@ The server is registered in `~/.gemini/config/mcp_config.json`:
 | :--- | :--- | :--- |
 | `get_bridge_status` | *(none)* | Returns connection state, active story ID, title, current view, word count, and pipeline status. |
 | `start_new_story` | `concept` (required), `title`, `writingMode`, `autoStart`, `isAutopilot` | Starts a new story canvas with the concept and optionally triggers the story bible initialization pipeline. |
-| `set_model_config` | `provider` (required: `gemini`, `openrouter`, `nanogpt`, `koboldcpp`, `codex`), `model`, `role` (`all`, `dev`, `review`, `prose`), `apiKey`, `baseUrl` | Updates the active model API provider and model across the application or a specific tier role. |
+| `set_model_config` | `provider` (required: `gemini`, `openrouter`, `nanogpt`, `koboldcpp`, `codex`, `claude`), `model`, `role` (`all`, `dev`, `review`, `prose`), `apiKey`, `baseUrl` | Updates the active model API provider and model across the application or a specific tier role. |
 | `get_model_config` | *(none)* | Returns active API provider, 3-model role configurations, and available settings. |
 | `get_active_story` | `includeFullProse` (boolean, default: false) | Retrieves the active story bible, outline, characters, sequences, and word counts. |
 | `list_stories` | *(none)* | Lists all stories saved in the browser's IndexedDB story library. |

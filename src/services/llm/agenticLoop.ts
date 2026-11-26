@@ -6,6 +6,7 @@
  */
 
 import { getPipelineStepInfo } from '@/config';
+import { CLI_BRIDGE_DEFAULT_URLS, isCliBridgeProvider, isLocalProvider } from '@/types';
 import {
     isAudioDramaScriptText,
     isMetaCommentaryText,
@@ -141,7 +142,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
     const defaultMaxTokens =
         effectiveProvider === 'openrouter'
             ? 65536
-            : effectiveProvider === 'koboldcpp' || effectiveProvider === 'codex'
+            : isLocalProvider(effectiveProvider)
               ? 32768
               : 16384;
     const resolvedMaxTokens = options?.max_tokens || defaultMaxTokens;
@@ -176,8 +177,8 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
         if (effectiveProvider === 'openrouter') {
             return 'https://openrouter.ai/api/v1/chat/completions';
         }
-        if (effectiveProvider === 'codex') {
-            return `${baseUrl || 'http://localhost:5010'}/v1/chat/completions`;
+        if (isCliBridgeProvider(effectiveProvider)) {
+            return `${baseUrl || CLI_BRIDGE_DEFAULT_URLS[effectiveProvider]}/v1/chat/completions`;
         }
         return `${baseUrl || 'http://localhost:5001'}/v1/chat/completions`;
     };
@@ -203,7 +204,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
             maxTokens: resolvedMaxTokens,
             temperature: resolvedTemp,
             timeoutSeconds:
-                effectiveProvider === 'koboldcpp' || effectiveProvider === 'codex'
+                isLocalProvider(effectiveProvider)
                     ? 15 * 60
                     : undefined,
             thinking: { enabled: false, budget: 0, effort: 'none', level: 'MINIMAL' },
@@ -568,6 +569,8 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                 ? 'KoboldCPP'
                 : effectiveProvider === 'codex'
                   ? 'Codex'
+                  : effectiveProvider === 'claude'
+                    ? 'Claude Code'
                   : effectiveProvider === 'nanogpt'
                     ? 'nano-GPT'
                     : 'OpenRouter';
@@ -640,8 +643,8 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                 }) as Promise<OpenAICompatibleFullResult>;
                             }
                             const targetUrl =
-                                effectiveProvider === 'codex'
-                                    ? baseUrl || 'http://localhost:5010'
+                                isCliBridgeProvider(effectiveProvider)
+                                    ? baseUrl || CLI_BRIDGE_DEFAULT_URLS[effectiveProvider]
                                     : baseUrl || 'http://localhost:5001';
                             return callKoboldCPP(targetUrl, model, '', systemPrompt, false, {
                                 ...turnOpts,
@@ -657,7 +660,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                         turnErr instanceof Error ? turnErr.message : turnErr || ''
                     ).toLowerCase();
                     if (
-                        (effectiveProvider === 'koboldcpp' || effectiveProvider === 'codex') &&
+                        isLocalProvider(effectiveProvider) &&
                         (errStr.includes('tool') ||
                             errStr.includes('schema') ||
                             errStr.includes('unrecognized') ||
@@ -695,8 +698,8 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                             );
                         }
                         const targetUrl =
-                            effectiveProvider === 'codex'
-                                ? baseUrl || 'http://localhost:5010'
+                            isCliBridgeProvider(effectiveProvider)
+                                ? baseUrl || CLI_BRIDGE_DEFAULT_URLS[effectiveProvider]
                                 : baseUrl || 'http://localhost:5001';
                         return callKoboldCPP(
                             targetUrl,

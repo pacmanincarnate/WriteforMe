@@ -22,6 +22,7 @@ import {
     type ProviderModelSettings,
     type ThinkingBudgetSettings
 } from '@/services/llm';
+import { CLI_BRIDGE_DEFAULT_URLS, isCliBridgeProvider, isLocalProvider, type CliBridgeProviderId } from '@/types';
 
 export const PROMPT_LOG_CAP = 250;
 
@@ -83,6 +84,7 @@ export interface AiDispatchSettings {
     nanoGptKey?: string;
     koboldUrl?: string;
     codexUrl?: string;
+    claudeUrl?: string;
     openRouterMaxTokens?: number;
     apiTimeout?: number;
     activeStory?: { id?: string; writing_mode?: string } | null;
@@ -214,9 +216,13 @@ export async function dispatchAI(
 
     const apiTimeoutSec = settings.apiTimeout ?? 180;
     const timeoutMs =
-        targetProvider === 'koboldcpp' || targetProvider === 'codex'
+        isLocalProvider(targetProvider)
             ? 15 * 60 * 1000
             : apiTimeoutSec * 1000;
+
+    const cliBridgeUrl = (provider: CliBridgeProviderId): string =>
+        (provider === 'claude' ? settings.claudeUrl : settings.codexUrl) ||
+        CLI_BRIDGE_DEFAULT_URLS[provider];
 
     const requestParameters: Record<string, unknown> = {
         provider: targetProvider,
@@ -235,7 +241,7 @@ export async function dispatchAI(
                     : 0.8,
         ...(targetProvider === 'koboldcpp' ? { sampler: koboldSamplerSettings } : {}),
         timeoutSeconds:
-            targetProvider === 'koboldcpp' || targetProvider === 'codex' ? 15 * 60 : apiTimeoutSec,
+            isLocalProvider(targetProvider) ? 15 * 60 : apiTimeoutSec,
         timeoutMs,
         thinking: {
             enabled: Boolean(thinkingConfig && thinkingConfig.enabled),
@@ -250,8 +256,8 @@ export async function dispatchAI(
                   ? 'https://nano-gpt.com/api/v1/chat/completions'
                   : targetProvider === 'openrouter'
                     ? 'https://openrouter.ai/api/v1/chat/completions'
-                    : targetProvider === 'codex'
-                      ? `${settings.codexUrl || 'http://localhost:5010'}/v1/chat/completions`
+                    : isCliBridgeProvider(targetProvider)
+                      ? `${cliBridgeUrl(targetProvider)}/v1/chat/completions`
                       : `${settings.koboldUrl || 'http://localhost:5001'}/v1/chat/completions`
     };
 
@@ -323,7 +329,7 @@ export async function dispatchAI(
         modelRole: activeRole,
         timeout: timeoutMs,
         ...(targetProvider === 'openrouter' ? { sessionId: openRouterSessionId } : {}),
-        ...(targetProvider === 'codex' ? { provider: 'codex' } : {}),
+        ...(isCliBridgeProvider(targetProvider) ? { provider: targetProvider } : {}),
         onSuccess: (metadata: LlmSuccessMetadata) => {
             const durationSec = ((performance.now() - startTime) / 1000).toFixed(2);
             const durationMs = Math.round(performance.now() - startTime);
@@ -412,9 +418,9 @@ export async function dispatchAI(
                     isJson,
                     options
                 );
-            } else if (targetProvider === 'codex') {
+            } else if (isCliBridgeProvider(targetProvider)) {
                 response = await callKoboldCPP(
-                    settings.codexUrl || 'http://localhost:5010',
+                    cliBridgeUrl(targetProvider),
                     currentModelToUse,
                     prompt,
                     finalSystemPrompt,

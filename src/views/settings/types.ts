@@ -42,9 +42,8 @@ export interface SettingsStory extends Story {
 
 export interface SettingsCodexStatus {
     online?: boolean;
-    model?: string;
+    model?: string | null;
     error?: string | null;
-    [key: string]: unknown;
 }
 
 export interface SettingsCodexEmbeddingStatus {
@@ -103,6 +102,13 @@ export interface SettingsModelsTabProps {
     codexStatus: SettingsCodexStatus;
     codexEmbeddingStatus: SettingsCodexEmbeddingStatus | null;
     refreshCodexModels: () => void | Promise<void>;
+    claudeUrl: string;
+    setClaudeUrl: (url: string) => void;
+    claudeModel: string;
+    setClaudeModel: (model: string) => void;
+    claudeModelsList: CodexModelInfo[];
+    claudeStatus: SettingsCodexStatus;
+    refreshClaudeModels: () => void | Promise<void>;
     showOtherApiKeys: boolean;
     setShowOtherApiKeys: React.Dispatch<React.SetStateAction<boolean>>;
     savedModels: string[];
