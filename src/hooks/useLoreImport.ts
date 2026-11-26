@@ -38,7 +38,7 @@ export interface UseLoreImportParams<TStory extends LoreStory = LoreStory> {
     story: TStory;
     setStory: (updater: (prev: TStory) => TStory) => unknown;
     /** The distilled world primer is stale once the source documents change. */
-    setWorldPrimer: (primer: null) => void;
+    setWorldPrimer: (primer: string | null) => void;
     showToast: (message: string, variant?: ToastVariant) => void;
     setLoading: (loading: boolean) => void;
     setLoadingStep: (step: string) => void;

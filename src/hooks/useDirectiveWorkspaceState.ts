@@ -16,6 +16,13 @@ export const DIRECTIVE_VERIFY_STORAGE_KEY = 'ellipsisprose_directive_verify';
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 
+/** One line of the directive run log shown while a plan executes. */
+export interface DirectiveExecutionLogEntry {
+    id: number;
+    text: string;
+    status: string;
+}
+
 export interface UseDirectiveWorkspaceStateResult {
     directiveInput: string;
     setDirectiveInput: Setter<string>;
@@ -30,8 +37,8 @@ export interface UseDirectiveWorkspaceStateResult {
     setDirectiveUndoSnapshot: Setter<unknown>;
     isExecutingDirective: boolean;
     setIsExecutingDirective: Setter<boolean>;
-    directiveExecutionLogs: unknown[];
-    setDirectiveExecutionLogs: Setter<unknown[]>;
+    directiveExecutionLogs: DirectiveExecutionLogEntry[];
+    setDirectiveExecutionLogs: Setter<DirectiveExecutionLogEntry[]>;
     directiveProgress: number;
     setDirectiveProgress: Setter<number>;
     protectWrittenProse: boolean;
@@ -44,8 +51,8 @@ export interface UseDirectiveWorkspaceStateResult {
     setVerifyDirectiveEdits: Setter<boolean>;
     directiveRefinement: string;
     setDirectiveRefinement: Setter<string>;
-    directivePlanHistory: unknown[];
-    setDirectivePlanHistory: Setter<unknown[]>;
+    directivePlanHistory: DirectivePlan[];
+    setDirectivePlanHistory: Setter<DirectivePlan[]>;
     expandedDirectiveActions: Record<string, boolean>;
     setExpandedDirectiveActions: Setter<Record<string, boolean>>;
 }
@@ -57,7 +64,7 @@ export function useDirectiveWorkspaceState(): UseDirectiveWorkspaceStateResult {
     const [directivePlanPhase, setDirectivePlanPhase] = useState<string | null>(null);
     const [directiveUndoSnapshot, setDirectiveUndoSnapshot] = useState<unknown>(null);
     const [isExecutingDirective, setIsExecutingDirective] = useState(false);
-    const [directiveExecutionLogs, setDirectiveExecutionLogs] = useState<unknown[]>([]);
+    const [directiveExecutionLogs, setDirectiveExecutionLogs] = useState<DirectiveExecutionLogEntry[]>([]);
     const [directiveProgress, setDirectiveProgress] = useState(0);
     const [protectWrittenProse, setProtectWrittenProse] = useState(true);
     const [cascadeSceneChanges, setCascadeSceneChanges] = usePersistedBoolean(
@@ -71,7 +78,7 @@ export function useDirectiveWorkspaceState(): UseDirectiveWorkspaceStateResult {
         'directive verification'
     );
     const [directiveRefinement, setDirectiveRefinement] = useState('');
-    const [directivePlanHistory, setDirectivePlanHistory] = useState<unknown[]>([]);
+    const [directivePlanHistory, setDirectivePlanHistory] = useState<DirectivePlan[]>([]);
     const [expandedDirectiveActions, setExpandedDirectiveActions] = useState<Record<string, boolean>>({});
 
     return {

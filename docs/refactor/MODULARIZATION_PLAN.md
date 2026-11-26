@@ -143,6 +143,7 @@ Create `src/hooks/useStoryPersistence.ts` and `src/hooks/useStoryEditors.ts`; ex
 ### 4.3 Phase 7 — `src/App.tsx`, legacy removal, CI/CD
 
 1. Convert the residual `MonolithApp.jsx` into typed `src/App.tsx` composed of hooks + views (move remaining state/effects into hooks or stores; the file should become a thin composition root). Delete `src/legacy/` and `src/compat/` shims no longer needed (keep any `window.*` contract that is documented as public).
+   **Status:** the shell is `src/App.tsx`, type-checked and linted like the rest of `src/` (no `any`, no `@ts-` comments). Shell `useState` went from 91 to 19. Where two modules still declare the same value differently, the shell re-labels it through `src/compat/shellBoundary.ts`; `tests/unit/shell-boundary-budget.test.ts` holds the count (104 generic hand-offs, 26 story re-labels) so it can only go down. Reconciling those shared types (one `Story`, one log entry, one relationship record) is the follow-up. Still to do: delete `src/legacy/` (the `register*Globals.ts` shims).
 2. `.github/workflows/`:
    - `ci.yml`: Node 22, `npm ci`, typecheck, lint (`--max-warnings=0`), `npm test`, build, singlefile build, all four E2E modes.
    - `deploy-pages.yml`: build with base `/WriteforMe/`, deploy `dist/` to GitHub Pages.

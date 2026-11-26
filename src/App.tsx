@@ -3,477 +3,50 @@ import * as ReactDOMClient from 'react-dom/client';
 // Explicit imports for names this file used to pick up from window globals (Phase 7).
 import { applyThemeToDom, hydrateAllStoresFromStorage, usePipelineStore, useSettingsStore, useUiStore } from '@/stores';
 import { PROMPT_LOG_CAP } from '@/pipeline';
+import type { CallAiFn, PipelineRuntimeContext } from '@/pipeline';
 import { applyWorldUpdates } from '@/domain/continuity';
 import { clearDirectivePlanResults } from '@/domain/story';
 import { createDefaultStoryTemplate } from '@/domain/lifecycle';
 import { retrieveLoreContext } from '@/services/rag';
-import {
-    cleanJson,
-    decodeXmlEntities,
-    DRAMA_SPEAKER_HUE_COUNT,
-    escapeXml,
-    extractAllTags,
-    extractReasoningAndContent,
-    extractTag,
-    extractTagAttribute,
-    extractTagList,
-    formatAudioDramaScriptHtml,
-    formatObjectToXml,
-    formatReaderProse,
-    getAudioDramaSpeakerClass,
-    isSerializationPlaceholder,
-    normalizeMarkdownIndentation,
-    parseMarkdown,
-    safeJsonStringify,
-    safeLocalStorageSet,
-    safeSessionStorageSet,
-    sanitizeHtml,
-    SERIALIZATION_PLACEHOLDER_REGEX,
-    stripXmlTags
-} from '@/utils';
-import {
-    ARCH_CONCEPTS,
-    ARCH_GENRES,
-    ARCH_STYLES,
-    AVAILABLE_ICONS,
-    BANNED_CHARACTER_NAMES,
-    BANNED_NAMES_PROMPT_INSTRUCTION,
-    DEFAULT_AUDIO_DRAMA_SETTINGS,
-    DEFAULT_BANNED_PHRASES,
-    DEFAULT_GEMINI_IMAGE_MODELS,
-    DEFAULT_IMAGE_STYLES,
-    DEFAULT_OPENROUTER_IMAGE_MODELS,
-    DEFAULT_READER_SETTINGS,
-    ELEVENLABS_VOICES,
-    formatModalityHand,
-    GEMINI_PREBUILT_VOICES,
-    generateRandomArchetypes,
-    getPipelineStepInfo,
-    inferNarrativeModeForScene,
-    KOKORO_VOICE_GROUPS,
-    KOKORO_VOICES,
-    mapLogNameToStepId,
-    migrateAudioDramaSettings,
-    NANO_GPT_DEFAULT_MODELS,
-    NARRATIVE_MODE_ICONS,
-    NARRATIVE_MODES,
-    PIPELINE_STEP_SPEC,
-    PIPELINE_STEPS_META,
-    SILENT_WAV_DATA_URI,
-    STRUCTURAL_MODALITIES,
-    TTS_PIPELINE_TIERS,
-    VIEW_LABELS
-} from '@/config';
-import {
-    AUDIO_DRAMA_SURGICAL_MANDATE,
-    AUDIO_DRAMA_SYNTAX_CONTRACT_CARD,
-    buildWritingSystemPrompt,
-    getSurgicalPromptForMode,
-    PROMPTS,
-    stripNarrativeLensSchemaLine,
-    STRUCTURAL_EDIT_PROTOCOL,
-    SURGICAL_EDIT_PROTOCOL
-} from '@/prompts';
-import { countWords, escapeRegExp, parseNum, readingMinutes, safeEscapeRegex, STOPWORDS, tokenMatch } from '@/utils';
+import { safeLocalStorageSet } from '@/utils';
+import { generateRandomArchetypes } from '@/config';
+import { PROMPTS } from '@/prompts';
+import type { SceneBlueprint, Story } from '@/types';
+import type { ArchetypeOption } from '@/config';
+import type { SceneAudioMeta, SequenceAudioMeta } from '@/services/storage';
+import type { KokoroWorkerHandle } from '@/services/audio';
+import type { SharedTtsQueueItem, UseShellModalsResult } from '@/hooks';
+import type { SelectedRelationshipState } from '@/views';
+import { publishAppGlobal } from '@/compat/windowBridge';
+import { handOff, setStoryFor, storyFor, storyRefFor } from '@/compat/shellBoundary';
+import type { PipelineLogEntry } from '@/stores';
+import { applyCascadingNameReplacements, auditEntityNamesAndPlaces, extractCandidatePlaceNames, scanTextForSlop } from '@/domain/slop';
+
 import {
     actForSequence,
-    AUDIO_PRODUCTION_STAGE_ORDER,
-    buildCharacterArcsBlock,
-    buildDirectiveActionPreview,
-    buildGenreToneBlocks,
-    buildGenreToneStyleBlocks,
-    buildLengthMandateBlock,
-    buildRelationshipFrictionBlock,
-    buildSceneCountTargetBlock,
-    buildStoryInfoBlock,
-    calculateTargetWordCount,
     computeAudioProductionEstimate,
-    computeDirectiveStoryStats,
     computeNovelProgressEstimate,
-    computePacingRanges,
-    computeSceneWordTarget,
-    computeSequenceLengthPlan,
-    computeStoryProgressMetrics,
-    DIRECTIVE_ACTION_META,
-    DIRECTIVE_PROSE_SAFE_ACTIONS,
-    DIRECTIVE_STRUCTURAL_ACTIONS,
-    ensureCharacter,
-    extractCharacterBrief,
-    extractRelationship,
-    extractStoryProseText,
-    formatAudioDuration,
-    formatBytesCompact,
-    formatLoreForPrompt,
-    formatSceneSummary,
-    getActiveClueDirectivesForScene,
-    getAuthorNoteXml,
-    getDirectiveActionScopeMeta,
-    getRecentStoryArtifacts,
-    getSecretRevealDirectiveForScene,
-    insertTargetWordCount,
-    isActionBlockedByProtection,
-    isLegacyValenceEntry,
-    LENGTH_CONTROL,
-    mapAudioStageToCanonical,
-    measureNovelLength,
-    normalizeBeatsForScene,
-    normalizeIntentionalOverrides,
-    normalizeScenesForSequence,
-    normalizeSceneBlueprint,
-    normalizeSecretVault,
     normalizeSequences,
-    normalizeStoryArcObject,
-    parseActNumber,
-    parseLegacyDescriptionFields,
-    parseSequencesXML,
-    parseStoryArcXml,
-    parseStructuredGenre,
-    parseStructuredStyle,
-    parseStructuredTone,
-    parseValueShiftInput,
-    reindexStoryForSequenceDelete,
-    reindexStoryForSequenceInsert,
-    resolveCharacter,
-    resolveDirectiveTargetLabel,
-    sanitizeStoryContextForPosition,
-    SEQUENCE_ACT_MAP,
-    SEQUENCE_DEFAULT_FUNCTIONS,
-    translateLoadingStepToHuman,
-    getAdaptiveCoverTypography,
-    getCoverStyleIndex,
-    formatAllVerboseLogs,
-    formatVerboseLogEntry
+    parseActNumber
 } from '@/domain/story';
+import { setLiveStoryProviderForAudio, isAudioDramaScriptText } from '@/domain/audio';
+
+import { GraphManager } from '@/domain/lore';
+
+import { prepareLibraryStorySelection } from '@/domain/lifecycle';
+import { compileNarrativeStateGraph, createHarnessInspectionTools, runFullManuscriptNlpTelemetry } from '@/domain/editorial';
+
+import { copyVerboseLogToClipboard } from '@/services/browser';
+
 import {
-    analyzeAudioDramaExpressiveness,
-    analyzeAudioDramaScriptFormatting,
-    analyzeAudioPcmData,
-    applyHighPass75Hz,
-    applyRaisedCosineFades,
-    bisectChunk,
-    BREEZE_MASTER_GUIDANCE_SCALE,
-    buildEstimatedCueTimeline,
-    buildStoryAudioExportPlan,
-    CANONICAL_AUDIO_DRAMA_VOCAL_TAGS,
-    CANONICAL_VOCAL_EVENTS,
-    checkBoundaryTruncation,
-    chunkAudioDramaTurns,
-    chunkNovelProseForDrama3,
-    chunkProseForTts,
-    classifyParentheticalTag,
-    cleanCharacterNameFromVoiceProfile,
-    cleanDialogueSpokenText,
-    combineAdjacentNarratorScriptBlocks,
-    combineAdjacentNarratorSegments,
-    computeCueTextWeight,
-    computeRmsDb,
-    computeSceneProseHash,
-    computeSceneVoiceSignatureHash,
-    computeSpeakersVoiceSignatureHash,
-    computeVoiceVarietyHash,
-    computeWordErrorRate,
-    detectMetaWordLeakage,
-    DRAMA3_SCOPED_TAGS,
-    drama3ToBreezeStore,
-    Drama3ToBreezeVectorStore,
-    encodeFloat32PcmToWavBlob,
-    estimateDramaTurnSeconds,
-    estimateReferenceTextSeconds,
-    expandSegmentTurnsToCues,
-    extractDialogueStats,
-    extractPersonalizedReferenceTextFromInterview,
-    extractSpokenAndTags,
-    formatMissingAudioSlotsSummary,
-    generatePinkNoiseRoomTone,
-    getDeterministicVoiceSeed,
-    getHumanReadableTtsError,
-    getLiveStoryForAudio,
-    setLiveStoryProviderForAudio,
-    getVoiceDescriptionForCharacter,
-    getVoiceReferenceTextForCharacter,
-    integerToEnglishWords,
-    isAudioDramaScriptText,
-    isLegacyBoilerplateVoiceProfile,
-    isMasterVoiceRecordMatching,
-    isMetaCommentaryText,
-    isUsableVocalDescription,
-    isValidQwenVoiceProfile,
-    isValidVoiceDesignProfile,
-    isValidVoiceRefPath,
-    levelSamplesToLufs,
-    mapCharacterToAudioCppVoice,
-    mapCharacterToElevenLabsVoice,
-    mapCharacterToGeminiVoice,
-    mapCharacterToKokoroVoice,
-    measureIntegratedLufs,
-    META_TOKENS,
-    normalizeAudioDramaScript,
-    normalizeAudioDramaScriptWithReport,
-    normalizeAudioDramaText,
-    normalizeAudioDramaTextPreservingTags,
-    normalizeDirectionKey,
-    NUM_WORDS_ONES,
-    NUM_WORDS_TENS,
-    ordinalToEnglishWords,
-    parseAudioDramaScript,
-    RAIN_SENTENCE,
-    resolveCastMemberForSpeaker,
-    resolveSequenceAudioPlan,
-    resolveSpeakerVoiceIdentity,
-    sanitizeVoiceReferenceText,
-    splitIntoSpokenSubTurns,
-    splitLongCueText,
-    splitReferenceTextIntoSentences,
-    splitSpokenTextIntoTtsSubchunks,
-    stripProseToPlainText,
-    studioTargetF0Band,
-    synthesizeQwenVoiceDesignProfile,
-    synthesizeVoiceDesignProfile,
-    verifyChunkQuality,
-    VOCAL_EVENT_SYNONYMS,
-    VOICE_REFERENCE_MIN_SECONDS,
-    VOICE_REFERENCE_TARGET_MAX_SECONDS
-} from '@/domain/audio';
-import {
-    _parseSurgicalEditXmlBlocks,
-    applyParsedEdits,
-    applyStructuralEdits,
-    applySurgicalEditsDetailed,
-    applyVoiceDirectorSurgicalEdits,
-    computeChangeRatio,
-    locateNeedle,
-    SURGICAL_MAX_CHANGE_RATIO
-} from '@/domain/editing';
-import {
-    buildUploadLoreChunks,
-    chunkLoreText,
-    computeLoreFingerprint,
-    cosineSimilarity,
-    deriveLoreTitle,
-    deriveSectionTitle,
-    deriveSemanticChunkTopic,
-    expandQueryLocally,
-    extractLeadingHeading,
-    GraphManager,
-    migrateLoreTitles,
-    normalizeLoreRelations,
-    partitionLoreIntoSemanticSections,
-    splitParagraphIntoSentenceChunks,
-    splitTextIntoBoundaryAwareChunks,
-    STOP_WORDS
-} from '@/domain/lore';
-import {
-    analyzeProseQuality,
-    computeRollingDialogueStatus,
-    ensureActOutputCompleteness,
-    ensureSequenceOutputCompleteness,
-    ensureStoryArcOutputCompleteness,
-    extractReviewStatus,
-    findFlatValueShiftScenes,
-    findTrivialMRUBeats,
-    getDynamicBannedPhrases,
-    parseIssuesFromReview,
-    parseValenceState,
-    parseWritingOutput,
-    validatePromptCacheOrder,
-    validateStructuralOutput,
-    surgicallyRepairBeatMRUs,
-    surgicallyRepairValueShifts
-} from '@/domain/validation';
-import {
-    archiveRevealedSecretBeliefs,
-    buildScenePlannerContinuityBlock,
-    buildSequencePromptContext,
-    buildUpcomingBoundaryGuardInfo,
-    cascadeInvalidateSourceAgent,
-    commitEpistemicSceneDeltas,
-    compareSceneCoordinates,
-    compileActiveState,
-    compileEpistemicAsymmetryAndIrony,
-    ensureEpistemicGraph,
-    ensureEpistemicGraphAccessors,
-    extractProseTextTail,
-    findIntersectingBeliefsForConsolidation,
-    formatArchivistBlueprintContext,
-    formatChoreographedBeatHistory,
-    formatContinuityLedgerForPrompt,
-    formatSceneCharactersList,
-    formatSceneCoord,
-    formatSequenceCastProfiles,
-    getContinuityContext,
-    getSequenceScenesList,
-    ingestSceneContinuityData,
-    initEpistemicGraph,
-    initKnowledgeGraph,
-    isBeliefActiveAt,
-    isFactKnownAt,
-    logSemanticEvent,
-    normalizeEntityId,
-    normalizeEpistemicPropositionsMap,
-    parseSceneCoordinates,
-    projectFocalizedSubgraph,
-    querySemanticEventLog,
-    resolveEntityDisplayName,
-    resolvePropositionMatch,
-    rollbackEpistemicStateForScene,
-    runContinuityAuditor,
-    runEpistemicSleepCycle,
-    updateKnowledgeGraph
-} from '@/domain/continuity';
-import {
-    buildRolledBackStoryState,
-    cleanPreservedCastMember,
-    cleanRelationshipsForRollback,
-    cleanScenesForProseRollback,
-    isGeneratedCastMemberForStage,
-    isPreservedPreWritingLoreItem,
-    migrateStoryToSequences,
-    prepareLibraryStorySelection,
-    rebuildBaselineCharacterStates,
-    resetSecretVaultForRollback,
-    restorePreservedLoreItem,
-    STORY_RESET_STAGES
-} from '@/domain/lifecycle';
-import {
-    applyManuscriptPatchToScene,
-    buildDeterministicSurgicalRepair,
-    compileAestheticConstitution,
-    compileGateFailureFeedback,
-    compileNarrativeStateGraph,
-    compileThreeWaveEditPlan,
-    computeCharacter8DVoiceVector,
-    computeEbbinghausMemoryDecay,
-    computeVoiceDriftDistance,
-    conveneAdversarialTribunal,
-    createHarnessInspectionTools,
-    denormalizeSceneFromXml,
-    escapeHarnessXml,
-    evaluateSceneLayer0AndDivergence,
-    extractAuthorVoiceDNA,
-    extractEditorialPatchPayload,
-    getDraftedStoryScenesList,
-    HARNESS_FILTER_VERBS,
-    HARNESS_FORBIDDEN_SLOP_LEXICON,
-    HARNESS_SOMATIC_PATTERNS,
-    hasBalancedQuotes,
-    inferSpeakerForSentence,
-    normalizePreservingNewlines,
-    normalizeSceneToXml,
-    runAutonomousInvestigationStage,
-    runFourGateVerificationSuite,
-    runFullManuscriptNlpTelemetry,
-    runSceneNlpTelemetry,
-    splitProseIntoSentences
-} from '@/domain/editorial';
-import { fetchWithTimeout } from '@/services/http';
-import {
-    copyVerboseLogToClipboard,
-    downloadBlob,
-    downloadVerboseLogFile,
-    ensureCoverFontsLoaded,
-    getBestTtsDevice,
-    getDeviceCapabilityTier,
-    isMobileDevice
-} from '@/services/browser';
-import {
-    convertHtmlToMarkdown,
-    ensureJSZip,
-    ensureLameJs,
-    ensureMammoth,
-    ensurePdfJs,
-    extractDocumentText,
-    extractTextFromCsv,
-    extractTextFromDocx,
-    extractTextFromEpub,
-    extractTextFromFile,
-    extractTextFromJson,
-    extractTextFromPdf,
-    extractTextFromPlainText,
-    yieldToMain
-} from '@/services/documents';
-import {
-    audioStore,
-    AudioStore,
-    DISK_SETTINGS_API_KEY_NAMES,
-    DISK_SETTINGS_EXCLUDED_KEYS,
     diskSettingsVault,
-    imageStore,
-    ImageStore,
-    isLocalStorageVaultAvailable,
-    isPersistableSettingsKey,
-    isQuotaExceededIdbError,
-    isRecoverableIdbConnectionError,
     logStore,
-    LogStore,
-    ResilientIdbStore,
     storyStore,
-    updateStoryRecordById,
-    StoryStore,
-    studioCacheStore,
-    StudioCacheStore,
-    toAsciiHeaderJson
+    updateStoryRecordById
 } from '@/services/storage';
 import { EmbeddingService, VectorStore } from '@/services/rag';
-import {
-    callAgenticLoop,
-    callGemini,
-    callKoboldCPP,
-    callNanoGPT,
-    callOpenRouter,
-    checkKoboldCPPStatus,
-    clearOpenRouterRoutingState,
-    computeOpenRouterSmartRoutingProfile,
-    executeLocalTool,
-    fetchNanoGPTModels,
-    fetchOpenRouterModels,
-    filterModelsClientSide,
-    formatOpenAITools,
-    getOpenRouterModelLimits,
-    getOpenRouterSmartRouting,
-    isCloudModelName,
-    OPENROUTER_PREFERRED_MIN_THROUGHPUT,
-    parseNanoGPTModelMetadata,
-    searchNanoGPTModels,
-    supportsExplicitOpenRouterCacheControl,
-    WRITING_AGENT_TOOLS
-} from '@/services/llm';
-import {
-    _rawSynthesizeAudioDramaChunk,
-    activateAudioCppWave,
-    base64AudioToBlob,
-    blobToBase64,
-    buildDrama3Payload,
-    buildWave2ActivateBody,
-    cleanAndTrimAudioBuffer,
-    clearKokoroModelCache,
-    createKokoroWorker,
-    decodeAudioBlobToSamples,
-    decodeWavBlobDirect,
-    encodeAudioBufferToWavBlob,
-    encodeFloat32PcmToMp3Blob,
-    enqueueAudioCppTask,
-    ensureAudioDramaVoicesRegistered,
-    ensureMp3AudioBlob,
-    ensureSpeakerMasterVoice,
-    exportSceneAudioMp3,
-    exportSequenceAudioMp3,
-    getCachedSpeakerMasterVoice,
-    hashLiveSegmentSig as _hashLiveSegmentSig,
-    isAudioCppQueueBusy,
-    liveAudioCppWaveState as _liveAudioCppWaveState,
-    resolveSpeakersMasterMap,
-    runStudioRenderJob,
-    sanitizeAudioBlob,
-    stitchAndEncodeChunksToMp3,
-    stitchAudioBlobsToMp3,
-    stitchAudioBlobsWithPause,
-    StudioPipeline,
-    synthesizeAudioDramaChunk,
-    synthesizeDrama3SegmentChunk,
-    toDrama3HttpBody,
-    trimTrailingAudioStatic
-} from '@/services/audio';
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDebounce, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+
+import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -481,31 +54,20 @@ import {
     rebuildRagIndex as orchestrateRebuildRagIndex,
     triggerLoreExtraction as orchestrateTriggerLoreExtraction,
     handleWorldUpdates as orchestrateHandleWorldUpdates,
-    checkAndExecuteRSI as orchestrateCheckAndExecuteRSI,
     retroactivelyInjectClue as orchestrateRetroactivelyInjectClue,
-    repairBannedEntitiesWithAI as orchestrateRepairBannedEntitiesWithAI,
-    runArchivistForScene as orchestrateRunArchivistForScene,
     generateCharacterProfile as orchestrateGenerateCharacterProfile,
-    getCharacterDetails as orchestrateGetCharacterDetails,
-    retryFailedSurgicalEdits as orchestrateRetryFailedSurgicalEdits,
-    applySurgicalEditsWithRetry as orchestrateApplySurgicalEditsWithRetry,
     runAgentWithEscalation as orchestrateRunAgentWithEscalation,
-    updateStorySoFar as orchestrateUpdateStorySoFar,
-    createStoryEntityFromSetup as orchestrateCreateStoryEntityFromSetup,
     initStory as orchestrateInitStory,
     generateStoryArc as orchestrateGenerateStoryArc,
     generateActsAndSequences as orchestrateGenerateActsAndSequences,
     generateSequences as orchestrateGenerateSequences,
     generateScenes as orchestrateGenerateScenes,
-    applySurgicalProsePatch as orchestrateApplySurgicalProsePatch,
     handleRunManualSlopClean as orchestrateHandleRunManualSlopClean,
     handleCascadeSceneToProse as orchestrateHandleCascadeSceneToProse,
     runAudioDramaVoiceDirectorPass as orchestrateRunAudioDramaVoiceDirectorPass,
     writeSceneProse as orchestrateWriteSceneProse,
     handleAutoGenerateScene as orchestrateHandleAutoGenerateScene,
     handleDirectSceneVoices as orchestrateHandleDirectSceneVoices,
-    verifyAndArchiveDirectiveScene as orchestrateVerifyAndArchiveDirectiveScene,
-    reviewDirectiveConsistency as orchestrateReviewDirectiveConsistency,
     handleFixDirectiveReview as orchestrateHandleFixDirectiveReview,
     runDirectivePlanner as orchestrateRunDirectivePlanner,
     executeDirectivePlan as orchestrateExecuteDirectivePlan,
@@ -517,132 +79,13 @@ import {
     runContinuousAutopilotStep as orchestrateRunContinuousAutopilotStep
 } from '@/pipeline';
 import {
-    Icon,
-    Book,
-    Layers,
-    Film,
-    Feather,
-    ChevronRight,
-    ChevronDown,
-    ChevronUp,
-    Sparkles,
-    Save,
-    RefreshCw,
-    Edit3,
-    ArrowLeft,
-    ArrowRight,
-    ArrowUpRight,
-    XCircle,
-    AlertOctagon,
-    FileText,
-    Settings,
-    AlertCircle,
-    Menu,
-    X,
-    Users,
-    User,
-    Target,
-    Brain,
-    Globe,
-    PenTool,
-    GitBranch,
-    Workflow,
-    Clock,
-    Terminal,
-    ShieldCheck,
-    Zap,
-    Trash2,
-    Download,
-    Upload,
-    Activity,
-    History,
-    Play,
-    Pause,
-    Headphones,
-    Mic,
-    Volume2,
-    VolumeX,
-    Radio,
-    SkipBack,
-    SkipForward,
-    Cpu,
-    Loader2,
-    Square,
-    Copy,
-    MessageSquare,
-    Eye,
-    CheckCircle2,
-    Sliders,
-    Minus,
-    Scroll,
-    Search,
-    Plus,
-    Heart,
-    AlertTriangle,
-    RotateCcw,
-    RotateCw,
-    CheckCircle,
-    Wand2,
-    Image,
-    BookOpen,
-    Library,
-    Bookmark,
-    Paintbrush,
-    Sun,
-    Moon,
-    ChevronLeft,
-    Type,
-    List,
-    Maximize2,
-    Minimize2,
-    AlignLeft,
-    AlignJustify,
-    Check,
-    SlidersHorizontal,
-    MoreHorizontal,
-    ListPlus,
-    Compass,
-    Shuffle,
-    Anchor,
-    MapPin,
-    TrendingUp,
-    LogOut,
-    Lock,
-    Key,
-    EyeOff,
-    Unlock,
-    Shield,
-    Share2,
-    GitCommit,
-    Scale,
-    Gavel,
-    Microscope,
-    Fingerprint,
-    GitMerge,
-    CheckSquare,
-    EditButton,
-    LoreFileCard,
-    BufferedTextarea,
-    LoreCard,
-    SceneRow,
-    CharacterCard,
-    HumanStructuredValue,
     EditModal,
     StudioConfirmModal,
     StudioFormModal,
-    LiveCreationIsland,
-    EditorialSubNav,
-    StoryResetDropdown,
     InterventionModal,
     CritiqueModal,
     LogDetailModal,
-    UniversalModelSearch,
-    AUDIO_DRAMA_RIPPLE_RADII,
-    BookCoverAudioArt,
-    AudioDramaRipples,
-    StylizedBlankCover,
     ToastNotification,
-    PIPELINE_STEPS,
     StudioSidebar,
     StudioHeader,
     GesmPropositionModal,
@@ -658,7 +101,6 @@ import {
     LibraryView,
     LogsView,
     LoreView,
-    measureReaderPages,
     PipelineView,
     ReaderView,
     RelationshipsView,
@@ -668,8 +110,7 @@ import {
     WriterView
 } from '@/views';
 
-const ReactDOM = ReactDOMClient;
-        const { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } = React;
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
 
         // --- 1. API CONFIGURATION ---
@@ -679,17 +120,23 @@ const ReactDOM = ReactDOMClient;
 
 
 
+        /** Argument list of a pipeline orchestrator after its leading runtime context. */
+        type CtxArgs<F> = F extends (ctx: PipelineRuntimeContext, ...rest: infer R) => unknown ? R : never;
+
+        type ResetStory = Parameters<typeof useStoryReset>[0]['story'];
+        type RetrieveArgs = Parameters<typeof retrieveLoreContext>;
+
         function EllipsisProsef() {
             const [activeStoryId, setActiveStoryId] = useState(() => localStorage.getItem("ellipsisprose_active_story_id") || "story_default");
 
-            const [story, setStoryRaw] = useState(() => createDefaultStoryTemplate(activeStoryId));
+            const [story, setStoryRaw] = useState<Story>(() => createDefaultStoryTemplate(activeStoryId) as unknown as Story);
             const storyRef = useRef(story);
             // storyRef is written ONLY by setStory below (and the few handlers that pre-seed it before calling
             // setStory). Do NOT re-sync it from `story` during render: Zustand store updates re-render this
             // component synchronously (useSyncExternalStore) BEFORE a pending setStoryRaw has been applied, so a
             // render-time `storyRef.current = story` rolls the ref back one update and the next functional
             // setStory(prev => ...) silently drops it (observed: freshly written scene prose discarded).
-            const setStory = useCallback((updaterOrValue) => {
+            const setStory = useCallback((updaterOrValue: Story | ((prev: Story) => Story)): Story => {
                 const prev = storyRef.current;
                 const next = typeof updaterOrValue === 'function' ? updaterOrValue(prev) : updaterOrValue;
                 storyRef.current = next;
@@ -698,29 +145,28 @@ const ReactDOM = ReactDOMClient;
             }, []);
             const hasHydratedStory = useRef(false);
             const isInitialMount = useRef(true);
-            const skipNextIdbHydrationIdRef = useRef(null);
-            const [initializingStoryId, setInitializingStoryId] = useState(null);
-            const initializingStoryIdRef = useRef(null);
-            const storySnapshotsByIdRef = useRef({});
+            const skipNextIdbHydrationIdRef = useRef<string | null>(null);
+            const [initializingStoryId, setInitializingStoryId] = useState<string | null>(null);
+            const initializingStoryIdRef = useRef<string | null>(null);
+            const storySnapshotsByIdRef = useRef<Record<string, Story>>({});
             const pendingSetupLoreRef = useRef({});
-            const deletedStoryIdsRef = useRef(new Set());
+            const deletedStoryIdsRef = useRef(new Set<string>());
 
             // ImageStore initialized inside useStoryImages below
-            window.createDefaultStoryTemplate = createDefaultStoryTemplate;
-            window.hasHydratedStory = hasHydratedStory;
-            window.storyRef = storyRef;
+            publishAppGlobal('createDefaultStoryTemplate', createDefaultStoryTemplate);
+            publishAppGlobal('hasHydratedStory', hasHydratedStory);
+            publishAppGlobal('storyRef', storyRef);
             setLiveStoryProviderForAudio(() => storyRef.current);
-            window.setStory = setStory;
+            publishAppGlobal('setStory', setStory);
 
             // Inspector Mode State (Toggled in Sidebar Footer)
             const isInspectorMode = useUiStore(s => s.isInspectorMode);
-            const toggleInspectorMode = useUiStore(s => s.toggleInspectorMode);
-            window.isInspectorMode = isInspectorMode;
+            publishAppGlobal('isInspectorMode', isInspectorMode);
 
             // Custom Editorial Dialog States (replacing window.confirm and window.prompt)
             const confirmModalState = useUiStore(s => s.confirmModalState);
             const requestConfirm = useUiStore(s => s.requestConfirm);
-            window.requestConfirm = requestConfirm;
+            publishAppGlobal('requestConfirm', requestConfirm);
 
             const formModalState = useUiStore(s => s.formModalState);
             const openFormModal = useUiStore(s => s.openFormModal);
@@ -730,7 +176,6 @@ const ReactDOM = ReactDOMClient;
             const showToast = useUiStore(s => s.showToast);
             const dismissToast = useUiStore(s => s.dismissToast);
 
-            const selectedAct = useUiStore(s => s.selectedAct);
             const setSelectedAct = useUiStore(s => s.setSelectedAct);
             const selectedSequence = useUiStore(s => s.selectedSequence);
             const setSelectedSequence = useUiStore(s => s.setSelectedSequence);
@@ -747,12 +192,12 @@ const ReactDOM = ReactDOMClient;
             const logAudioDramaPipelineStageStart = usePipelineStore(s => s.logAudioDramaPipelineStageStart);
             const logAudioDramaPipelineStageComplete = usePipelineStore(s => s.logAudioDramaPipelineStageComplete);
             const logAudioDramaPipelineStageError = usePipelineStore(s => s.logAudioDramaPipelineStageError);
-            window.logAudioDramaPipelineStageStart = logAudioDramaPipelineStageStart;
-            window.logAudioDramaPipelineStageComplete = logAudioDramaPipelineStageComplete;
-            window.logAudioDramaPipelineStageError = logAudioDramaPipelineStageError;
-            window.logPipelineValidation = logPipelineValidation;
-            window.logPipelineError = logPipelineError;
-            window.openFormModal = openFormModal;
+            publishAppGlobal('logAudioDramaPipelineStageStart', logAudioDramaPipelineStageStart);
+            publishAppGlobal('logAudioDramaPipelineStageComplete', logAudioDramaPipelineStageComplete);
+            publishAppGlobal('logAudioDramaPipelineStageError', logAudioDramaPipelineStageError);
+            publishAppGlobal('logPipelineValidation', logPipelineValidation);
+            publishAppGlobal('logPipelineError', logPipelineError);
+            publishAppGlobal('openFormModal', openFormModal);
 
             // Declared before useStoryLibrary, which reads it.
             const view = useUiStore(s => s.view);
@@ -762,10 +207,10 @@ const ReactDOM = ReactDOMClient;
                 get current() { return useUiStore.getState().view; },
                 set current(_next) { /* the store is the source of truth */ }
             }), []);
-            window.setView = setView;
+            publishAppGlobal('setView', setView);
             // Views where autonomous background generation must NEVER pull the user away
             const isAutopilotProtectedView = useUiStore(s => s.isAutopilotProtectedView);
-            window.isAutopilotProtectedView = isAutopilotProtectedView;
+            publishAppGlobal('isAutopilotProtectedView', isAutopilotProtectedView);
 
             // Story Library (Phase 6E-3): list, covers, preferences and duplicate / delete / cover-style actions.
             const {
@@ -773,8 +218,6 @@ const ReactDOM = ReactDOMClient;
                 libraryCovers, setLibraryCovers,
                 libraryAudioCounts,
                 librarySearchQuery, setLibrarySearchQuery,
-                libraryViewMode, setLibraryViewMode,
-                librarySortBy, setLibrarySortBy,
                 refreshLibrary,
                 handleUpdateStoryCoverStyle,
                 handleDuplicateStory,
@@ -786,17 +229,16 @@ const ReactDOM = ReactDOMClient;
 
             // Load the active story at startup and on story switches; remember the active id (Phase 6E-3).
             useStoryHydration({
-                activeStoryId, setActiveStoryId, setStory,
+                activeStoryId, setActiveStoryId, setStory: setStoryFor(setStory),
                 isInitialMountRef: isInitialMount,
                 hasHydratedStoryRef: hasHydratedStory,
                 skipNextIdbHydrationIdRef,
                 // Declared further down; read when the load runs.
-                getLateDeps: () => ({ setWorldPrimer, vectorStore, embeddingService, ingestLoreBatch, refreshLibrary, setView, view })
+                getLateDeps: () => ({ setWorldPrimer, vectorStore, embeddingService, ingestLoreBatch: handOff(ingestLoreBatch), refreshLibrary, setView, view })
             });
-            const callAIRef = useRef(async (..._args) => '');
+            const callAIRef = useRef<CallAiFn>(async () => '');
             const llmKeysRef = useRef({ apiKey: '', openRouterKey: '' });
             const {
-                imageStore,
                 imageProvider, setImageProvider,
                 imageModel, setImageModel,
                 geminiImageModelsList, setGeminiImageModelsList,
@@ -858,7 +300,6 @@ const ReactDOM = ReactDOMClient;
                 apiKey, setApiKey,
                 apiTimeout, setApiTimeout,
                 geminiModel, setGeminiModel,
-                geminiModelsList,
                 openRouterKey, setOpenRouterKey,
                 openRouterModel, setOpenRouterModel,
                 openRouterMaxTokens, setOpenRouterMaxTokens,
@@ -872,8 +313,6 @@ const ReactDOM = ReactDOMClient;
                 codexStatus,
                 codexEmbeddingStatus,
                 savedModels,
-                openRouterModelsList,
-                nanoGptModelsList,
                 koboldStatus,
                 koboldLoadedModel,
                 koboldError,
@@ -885,40 +324,29 @@ const ReactDOM = ReactDOMClient;
                 proseModel, setProseModel,
                 modelSearchQuery, setModelSearchQuery,
                 isSearchingModels,
-                searchResults, setSearchResults,
+                searchResults,
                 isModelDropdownOpen, setIsModelDropdownOpen,
                 reviewModelSearchQuery, setReviewModelSearchQuery,
                 isSearchingReviewModels,
-                reviewSearchResults, setReviewSearchResults,
+                reviewSearchResults,
                 isReviewModelDropdownOpen, setIsReviewModelDropdownOpen,
                 proseModelSearchQuery, setProseModelSearchQuery,
                 isSearchingProseModels,
-                proseSearchResults, setProseSearchResults,
+                proseSearchResults,
                 isProseModelDropdownOpen, setIsProseModelDropdownOpen,
-                useProseModel, setUseProseModel,
-                geminiProseModel, setGeminiProseModel,
-                openRouterProseModel, setOpenRouterProseModel,
-                nanoGptProseModel, setNanoGptProseModel,
-                koboldProseModel, setKoboldProseModel,
-                codexProseModel, setCodexProseModel,
-                enableThinkingAct, setEnableThinkingAct,
-                enableThinkingScene, setEnableThinkingScene,
-                enableThinkingWriting, setEnableThinkingWriting,
+                setEnableThinkingAct,
+                setEnableThinkingScene,
+                setEnableThinkingWriting,
                 thinkingBudgetStoryArc, setThinkingBudgetStoryArc,
                 thinkingBudgetAct, setThinkingBudgetAct,
                 thinkingBudgetScene, setThinkingBudgetScene,
                 thinkingBudgetWriting, setThinkingBudgetWriting,
                 getModelSettingsSnapshot,
                 getDefaultModelForProvider,
-                sanitizeLocalKoboldModel,
                 getEffectiveModelConfig,
                 saveModel,
                 deleteModel,
-                fetchGeminiModels,
                 fetchGeminiImageModels,
-                refreshOpenRouterModels,
-                refreshNanoGptModels,
-                checkKoboldStatus,
                 refreshCodexModels,
                 refreshComfyInfo,
                 handleCatalogRefresh,
@@ -928,7 +356,7 @@ const ReactDOM = ReactDOMClient;
                 story,
                 storyRef,
                 setCurrentPipelineStep,
-                setPromptLog,
+                setPromptLog: handOff(setPromptLog),
                 showToast,
                 logPipelineDelay,
                 imageProvider,
@@ -946,7 +374,7 @@ const ReactDOM = ReactDOMClient;
             });
             callAIRef.current = callAI;
             llmKeysRef.current = { apiKey, openRouterKey };
-            const [failedReviewCritiques, setFailedReviewCritiques] = useState([]);
+            const [failedReviewCritiques, setFailedReviewCritiques] = useState<string[]>([]);
 
             // Custom narrative modes (Phase 6E-3): saved modes, Settings form state and handlers.
             const {
@@ -975,7 +403,7 @@ const ReactDOM = ReactDOMClient;
 
             // AI Slop & Naming configuration (Phase 6E-3): state, persistence and editor handlers.
             const {
-                bannedPhrases, setBannedPhrases,
+                bannedPhrases,
                 slopConfig, setSlopConfig,
                 newBannedPhraseInput, setNewBannedPhraseInput,
                 slopSearchQuery, setSlopSearchQuery,
@@ -992,11 +420,10 @@ const ReactDOM = ReactDOMClient;
             } = useSlopConfig({ showToast });
             // Writer scene workspace UI state, closed/reset on scene or view change (Phase 7).
             const {
-                isWriterFocusMode, setIsWriterFocusMode,
                 isEditingProseInline, setIsEditingProseInline,
                 inlineProseDraft, setInlineProseDraft,
                 blueprintActiveTab, setBlueprintActiveTab,
-                isBlueprintCollapsed, setIsBlueprintCollapsed,
+                setIsBlueprintCollapsed,
                 isEditingSceneBlueprint, setIsEditingSceneBlueprint,
                 sceneBlueprintDraft, setSceneBlueprintDraft,
                 sceneWorkspaceTab, setSceneWorkspaceTab,
@@ -1009,11 +436,11 @@ const ReactDOM = ReactDOMClient;
             } = useSceneWorkspaceState({ selectedSequence, selectedScene, view });
 
             // Selected relationship for editing
-            const [selectedRel, setSelectedRel] = useState(null);
+            const [selectedRel, setSelectedRel] = useState<SelectedRelationshipState | null>(null);
             const matrixView = useUiStore(s => s.matrixView);
             const setMatrixView = useUiStore(s => s.setMatrixView);
             const [matrixScroll, setMatrixScroll] = useState({ left: false, right: false });
-            const matrixScrollRef = useRef(null);
+            const matrixScrollRef = useRef<HTMLDivElement>(null);
             const measureMatrixScroll = () => {
                 const el = matrixScrollRef.current;
                 const overflow = !!el && el.scrollWidth > el.clientWidth + 1;
@@ -1021,7 +448,7 @@ const ReactDOM = ReactDOMClient;
                 const right = overflow && el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
                 setMatrixScroll(prev => prev.left === left && prev.right === right ? prev : { left, right });
             };
-            const selectMatrixRelationship = (fromChar, toChar) => {
+            const selectMatrixRelationship = (fromChar: { name: string }, toChar: { name: string }) => {
                 const relKey = `${fromChar.name}->${toChar.name}`;
                 const rel = story.relationships?.[relKey];
                 setSelectedRel({
@@ -1030,8 +457,8 @@ const ReactDOM = ReactDOMClient;
                     key: relKey,
                     current: rel?.current || "",
                     hidden_tension: rel?.hidden_tension || "",
-                    trust_level: parseInt(rel?.trust_level, 10) || 5,
-                    history: rel?.history || []
+                    trust_level: parseInt(String(rel?.trust_level), 10) || 5,
+                    history: handOff(rel?.history || [])
                 });
             };
 
@@ -1077,7 +504,7 @@ const ReactDOM = ReactDOMClient;
             });
 
             // Archetype State
-            const [archetypeOptions, setArchetypeOptions] = useState([]);
+            const [archetypeOptions, setArchetypeOptions] = useState<ArchetypeOption[]>([]);
 
             // Initialize Archetypes on Mount
             useEffect(() => {
@@ -1128,11 +555,11 @@ const ReactDOM = ReactDOMClient;
             // Sidebar collapse is persisted by the UI store.
 
             useEffect(() => {
-                const handleSidebarShortcut = (event) => {
+                const handleSidebarShortcut = (event: KeyboardEvent) => {
                     const focused = document.activeElement;
                     if (!(event.ctrlKey || event.metaKey) || event.key !== '\\' || event.repeat) return;
                     if (!window.matchMedia('(min-width: 768px)').matches) return;
-                    if (focused?.matches('input, textarea') || focused?.isContentEditable) return;
+                    if (focused?.matches('input, textarea') || (focused instanceof HTMLElement && focused.isContentEditable)) return;
                     event.preventDefault();
                     setIsSidebarCollapsed(prev => !prev);
                 };
@@ -1162,11 +589,11 @@ const ReactDOM = ReactDOMClient;
                 if (slopConfig?.enableSlopAudit === false) return null;
                 const sId = `${selectedSequence}-${selectedScene}`;
                 const scProse = story?.prose?.[sId];
-                const proseText = scProse?.final || scProse?.draft || "";
-                if (!proseText || !proseText.trim() || typeof window.scanTextForSlop !== 'function') return null;
+                const proseText = (scProse && typeof scProse === 'object' ? scProse.final || scProse.draft : "") || "";
+                if (!proseText || !proseText.trim()) return null;
                 const isAudioDramaScene = story?.writing_mode === 'audio_drama' ||
                     (typeof isAudioDramaScriptText === 'function' && isAudioDramaScriptText(proseText));
-                return window.scanTextForSlop(proseText, {
+                return scanTextForSlop(proseText, {
                     slopConfig,
                     customBannedPhrases: bannedPhrases,
                     story,
@@ -1185,7 +612,7 @@ const ReactDOM = ReactDOMClient;
                 inputCustomWords, setInputCustomWords,
                 resetSetupDraftFields
             } = useSetupDraft();
-            const [worldPrimer, setWorldPrimer] = useState(null);
+            const [worldPrimer, setWorldPrimer] = useState<string | null>(null);
             // World-building document import: Setup drafts and post-generation lore (Phase 6E-3).
             const {
                 importedLoreFiles,
@@ -1199,7 +626,7 @@ const ReactDOM = ReactDOMClient;
                 handlePostGenLoreImport
             } = useLoreImport({
                 story, setStory, setWorldPrimer, showToast, setLoading, setLoadingStep,
-                ingestLoreBatch: (loreList, options) => ingestLoreBatch(loreList, options)
+                ingestLoreBatch: (loreList, options) => ingestLoreBatch(handOff(loreList), options)
             });
             // Lore tab search, paging and drop-zone flags (Phase 7).
             const {
@@ -1211,8 +638,8 @@ const ReactDOM = ReactDOMClient;
                 isDraggingLoreTab, setIsDraggingLoreTab
             } = useLoreBrowser(story?.lore);
 
-            const loreInputRef = useRef(null);
-            const coverUploadInputRef = useRef(null);
+            const loreInputRef = useRef<HTMLInputElement>(null);
+            const coverUploadInputRef = useRef<HTMLInputElement>(null);
 
 
             const isLogHydrated = useRef(false);
@@ -1227,14 +654,14 @@ const ReactDOM = ReactDOMClient;
                     }
                     try {
                         const targetId = activeStoryId;
-                        let savedLogs = await logStore.loadLogs(targetId);
+                        let savedLogs = (await logStore.loadLogs(targetId)) as PipelineLogEntry[];
                         if (!isMounted) return;
 
                         // Auto-recovery guard: If this story is missing early setup logs (Conceptual Development
                         // or Character Developer), check if they were left in 'story_default' during initialization.
                         if (targetId !== 'story_default' && Array.isArray(savedLogs) && savedLogs.length > 0 && !savedLogs.some(l => l && l.function && l.function.includes('Character Developer'))) {
                             try {
-                                const orphanLogs = await logStore.loadLogs('story_default');
+                                const orphanLogs = (await logStore.loadLogs('story_default')) as PipelineLogEntry[];
                                 if (Array.isArray(orphanLogs) && orphanLogs.length > 0) {
                                     const earlyOrphans = orphanLogs.filter(l => l && l.function && (l.function.includes('Character Developer') || l.function.includes('Conceptual Development')));
                                     if (earlyOrphans.length > 0) {
@@ -1288,7 +715,6 @@ const ReactDOM = ReactDOMClient;
                 audioAutopilotProgress, setAudioAutopilotProgress,
                 logFilter, setLogFilter
             } = usePipelineViewState();
-            const generatingSceneKey = usePipelineStore(s => s.generatingSceneKey);
             const setGeneratingSceneKey = usePipelineStore(s => s.setGeneratingSceneKey);
 
             // --- EBOOK READER & AUDIO REFS ---
@@ -1305,23 +731,23 @@ const ReactDOM = ReactDOMClient;
             const availableSceneAudioMapRef = useRef({});
 
             // Late-bound bridges so acyclic hooks can call into later-declared siblings
-            const setTtsQueueAndRefRef = useRef(() => {});
+            const setTtsQueueAndRefRef = useRef<(valOrFn: SharedTtsQueueItem[] | ((prev: SharedTtsQueueItem[]) => SharedTtsQueueItem[])) => void>(() => {});
             const stopTtsPlaybackRef = useRef(() => {});
-            const getOrCreateTtsWorkerRef = useRef(() => null);
+            const getOrCreateTtsWorkerRef = useRef<() => KokoroWorkerHandle | null>(() => null);
             const initTtsEngineRef = useRef(async () => false);
             const isTtsBusyOrPlayingRef = useRef(false);
-            const openEditModalRef = useRef(() => {});
-            const setAvailableSceneAudioMapRef = useRef(() => {});
-            const setAvailableSequenceAudioMapRef = useRef(() => {});
+            const openEditModalRef = useRef<UseShellModalsResult['openEditModal']>(() => {});
+            const setAvailableSceneAudioMapRef = useRef<React.Dispatch<React.SetStateAction<Record<string, SceneAudioMeta>>>>(() => {});
+            const setAvailableSequenceAudioMapRef = useRef<React.Dispatch<React.SetStateAction<Record<string, SequenceAudioMeta>>>>(() => {});
             const refreshAvailableSceneAudioRef = useRef(async () => {});
             const getLlmKeys = useCallback(() => llmKeysRef.current, []);
-            const openEditModalStable = useCallback((title, value, onConfirm, fieldKey) => openEditModalRef.current(title, value, onConfirm, fieldKey), []);
+            const openEditModalStable = useCallback<UseShellModalsResult['openEditModal']>((title, value, onConfirm) => openEditModalRef.current(title, value, onConfirm), []);
 
             const {
-                audioDramaSettings, setAudioDramaSettings, audioDramaSettingsRef,
+                audioDramaSettings, audioDramaSettingsRef,
                 sessionTtsTierCapRef, ttsProbeCacheRef, updateAudioDramaSetting,
-                isAuditioningVoice, setIsAuditioningVoice, auditioningTarget, setAuditioningTarget,
-                collectSpeakerAliases, invalidateSpeakerVoiceCache, commitVoiceEditUpdate,
+                isAuditioningVoice,
+                commitVoiceEditUpdate,
                 stopAuditionPlayback, stopAllAudioPlayback, testAuditionCharacterVoice,
                 handleRerollCharacterSeed, handleRerollNarratorSeed,
                 handleEditNarratorVoiceProfile, handleEditNarratorSeed,
@@ -1332,7 +758,7 @@ const ReactDOM = ReactDOMClient;
             } = useVoiceManagement({
                 story,
                 storyRef,
-                setStory,
+                setStory: setStoryFor(setStory),
                 getLlmKeys,
                 showToast,
                 requestConfirm,
@@ -1358,15 +784,15 @@ const ReactDOM = ReactDOMClient;
                 getSceneAudioStatus, storyAudioSummary,
                 isExportingSceneAudio, isExportingSequenceAudio, isExportingStoryAudio,
                 isRegeneratingSceneAudio,
-                isAudioAutopilotRunning, setIsAudioAutopilotRunning, isAudioAutopilotRunningRef,
+                isAudioAutopilotRunning, setIsAudioAutopilotRunning,
                 isAudioAutopilotQueued, setIsAudioAutopilotQueued, isAudioAutopilotQueuedRef,
-                generateAndStoreSceneAudio, handleDownloadSceneAudio, handleRegenerateSceneAudio,
+                handleDownloadSceneAudio, handleRegenerateSceneAudio,
                 handleDownloadSequenceAudio, handleDownloadStoryAudio,
                 clearStoryTtsArtifacts, handleToggleAudioAutopilot
             } = useAudioProduction({
                 story,
                 storyRef,
-                setStory,
+                setStory: setStoryFor(setStory),
                 selectedSequence,
                 selectedScene,
                 audioDramaSettings,
@@ -1421,9 +847,9 @@ const ReactDOM = ReactDOMClient;
 
             const audioProgress = useMemo(() => computeAudioProductionEstimate(
                 story,
-                availableSceneAudioMap,
+                handOff(availableSceneAudioMap),
                 getSceneAudioStatus,
-                audioAutopilotProgress,
+                handOff(audioAutopilotProgress),
                 audioDramaSettings,
                 isAudioAutopilotRunning
             ), [story, availableSceneAudioMap, getSceneAudioStatus, audioAutopilotProgress, audioDramaSettings, isAudioAutopilotRunning]);
@@ -1500,12 +926,12 @@ const ReactDOM = ReactDOMClient;
 
             // Precompute O(1) act-to-scenes lookup map to eliminate combinatorial DOM bloat
             const scenesByAct = useMemo(() => {
-                const map = {};
+                const map: Record<number, SceneBlueprint[]> = {};
                 const acts = story?.acts || [];
                 const sequences = story?.sequences || [];
                 acts.forEach((a, aIdx) => {
                     const actNum = parseActNumber(a.number, aIdx + 1);
-                    const list = [];
+                    const list: SceneBlueprint[] = [];
                     sequences.forEach((seq, sIdx) => {
                         if (parseActNumber(seq.parent_act, actForSequence(sIdx + 1)) === actNum) {
                             const seqScenes = story?.scenes?.[`${sIdx}`] || [];
@@ -1522,13 +948,13 @@ const ReactDOM = ReactDOMClient;
 
             // --- LIVE TTS PLAYBACK & OFFLINE SCENE AUDIO PLAYER (extracted hook) ---
             const {
-                ttsStatus, setTtsStatus, isTtsBusyOrPlaying, isAnyAudioPlaying,
+                ttsStatus, isTtsBusyOrPlaying, isAnyAudioPlaying,
                 ttsProgress, ttsStatusMessage, ttsActiveDevice, ttsError, setTtsError, setTtsCurrentTime, requestChunkAudio,
                 ttsIsMiniPlayerVisible, setTtsIsMiniPlayerVisible,
                 ttsQueue, setTtsQueueAndRef,
                 ttsCurrentChunkIndex, ttsCurrentTime, ttsDuration, ttsGeneratingElapsedSec,
                 audioDramaActiveSpeaker, audioDramaActiveEmotion, isAudioDramaModeActive,
-                audioPlaybackScope, setAudioPlaybackScope, isPlayingMasterSceneMp3,
+                isPlayingMasterSceneMp3,
                 ttsPlayingScene, ttsResolvedSource,
                 getOrCreateTtsWorker, initTtsEngine, startTtsFromProse, toggleTtsPlayPause,
                 stopTtsPlayback, skipTtsChunk, changeTtsVoice,
@@ -1536,7 +962,7 @@ const ReactDOM = ReactDOMClient;
             } = useTtsPlayback({
                 story,
                 storyRef,
-                setStory,
+                setStory: setStoryFor(setStory),
                 selectedSequence,
                 selectedScene,
                 viewRef,
@@ -1583,16 +1009,16 @@ const ReactDOM = ReactDOMClient;
 
 
 
-            const fileInputRef = useRef(null);
+            const fileInputRef = useRef<HTMLInputElement>(null);
 
             // RAG & Graph State
             // useRef's initial-value argument is evaluated on EVERY render - useRef(new VectorStore())
             // constructed (and discarded) a fresh instance, including an IndexedDB open, per render.
-            const vectorStore = useRef(null);
+            const vectorStore = useRef<VectorStore | null>(null);
             if (!vectorStore.current) vectorStore.current = new VectorStore();
-            const graphManager = useRef(null);
+            const graphManager = useRef<GraphManager | null>(null);
             if (!graphManager.current) graphManager.current = new GraphManager();
-            const embeddingService = useRef(null);
+            const embeddingService = useRef<EmbeddingService | null>(null);
             const ragIndexRevision = useRef(0);
             // RAG index status and RAG inspector test query (Phase 7).
             const {
@@ -1626,10 +1052,10 @@ const ReactDOM = ReactDOMClient;
             } = useShellModals({ showToast });
 
             // Feedback Ledger State for Rollbacks
-            const [feedbackLedger, setFeedbackLedger] = useState({});
+            const [feedbackLedger, setFeedbackLedger] = useState<Record<string, string[]>>({});
 
             // Prompt-log detail dialog (Phase 6E-3).
-            const { logModalState, setLogModalState, openLogDetailModal } = useLogDetailModal({ promptLog });
+            const { logModalState, setLogModalState, openLogDetailModal } = useLogDetailModal({ promptLog: handOff(promptLog) });
 
             openEditModalRef.current = openEditModal;
 
@@ -1638,25 +1064,25 @@ const ReactDOM = ReactDOMClient;
             // Updates React state + snapshot when targetStoryId is active, or updates
             // snapshot + IndexedDB directly without clobbering another active story.
             // ============================================================================
-            const updateStoryById = (targetStoryId, updaterOrPatch) => updateStoryRecordById({
+            const updateStoryById = (targetStoryId: string, updaterOrPatch: Parameters<PipelineRuntimeContext['updateStoryById']>[1]) => updateStoryRecordById<Story>({
                 deletedStoryIds: deletedStoryIdsRef.current,
                 getActiveStory: () => storyRef.current,
                 setStory,
                 snapshots: storySnapshotsByIdRef.current,
                 store: storyStore,
-                createDefaultStory: createDefaultStoryTemplate
-            }, targetStoryId, updaterOrPatch);
+                createDefaultStory: (id) => storyFor(handOff(createDefaultStoryTemplate(id)))
+            }, targetStoryId, handOff(updaterOrPatch));
 
-            const feedbackLedgerRef = useRef(null);
+            const feedbackLedgerRef = useRef<Record<string, string[]>>(feedbackLedger);
             feedbackLedgerRef.current = feedbackLedger;
             const ragStatusRef = useRef(ragStatus);
             ragStatusRef.current = ragStatus;
             const isRebuildingRagRef = useRef(isRebuildingRag);
             isRebuildingRagRef.current = isRebuildingRag;
 
-            const getPipelineCtx = () => ({
+            const getPipelineCtx = (): PipelineRuntimeContext => ({
                 getStory: () => storyRef.current || story,
-                setStory,
+                setStory: setStoryFor(setStory),
                 getActiveStoryId: () => storyRef.current?.id || activeStoryId,
                 updateStoryById,
                 refreshLibrary,
@@ -1672,7 +1098,7 @@ const ReactDOM = ReactDOMClient;
                 getFeedbackLedger: () => feedbackLedgerRef.current || {},
                 setFeedbackLedger,
                 setFailedReviewCritiques,
-                setInterventionState,
+                setInterventionState: handOff(setInterventionState),
                 setLoading,
                 setLoadingStep,
                 setCurrentPipelineStep,
@@ -1695,12 +1121,12 @@ const ReactDOM = ReactDOMClient;
                 getRagIndexRevision: () => ragIndexRevision.current,
                 bumpRagIndexRevision: () => { ragIndexRevision.current += 1; return ragIndexRevision.current; },
                 getLoreImportVersion: () => loreImportVersionRef.current,
-                retrieveContext: (...args) => retrieveContext(...args),
+                retrieveContext: (...args: Parameters<typeof retrieveContext>) => retrieveContext(...args),
                 callAI: (...args) => callAI(...args),
                 applyWorldUpdates: typeof applyWorldUpdates === 'function' ? applyWorldUpdates : undefined,
-                auditEntityNamesAndPlaces: typeof window !== 'undefined' && typeof window.auditEntityNamesAndPlaces === 'function' ? window.auditEntityNamesAndPlaces : undefined,
-                applyCascadingNameReplacements: typeof window !== 'undefined' && typeof window.applyCascadingNameReplacements === 'function' ? window.applyCascadingNameReplacements : undefined,
-                extractCandidatePlaceNames: typeof window !== 'undefined' && typeof window.extractCandidatePlaceNames === 'function' ? window.extractCandidatePlaceNames : undefined,
+                auditEntityNamesAndPlaces,
+                applyCascadingNameReplacements,
+                extractCandidatePlaceNames,
                 getSetupDraft: () => ({
                     inputConcept,
                     inputTitle,
@@ -1721,7 +1147,7 @@ const ReactDOM = ReactDOMClient;
                 getHasHydratedStoryRef: () => hasHydratedStory,
                 getImportingLore: () => importingLore,
                 setActiveStoryId,
-                setPromptLog,
+                setPromptLog: handOff(setPromptLog),
                 setSelectedAct,
                 setActiveActTab,
                 getSelectedSequence: () => selectedSequence,
@@ -1782,8 +1208,8 @@ const ReactDOM = ReactDOMClient;
             // without truncation cliffs, using Fast-Path (<=28k), Sequential Map-Reduce,
             // and Hierarchical Tree-Reduction (>20k briefings).
             // ============================================================================
-            const distillLore = (text, options = {}) => orchestrateDistillLore(getPipelineCtx(), text, options);
-            window.distillLore = distillLore;
+            const distillLore = (text: CtxArgs<typeof orchestrateDistillLore>[0], options: CtxArgs<typeof orchestrateDistillLore>[1] = {}) => orchestrateDistillLore(getPipelineCtx(), text, options);
+            publishAppGlobal('distillLore', distillLore);
 
             const clearImportedLore = () => {
                 // Ignore pending reads if the user clears the files or starts another story.
@@ -1799,34 +1225,31 @@ const ReactDOM = ReactDOMClient;
                 if (loreInputRef.current) loreInputRef.current.value = '';
                 try {
                     localStorage.removeItem("ellipsisprose_draft_lore_files");
-                } catch (_) {}
+                } catch {
+                    // Storage unavailable; nothing to remove.
+                }
             };
 
             // ============================================================================
             // TIER 6.3: RETROACTIVE STATE INJECTION (RSI) AGENT
             // Associated Prompt: PROMPTS.rsiPrompt
             // ============================================================================
-            const checkAndExecuteRSI = (reason, currentStory) => orchestrateCheckAndExecuteRSI(getPipelineCtx(), reason, currentStory);
 
             /**
              * Retroactively Injects a Clue Directive into Preceding Drafted Scene Prose via RSI
              */
-            const retroactivelyInjectClue = (secretId, clueIdx, currentStory = story) => orchestrateRetroactivelyInjectClue(getPipelineCtx(), secretId, clueIdx, currentStory);
-            window.retroactivelyInjectClue = retroactivelyInjectClue;
+            const retroactivelyInjectClue = (secretId: CtxArgs<typeof orchestrateRetroactivelyInjectClue>[0], clueIdx: CtxArgs<typeof orchestrateRetroactivelyInjectClue>[1], currentStory: CtxArgs<typeof orchestrateRetroactivelyInjectClue>[2] = story) => orchestrateRetroactivelyInjectClue(getPipelineCtx(), secretId, clueIdx, currentStory);
+            publishAppGlobal('retroactivelyInjectClue', retroactivelyInjectClue);
 
 
             // 2A: Upstream AI Slop Entity Name & Place Repair Helper
-            const repairBannedEntitiesWithAI = (opts = {}) => orchestrateRepairBannedEntitiesWithAI(getPipelineCtx(), opts);
 
             // TIER 6.4: Shared scene archivist, used after writing and directive verification.
-            const runArchivistForScene = (storyState, seqIdx, sceneIdx) => orchestrateRunArchivistForScene(getPipelineCtx(), storyState, seqIdx, sceneIdx);
 
 
-            const verifyAndArchiveDirectiveScene = (storyState, sId, logMessage) => orchestrateVerifyAndArchiveDirectiveScene(getPipelineCtx(), storyState, sId, logMessage);
 
-            const reviewDirectiveConsistency = (storyState, sceneIds, consistencyNotes, logMessage) => orchestrateReviewDirectiveConsistency(getPipelineCtx(), storyState, sceneIds, consistencyNotes, logMessage);
 
-            const handleFixDirectiveReview = (actionIdx) => orchestrateHandleFixDirectiveReview(getPipelineCtx(), actionIdx);
+            const handleFixDirectiveReview = (actionIdx: CtxArgs<typeof orchestrateHandleFixDirectiveReview>[0]) => orchestrateHandleFixDirectiveReview(getPipelineCtx(), actionIdx);
 
 
             const restorePreviousDirectivePlan = () => {
@@ -1842,17 +1265,16 @@ const ReactDOM = ReactDOMClient;
             };
 
 
-            const applySurgicalProsePatch = (opts) => orchestrateApplySurgicalProsePatch(getPipelineCtx(), opts);
 
-            const handleRunManualSlopClean = (seqIdx, sceneIdx) => orchestrateHandleRunManualSlopClean(getPipelineCtx(), seqIdx, sceneIdx);
+            const handleRunManualSlopClean = (seqIdx: CtxArgs<typeof orchestrateHandleRunManualSlopClean>[0], sceneIdx: CtxArgs<typeof orchestrateHandleRunManualSlopClean>[1]) => orchestrateHandleRunManualSlopClean(getPipelineCtx(), seqIdx, sceneIdx);
 
-            const executeDirectivePlan = (planActions) => orchestrateExecuteDirectivePlan(getPipelineCtx(), planActions);
+            const executeDirectivePlan = (planActions: CtxArgs<typeof orchestrateExecuteDirectivePlan>[0]) => orchestrateExecuteDirectivePlan(getPipelineCtx(), planActions);
 
             // ============================================================================
             // TIER 6.1: DIRECTIVE PLANNER AGENT
             // Associated Prompt: PROMPTS.directivePlanner
             // ============================================================================
-            const runDirectivePlanner = (refinementRequest = '') => orchestrateRunDirectivePlanner(getPipelineCtx(), refinementRequest);
+            const runDirectivePlanner = (refinementRequest: CtxArgs<typeof orchestrateRunDirectivePlanner>[0] = '') => orchestrateRunDirectivePlanner(getPipelineCtx(), refinementRequest);
 
             // Manual edits to the directive plan (Phase 6E-3).
             const {
@@ -1868,9 +1290,7 @@ const ReactDOM = ReactDOMClient;
                 isPlanningDirective, isExecutingDirective
             });
 
-            const retryFailedSurgicalEdits = (opts) => orchestrateRetryFailedSurgicalEdits(getPipelineCtx(), opts);
 
-            const applySurgicalEditsWithRetry = (opts) => orchestrateApplySurgicalEditsWithRetry(getPipelineCtx(), opts);
 
             // ============================================================================
             // TIER 6.0: AUTONOMOUS EDITORIAL HARNESS & LITERARY CI/CD ORCHESTRATOR
@@ -1879,21 +1299,26 @@ const ReactDOM = ReactDOMClient;
             //   - mode = 'review_only': Runs Phases 1–3 only (Diagnostic Review, Tribunal, & 3-Wave Plan compilation)
             //   - mode = 'execute_plan': Executes pending transactions in the compiled 3-Wave Edit Plan through the 4-Gate CI/CD suite
             // ============================================================================
-            const runAutonomousEditorialHarness = (opts = {}) => orchestrateRunAutonomousEditorialHarness(getPipelineCtx(), opts);
+            const runAutonomousEditorialHarness = (opts: CtxArgs<typeof orchestrateRunAutonomousEditorialHarness>[0] = {}) => orchestrateRunAutonomousEditorialHarness(getPipelineCtx(), opts);
 
-            const executeSingleHarnessTransaction = (transactionId) => orchestrateExecuteSingleHarnessTransaction(getPipelineCtx(), transactionId);
+            const executeSingleHarnessTransaction = (transactionId: CtxArgs<typeof orchestrateExecuteSingleHarnessTransaction>[0]) => orchestrateExecuteSingleHarnessTransaction(getPipelineCtx(), transactionId);
 
-            const revertHarnessTransaction = (transactionId) => orchestrateRevertHarnessTransaction(getPipelineCtx(), transactionId);
+            const revertHarnessTransaction = (transactionId: CtxArgs<typeof orchestrateRevertHarnessTransaction>[0]) => orchestrateRevertHarnessTransaction(getPipelineCtx(), transactionId);
 
             const revertAllHarnessTransactions = () => orchestrateRevertAllHarnessTransactions(getPipelineCtx());
 
             const handleRunHarnessInspectorTool = () => {
                 const currentStory = storyRef.current || story;
-                const fullTelemetry = currentStory.editorial_harness?.fullTelemetry || runFullManuscriptNlpTelemetry(currentStory, bannedPhrases, slopConfig);
-                const nsg = currentStory.editorial_harness?.nsg || compileNarrativeStateGraph(currentStory, fullTelemetry);
-                const layer0Map = currentStory.editorial_harness?.layer0Map || {};
-                const tools = createHarnessInspectionTools(currentStory, nsg, fullTelemetry, layer0Map);
-                const fn = tools[editorialToolName];
+                const harness = (currentStory.editorial_harness || {}) as Partial<{
+                    fullTelemetry: ReturnType<typeof runFullManuscriptNlpTelemetry>;
+                    nsg: ReturnType<typeof compileNarrativeStateGraph>;
+                    layer0Map: Parameters<typeof createHarnessInspectionTools>[3];
+                }>;
+                const fullTelemetry = harness.fullTelemetry || runFullManuscriptNlpTelemetry(storyFor(currentStory), bannedPhrases, slopConfig);
+                const nsg = harness.nsg || compileNarrativeStateGraph(storyFor(currentStory), fullTelemetry);
+                const layer0Map = harness.layer0Map || {};
+                const tools = createHarnessInspectionTools(storyFor(currentStory), nsg, fullTelemetry, layer0Map);
+                const fn = (tools as Record<string, ((args: unknown) => unknown) | undefined>)[editorialToolName];
                 if (typeof fn !== 'function') {
                     setEditorialToolOutput({ error: `Unknown tool: ${editorialToolName}` });
                     return;
@@ -1902,39 +1327,38 @@ const ReactDOM = ReactDOMClient;
                 setEditorialToolOutput(result);
             };
 
-            window.runAutonomousEditorialHarness = runAutonomousEditorialHarness;
-            window.executeSingleHarnessTransaction = executeSingleHarnessTransaction;
-            window.revertHarnessTransaction = revertHarnessTransaction;
-            window.revertAllHarnessTransactions = revertAllHarnessTransactions;
+            publishAppGlobal('runAutonomousEditorialHarness', runAutonomousEditorialHarness);
+            publishAppGlobal('executeSingleHarnessTransaction', executeSingleHarnessTransaction);
+            publishAppGlobal('revertHarnessTransaction', revertHarnessTransaction);
+            publishAppGlobal('revertAllHarnessTransactions', revertAllHarnessTransactions);
 
-            const runAgentWithEscalation = (params) => orchestrateRunAgentWithEscalation(getPipelineCtx(), params);
+            const runAgentWithEscalation = (params: CtxArgs<typeof orchestrateRunAgentWithEscalation>[0]) => orchestrateRunAgentWithEscalation(getPipelineCtx(), params);
 
-            const createStoryEntityFromSetup = (opts = {}) => orchestrateCreateStoryEntityFromSetup(getPipelineCtx(), opts);
 
-            const initStory = (isAutopilotOrEvent = false, options = {}) => orchestrateInitStory(getPipelineCtx(), isAutopilotOrEvent, options);
+            const initStory = (isAutopilotOrEvent: CtxArgs<typeof orchestrateInitStory>[0] = false, options: CtxArgs<typeof orchestrateInitStory>[1] = {}) => orchestrateInitStory(getPipelineCtx(), isAutopilotOrEvent, options);
 
             // ============================================================================
             // TIER 1.1: STORY ARC PLANNER & TIER 1.2: STORY ARC REVIEWER
             // Associated Prompts: PROMPTS.storyArc, PROMPTS.arcReview
             // ============================================================================
-            const generateStoryArc = (currentStory = story, isAutopilot = false) => orchestrateGenerateStoryArc(getPipelineCtx(), currentStory, isAutopilot);
+            const generateStoryArc = (currentStory: CtxArgs<typeof orchestrateGenerateStoryArc>[0] = story, isAutopilot: CtxArgs<typeof orchestrateGenerateStoryArc>[1] = false) => orchestrateGenerateStoryArc(getPipelineCtx(), currentStory, isAutopilot);
 
-            const generateActsAndSequences = (currentStory = story, isAutopilot = false) => orchestrateGenerateActsAndSequences(getPipelineCtx(), currentStory, isAutopilot);
+            const generateActsAndSequences = (currentStory: CtxArgs<typeof orchestrateGenerateActsAndSequences>[0] = story, isAutopilot: CtxArgs<typeof orchestrateGenerateActsAndSequences>[1] = false) => orchestrateGenerateActsAndSequences(getPipelineCtx(), currentStory, isAutopilot);
 
 
 
             // Single Item Ingest with Redundancy Check (3-Tier Lore Merger - A4)
-            const ingestLore = (item, rebuild = null) => orchestrateIngestLore(getPipelineCtx(), item, rebuild);
+            const ingestLore = (item: CtxArgs<typeof orchestrateIngestLore>[0], rebuild: CtxArgs<typeof orchestrateIngestLore>[1] = null) => orchestrateIngestLore(getPipelineCtx(), item, rebuild);
 
             // Batch Ingest (for Init or Import)
-            const ingestLoreBatch = (loreList, options = {}) => orchestrateIngestLoreBatch(getPipelineCtx(), loreList, options);
+            const ingestLoreBatch = (loreList: CtxArgs<typeof orchestrateIngestLoreBatch>[0], options: CtxArgs<typeof orchestrateIngestLoreBatch>[1] = {}) => orchestrateIngestLoreBatch(getPipelineCtx(), loreList, options);
 
             const rebuildRagIndex = () => orchestrateRebuildRagIndex(getPipelineCtx());
 
             // Build Graph on Load/Change
             useEffect(() => {
                 if (story.lore) {
-                    graphManager.current.buildGraph(story.lore);
+                    graphManager.current?.buildGraph(story.lore);
                 }
             }, [story.lore]);
 
@@ -1947,15 +1371,15 @@ const ReactDOM = ReactDOMClient;
 
 
 
-            const toggleAct = (idx) => {
+            const toggleAct = (idx: number | string) => {
                 setCollapsedActs(prev => ({ ...prev, [idx]: !prev[idx] }));
             };
 
-            const toggleBeats = (bId) => {
+            const toggleBeats = (bId: string) => {
                 setCollapsedBeats(prev => ({ ...prev, [bId]: !prev[bId] }));
             };
 
-            const toggleBeatAnalysis = (bId) => {
+            const toggleBeatAnalysis = (bId: string) => {
                 setExpandedBeatAnalysis(prev => ({ ...prev, [bId]: !prev[bId] }));
             };
 
@@ -1992,38 +1416,38 @@ const ReactDOM = ReactDOMClient;
             // TIER 6.5: LORE EXTRACTION AGENT
             // Associated Prompt: PROMPTS.loreExtraction
             // ============================================================================
-            const triggerLoreExtraction = (payload, activeActNum = 1, activeSceneNum = 1) => orchestrateTriggerLoreExtraction(getPipelineCtx(), payload, activeActNum, activeSceneNum);
+            const triggerLoreExtraction = (payload: CtxArgs<typeof orchestrateTriggerLoreExtraction>[0], activeActNum: CtxArgs<typeof orchestrateTriggerLoreExtraction>[1] = 1, activeSceneNum: CtxArgs<typeof orchestrateTriggerLoreExtraction>[2] = 1) => orchestrateTriggerLoreExtraction(getPipelineCtx(), payload, activeActNum, activeSceneNum);
 
 
-            const handleWorldUpdates = (updates, activeActNum = 1, activeSceneNum = 1, targetStory = null, sceneObj = null) => orchestrateHandleWorldUpdates(getPipelineCtx(), updates, activeActNum, activeSceneNum, targetStory, sceneObj);
-            window.handleWorldUpdates = handleWorldUpdates;
-            window.applyWorldUpdates = applyWorldUpdates;
+            const handleWorldUpdates = (updates: CtxArgs<typeof orchestrateHandleWorldUpdates>[0], activeActNum: CtxArgs<typeof orchestrateHandleWorldUpdates>[1] = 1, activeSceneNum: CtxArgs<typeof orchestrateHandleWorldUpdates>[2] = 1, targetStory: CtxArgs<typeof orchestrateHandleWorldUpdates>[3] = null, sceneObj: CtxArgs<typeof orchestrateHandleWorldUpdates>[4] = null) => orchestrateHandleWorldUpdates(getPipelineCtx(), updates, activeActNum, activeSceneNum, targetStory, sceneObj);
+            publishAppGlobal('handleWorldUpdates', handleWorldUpdates);
+            publishAppGlobal('applyWorldUpdates', applyWorldUpdates);
 
 
 
             // Stage reset and factory reset (Phase 6E-3).
             const { handleResetStoryStage, handleDeleteStory } = useStoryReset({
-                story, storyRef, setStory, setActiveStoryId, requestConfirm, showToast,
-                clearStoryTtsArtifacts, setContinuousAutopilot, setReadingProgress, prefetchCacheRef,
-                setLoadedImages, setFeedbackLedger,
+                story: storyFor<ResetStory>(story), storyRef: storyRefFor<ResetStory>(storyRef), setStory: setStoryFor<(next: ResetStory) => unknown>(setStory), setActiveStoryId, requestConfirm, showToast,
+                clearStoryTtsArtifacts: handOff(clearStoryTtsArtifacts), setContinuousAutopilot, setReadingProgress, prefetchCacheRef,
+                setLoadedImages: handOff(setLoadedImages), setFeedbackLedger: handOff(setFeedbackLedger),
                 setSelectedAct, setSelectedSequence, setSelectedScene, setActiveActTab, setCollapsedActs,
                 view, viewRef, setView,
-                graphManager, vectorStore, embeddingService, ingestLoreBatch,
+                graphManager: handOff(graphManager), vectorStore, embeddingService, ingestLoreBatch: handOff(ingestLoreBatch),
                 refreshLibrary, setLibraryStories, setLibraryCovers, clearSetupDraft
             });
-            window.handleResetStoryStage = handleResetStoryStage;
+            publishAppGlobal('handleResetStoryStage', handleResetStoryStage);
 
             // Export (JSON, audio-drama script, EPUB) and file import (Phase 6E-3).
             const { handleExport, handleExportAudioDramaTxt, handleExportEpub, handleImport } = useStoryTransfer({
                 story, storyRef, setStory, setActiveStoryId, setLoadedImages, setPortraitReload, setView,
-                refreshLibrary, refreshAvailableSceneAudio, showToast, requestConfirm,
+                refreshLibrary, refreshAvailableSceneAudio, showToast, requestConfirm: handOff(requestConfirm),
                 dismissToast,
                 enterReaderMode, playSceneAudio
             });
-            window.handleImport = handleImport;
+            publishAppGlobal('handleImport', handleImport);
 
             // RAG Retrieval Engine with BM25 Lexical Fallback & Knowledge Graph Traversal (delegated to src/services/rag)
-            const retrieveContext = (query, threshold = 0.5, filterFn = null, loreList = null) =>
+            const retrieveContext = (query: RetrieveArgs[0], threshold: RetrieveArgs[2] = 0.5, filterFn: RetrieveArgs[3] = null, loreList: RetrieveArgs[4] = null) =>
                 retrieveLoreContext(
                     query,
                     {
@@ -2036,7 +1460,7 @@ const ReactDOM = ReactDOMClient;
                     filterFn,
                     loreList
                 );
-            window.retrieveContext = retrieveContext;
+            publishAppGlobal('retrieveContext', retrieveContext);
 
             // RAG Inspector Handler
             const handleRagTest = async () => {
@@ -2047,7 +1471,7 @@ const ReactDOM = ReactDOMClient;
                     const results = await retrieveContext(ragTestQuery, 0.0); // 0.0 threshold to see everything
                     setRagTestResults(results);
                 } catch (e) {
-                    alert("RAG Test Failed: " + e.message);
+                    alert("RAG Test Failed: " + (e as Error).message);
                 } finally {
                     setRagTestLoading(false);
                 }
@@ -2059,9 +1483,8 @@ const ReactDOM = ReactDOMClient;
             // TIER 0.2: CHARACTER DEVELOPMENT AGENT - ON DEMAND
             // Associated Prompt: PROMPTS.characterDevelopment
             // ============================================================================
-            const generateCharacterProfile = (...args) => orchestrateGenerateCharacterProfile(getPipelineCtx(), ...args);
+            const generateCharacterProfile = (...args: CtxArgs<typeof orchestrateGenerateCharacterProfile>) => orchestrateGenerateCharacterProfile(getPipelineCtx(), ...args);
 
-            const getCharacterDetails = (charName, mutableCastList) => orchestrateGetCharacterDetails(getPipelineCtx(), charName, mutableCastList);
 
             // Scene & beat editors (Phase 6E-3): pure transforms live in @/domain/story/sceneEditing.
             const {
@@ -2086,25 +1509,25 @@ const ReactDOM = ReactDOMClient;
                 showToast,
                 requestConfirm
             });
-            window.updateSceneBlueprint = updateSceneBlueprint;
+            publishAppGlobal('updateSceneBlueprint', updateSceneBlueprint);
 
-            const handleCascadeSceneToProse = (seqIdx, sceneIdx, options = {}) => orchestrateHandleCascadeSceneToProse(getPipelineCtx(), seqIdx, sceneIdx, options);
-            window.handleCascadeSceneToProse = handleCascadeSceneToProse;
+            const handleCascadeSceneToProse = (seqIdx: CtxArgs<typeof orchestrateHandleCascadeSceneToProse>[0], sceneIdx: CtxArgs<typeof orchestrateHandleCascadeSceneToProse>[1], options: CtxArgs<typeof orchestrateHandleCascadeSceneToProse>[2] = {}) => orchestrateHandleCascadeSceneToProse(getPipelineCtx(), seqIdx, sceneIdx, options);
+            publishAppGlobal('handleCascadeSceneToProse', handleCascadeSceneToProse);
 
-            window.handleAddScene = handleAddScene;
+            publishAppGlobal('handleAddScene', handleAddScene);
 
-            window.handleMoveScene = handleMoveScene;
+            publishAppGlobal('handleMoveScene', handleMoveScene);
 
-            const updateCharacterStateForScene = (charName, stateUpdates = {}) => {
+            const updateCharacterStateForScene = (charName: string, stateUpdates: Record<string, unknown> = {}) => {
                 if (!charName) return;
                 const cleanName = String(charName).trim();
                 if (!cleanName) return;
 
                 const updatedStory = setStory(prev => {
-                    const prevStates = { ...(prev.character_states || {}) };
+                    const prevStates: Record<string, Record<string, unknown>> = { ...((prev.character_states as Record<string, Record<string, unknown>> | undefined) || {}) };
                     const matchedKey = Object.keys(prevStates).find(k => k.toLowerCase() === cleanName.toLowerCase()) || cleanName;
                     const origState = prevStates[matchedKey] || {};
-                    const nextPatch = { ...(stateUpdates || {}) };
+                    const nextPatch: Record<string, unknown> = { ...(stateUpdates || {}) };
                     if ('physical_state' in nextPatch && !('physical_status' in nextPatch)) {
                         nextPatch.physical_status = nextPatch.physical_state;
                     } else if ('physical_status' in nextPatch && !('physical_state' in nextPatch)) {
@@ -2127,7 +1550,7 @@ const ReactDOM = ReactDOMClient;
                     storyStore.saveStory(updatedStory.id, updatedStory).catch(err => console.warn("Failed saving character state update:", err));
                 }
             };
-            window.updateCharacterStateForScene = updateCharacterStateForScene;
+            publishAppGlobal('updateCharacterStateForScene', updateCharacterStateForScene);
 
             const requestSequenceWeaving = () => {
                 if (!story.acts || story.acts.length === 0) {
@@ -2164,17 +1587,16 @@ const ReactDOM = ReactDOMClient;
             // ============================================================================
             // STORY SO FAR UPDATER
             // ============================================================================
-            const updateStorySoFar = (currentStory, isAutopilot = false) => orchestrateUpdateStorySoFar(getPipelineCtx(), currentStory, isAutopilot);
 
             // ============================================================================
             // TIER 3.1 & 3.2: SEQUENCE AGENT (LARGE)
             // Associated Prompts: PROMPTS.sequenceAgent, PROMPTS.sequenceReview
             // ============================================================================
-            const generateSequences = (currentStory = story, isAutopilot = false) => orchestrateGenerateSequences(getPipelineCtx(), currentStory, isAutopilot);
+            const generateSequences = (currentStory: CtxArgs<typeof orchestrateGenerateSequences>[0] = story, isAutopilot: CtxArgs<typeof orchestrateGenerateSequences>[1] = false) => orchestrateGenerateSequences(getPipelineCtx(), currentStory, isAutopilot);
 
-            const requestSceneWeaving = (seqIdx) => {
+            const requestSceneWeaving = (seqIdx?: unknown) => {
                 const sIdx = typeof seqIdx === 'number' ? seqIdx : (selectedSequence !== null ? selectedSequence : 0);
-                if (story.scenes[`${sIdx}`]?.length > 0) {
+                if ((story.scenes?.[`${sIdx}`]?.length ?? 0) > 0) {
                     requestConfirm({
                         title: `Rerun Scene Weaver for Sequence ${sIdx + 1}?`,
                         message: `Rerunning the Scene Weaver will overwrite ALL existing scenes, beats, and drafted prose for Sequence ${sIdx + 1}. This cannot be undone.`,
@@ -2187,24 +1609,24 @@ const ReactDOM = ReactDOMClient;
                 generateScenes(sIdx);
             };
 
-            const generateScenes = (sequenceIndex, currentStory = story, isAutopilot = false, isPrefetch = false) => orchestrateGenerateScenes(getPipelineCtx(), sequenceIndex, currentStory, isAutopilot, isPrefetch);
+            const generateScenes = (sequenceIndex: CtxArgs<typeof orchestrateGenerateScenes>[0], currentStory: CtxArgs<typeof orchestrateGenerateScenes>[1] = story, isAutopilot: CtxArgs<typeof orchestrateGenerateScenes>[2] = false, isPrefetch: CtxArgs<typeof orchestrateGenerateScenes>[3] = false) => orchestrateGenerateScenes(getPipelineCtx(), sequenceIndex, currentStory, isAutopilot, isPrefetch);
 
             // ============================================================================
 
-            const runAudioDramaVoiceDirectorPass = (opts = {}) => orchestrateRunAudioDramaVoiceDirectorPass(getPipelineCtx(), opts);
+            const runAudioDramaVoiceDirectorPass = (opts: CtxArgs<typeof orchestrateRunAudioDramaVoiceDirectorPass>[0] = {}) => orchestrateRunAudioDramaVoiceDirectorPass(getPipelineCtx(), opts);
 
-            const writeSceneProse = (...args) => orchestrateWriteSceneProse(getPipelineCtx(), ...args);
+            const writeSceneProse = (...args: CtxArgs<typeof orchestrateWriteSceneProse>) => orchestrateWriteSceneProse(getPipelineCtx(), ...args);
 
-            window.writeSceneProse = writeSceneProse;
-            window.runAudioDramaVoiceDirectorPass = runAudioDramaVoiceDirectorPass;
-            window.runAgentWithEscalation = runAgentWithEscalation;
-            window.generateStoryArc = generateStoryArc;
-            window.generateActsAndSequences = generateActsAndSequences;
-            window.generateCharacterProfile = generateCharacterProfile;
-            window.generateScenes = generateScenes;
-            window.triggerLoreExtraction = triggerLoreExtraction;
-            window.PROMPTS = PROMPTS;
-            window.callAI = callAI;
+            publishAppGlobal('writeSceneProse', writeSceneProse);
+            publishAppGlobal('runAudioDramaVoiceDirectorPass', runAudioDramaVoiceDirectorPass);
+            publishAppGlobal('runAgentWithEscalation', runAgentWithEscalation);
+            publishAppGlobal('generateStoryArc', generateStoryArc);
+            publishAppGlobal('generateActsAndSequences', generateActsAndSequences);
+            publishAppGlobal('generateCharacterProfile', generateCharacterProfile);
+            publishAppGlobal('generateScenes', generateScenes);
+            publishAppGlobal('triggerLoreExtraction', triggerLoreExtraction);
+            publishAppGlobal('PROMPTS', PROMPTS);
+            publishAppGlobal('callAI', callAI);
 
             const copyFullScene = () => {
                 const seq = selectedSequence !== null ? selectedSequence : 0;
@@ -2213,8 +1635,9 @@ const ReactDOM = ReactDOMClient;
                 const scene = story.scenes[`${seq}`][sc];
                 const sId = `${seq}-${sc}`;
                 let text = `SCENE ${scene.number}: ${(scene.title || "").toUpperCase()}\n\n`;
-                if (story.prose[sId]?.final) {
-                    text += story.prose[sId].final + "\n\n";
+                const sceneProse = story.prose?.[sId];
+                if (sceneProse && typeof sceneProse === 'object' && sceneProse.final) {
+                    text += sceneProse.final + "\n\n";
                 }
 
                 if (story.writing_mode === 'audio_drama') {
@@ -2230,7 +1653,7 @@ const ReactDOM = ReactDOMClient;
                         URL.revokeObjectURL(url);
                         showToast("Scene exported as Audio Drama txt.", "success");
                     } catch (err) {
-                        showToast("Export failed: " + err.message, "error");
+                        showToast("Export failed: " + (err as Error).message, "error");
                     }
                 } else {
                     const textArea = document.createElement("textarea");
@@ -2239,12 +1662,12 @@ const ReactDOM = ReactDOMClient;
                     textArea.style.left = "-9999px";
                     document.body.appendChild(textArea);
                     textArea.select();
-                    try { document.execCommand('copy'); showToast("Copied to clipboard!"); } catch (err) { alert("Copy failed."); }
+                    try { document.execCommand('copy'); showToast("Copied to clipboard!"); } catch { alert("Copy failed."); }
                     document.body.removeChild(textArea);
                 }
             };
 
-            const handleAutopilot = (options = {}) => orchestrateHandleAutopilot(getPipelineCtx(), options);
+            const handleAutopilot = (options: CtxArgs<typeof orchestrateHandleAutopilot>[0] = {}) => orchestrateHandleAutopilot(getPipelineCtx(), options);
 
             const runContinuousAutopilotStep = () => orchestrateRunContinuousAutopilotStep(getPipelineCtx());
 
@@ -2261,9 +1684,9 @@ const ReactDOM = ReactDOMClient;
                 });
             };
 
-            window.runContinuousAutopilotStep = runContinuousAutopilotStep;
-            window.toggleContinuousAutopilot = toggleContinuousAutopilot;
-            window.handleAutopilot = handleAutopilot;
+            publishAppGlobal('runContinuousAutopilotStep', runContinuousAutopilotStep);
+            publishAppGlobal('toggleContinuousAutopilot', toggleContinuousAutopilot);
+            publishAppGlobal('handleAutopilot', handleAutopilot);
 
             useEffect(() => {
                 let cancelled = false;
@@ -2280,7 +1703,7 @@ const ReactDOM = ReactDOMClient;
                             const pingResp = await fetch(`${targetUrl}/v1/models`, { method: 'GET', signal: testCtrl.signal });
                             clearTimeout(testTimer);
                             if (!pingResp.ok) throw new Error(`HTTP ${pingResp.status}`);
-                        } catch (connErr) {
+                        } catch {
                             showToast(`Could not connect to KoboldCPP at ${targetUrl}. Please ensure KoboldCPP is running locally before starting Autopilot.`, 'error');
                             setContinuousAutopilot(false);
                             continuousAutopilotRef.current = false;
@@ -2294,12 +1717,12 @@ const ReactDOM = ReactDOMClient;
                             continue;
                         }
                         isAutopilotStepRunningRef.current = true;
-                        let hasMore = false;
+                        let hasMore;
                         try {
                             hasMore = await runContinuousAutopilotStep();
                         } catch (err) {
                             console.error("Continuous Autopilot error:", err);
-                            showToast(`Autopilot error: ${err.message}`, "error");
+                            showToast(`Autopilot error: ${(err as Error).message}`, "error");
                             setContinuousAutopilot(false);
                             continuousAutopilotRef.current = false;
                             break;
@@ -2358,7 +1781,7 @@ const ReactDOM = ReactDOMClient;
                 setMcpRetryTrigger
             } = useMcpBridge({
                 state: {
-                    story,
+                    story: storyFor(story),
                     activeStoryId,
                     apiProvider,
                     devProvider,
@@ -2408,9 +1831,9 @@ const ReactDOM = ReactDOMClient;
                     setInputTitle,
                     setInputConcept,
                     setInputAuthorNote,
-                    setInputWritingMode,
+                    setInputWritingMode: handOff(setInputWritingMode),
                     setActiveStoryId,
-                    setStory,
+                    setStory: setStoryFor(setStory),
                     setView,
                     clearImportedLore,
                     showToast,
@@ -2424,16 +1847,16 @@ const ReactDOM = ReactDOMClient;
                     generateScenes,
                     writeSceneProse
                 },
-                storyStore
+                storyStore: handOff(storyStore)
             });
 
-            const handleAutoGenerateScene = (seqIdx, sceneIdx, options = {}) => orchestrateHandleAutoGenerateScene(getPipelineCtx(), seqIdx, sceneIdx, options);
+            const handleAutoGenerateScene = (seqIdx: CtxArgs<typeof orchestrateHandleAutoGenerateScene>[0], sceneIdx: CtxArgs<typeof orchestrateHandleAutoGenerateScene>[1], options: CtxArgs<typeof orchestrateHandleAutoGenerateScene>[2] = {}) => orchestrateHandleAutoGenerateScene(getPipelineCtx(), seqIdx, sceneIdx, options);
 
-            const handleDirectSceneVoices = (seqIdx = selectedSequence, sceneIdx = selectedScene) => orchestrateHandleDirectSceneVoices(getPipelineCtx(), seqIdx, sceneIdx);
+            const handleDirectSceneVoices = (seqIdx: CtxArgs<typeof orchestrateHandleDirectSceneVoices>[0] = selectedSequence, sceneIdx: CtxArgs<typeof orchestrateHandleDirectSceneVoices>[1] = selectedScene) => orchestrateHandleDirectSceneVoices(getPipelineCtx(), seqIdx, sceneIdx);
 
 
 
-            const handleSelectLibraryStory = (targetItem, targetView = 'dashboard') => {
+            const handleSelectLibraryStory = (targetItem: { id: string; data?: unknown } | null | undefined, targetView = 'dashboard') => {
                 if (!targetItem) return;
                 const liveInitData = (initializingStoryIdRef.current === targetItem.id && storySnapshotsByIdRef.current[targetItem.id])
                     ? storySnapshotsByIdRef.current[targetItem.id]
@@ -2443,7 +1866,7 @@ const ReactDOM = ReactDOMClient;
                     skipNextIdbHydrationIdRef.current = targetItem.id;
                 }
                 setActiveStoryId(targetItem.id);
-                setStory(prepareLibraryStorySelection(targetData, targetItem.id));
+                setStory(handOff(prepareLibraryStorySelection(handOff(targetData), targetItem.id)));
                 if (targetView === 'reader') {
                     enterReaderMode();
                 } else {
@@ -2471,13 +1894,13 @@ const ReactDOM = ReactDOMClient;
                         continuousAutopilot={continuousAutopilot}
                         isAudioAutopilotRunning={isAudioAutopilotRunning}
                         isAudioAutopilotQueued={isAudioAutopilotQueued}
-                        storyAudioSummary={storyAudioSummary}
+                        storyAudioSummary={handOff(storyAudioSummary)}
                         refreshLibrary={refreshLibrary}
                         handleAutopilot={handleAutopilot}
                         handleToggleAudioAutopilot={handleToggleAudioAutopilot}
                         enterReaderMode={enterReaderMode}
                         getSceneProseText={getSceneProseText}
-                        getSceneAudioStatus={getSceneAudioStatus}
+                        getSceneAudioStatus={handOff(getSceneAudioStatus)}
                         handleExportEpub={handleExportEpub}
                         handleExportAudioDramaTxt={handleExportAudioDramaTxt}
                         handleImport={handleImport}
@@ -2502,9 +1925,9 @@ const ReactDOM = ReactDOMClient;
                             handleAutopilot={handleAutopilot}
                             isAudioAutopilotRunning={isAudioAutopilotRunning}
                             isMcpConnected={isMcpConnected}
-                            activePipelineWork={activePipelineWork}
+                            activePipelineWork={handOff(activePipelineWork)}
                             novelProgress={novelProgress}
-                            audioAutopilotProgress={audioAutopilotProgress}
+                            audioAutopilotProgress={handOff(audioAutopilotProgress)}
                             audioProgress={audioProgress}
                             setPipelineDisplayMode={setPipelineDisplayMode}
                         />
@@ -2523,16 +1946,16 @@ const ReactDOM = ReactDOMClient;
                                     currentChapter={currentChapter}
                                     visibleScrollChapter={visibleScrollChapter}
                                     setVisibleScrollChapter={setVisibleScrollChapter}
-                                    jumpToReaderChapter={jumpToReaderChapter}
+                                    jumpToReaderChapter={handOff(jumpToReaderChapter)}
                                     goToNextReaderChapter={goToNextReaderChapter}
                                     goToPrevReaderChapter={goToPrevReaderChapter}
-                                    readerSettings={readerSettings}
-                                    updateReaderSetting={updateReaderSetting}
+                                    readerSettings={handOff(readerSettings)}
+                                    updateReaderSetting={handOff(updateReaderSetting)}
                                     readerPageIndex={readerPageIndex}
                                     readerPageIndexRef={readerPageIndexRef}
                                     readerTotalPages={readerTotalPages}
                                     readerContainerWidth={readerContainerWidth}
-                                    readingProgress={readingProgress}
+                                    readingProgress={handOff(readingProgress)}
                                     saveReadingProgress={saveReadingProgress}
                                     isReaderHudVisible={isReaderHudVisible}
                                     toggleReaderHud={toggleReaderHud}
@@ -2557,15 +1980,15 @@ const ReactDOM = ReactDOMClient;
                                     touchHasDraggedRef={touchHasDraggedRef}
                                     justTappedRef={justTappedRef}
                                     turnReaderPage={turnReaderPage}
-                                    jumpToReaderScene={jumpToReaderScene}
+                                    jumpToReaderScene={handOff(jumpToReaderScene)}
                                     goToNextReaderScene={goToNextReaderScene}
                                     setView={setView}
                                     ttsStatus={ttsStatus}
                                     ttsProgress={ttsProgress}
                                     ttsStatusMessage={ttsStatusMessage}
-                                    ttsActiveDevice={ttsActiveDevice}
+                                    ttsActiveDevice={handOff(ttsActiveDevice)}
                                     ttsError={ttsError}
-                                    setTtsError={setTtsError}
+                                    setTtsError={handOff(setTtsError)}
                                     startTtsFromProse={startTtsFromProse}
                                     requestChunkAudio={requestChunkAudio}
                                     setSettingsTab={setSettingsTab}
@@ -2596,10 +2019,10 @@ const ReactDOM = ReactDOMClient;
                                     isExportingSequenceAudio={isExportingSequenceAudio}
                                     ttsGeneratingElapsedSec={ttsGeneratingElapsedSec}
                                     availableSceneAudioMap={availableSceneAudioMap}
-                                    playStoredOrLiveSceneAudio={playStoredOrLiveSceneAudio}
+                                    playStoredOrLiveSceneAudio={handOff(playStoredOrLiveSceneAudio)}
                                     playSceneAudio={playSceneAudio}
                                     ttsPlayingScene={ttsPlayingScene}
-                                    ttsResolvedSource={ttsResolvedSource}
+                                    ttsResolvedSource={handOff(ttsResolvedSource)}
                                     isFollowingAudio={isFollowingAudio}
                                     setIsFollowingAudio={setIsFollowingAudio}
                                     returnToActiveAudio={returnToActiveAudio}
@@ -2632,7 +2055,7 @@ const ReactDOM = ReactDOMClient;
                                     inputCustomWords={inputCustomWords}
                                     setInputCustomWords={setInputCustomWords}
                                     inputWritingMode={inputWritingMode}
-                                    setInputWritingMode={setInputWritingMode}
+                                    setInputWritingMode={handOff(setInputWritingMode)}
                                     archetypeOptions={archetypeOptions}
                                     setArchetypeOptions={setArchetypeOptions}
                                     importedLoreFiles={importedLoreFiles}
@@ -2646,7 +2069,7 @@ const ReactDOM = ReactDOMClient;
                                     clearImportedLore={clearImportedLore}
                                     loading={loading}
                                     continuousAutopilot={continuousAutopilot}
-                                    initStory={initStory}
+                                    initStory={handOff(initStory)}
                                     handleAutopilot={handleAutopilot}
                                 />
                             )}
@@ -2655,8 +2078,8 @@ const ReactDOM = ReactDOMClient;
                                 <DashboardView
                                     view={view}
                                     setView={setView}
-                                    story={story}
-                                    setStory={setStory}
+                                    story={storyFor(story)}
+                                    setStory={setStoryFor(setStory)}
                                     theme={theme}
                                     isInspectorMode={isInspectorMode}
                                     selectedSequence={selectedSequence}
@@ -2669,7 +2092,7 @@ const ReactDOM = ReactDOMClient;
                                     deleteCoverImage={deleteCoverImage}
                                     storyAudioSummary={storyAudioSummary}
                                     availableSceneAudioMap={availableSceneAudioMap}
-                                    readingProgress={readingProgress}
+                                    readingProgress={handOff(readingProgress)}
                                     enterReaderMode={enterReaderMode}
                                     loading={loading}
                                     loadingStep={loadingStep}
@@ -2677,7 +2100,7 @@ const ReactDOM = ReactDOMClient;
                                     continuousAutopilot={continuousAutopilot}
                                     isRunningEditorialHarness={isRunningEditorialHarness}
                                     setEditorialScopeSceneId={setEditorialScopeSceneId}
-                                    runAutonomousEditorialHarness={runAutonomousEditorialHarness}
+                                    runAutonomousEditorialHarness={handOff(runAutonomousEditorialHarness)}
                                     handleExportEpub={handleExportEpub}
                                     handleDownloadStoryAudio={handleDownloadStoryAudio}
                                     handleExportAudioDramaTxt={handleExportAudioDramaTxt}
@@ -2688,8 +2111,8 @@ const ReactDOM = ReactDOMClient;
                                     isAudioAutopilotQueued={isAudioAutopilotQueued}
                                     handleToggleAudioAutopilot={handleToggleAudioAutopilot}
                                     handleResetStoryStage={handleResetStoryStage}
-                                    initStory={initStory}
-                                    generateStoryArc={generateStoryArc}
+                                    initStory={handOff(initStory)}
+                                    generateStoryArc={handOff(generateStoryArc)}
                                     epistemicViewTab={epistemicViewTab}
                                     setEpistemicViewTab={setEpistemicViewTab}
                                     epistemicScrubberCoord={epistemicScrubberCoord}
@@ -2698,13 +2121,13 @@ const ReactDOM = ReactDOMClient;
                                     setEpistemicFilterChar={setEpistemicFilterChar}
                                     epistemicSearchQuery={epistemicSearchQuery}
                                     setEpistemicSearchQuery={setEpistemicSearchQuery}
-                                    setEditingPropModal={setEditingPropModal}
-                                    setEditingBeliefModal={setEditingBeliefModal}
+                                    setEditingPropModal={handOff(setEditingPropModal)}
+                                    setEditingBeliefModal={handOff(setEditingBeliefModal)}
                                     handleDeleteProposition={handleDeleteProposition}
-                                    handleInvalidateBelief={handleInvalidateBelief}
-                                    retroactivelyInjectClue={retroactivelyInjectClue}
+                                    handleInvalidateBelief={handOff(handleInvalidateBelief)}
+                                    retroactivelyInjectClue={handOff(retroactivelyInjectClue)}
                                     openEditModal={openEditModal}
-                                    openFormModal={openFormModal}
+                                    openFormModal={handOff(openFormModal)}
                                     requestConfirm={requestConfirm}
                                     showToast={showToast}
                                 />
@@ -2714,9 +2137,9 @@ const ReactDOM = ReactDOMClient;
                                 <CastView
                                     view={view}
                                     setView={setView}
-                                    story={story}
-                                    storyRef={storyRef}
-                                    setStory={setStory}
+                                    story={storyFor(story)}
+                                    storyRef={storyRefFor(storyRef)}
+                                    setStory={setStoryFor(setStory)}
                                     isInspectorMode={isInspectorMode}
                                     selectedSequence={selectedSequence}
                                     selectedScene={selectedScene}
@@ -2725,10 +2148,10 @@ const ReactDOM = ReactDOMClient;
                                     isAnyAudioPlaying={isAnyAudioPlaying}
                                     isAuditioningVoice={isAuditioningVoice}
                                     openEditModal={openEditModal}
-                                    openFormModal={openFormModal}
+                                    openFormModal={handOff(openFormModal)}
                                     showToast={showToast}
                                     findCastIndexForChar={findCastIndexForChar}
-                                    commitVoiceEditUpdate={commitVoiceEditUpdate}
+                                    commitVoiceEditUpdate={handOff(commitVoiceEditUpdate)}
                                     generateCharacterPortrait={generateCharacterPortrait}
                                     uploadCharacterPortrait={uploadCharacterPortrait}
                                     removeCharacterPortrait={removeCharacterPortrait}
@@ -2744,7 +2167,7 @@ const ReactDOM = ReactDOMClient;
                                     view={view}
                                     setView={setView}
                                     story={story}
-                                    setStory={setStory}
+                                    setStory={setStoryFor(setStory)}
                                     isInspectorMode={isInspectorMode}
                                     selectedSequence={selectedSequence}
                                     selectedScene={selectedScene}
@@ -2756,7 +2179,7 @@ const ReactDOM = ReactDOMClient;
                                     filteredLore={filteredLore}
                                     paginatedLore={paginatedLore}
                                     totalLorePages={totalLorePages}
-                                    scenesByAct={scenesByAct}
+                                    scenesByAct={handOff(scenesByAct)}
                                     isDraggingLoreTab={isDraggingLoreTab}
                                     setIsDraggingLoreTab={setIsDraggingLoreTab}
                                     ragStatus={ragStatus}
@@ -2766,7 +2189,7 @@ const ReactDOM = ReactDOMClient;
                                     ingestLore={ingestLore}
                                     handleDeleteLore={handleDeleteLore}
                                     openEditModal={openEditModal}
-                                    openFormModal={openFormModal}
+                                    openFormModal={handOff(openFormModal)}
                                     showToast={showToast}
                                 />
                             )}
@@ -2775,21 +2198,21 @@ const ReactDOM = ReactDOMClient;
                                 <RelationshipsView
                                     view={view}
                                     setView={setView}
-                                    story={story}
-                                    setStory={setStory}
+                                    story={storyFor(story)}
+                                    setStory={setStoryFor(setStory)}
                                     isInspectorMode={isInspectorMode}
                                     selectedSequence={selectedSequence}
                                     selectedScene={selectedScene}
                                     loadedImages={loadedImages}
                                     matrixView={matrixView}
-                                    setMatrixView={setMatrixView}
+                                    setMatrixView={handOff(setMatrixView)}
                                     matrixScroll={matrixScroll}
                                     matrixScrollRef={matrixScrollRef}
                                     measureMatrixScroll={measureMatrixScroll}
                                     selectedRel={selectedRel}
                                     setSelectedRel={setSelectedRel}
                                     selectMatrixRelationship={selectMatrixRelationship}
-                                    openFormModal={openFormModal}
+                                    openFormModal={handOff(openFormModal)}
                                     requestConfirm={requestConfirm}
                                     showToast={showToast}
                                 />
@@ -2799,8 +2222,8 @@ const ReactDOM = ReactDOMClient;
                                 <DirectiveView
                                     view={view}
                                     setView={setView}
-                                    story={story}
-                                    setStory={setStory}
+                                    story={storyFor(story)}
+                                    setStory={setStoryFor(setStory)}
                                     isInspectorMode={isInspectorMode}
                                     selectedSequence={selectedSequence}
                                     selectedScene={selectedScene}
@@ -2815,23 +2238,23 @@ const ReactDOM = ReactDOMClient;
                                     setVerifyDirectiveEdits={setVerifyDirectiveEdits}
                                     isPlanningDirective={isPlanningDirective}
                                     isExecutingDirective={isExecutingDirective}
-                                    directivePlanPhase={directivePlanPhase}
-                                    directivePlan={directivePlan}
-                                    setDirectivePlan={setDirectivePlan}
-                                    directivePlanHistory={directivePlanHistory}
-                                    setDirectivePlanHistory={setDirectivePlanHistory}
+                                    directivePlanPhase={handOff(directivePlanPhase)}
+                                    directivePlan={handOff(directivePlan)}
+                                    setDirectivePlan={handOff(setDirectivePlan)}
+                                    directivePlanHistory={handOff(directivePlanHistory)}
+                                    setDirectivePlanHistory={handOff(setDirectivePlanHistory)}
                                     directiveRefinement={directiveRefinement}
                                     setDirectiveRefinement={setDirectiveRefinement}
                                     expandedDirectiveActions={expandedDirectiveActions}
                                     setExpandedDirectiveActions={setExpandedDirectiveActions}
-                                    directiveExecutionLogs={directiveExecutionLogs}
-                                    setDirectiveExecutionLogs={setDirectiveExecutionLogs}
+                                    directiveExecutionLogs={handOff(directiveExecutionLogs)}
+                                    setDirectiveExecutionLogs={handOff(setDirectiveExecutionLogs)}
                                     directiveProgress={directiveProgress}
-                                    directiveUndoSnapshot={directiveUndoSnapshot}
+                                    directiveUndoSnapshot={handOff(directiveUndoSnapshot)}
                                     setDirectiveUndoSnapshot={setDirectiveUndoSnapshot}
                                     runDirectivePlanner={runDirectivePlanner}
                                     restorePreviousDirectivePlan={restorePreviousDirectivePlan}
-                                    executeDirectivePlan={executeDirectivePlan}
+                                    executeDirectivePlan={handOff(executeDirectivePlan)}
                                     handleAddManualDirectiveAction={handleAddManualDirectiveAction}
                                     handleToggleDirectiveActionSkip={handleToggleDirectiveActionSkip}
                                     handleRemoveDirectiveAction={handleRemoveDirectiveAction}
@@ -2865,18 +2288,18 @@ const ReactDOM = ReactDOMClient;
                                     isRunningEditorialHarness={isRunningEditorialHarness}
                                     editorialHarnessPhase={editorialHarnessPhase}
                                     editorialHarnessProgress={editorialHarnessProgress}
-                                    runAutonomousEditorialHarness={runAutonomousEditorialHarness}
+                                    runAutonomousEditorialHarness={handOff(runAutonomousEditorialHarness)}
                                     revertAllHarnessTransactions={revertAllHarnessTransactions}
                                     executeSingleHarnessTransaction={executeSingleHarnessTransaction}
                                     revertHarnessTransaction={revertHarnessTransaction}
                                     novelIgnoreDraftRule={novelIgnoreDraftRule}
-                                    setNovelIgnoreDraftRule={setNovelIgnoreDraftRule}
+                                    setNovelIgnoreDraftRule={handOff(setNovelIgnoreDraftRule)}
                                     handleAddNovelIgnoreRule={handleAddNovelIgnoreRule}
                                     handleRemoveNovelIgnoreRule={handleRemoveNovelIgnoreRule}
                                     editorialToolName={editorialToolName}
                                     setEditorialToolName={setEditorialToolName}
                                     editorialToolArgs={editorialToolArgs}
-                                    setEditorialToolArgs={setEditorialToolArgs}
+                                    setEditorialToolArgs={handOff(setEditorialToolArgs)}
                                     editorialToolOutput={editorialToolOutput}
                                     handleRunHarnessInspectorTool={handleRunHarnessInspectorTool}
                                 />
@@ -2886,8 +2309,8 @@ const ReactDOM = ReactDOMClient;
                                 <StructureView
                                     view={view}
                                     setView={setView}
-                                    story={story}
-                                    setStory={setStory}
+                                    story={storyFor(story)}
+                                    setStory={setStoryFor(setStory)}
                                     isInspectorMode={isInspectorMode}
                                     selectedSequence={selectedSequence}
                                     setSelectedSequence={setSelectedSequence}
@@ -2902,7 +2325,7 @@ const ReactDOM = ReactDOMClient;
                                     enableNarrativeLenses={enableNarrativeLenses}
                                     allNarrativeModes={allNarrativeModes}
                                     getModeIcon={getModeIcon}
-                                    getSceneProseText={getSceneProseText}
+                                    getSceneProseText={handOff(getSceneProseText)}
                                     getSceneAudioStatus={getSceneAudioStatus}
                                     availableSceneAudioMap={availableSceneAudioMap}
                                     availableSequenceAudioMap={availableSequenceAudioMap}
@@ -2911,7 +2334,7 @@ const ReactDOM = ReactDOMClient;
                                     isExportingSequenceAudio={isExportingSequenceAudio}
                                     isExportingStoryAudio={isExportingStoryAudio}
                                     enterReaderMode={enterReaderMode}
-                                    generateActsAndSequences={generateActsAndSequences}
+                                    generateActsAndSequences={handOff(generateActsAndSequences)}
                                     handleResetStoryStage={handleResetStoryStage}
                                     handleAddScene={handleAddScene}
                                     handleDeleteScene={handleDeleteScene}
@@ -2951,8 +2374,8 @@ const ReactDOM = ReactDOMClient;
                                 setBlueprintActiveTab={setBlueprintActiveTab}
                                 isEditingSceneBlueprint={isEditingSceneBlueprint}
                                 setIsEditingSceneBlueprint={setIsEditingSceneBlueprint}
-                                sceneBlueprintDraft={sceneBlueprintDraft}
-                                setSceneBlueprintDraft={setSceneBlueprintDraft}
+                                sceneBlueprintDraft={handOff(sceneBlueprintDraft)}
+                                setSceneBlueprintDraft={handOff(setSceneBlueprintDraft)}
                                 isEditingProseInline={isEditingProseInline}
                                 setIsEditingProseInline={setIsEditingProseInline}
                                 inlineProseDraft={inlineProseDraft}
@@ -2966,7 +2389,7 @@ const ReactDOM = ReactDOMClient;
                                 toggleBeatAnalysis={toggleBeatAnalysis}
                                 loading={loading}
                                 loadingImages={loadingImages}
-                                loadedImages={loadedImages}
+                                loadedImages={handOff(loadedImages)}
                                 isExportingSceneAudio={isExportingSceneAudio}
                                 isRegeneratingSceneAudio={isRegeneratingSceneAudio}
                                 isDirectingVoices={isDirectingVoices}
@@ -2980,7 +2403,7 @@ const ReactDOM = ReactDOMClient;
                                 setSlopAuditFilter={setSlopAuditFilter}
                                 slopAllowlistExpanded={slopAllowlistExpanded}
                                 setSlopAllowlistExpanded={setSlopAllowlistExpanded}
-                                getSceneAudioStatus={getSceneAudioStatus}
+                                getSceneAudioStatus={handOff(getSceneAudioStatus)}
                                 updateSceneBlueprint={updateSceneBlueprint}
                                 updateCharacterStateForScene={updateCharacterStateForScene}
                                 handleAutoGenerateScene={handleAutoGenerateScene}
@@ -3000,7 +2423,7 @@ const ReactDOM = ReactDOMClient;
                                 enterReaderMode={enterReaderMode}
                                 playSceneAudio={playSceneAudio}
                                 stopAllAudioPlayback={stopAllAudioPlayback}
-                                runAutonomousEditorialHarness={runAutonomousEditorialHarness}
+                                runAutonomousEditorialHarness={handOff(runAutonomousEditorialHarness)}
                                 setEditorialScopeSceneId={setEditorialScopeSceneId}
                                 handleRunManualSlopClean={handleRunManualSlopClean}
                                 handleAddStoryAllowlistItem={handleAddStoryAllowlistItem}
@@ -3012,8 +2435,8 @@ const ReactDOM = ReactDOMClient;
 
                             {view === 'logs' && (
                                 <LogsView
-                                    promptLog={promptLog}
-                                    setPromptLog={setPromptLog}
+                                    promptLog={handOff(promptLog)}
+                                    setPromptLog={handOff(setPromptLog)}
                                     logFilter={logFilter}
                                     setLogFilter={setLogFilter}
                                     openLogDetailModal={openLogDetailModal}
@@ -3032,22 +2455,22 @@ const ReactDOM = ReactDOMClient;
                                 loading={loading}
                                 loadingStep={loadingStep}
                                 currentPipelineStep={currentPipelineStep}
-                                inspectedStepId={inspectedStepId}
-                                setInspectedStepId={setInspectedStepId}
+                                inspectedStepId={handOff(inspectedStepId)}
+                                setInspectedStepId={handOff(setInspectedStepId)}
                                 pipelineViewMode={pipelineViewMode}
                                 setPipelineViewMode={setPipelineViewMode}
                                 pipelineDisplayMode={pipelineDisplayMode}
                                 setPipelineDisplayMode={setPipelineDisplayMode}
-                                activePipelineWork={activePipelineWork}
-                                promptLog={promptLog}
+                                activePipelineWork={handOff(activePipelineWork)}
+                                promptLog={handOff(promptLog)}
                                 continuousAutopilot={continuousAutopilot}
                                 handleAutopilot={handleAutopilot}
                                 toggleContinuousAutopilot={toggleContinuousAutopilot}
                                 novelProgress={novelProgress}
-                                audioProgress={audioProgress}
+                                audioProgress={handOff(audioProgress)}
                                 isAudioAutopilotRunning={isAudioAutopilotRunning}
                                 isAudioAutopilotQueued={isAudioAutopilotQueued}
-                                audioAutopilotProgress={audioAutopilotProgress}
+                                audioAutopilotProgress={handOff(audioAutopilotProgress)}
                                 handleToggleAudioAutopilot={handleToggleAudioAutopilot}
                                 isAnyAudioPlaying={isAnyAudioPlaying}
                                 playSceneAudio={playSceneAudio}
@@ -3070,7 +2493,7 @@ const ReactDOM = ReactDOMClient;
                                     ragTestQuery={ragTestQuery}
                                     setRagTestQuery={setRagTestQuery}
                                     ragTestLoading={ragTestLoading}
-                                    ragTestResults={ragTestResults}
+                                    ragTestResults={handOff(ragTestResults)}
                                     handleRagTest={handleRagTest}
                                 />
                             )}
@@ -3087,8 +2510,8 @@ const ReactDOM = ReactDOMClient;
                                     initializingStoryId={initializingStoryId}
                                     setView={setView}
                                     handleImport={handleImport}
-                                    handleDeleteLibraryStory={handleDeleteLibraryStory}
-                                    handleDuplicateStory={handleDuplicateStory}
+                                    handleDeleteLibraryStory={handOff(handleDeleteLibraryStory)}
+                                    handleDuplicateStory={handOff(handleDuplicateStory)}
                                     handleUpdateStoryCoverStyle={handleUpdateStoryCoverStyle}
                                     onSelectStory={handleSelectLibraryStory}
                                 />
@@ -3129,7 +2552,7 @@ const ReactDOM = ReactDOMClient;
                                 codexModel={codexModel}
                                 setCodexModel={setCodexModel}
                                 codexModelsList={codexModelsList}
-                                codexStatus={codexStatus}
+                                codexStatus={handOff(codexStatus)}
                                 codexEmbeddingStatus={codexEmbeddingStatus}
                                 refreshCodexModels={refreshCodexModels}
                                 showOtherApiKeys={showOtherApiKeys}
@@ -3140,7 +2563,7 @@ const ReactDOM = ReactDOMClient;
                                 modelSearchQuery={modelSearchQuery}
                                 setModelSearchQuery={setModelSearchQuery}
                                 isSearchingModels={isSearchingModels}
-                                searchResults={searchResults}
+                                searchResults={handOff(searchResults)}
                                 isModelDropdownOpen={isModelDropdownOpen}
                                 setIsModelDropdownOpen={setIsModelDropdownOpen}
                                 showAdvancedModelRouting={showAdvancedModelRouting}
@@ -3153,7 +2576,7 @@ const ReactDOM = ReactDOMClient;
                                 reviewModelSearchQuery={reviewModelSearchQuery}
                                 setReviewModelSearchQuery={setReviewModelSearchQuery}
                                 isSearchingReviewModels={isSearchingReviewModels}
-                                reviewSearchResults={reviewSearchResults}
+                                reviewSearchResults={handOff(reviewSearchResults)}
                                 isReviewModelDropdownOpen={isReviewModelDropdownOpen}
                                 setIsReviewModelDropdownOpen={setIsReviewModelDropdownOpen}
                                 proseProvider={proseProvider}
@@ -3163,7 +2586,7 @@ const ReactDOM = ReactDOMClient;
                                 proseModelSearchQuery={proseModelSearchQuery}
                                 setProseModelSearchQuery={setProseModelSearchQuery}
                                 isSearchingProseModels={isSearchingProseModels}
-                                proseSearchResults={proseSearchResults}
+                                proseSearchResults={handOff(proseSearchResults)}
                                 isProseModelDropdownOpen={isProseModelDropdownOpen}
                                 setIsProseModelDropdownOpen={setIsProseModelDropdownOpen}
                                 handleCatalogRefresh={handleCatalogRefresh}
@@ -3178,7 +2601,7 @@ const ReactDOM = ReactDOMClient;
                                 imageApiKey={imageApiKey}
                                 setImageApiKey={setImageApiKey}
                                 geminiImageModelsList={geminiImageModelsList}
-                                fetchGeminiImageModels={fetchGeminiImageModels}
+                                fetchGeminiImageModels={handOff(fetchGeminiImageModels)}
                                 isFetchingImageModels={isFetchingImageModels}
                                 comfyUrl={comfyUrl}
                                 setComfyUrl={setComfyUrl}
@@ -3231,7 +2654,7 @@ const ReactDOM = ReactDOMClient;
                                 setEnableThinkingWriting={setEnableThinkingWriting}
                                 enableNarrativeLenses={enableNarrativeLenses}
                                 setEnableNarrativeLenses={setEnableNarrativeLenses}
-                                customModes={customModes}
+                                customModes={handOff(customModes)}
                                 editingModeId={editingModeId}
                                 newModeId={newModeId}
                                 setNewModeId={setNewModeId}
@@ -3241,7 +2664,7 @@ const ReactDOM = ReactDOMClient;
                                 newModePrompt={newModePrompt}
                                 setNewModePrompt={setNewModePrompt}
                                 setIsIconPickerOpen={setIsIconPickerOpen}
-                                handleStartEditCustomMode={handleStartEditCustomMode}
+                                handleStartEditCustomMode={handOff(handleStartEditCustomMode)}
                                 handleDeleteCustomMode={handleDeleteCustomMode}
                                 handleSaveCustomMode={handleSaveCustomMode}
                                 handleCancelEditCustomMode={handleCancelEditCustomMode}
@@ -3270,7 +2693,7 @@ const ReactDOM = ReactDOMClient;
                                 setStory={setStory}
                                 audioDramaSettings={audioDramaSettings}
                                 updateAudioDramaSetting={updateAudioDramaSetting}
-                                ttsActiveDevice={ttsActiveDevice}
+                                ttsActiveDevice={handOff(ttsActiveDevice)}
                                 isAuditioningVoice={isAuditioningVoice}
                                 isAnyAudioPlaying={isAnyAudioPlaying}
                                 stopAllAudioPlayback={stopAllAudioPlayback}
@@ -3297,29 +2720,29 @@ const ReactDOM = ReactDOMClient;
                                 availableSceneAudioMap={availableSceneAudioMap}
                                 loading={loading}
                                 handleExport={handleExport}
-                                handleResetStoryStage={handleResetStoryStage}
+                                handleResetStoryStage={handOff(handleResetStoryStage)}
                                 handleDeleteStory={handleDeleteStory}
                                 showToast={showToast}
                             />
                         </main>
                         {/* TOAST NOTIFICATION */}
-                        <ToastNotification toast={toast} theme={theme} position={view === 'reader' && ttsIsMiniPlayerVisible && !toast?.bookCard ? 'top' : 'bottom'} onDismiss={dismissToast} />
+                        <ToastNotification toast={handOff(toast)} theme={theme} position={view === 'reader' && ttsIsMiniPlayerVisible && !toast?.bookCard ? 'top' : 'bottom'} onDismiss={dismissToast} />
                     </div >
                     {/* GLOBAL EDIT MODAL */}
                     <EditModal
                         isOpen={editingState.isOpen}
                         title={editingState.title}
                         value={editingState.value}
-                        onConfirm={editingState.onConfirm}
+                        onConfirm={handOff(editingState.onConfirm)}
                         onCancel={() => setEditingState(prev => ({ ...prev, isOpen: false }))}
                     />
                     {/* INTERVENTION MODAL */}
                     <InterventionModal
                         isOpen={interventionState.isOpen}
                         tierName={interventionState.tierName}
-                        deviationReasons={interventionState.deviationReasons}
+                        deviationReasons={handOff(interventionState.deviationReasons)}
                         rawOutput={interventionState.rawOutput}
-                        onResolve={interventionState.onResolve}
+                        onResolve={handOff(interventionState.onResolve)}
                         onCancel={() => {
                             if (interventionState.onResolve) interventionState.onResolve('abort');
                             setInterventionState(prev => ({ ...prev, isOpen: false }));
@@ -3356,29 +2779,29 @@ const ReactDOM = ReactDOMClient;
                         secondaryLabel={confirmModalState.secondaryLabel}
                         danger={confirmModalState.danger}
                         warning={confirmModalState.warning}
-                        onConfirm={confirmModalState.onConfirm}
-                        onSecondary={confirmModalState.onSecondary}
-                        onCancel={confirmModalState.onCancel}
+                        onConfirm={handOff(confirmModalState.onConfirm)}
+                        onSecondary={handOff(confirmModalState.onSecondary)}
+                        onCancel={handOff(confirmModalState.onCancel)}
                     />
                     {/* CUSTOM EDITORIAL FORM MODAL */}
                     <StudioFormModal
                         isOpen={formModalState.isOpen}
                         title={formModalState.title}
                         subtitle={formModalState.subtitle}
-                        fields={formModalState.fields}
+                        fields={handOff(formModalState.fields)}
                         submitLabel={formModalState.submitLabel}
                         cancelLabel={formModalState.cancelLabel}
-                        onSubmit={formModalState.onSubmit}
-                        onCancel={formModalState.onCancel}
+                        onSubmit={handOff(formModalState.onSubmit)}
+                        onCancel={handOff(formModalState.onCancel)}
                     />
                     <GesmPropositionModal
-                        editingPropModal={editingPropModal}
-                        setEditingPropModal={setEditingPropModal}
+                        editingPropModal={handOff(editingPropModal)}
+                        setEditingPropModal={handOff(setEditingPropModal)}
                         handleSaveProposition={handleSaveProposition}
                     />
                     <GesmBeliefModal
-                        editingBeliefModal={editingBeliefModal}
-                        setEditingBeliefModal={setEditingBeliefModal}
+                        editingBeliefModal={handOff(editingBeliefModal)}
+                        setEditingBeliefModal={handOff(setEditingBeliefModal)}
                         handleSaveBelief={handleSaveBelief}
                         story={story}
                     />
@@ -3402,8 +2825,11 @@ const ReactDOM = ReactDOMClient;
                 hydrateAllStoresFromStorage();
             }
             const container = document.getElementById('root');
-            if (!window.reactRoot) {
-                window.reactRoot = ReactDOM.createRoot(container);
+            if (!container) throw new Error('EllipsisProse: #root element is missing from index.html');
+            // Kept on window so a hot reload reuses the root instead of mounting a second one.
+            const host = window as Window & { reactRoot?: ReactDOMClient.Root };
+            if (!host.reactRoot) {
+                host.reactRoot = ReactDOMClient.createRoot(container);
             }
-            window.reactRoot.render(<EllipsisProsef />);
+            host.reactRoot.render(<EllipsisProsef />);
         })();

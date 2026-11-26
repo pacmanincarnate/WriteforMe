@@ -133,7 +133,7 @@ describe('Story Domain: entities', () => {
             concept: 'A submerged archive holds a century-old fraud.',
             cast: [{ id: 'c1', name: 'Dr. Elena Vance', role: 'Lead', vocal_cadence: 'Calm alto' }],
             lore: [{ topic: 'Harbor Act', detail: 'Passed in 1922.' }],
-            relationships: [{ from: 'Dr. Elena Vance', to: 'Marcus Cole', feeling: 'Guarded' }]
+            relationships: { 'Dr. Elena Vance->Marcus Cole': { from: 'Dr. Elena Vance', to: 'Marcus Cole', feeling: 'Guarded' } }
         };
 
         expect(buildStoryInfoBlock(story)).toContain('submerged archive');

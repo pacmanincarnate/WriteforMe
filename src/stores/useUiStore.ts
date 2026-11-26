@@ -27,7 +27,8 @@ export interface ToastBookCard {
 
 export interface ToastState {
     message: string;
-    type?: 'success' | 'error' | 'info' | 'warning';
+    /** 'success' | 'error' | 'info' | 'warning'; callers also pass other labels, shown with the default style. */
+    type?: string;
     bookCard?: ToastBookCard | null;
     [key: string]: unknown;
 }

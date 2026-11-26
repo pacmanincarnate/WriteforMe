@@ -10,6 +10,7 @@
 
 import { useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import type { AudioAutopilotProgressState } from './useAudioProduction';
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 
@@ -25,8 +26,8 @@ export interface UsePipelineViewStateResult {
     /** What the pipeline is working on right now, for the live indicator. */
     activePipelineWork: unknown;
     setActivePipelineWork: Setter<unknown>;
-    audioAutopilotProgress: unknown;
-    setAudioAutopilotProgress: Setter<unknown>;
+    audioAutopilotProgress: AudioAutopilotProgressState | null;
+    setAudioAutopilotProgress: Setter<AudioAutopilotProgressState | null>;
     logFilter: string;
     setLogFilter: Setter<string>;
 }
@@ -36,7 +37,7 @@ export function usePipelineViewState(): UsePipelineViewStateResult {
     const [pipelineViewMode, setPipelineViewMode] = useState('detailed');
     const [pipelineDisplayMode, setPipelineDisplayMode] = useState('stage');
     const [activePipelineWork, setActivePipelineWork] = useState<unknown>(null);
-    const [audioAutopilotProgress, setAudioAutopilotProgress] = useState<unknown>(null);
+    const [audioAutopilotProgress, setAudioAutopilotProgress] = useState<AudioAutopilotProgressState | null>(null);
     const [logFilter, setLogFilter] = useState('all');
     return {
         inspectedStepId,

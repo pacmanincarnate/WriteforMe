@@ -99,6 +99,10 @@ export interface Relationship {
     type?: string;
     tension?: string;
     dynamic?: string;
+    current?: string;
+    hidden_tension?: string;
+    trust_level?: number | string;
+    history?: Array<{ chapter?: string; change?: string; [key: string]: unknown }>;
     [key: string]: unknown;
 }
 
@@ -143,7 +147,8 @@ export interface Story {
     beats?: Record<string, BeatItem[]>;
     prose?: Record<string, ProseEntry | string>;
     lore?: LoreItem[];
-    relationships?: Relationship[];
+    /** Keyed by `"<from>-><to>"` (see `createDefaultStoryTemplate`). */
+    relationships?: Record<string, Relationship>;
     secret_vault?: SecretEntry[];
     epistemic_graph?: Record<string, unknown> | null;
     length_control?: Record<string, unknown>;

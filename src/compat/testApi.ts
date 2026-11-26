@@ -60,8 +60,8 @@ export const TEST_API_MODULE_GLOBALS = [
 ] as const;
 
 /**
- * Handles into the running app, published by the app shell while it renders (today
- * `src/legacy/MonolithApp.jsx`, in Phase 7 `src/App.tsx` or the hooks that own them).
+ * Handles into the running app, published by the app shell (`src/App.tsx`, through
+ * `publishAppGlobal`) while it renders, or by the hooks that own them.
  */
 export const TEST_API_APP_GLOBALS = [
     'distillLore',

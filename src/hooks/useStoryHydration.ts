@@ -26,7 +26,7 @@ type StoredStory = Record<string, unknown>;
 
 /** Values the load needs that the caller declares after this hook; read when the effect runs. */
 export interface StoryHydrationLateDeps {
-    setWorldPrimer: (primer: unknown) => void;
+    setWorldPrimer: (primer: string | null) => void;
     vectorStore: MutableRefObject<unknown>;
     embeddingService: MutableRefObject<{ isConfigured: () => boolean; getProviderLabel: () => string } | null>;
     ingestLoreBatch: (lore: unknown[], options: Record<string, unknown>) => Promise<unknown>;
@@ -144,7 +144,7 @@ export function useStoryHydration({
                     isInitialMountRef.current = false;
                     const hydrated = hydrateStoredStory(stored, resolvedId);
                     setStory(hydrated.story);
-                    deps.setWorldPrimer(hydrated.worldPrimer);
+                    deps.setWorldPrimer(hydrated.worldPrimer as string | null);
                     hasHydratedStoryRef.current = true;
                     console.log(`Loaded active story '${resolvedId}' from storage.`);
 
@@ -165,7 +165,7 @@ export function useStoryHydration({
                         skipNextIdbHydrationIdRef.current = fallback.id;
                         setActiveStoryId(fallback.id);
                         setStory(hydrated.story);
-                        deps.setWorldPrimer(hydrated.worldPrimer);
+                        deps.setWorldPrimer(hydrated.worldPrimer as string | null);
                         hasHydratedStoryRef.current = true;
                     } else {
                         const defaultStory = createDefaultStoryTemplate('story_default') as unknown as StoredStory;

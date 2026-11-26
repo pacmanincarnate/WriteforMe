@@ -12,7 +12,7 @@ import './legacy/registerServiceGlobals';
 import './legacy/registerStoreGlobals';
 import './legacy/registerPipelineGlobals';
 import './legacy/registerUiGlobals';
-import './legacy/MonolithApp.jsx';
+import './App';
 
 const PRELOAD_RELOAD_GUARD_KEY = 'ellipsisprose_preload_reload_once';
 
