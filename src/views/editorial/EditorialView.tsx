@@ -1218,7 +1218,10 @@ export function EditorialView({
                                                                         : 'COMMITTED (R1/3)'
                                                                     : tx.status === 'ROLLED_BACK'
                                                                       ? `ROLLED BACK (${tx.attempts_used || 3}/3 rounds)`
-                                                                      : tx.status}
+                                                                      : tx.status === 'SKIPPED_STALE' ||
+                                                                          tx.status === 'SKIPPED_CONFLICT'
+                                                                        ? 'SKIPPED (text changed)'
+                                                                        : tx.status}
                                                             </span>
                                                             <button
                                                                 onClick={() =>
@@ -1251,6 +1254,12 @@ export function EditorialView({
                                                                 )}
                                                         </div>
                                                     </div>
+
+                                                    {tx.skipReason && tx.status !== 'COMMITTED' && (
+                                                        <p className="text-xs text-ink-600">
+                                                            {tx.skipReason}
+                                                        </p>
+                                                    )}
 
                                                     <div className="text-xs text-ink-700 bg-inset p-3 rounded-xl border border-edge-soft font-serif">
                                                         <strong className="font-mono uppercase text-ink-500">
