@@ -24,9 +24,23 @@ const crypto = require('crypto');
 // Configuration & CLI Argument Parsing
 // ---------------------------------------------------------------------------
 const ROOT_DIR = __dirname;
-const CACHE_DIR = path.join(ROOT_DIR, 'cache', 'voices');
-const AUDIOCPP_CONFIGS_DIR = path.join(ROOT_DIR, 'audiocpp');
-const RUNTIME_WAVE2_CONFIG_PATH = path.join(ROOT_DIR, 'cache', 'runtime_wave2_drama3.json');
+// The desktop app (desktop/main.cjs) runs this bridge from a read-only install folder, so it
+// points the voice cache and the wave presets at the user's data folder with these variables.
+const CACHE_DIR = process.env.ELLIPSISPROSE_BRIDGE_CACHE_DIR
+    ? path.resolve(process.env.ELLIPSISPROSE_BRIDGE_CACHE_DIR)
+    : path.join(ROOT_DIR, 'cache', 'voices');
+const AUDIOCPP_CONFIGS_DIR = process.env.ELLIPSISPROSE_AUDIOCPP_CONFIG_DIR
+    ? path.resolve(process.env.ELLIPSISPROSE_AUDIOCPP_CONFIG_DIR)
+    : path.join(ROOT_DIR, 'audiocpp');
+const RUNTIME_WAVE2_CONFIG_PATH = path.join(path.dirname(CACHE_DIR), 'runtime_wave2_drama3.json');
+const LEGACY_AUDIOCPP_HOME = 'D:\\AI_Projects\\Audiocpp\\audio.cpp';
+
+/** Working folder for the daemon: an explicit override, the original dev checkout, or the binary's folder. */
+function resolveDaemonCwd(binPath) {
+    if (process.env.ELLIPSISPROSE_AUDIOCPP_CWD) return process.env.ELLIPSISPROSE_AUDIOCPP_CWD;
+    if (fs.existsSync(LEGACY_AUDIOCPP_HOME)) return LEGACY_AUDIOCPP_HOME;
+    return path.dirname(binPath);
+}
 
 const settings = {
     port: Number(process.env.AUDIO_STUDIO_BRIDGE_PORT || 5020),
@@ -437,9 +451,12 @@ function resolveWave2RuntimeConfig(baseCfgPath, overridesNorm, vramStatus) {
     const primaryOpts = (models[0] && models[0].session_options) || {};
 
     if (overridesNorm.ggufFile) {
+        const defaultDrama3Dir = (models[0] && models[0].path && path.isAbsolute(models[0].path))
+            ? path.dirname(models[0].path)
+            : path.join(LEGACY_AUDIOCPP_HOME, 'models', 'Drama-3-GGUF');
         const candidate = path.isAbsolute(overridesNorm.ggufFile)
             ? overridesNorm.ggufFile
-            : path.join('D:\\AI_Projects\\Audiocpp\\audio.cpp\\models\\Drama-3-GGUF', overridesNorm.ggufFile);
+            : path.join(defaultDrama3Dir, overridesNorm.ggufFile);
         if (fs.existsSync(candidate)) {
             for (const m of models) m.path = candidate;
         }
@@ -655,12 +672,12 @@ async function activateWave(waveNumber, overrides = {}) {
     state.cudaGraphReuseSuppressed = 0;
     pushLog(`Spawning Audio.cpp Wave ${wave} daemon (${WAVE_MODEL_IDS[wave]}) using ${bin}...`);
     const args = ['--config', configFile];
-    const modelSpecsDir = 'D:\\AI_Projects\\Audiocpp\\audio.cpp\\model_specs';
+    const modelSpecsDir = path.join(LEGACY_AUDIOCPP_HOME, 'model_specs');
     if (fs.existsSync(modelSpecsDir)) {
         args.push('--model-spec-override', modelSpecsDir);
     }
     const proc = spawn(bin, args, {
-        cwd: 'D:\\AI_Projects\\Audiocpp\\audio.cpp',
+        cwd: resolveDaemonCwd(bin),
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -739,7 +756,7 @@ function isWaveConfigModelAvailable(waveNum, binPath, daemonAlive) {
         const baseDirs = [
             AUDIOCPP_CONFIGS_DIR,
             binPath ? path.resolve(path.dirname(binPath), '..', '..') : '',
-            'D:\\AI_Projects\\Audiocpp\\audio.cpp',
+            LEGACY_AUDIOCPP_HOME,
             ROOT_DIR
         ].filter(Boolean);
         let anyPathChecked = false;

@@ -1,0 +1,142 @@
+name: Desktop app
+
+# Builds the Windows desktop app (desktop/, Electron) and attaches it to a GitHub release.
+#
+# - Push a tag like v2.2.0: builds the installer and the portable exe and attaches both to a
+#   draft release for that tag. Review the draft, then press Publish.
+# - Actions tab, "Desktop app", Run workflow: same build, files appear as a workflow artifact.
+# - Pull requests and pushes that touch the desktop code: runs the desktop tests only.
+#
+# KoboldCpp, ComfyUI and audio.cpp are NOT in the build. The app downloads them from their own
+# releases when the user asks (see docs/DESKTOP.md).
+
+on:
+  push:
+    tags:
+      - 'v*'
+    branches:
+      - main
+      - dev
+    paths:
+      - 'desktop/**'
+      - 'server.js'
+      - 'audio-studio-bridge.js'
+      - 'audiocpp/**'
+      - '.github/workflows/desktop.yml'
+  pull_request:
+    paths:
+      - 'desktop/**'
+      - 'server.js'
+      - 'audio-studio-bridge.js'
+      - 'audiocpp/**'
+      - '.github/workflows/desktop.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Desktop tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - name: Desktop tests
+        working-directory: desktop
+        run: npm test
+
+  build:
+    name: Build Windows exe
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: windows-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            desktop/package-lock.json
+
+      - name: Install app dependencies
+        run: npm ci
+
+      - name: Build the web app
+        run: npm run build
+
+      - name: Install desktop dependencies
+        working-directory: desktop
+        run: npm ci
+
+      - name: Work out the version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            base=$(node -p "require('./package.json').version")
+            echo "version=${base}-build.${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build installer and portable exe
+        working-directory: desktop
+        run: npm run dist
+        env:
+          ELLIPSISPROSE_VERSION: ${{ steps.version.outputs.version }}
+          # Optional code signing. Without these secrets the exe is unsigned and Windows
+          # SmartScreen shows "unknown publisher" on first run.
+          CSC_LINK: ${{ secrets.WINDOWS_CERT_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+
+      - name: Checksums
+        working-directory: desktop/release
+        shell: bash
+        run: sha256sum *.exe > SHA256SUMS.txt && cat SHA256SUMS.txt
+
+      - name: Keep the files on this run
+        uses: actions/upload-artifact@v4
+        with:
+          name: EllipsisProse-${{ steps.version.outputs.version }}-windows
+          path: |
+            desktop/release/*.exe
+            desktop/release/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Attach to a draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd desktop/release
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" *.exe SHA256SUMS.txt --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" *.exe SHA256SUMS.txt --draft --generate-notes \
+              --title "EllipsisProse $GITHUB_REF_NAME"
+          fi
