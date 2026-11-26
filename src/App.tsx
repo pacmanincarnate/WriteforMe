@@ -2417,7 +2417,7 @@ import {
                                 codexModel={codexModel}
                                 setCodexModel={setCodexModel}
                                 codexModelsList={codexModelsList}
-                                codexStatus={handOff(codexStatus)}
+                                codexStatus={codexStatus}
                                 codexEmbeddingStatus={codexEmbeddingStatus}
                                 refreshCodexModels={refreshCodexModels}
                                 claudeUrl={claudeUrl}

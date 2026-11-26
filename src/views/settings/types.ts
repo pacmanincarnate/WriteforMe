@@ -42,9 +42,8 @@ export interface SettingsStory extends Story {
 
 export interface SettingsCodexStatus {
     online?: boolean;
-    model?: string;
+    model?: string | null;
     error?: string | null;
-    [key: string]: unknown;
 }
 
 export interface SettingsCodexEmbeddingStatus {
