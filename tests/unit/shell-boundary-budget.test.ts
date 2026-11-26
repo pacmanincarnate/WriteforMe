@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest';
  * budgets are the counts at the time the shell became type-checked: lower them as shared types
  * are reconciled, never raise them.
  */
-const HAND_OFF_BUDGET = 104;
+const HAND_OFF_BUDGET = 103;
 const STORY_SLICE_BUDGET = 26;
 
 const shell = fs.readFileSync(path.resolve(process.cwd(), 'src/App.tsx'), 'utf8');

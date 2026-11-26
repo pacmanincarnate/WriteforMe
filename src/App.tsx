@@ -8,15 +8,11 @@ import { applyWorldUpdates } from '@/domain/continuity';
 import { clearDirectivePlanResults } from '@/domain/story';
 import { createDefaultStoryTemplate } from '@/domain/lifecycle';
 import { retrieveLoreContext } from '@/services/rag';
-import { safeLocalStorageSet } from '@/utils';
-import { generateRandomArchetypes } from '@/config';
 import { PROMPTS } from '@/prompts';
 import type { SceneBlueprint, Story } from '@/types';
-import type { ArchetypeOption } from '@/config';
 import type { SceneAudioMeta, SequenceAudioMeta } from '@/services/storage';
 import type { KokoroWorkerHandle } from '@/services/audio';
 import type { SharedTtsQueueItem, UseShellModalsResult } from '@/hooks';
-import type { SelectedRelationshipState } from '@/views';
 import { publishAppGlobal } from '@/compat/windowBridge';
 import { handOff, setStoryFor, storyFor, storyRefFor } from '@/compat/shellBoundary';
 import type { PipelineLogEntry } from '@/stores';
@@ -46,7 +42,7 @@ import {
 } from '@/services/storage';
 import { EmbeddingService, VectorStore } from '@/services/rag';
 
-import { findCastIndexForChar, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useActiveStory, useArchetypeOptions, useAudioFollowState, useGenerationStatus, useNarrativeLensesToggle, useRelationshipMatrix, useSettingsDisclosures, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -110,7 +106,7 @@ import {
     WriterView
 } from '@/views';
 
-        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+        const { useEffect, useRef, useMemo, useCallback } = React;
 
 
         // --- 1. API CONFIGURATION ---
@@ -127,30 +123,26 @@ import {
         type RetrieveArgs = Parameters<typeof retrieveLoreContext>;
 
         function EllipsisProsef() {
-            const [activeStoryId, setActiveStoryId] = useState(() => localStorage.getItem("ellipsisprose_active_story_id") || "story_default");
-
-            const [story, setStoryRaw] = useState<Story>(() => createDefaultStoryTemplate(activeStoryId) as unknown as Story);
-            const storyRef = useRef(story);
-            // storyRef is written ONLY by setStory below (and the few handlers that pre-seed it before calling
-            // setStory). Do NOT re-sync it from `story` during render: Zustand store updates re-render this
-            // component synchronously (useSyncExternalStore) BEFORE a pending setStoryRaw has been applied, so a
-            // render-time `storyRef.current = story` rolls the ref back one update and the next functional
-            // setStory(prev => ...) silently drops it (observed: freshly written scene prose discarded).
-            const setStory = useCallback((updaterOrValue: Story | ((prev: Story) => Story)): Story => {
-                const prev = storyRef.current;
-                const next = typeof updaterOrValue === 'function' ? updaterOrValue(prev) : updaterOrValue;
-                storyRef.current = next;
-                setStoryRaw(next);
-                return next;
-            }, []);
-            const hasHydratedStory = useRef(false);
-            const isInitialMount = useRef(true);
-            const skipNextIdbHydrationIdRef = useRef<string | null>(null);
-            const [initializingStoryId, setInitializingStoryId] = useState<string | null>(null);
-            const initializingStoryIdRef = useRef<string | null>(null);
-            const storySnapshotsByIdRef = useRef<Record<string, Story>>({});
-            const pendingSetupLoreRef = useRef({});
-            const deletedStoryIdsRef = useRef(new Set<string>());
+            // The open story, its setter and the load / background-init bookkeeping (Phase 7).
+            const {
+                activeStoryId, setActiveStoryId,
+                story, setStory, storyRef,
+                hasHydratedStoryRef: hasHydratedStory,
+                isInitialMountRef: isInitialMount,
+                skipNextIdbHydrationIdRef,
+                initializingStoryId, setInitializingStoryId, initializingStoryIdRef,
+                storySnapshotsByIdRef, pendingSetupLoreRef, deletedStoryIdsRef
+            } = useActiveStory();
+            // Busy flag, autopilot switch and review feedback (Phase 7).
+            const {
+                loading, setLoading,
+                loadingStep, setLoadingStep,
+                continuousAutopilot, setContinuousAutopilot,
+                isDirectingVoices, setIsDirectingVoices,
+                failedReviewCritiques, setFailedReviewCritiques,
+                feedbackLedger, setFeedbackLedger, feedbackLedgerRef,
+                worldPrimer, setWorldPrimer
+            } = useGenerationStatus();
 
             // ImageStore initialized inside useStoryImages below
             publishAppGlobal('createDefaultStoryTemplate', createDefaultStoryTemplate);
@@ -289,7 +281,6 @@ import {
 
 
             // Settings & Model Catalog Hook
-            const [isDirectingVoices, setIsDirectingVoices] = useState(false);
 
             const {
                 enableReview, setEnableReview,
@@ -374,7 +365,6 @@ import {
             });
             callAIRef.current = callAI;
             llmKeysRef.current = { apiKey, openRouterKey };
-            const [failedReviewCritiques, setFailedReviewCritiques] = useState<string[]>([]);
 
             // Custom narrative modes (Phase 6E-3): saved modes, Settings form state and handlers.
             const {
@@ -393,13 +383,8 @@ import {
                 handleDeleteCustomMode
             } = useCustomNarrativeModes({ setStory, showToast, requestConfirm });
 
-            // Master Toggle for Narrative Lenses (defaults to true so narrative styles actively shape scene drafting)
-            const [enableNarrativeLenses, setEnableNarrativeLenses] = useState(() => {
-                const v2 = localStorage.getItem("ellipsisprose_enable_narrative_lenses_v2");
-                if (v2 !== null) return v2 === "true";
-                return true;
-            });
-
+            // Master toggle for Narrative Lenses, persisted (Phase 7).
+            const [enableNarrativeLenses, setEnableNarrativeLenses] = useNarrativeLensesToggle();
 
             // AI Slop & Naming configuration (Phase 6E-3): state, persistence and editor handlers.
             const {
@@ -435,32 +420,16 @@ import {
                 slopAllowlistExpanded, setSlopAllowlistExpanded
             } = useSceneWorkspaceState({ selectedSequence, selectedScene, view });
 
-            // Selected relationship for editing
-            const [selectedRel, setSelectedRel] = useState<SelectedRelationshipState | null>(null);
+            // Relationship editor selection and grid scroll edges (Phase 7).
             const matrixView = useUiStore(s => s.matrixView);
             const setMatrixView = useUiStore(s => s.setMatrixView);
-            const [matrixScroll, setMatrixScroll] = useState({ left: false, right: false });
-            const matrixScrollRef = useRef<HTMLDivElement>(null);
-            const measureMatrixScroll = () => {
-                const el = matrixScrollRef.current;
-                const overflow = !!el && el.scrollWidth > el.clientWidth + 1;
-                const left = overflow && el.scrollLeft > 1;
-                const right = overflow && el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
-                setMatrixScroll(prev => prev.left === left && prev.right === right ? prev : { left, right });
-            };
-            const selectMatrixRelationship = (fromChar: { name: string }, toChar: { name: string }) => {
-                const relKey = `${fromChar.name}->${toChar.name}`;
-                const rel = story.relationships?.[relKey];
-                setSelectedRel({
-                    from: fromChar.name,
-                    to: toChar.name,
-                    key: relKey,
-                    current: rel?.current || "",
-                    hidden_tension: rel?.hidden_tension || "",
-                    trust_level: parseInt(String(rel?.trust_level), 10) || 5,
-                    history: handOff(rel?.history || [])
-                });
-            };
+            const {
+                selectedRel, setSelectedRel,
+                matrixScroll, matrixScrollRef, measureMatrixScroll, selectMatrixRelationship
+            } = useRelationshipMatrix({
+                relationships: story.relationships, view, matrixView,
+                storyId: story?.id, castCount: story?.cast?.length
+            });
 
             // Directive Agent workspace state (Phase 7).
             const {
@@ -503,27 +472,9 @@ import {
                 saveStory: storyStore?.saveStory ? (id, value) => storyStore.saveStory(id, value) : undefined
             });
 
-            // Archetype State
-            const [archetypeOptions, setArchetypeOptions] = useState<ArchetypeOption[]>([]);
+            // Setup archetype suggestions, drawn once per app start (Phase 7).
+            const [archetypeOptions, setArchetypeOptions] = useArchetypeOptions();
 
-            // Initialize Archetypes on Mount
-            useEffect(() => {
-                setArchetypeOptions(generateRandomArchetypes(20));
-            }, []);
-
-            useEffect(() => {
-                const el = matrixScrollRef.current;
-                measureMatrixScroll();
-                if (!el || view !== 'relationships' || matrixView !== 'grid') return;
-                const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureMatrixScroll);
-                observer?.observe(el);
-                if (el.firstElementChild) observer?.observe(el.firstElementChild);
-                window.addEventListener('resize', measureMatrixScroll);
-                return () => {
-                    observer?.disconnect();
-                    window.removeEventListener('resize', measureMatrixScroll);
-                };
-            }, [view, matrixView, story?.id, story?.cast?.length]);
             const theme = useSettingsStore(s => s.theme);
             const setTheme = useSettingsStore(s => s.setTheme);
 
@@ -537,17 +488,12 @@ import {
             const settingsTab = useUiStore(s => s.settingsTab);
             const setSettingsTab = useUiStore(s => s.setSettingsTab);
 
-            // Streamlined Settings UX disclosures
-            const [showAdvancedModelRouting, setShowAdvancedModelRouting] = useState(() => Boolean(
-                (typeof reviewModel === 'string' && reviewModel.length > 0) ||
-                (typeof proseModel === 'string' && proseModel.length > 0) ||
-                (typeof reviewProvider === 'string' && reviewProvider.length > 0) ||
-                (typeof proseProvider === 'string' && proseProvider.length > 0)
-            ));
-            const [showOtherApiKeys, setShowOtherApiKeys] = useState(false);
+            // Which collapsible Settings sections are open (Phase 7).
+            const {
+                showAdvancedModelRouting, setShowAdvancedModelRouting,
+                showOtherApiKeys, setShowOtherApiKeys
+            } = useSettingsDisclosures({ reviewModel, proseModel, reviewProvider, proseProvider });
 
-            const [loading, setLoading] = useState(false);
-            const [loadingStep, setLoadingStep] = useState("");
             const isSidebarOpen = useUiStore(s => s.isSidebarOpen);
             const setIsSidebarOpen = useUiStore(s => s.setIsSidebarOpen);
             const isSidebarCollapsed = useUiStore(s => s.isSidebarCollapsed);
@@ -567,8 +513,13 @@ import {
                 return () => window.removeEventListener('keydown', handleSidebarShortcut);
             }, []);
 
-            const [continuousAutopilot, setContinuousAutopilot] = useState(false);
-            const [activeActTab, setActiveActTab] = useState(0);
+            // Outline folding and the Structure act tab (Phase 7).
+            const {
+                collapsedActs, setCollapsedActs,
+                collapsedBeats, setCollapsedBeats,
+                expandedBeatAnalysis, setExpandedBeatAnalysis,
+                activeActTab, setActiveActTab
+            } = useOutlineCollapseState();
             const continuousAutopilotRef = useRef(false);
             const isAutopilotStepRunningRef = useRef(false);
             const prefetchCacheRef = useRef(new Map());
@@ -612,7 +563,6 @@ import {
                 inputCustomWords, setInputCustomWords,
                 resetSetupDraftFields
             } = useSetupDraft();
-            const [worldPrimer, setWorldPrimer] = useState<string | null>(null);
             // World-building document import: Setup drafts and post-generation lore (Phase 6E-3).
             const {
                 importedLoreFiles,
@@ -722,9 +672,10 @@ import {
 
             // --- AUDIO DRAMA STUDIO, VOICE MANAGEMENT & OFFLINE AUDIO PRODUCTION (extracted hooks) ---
             const ttsPlayingSceneRef = useRef(null);
-            const [isFollowingAudio, setIsFollowingAudio] = useState(true);
-            const isFollowingAudioRef = useRef(true);
-            const [returnToAudioNonce, setReturnToAudioNonce] = useState(0);
+            const {
+                isFollowingAudio, setIsFollowingAudio, isFollowingAudioRef,
+                returnToAudioNonce, setReturnToAudioNonce
+            } = useAudioFollowState();
             const ttsQueueRef = useRef([]);
             const ttsWorkerRef = useRef(null);
             const ttsAudioRef = useRef(null);
@@ -1051,8 +1002,6 @@ import {
                 openEditModal, openCritiqueModal
             } = useShellModals({ showToast });
 
-            // Feedback Ledger State for Rollbacks
-            const [feedbackLedger, setFeedbackLedger] = useState<Record<string, string[]>>({});
 
             // Prompt-log detail dialog (Phase 6E-3).
             const { logModalState, setLogModalState, openLogDetailModal } = useLogDetailModal({ promptLog: handOff(promptLog) });
@@ -1073,8 +1022,6 @@ import {
                 createDefaultStory: (id) => storyFor(handOff(createDefaultStoryTemplate(id)))
             }, targetStoryId, handOff(updaterOrPatch));
 
-            const feedbackLedgerRef = useRef<Record<string, string[]>>(feedbackLedger);
-            feedbackLedgerRef.current = feedbackLedger;
             const ragStatusRef = useRef(ragStatus);
             ragStatusRef.current = ragStatus;
             const isRebuildingRagRef = useRef(isRebuildingRag);
@@ -1362,12 +1309,6 @@ import {
                 }
             }, [story.lore]);
 
-            // UI State
-            const {
-                collapsedActs, setCollapsedActs,
-                collapsedBeats, setCollapsedBeats,
-                expandedBeatAnalysis, setExpandedBeatAnalysis
-            } = useOutlineCollapseState();
 
 
 
@@ -1383,10 +1324,6 @@ import {
                 setExpandedBeatAnalysis(prev => ({ ...prev, [bId]: !prev[bId] }));
             };
 
-            useEffect(() => {
-                safeLocalStorageSet("ellipsisprose_enable_narrative_lenses_v2", enableNarrativeLenses);
-                safeLocalStorageSet("ellipsisprose_enable_narrative_lenses", enableNarrativeLenses);
-            }, [enableNarrativeLenses]);
 
 
 

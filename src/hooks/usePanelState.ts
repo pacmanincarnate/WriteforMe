@@ -97,6 +97,9 @@ export interface UseOutlineCollapseStateResult {
     setCollapsedBeats: Setter<Record<string, boolean>>;
     expandedBeatAnalysis: Record<string, boolean>;
     setExpandedBeatAnalysis: Setter<Record<string, boolean>>;
+    /** Act shown in the Structure view's tab strip. */
+    activeActTab: number;
+    setActiveActTab: Setter<number>;
 }
 
 /** Which acts and beats are folded, and which beat analyses are open. Everything starts unfolded. */
@@ -104,7 +107,10 @@ export function useOutlineCollapseState(): UseOutlineCollapseStateResult {
     const [collapsedActs, setCollapsedActs] = useState<Record<string, boolean>>({});
     const [collapsedBeats, setCollapsedBeats] = useState<Record<string, boolean>>({});
     const [expandedBeatAnalysis, setExpandedBeatAnalysis] = useState<Record<string, boolean>>({});
+    const [activeActTab, setActiveActTab] = useState(0);
     return {
+        activeActTab,
+        setActiveActTab,
         collapsedActs,
         setCollapsedActs,
         collapsedBeats,
