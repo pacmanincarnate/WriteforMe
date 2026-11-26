@@ -1,0 +1,57 @@
+name: Live model test
+
+# Opt-in. Runs the app's real generation paths against the Anthropic API. It spends API credit,
+# so it never runs on push or pull request: start it by hand from the Actions tab.
+# Needs a repository secret named ANTHROPIC_API_KEY (Settings, Secrets and variables, Actions).
+# Without the secret the job reports "skipped" and passes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: Model id
+        required: false
+        default: claude-opus-5-5
+      effort:
+        description: Effort (low, medium, high)
+        required: false
+        default: low
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    name: Live model run
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Live scenarios (real model)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          LIVE_LLM_MODEL: ${{ inputs.model }}
+          LIVE_LLM_EFFORT: ${{ inputs.effort }}
+        run: npm run test:live -- --out live-run.json
+
+      - name: Upload run summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-run
+          path: live-run.json
+          if-no-files-found: ignore

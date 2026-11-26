@@ -15,6 +15,8 @@
  *                     on dist/ with a deterministic fake LLM and assert the story it produces
  *   --mode pipeline-legacy   Same scenario against the legacy baseline (needs internet for its CDNs)
  *   --mode pipeline-parity   Run the scenario on legacy and on dist/ and compare the two transcripts
+ *   --mode live       Opt-in. Same UI paths against the real Anthropic API (needs ANTHROPIC_API_KEY;
+ *                     reports "skipped" and exits 0 without one). See tests/e2e/liveLlm.mjs.
  *
  * Optional:
  *   --screenshots <dir>  Capture light/dark desktop (1440x900) & mobile (390x844) PNGs
@@ -43,6 +45,8 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import vm from 'node:vm';
+import { createLiveLlm, liveConfigFromEnv, liveOverrideSource, startLiveRelay } from './liveLlm.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1485,6 +1489,55 @@ async function runBridgeStartScenario({ cdp, baseUrl, results, label }) {
     }
 }
 
+/** Page script: fill the Setup form through the DOM and start Autopilot through its confirm modal. */
+function startAutopilotFromSetupExpr(title, concept) {
+    return `(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        window.setView('setup');
+        await wait(500);
+        const setVal = (el, v) => {
+            const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        };
+        const field = (prefix) => Array.from(document.querySelectorAll('input,textarea'))
+            .find((e) => (e.getAttribute('placeholder') || '').startsWith(prefix));
+        const title = field('Story Title');
+        const concept = field('Concept');
+        if (!title || !concept) return { ok: false, reason: 'setup fields not found' };
+        setVal(title, ${JSON.stringify(title)});
+        setVal(concept, ${JSON.stringify(concept)});
+        await wait(700);
+        const isStart = (b) => /^Start\\s+Autopilot$/i.test((b.innerText || '').trim());
+        const startBtn = Array.from(document.querySelectorAll('button')).find((b) => isStart(b) && !b.disabled);
+        if (!startBtn) return { ok: false, reason: 'Start Autopilot button not found or disabled' };
+        startBtn.click();
+        // The confirm modal renders a second "Start Autopilot" button.
+        let confirmed = false;
+        for (let i = 0; i < 40 && !confirmed; i++) {
+            await wait(100);
+            const matches = Array.from(document.querySelectorAll('button')).filter(isStart);
+            if (matches.length >= 2) { matches[matches.length - 1].click(); confirmed = true; }
+        }
+        return { ok: confirmed, reason: confirmed ? '' : 'confirm modal did not appear' };
+    })()`;
+}
+
+/** Page script: switch Continuous Autopilot off and wait for the pipeline to go idle. */
+const STOP_AUTOPILOT_EXPR = `(async () => {
+        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+        let st = await window.EllipsisProseBridge.getPipelineStatus();
+        if (st.continuousAutopilot) window.toggleContinuousAutopilot();
+        for (let i = 0; i < 300; i++) {
+            await wait(200);
+            st = await window.EllipsisProseBridge.getPipelineStatus();
+            if (!st.continuousAutopilot && !st.loading) return { idle: true };
+        }
+        return { idle: false, st };
+    })()`;
+
 /**
  * Mocked-LLM end-to-end pipeline scenario. Uses the real UI path (Setup form -> Start Autopilot ->
  * confirm) and the window.__callAIOverride seam, both present in the legacy app and the modular build.
@@ -1509,38 +1562,8 @@ async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label })
     await installPipelineMock(cdp);
 
     // 1. Fill the Setup form through the DOM and start Autopilot (real user path).
-    const started = await cdp.eval(`(async () => {
-        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-        window.setView('setup');
-        await wait(500);
-        const setVal = (el, v) => {
-            const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-            Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, v);
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
-        };
-        const field = (prefix) => Array.from(document.querySelectorAll('input,textarea'))
-            .find((e) => (e.getAttribute('placeholder') || '').startsWith(prefix));
-        const title = field('Story Title');
-        const concept = field('Concept');
-        if (!title || !concept) return { ok: false, reason: 'setup fields not found' };
-        setVal(title, 'Golden Pipeline Run');
-        setVal(concept, 'A coastal archivist uncovers forged tide ledgers that hide a vanished lighthouse keeper.');
-        await wait(700);
-        const isStart = (b) => /^Start\\s+Autopilot$/i.test((b.innerText || '').trim());
-        const startBtn = Array.from(document.querySelectorAll('button')).find((b) => isStart(b) && !b.disabled);
-        if (!startBtn) return { ok: false, reason: 'Start Autopilot button not found or disabled' };
-        startBtn.click();
-        // The confirm modal renders a second "Start Autopilot" button.
-        let confirmed = false;
-        for (let i = 0; i < 40 && !confirmed; i++) {
-            await wait(100);
-            const matches = Array.from(document.querySelectorAll('button')).filter(isStart);
-            if (matches.length >= 2) { matches[matches.length - 1].click(); confirmed = true; }
-        }
-        return { ok: confirmed, reason: confirmed ? '' : 'confirm modal did not appear' };
-    })()`, true);
+    const started = await cdp.eval(startAutopilotFromSetupExpr('Golden Pipeline Run',
+        'A coastal archivist uncovers forged tide ledgers that hide a vanished lighthouse keeper.'), true);
     assert(`Pipeline[${label}]: Setup form starts Autopilot through the confirm modal`, started.ok, JSON.stringify(started));
     if (!started.ok) return { transcript: [], digest: null };
 
@@ -1559,17 +1582,7 @@ async function runPipelineScenario({ cdp, exceptions, baseUrl, results, label })
         if (proseScenes >= PIPELINE_TARGET_PROSE_SCENES) break;
         if (calls > 400) break; // runaway guard: a healthy run needs ~35 calls
     }
-    const stopped = await cdp.eval(`(async () => {
-        const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-        let st = await window.EllipsisProseBridge.getPipelineStatus();
-        if (st.continuousAutopilot) window.toggleContinuousAutopilot();
-        for (let i = 0; i < 300; i++) {
-            await wait(200);
-            st = await window.EllipsisProseBridge.getPipelineStatus();
-            if (!st.continuousAutopilot && !st.loading) return { idle: true };
-        }
-        return { idle: false, st };
-    })()`, true);
+    const stopped = await cdp.eval(STOP_AUTOPILOT_EXPR, true);
     assert(`Pipeline[${label}]: Autopilot writes ${PIPELINE_TARGET_PROSE_SCENES} scenes and stops cleanly`,
         proseScenes >= PIPELINE_TARGET_PROSE_SCENES && stopped.idle, JSON.stringify({ proseScenes, calls, stopped }));
 
@@ -1773,6 +1786,161 @@ async function runOfflineSuite({ cdp, exceptions, baseUrl, stopServer, results }
     assert('Offline: no uncaught exceptions while offline', exceptions.length === exceptionsBefore, exceptions.slice(exceptionsBefore).join(' | '));
 }
 
+const LIVE_LORE_SAMPLE = `The city of Vessmark stands on stilts above the Grey Fen. Its Lamplighters' Guild, led by Guildmaster Orla Teague, keeps the marsh-gas lamps burning and decides who may cross the causeways after dark. Twenty years ago the Fen Court was dissolved after the Drowning of the Low Quarter, and the guild has governed in its place ever since. Smugglers called reedmen move salt and letters through the unlit channels.`;
+const LIVE_STAGE_ORDER = ['Conceptual Development', 'Character Developer', 'Story Arc Agent', 'Act Agent', 'Sequence Agent', 'Scene Planner', 'Writing Agent'];
+const LIVE_TARGET_PROSE_SCENES = 1;
+
+/**
+ * Live-model scenarios: the real UI paths with a real model answering. Assertions are structural
+ * (did each stage produce something the next stage could use), never about the wording.
+ */
+async function runLiveScenarios({ cdp, exceptions, baseUrl, results, relay, llm, timeoutMs }) {
+    const assert = (name, cond, detail = '') => {
+        if (cond) {
+            results.passed.push(name);
+            console.log(`  [PASS] ${name}`);
+        } else {
+            results.failed.push({ name, detail });
+            console.error(`  [FAIL] ${name}${detail ? ` -> ${detail}` : ''}`);
+        }
+    };
+    const words = (text) => String(text || '').trim().split(/\s+/).filter(Boolean).length;
+
+    // 1. Connection: one tiny call straight from Node, so a bad key or model fails in seconds.
+    let hello = '';
+    let helloError = '';
+    try {
+        hello = await llm.complete({ prompt: 'Reply with the single word READY.', systemPrompt: '', isJson: false, logName: 'Live connection check' });
+    } catch (error) {
+        helloError = error.message;
+    }
+    assert(`Live: the model answers (${llm.config?.model || 'scripted'})`, /ready/i.test(hello), helloError || hello.slice(0, 120));
+    if (!/ready/i.test(hello)) return;
+
+    await cdp.send('Network.setBlockedURLs', { urls: PIPELINE_BLOCKED_URLS });
+    await waitForAppMount(cdp, baseUrl);
+    await sleep(600);
+    await cdp.eval(liveOverrideSource(relay.url), false);
+
+    // 2. One agent through the app: lore distillation (a single call on the fast path).
+    const lore = await cdp.eval(`(async () => {
+        try {
+            const primer = await window.distillLore(${JSON.stringify(LIVE_LORE_SAMPLE)});
+            return { primer: String(primer || ''), errors: window.__goldenLiveErrors.slice() };
+        } catch (e) { return { primer: '', errors: [String(e && e.message || e)] }; }
+    })()`, true);
+    assert('Live: lore distillation returns a world primer that keeps the source names',
+        words(lore.primer) >= 20 && /Vessmark|Teague|Lamplighter/i.test(lore.primer),
+        JSON.stringify({ words: words(lore.primer), errors: lore.errors, sample: lore.primer.slice(0, 160) }));
+
+    // 3. Autopilot from the Setup form until the first scene has prose.
+    await cdp.eval('window.__goldenLiveTranscript.length = 0; window.__goldenLiveErrors.length = 0;', false);
+    const started = await cdp.eval(startAutopilotFromSetupExpr('Live Model Run',
+        'A lamplighter in a marsh city finds that someone is putting out the causeway lamps one by one. Keep it a short story.'), true);
+    assert('Live: Setup form starts Autopilot through the confirm modal', started.ok, JSON.stringify(started));
+    if (!started.ok) return;
+
+    const proseCountExpr = `(() => {
+        const s = window.storyRef.current || {};
+        return Object.values(s.prose || {}).filter((p) => p && String(p.final || p.draft || '').trim().length > 0).length;
+    })()`;
+    let proseScenes = 0;
+    let lastName = '';
+    let fatal = '';
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        await sleep(2000);
+        proseScenes = await cdp.eval(proseCountExpr, false);
+        const progress = await cdp.eval(`(() => {
+            const t = window.__goldenLiveTranscript;
+            return { calls: t.length, last: t.length ? t[t.length - 1].logName : '', errors: window.__goldenLiveErrors.slice(-3) };
+        })()`, false);
+        if (progress.last && progress.last !== lastName) {
+            lastName = progress.last;
+            console.log(`  [live] call ${progress.calls}: ${lastName}`);
+        }
+        if (proseScenes >= LIVE_TARGET_PROSE_SCENES) break;
+        // Credentials, quota or the call cap: every further call would fail the same way.
+        const hardStop = progress.errors.find((e) => /\(401\)|\(403\)|\(404\)|LIVE_LLM_MAX_CALLS/.test(e));
+        if (hardStop) { fatal = hardStop; break; }
+    }
+    const stopped = await cdp.eval(STOP_AUTOPILOT_EXPR, true);
+    assert(`Live: Autopilot writes ${LIVE_TARGET_PROSE_SCENES} scene with a real model and stops cleanly`,
+        proseScenes >= LIVE_TARGET_PROSE_SCENES && stopped.idle,
+        JSON.stringify({ proseScenes, lastCall: lastName, fatal, stopped, timedOut: Date.now() >= deadline }));
+
+    await sleep(800);
+    const report = await cdp.eval(`(async () => {
+        const s = window.storyRef.current || {};
+        const words = (t) => String(t || '').trim().split(/\\s+/).filter(Boolean).length;
+        const digestOf = (st) => ({
+            title: st.title,
+            cast: (st.cast || []).map((c) => c.name),
+            acts: (st.acts || []).length,
+            sequences: (st.sequences || []).length,
+            scenes: Object.values(st.scenes || {}).reduce((n, v) => n + (v || []).length, 0),
+            proseWords: Object.fromEntries(Object.entries(st.prose || {}).map(([k, v]) => [k, words(v && (v.final || v.draft))]))
+        });
+        const saved = s.id ? await window.storyStore.loadStory(s.id) : null;
+        return {
+            id: s.id,
+            activeId: localStorage.getItem('ellipsisprose_active_story_id'),
+            digest: digestOf(s),
+            savedDigest: saved ? digestOf(saved) : null,
+            transcript: window.__goldenLiveTranscript.map((t) => ({ logName: t.logName, ms: t.ms, chars: t.chars, error: t.error })),
+            errors: window.__goldenLiveErrors.slice()
+        };
+    })()`, true);
+    const { digest, savedDigest, transcript } = report;
+    const names = transcript.map((t) => t.logName);
+    const stageIdx = LIVE_STAGE_ORDER.map((prefix) => names.findIndex((n) => n.startsWith(prefix)));
+    assert('Live: every pipeline stage runs, in order',
+        stageIdx.every((idx, i) => idx >= 0 && (i === 0 || idx > stageIdx[i - 1])),
+        JSON.stringify(LIVE_STAGE_ORDER.map((st, i) => `${st}@${stageIdx[i]}`)));
+
+    assert('Live: real model output parses into a story bible and structure',
+        digest.cast.length >= 1 && digest.cast.every((n) => String(n || '').trim()) && digest.acts >= 1 && digest.sequences >= 1 && digest.scenes >= 1,
+        JSON.stringify(digest));
+
+    const written = Object.values(digest.proseWords || {}).filter((n) => n > 0);
+    assert('Live: the written scene is real prose (150+ words, no leftover tags)',
+        written.length >= 1 && written.every((n) => n >= 150)
+            && !/<\/?(prose_text|polished_prose|draft_prose)>/.test(await cdp.eval(`(() => {
+                const s = window.storyRef.current || {};
+                return Object.values(s.prose || {}).map((p) => String((p && (p.final || p.draft)) || '')).join('\\n');
+            })()`, false)),
+        JSON.stringify(digest.proseWords));
+
+    assert('Live: the generated story is the active story and is saved',
+        Boolean(report.id) && report.id !== 'story_default' && report.activeId === report.id
+            && Boolean(savedDigest) && savedDigest.cast.length === digest.cast.length && savedDigest.scenes === digest.scenes,
+        JSON.stringify({ id: report.id, activeId: report.activeId, savedDigest }));
+
+    assert('Live: zero uncaught runtime exceptions', exceptions.length === 0, exceptions.join(' | '));
+
+    // Not assertions: how hard the model made the pipeline work.
+    const retries = names.filter((n) => /Attempt [2-9]\/|\(Retry \d+\)/.test(n)).length;
+    console.log(`  [live] ${names.length} agent calls, ${retries} retries, ${report.errors.length} failed calls`);
+    return { digest, transcript };
+}
+
+/** A stand-in for the live model so the live plumbing can be exercised without a key or network. */
+function createScriptedLlm() {
+    const sandbox = { window: {} };
+    vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'fixtures', 'mockLlm.js'), 'utf8'), sandbox);
+    const usage = { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, refusals: 0, truncated: 0 };
+    return {
+        usage,
+        config: { model: 'scripted' },
+        complete: async ({ prompt, systemPrompt, isJson, logName }) => {
+            usage.calls += 1;
+            if (logName === 'Live connection check') return 'READY';
+            if (/^Lore Distiller/.test(String(logName))) return `World primer. ${String(prompt).slice(-600)}`;
+            return String(await sandbox.window.__goldenMockLlm(prompt, systemPrompt, isJson, logName));
+        }
+    };
+}
+
 async function runMode(opts) {
     const results = { mode: opts.mode, passed: [], failed: [] };
     const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'ellipsis-golden-'));
@@ -1870,6 +2038,38 @@ async function runMode(opts) {
                 fs.mkdirSync(path.dirname(opts.out), { recursive: true });
                 fs.writeFileSync(opts.out, JSON.stringify(report, null, 2));
                 console.log(`[golden] Wrote pipeline transcript -> ${opts.out}`);
+            }
+        } else if (opts.mode === 'live') {
+            // Opt-in: real model calls. LIVE_LLM_SCRIPTED=1 swaps in the scripted model to test the plumbing.
+            const scripted = process.env.LIVE_LLM_SCRIPTED === '1';
+            const config = liveConfigFromEnv();
+            if (!scripted && !config.hasCredentials) {
+                console.log('[live] SKIPPED: ANTHROPIC_API_KEY is not set. Nothing was run.');
+                console.log('\n=== GOLDEN SUITE SUMMARY [live] ===\nSkipped: no ANTHROPIC_API_KEY');
+                return;
+            }
+            const distDir = path.join(ROOT_DIR, 'dist');
+            if (!fs.existsSync(path.join(distDir, 'index.html'))) throw new Error('dist/index.html missing — run npm run build first');
+            const llm = scripted ? createScriptedLlm() : createLiveLlm(config);
+            console.log(scripted
+                ? '[live] Using the scripted model (LIVE_LLM_SCRIPTED=1): no network, no cost.'
+                : `[live] Model ${config.model}, effort ${config.effort}, at most ${config.maxCalls} calls. This spends real API credit.`);
+            server = await startStaticHttpServer({ port, staticDir: distDir, indexFile: 'index.html' });
+            const relay = await startLiveRelay({ llm, allowedOrigin: `http://127.0.0.1:${port}` });
+            try {
+                session = await launchChromeSession(userDataDir, cdpPort);
+                const timeoutMs = (Number.parseInt(process.env.LIVE_LLM_TIMEOUT_MINUTES || '', 10) || 30) * 60000;
+                const run = await runLiveScenarios({ ...session, baseUrl: `http://127.0.0.1:${port}/`, results, relay, llm, timeoutMs });
+                const u = llm.usage;
+                console.log(`[live] Usage: ${u.calls} model calls, ${u.inputTokens.toLocaleString()} input tokens, ${u.outputTokens.toLocaleString()} output tokens`
+                    + `${u.truncated ? `, ${u.truncated} hit the output cap` : ''}${u.refusals ? `, ${u.refusals} declined` : ''}`);
+                if (opts.out && run) {
+                    fs.mkdirSync(path.dirname(opts.out), { recursive: true });
+                    fs.writeFileSync(opts.out, JSON.stringify({ model: llm.config.model, usage: u, ...run }, null, 2));
+                    console.log(`[golden] Wrote live transcript -> ${opts.out}`);
+                }
+            } finally {
+                await relay.close();
             }
         } else if (opts.mode === 'upgrade') {
             const legacySiteDir = ensureLegacySite();

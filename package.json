@@ -23,6 +23,7 @@
     "test:legacy": "node tests/e2e/golden_suite.mjs --mode legacy",
     "test:pipeline": "node tests/e2e/golden_suite.mjs --mode pipeline",
     "test:pipeline-parity": "node tests/e2e/golden_suite.mjs --mode pipeline-parity",
+    "test:live": "node tests/e2e/golden_suite.mjs --mode live",
     "verify": "npm run typecheck && npm run lint -- --max-warnings=0 && npm test && npm run build",
     "test:e2e": "npm run test:golden && npm run test:subpath && npm run test:singlefile && npm run test:upgrade && npm run test:pipeline",
     "gate": "npm run verify && npm run build:singlefile && npm run test:e2e",
@@ -55,6 +56,7 @@
     "zustand": "^5.1.0"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^1.14.0",
     "@eslint/js": "^10.0.1",
     "@types/dompurify": "^3.0.5",
     "@types/react": "^18.3.31",
