@@ -18,6 +18,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const net = require('net');
+const crypto = require('crypto');
 
 // ---------------------------------------------------------------------------
 // Configuration & CLI Argument Parsing
@@ -25,6 +26,7 @@ const net = require('net');
 const ROOT_DIR = __dirname;
 const CACHE_DIR = path.join(ROOT_DIR, 'cache', 'voices');
 const AUDIOCPP_CONFIGS_DIR = path.join(ROOT_DIR, 'audiocpp');
+const RUNTIME_WAVE2_CONFIG_PATH = path.join(ROOT_DIR, 'cache', 'runtime_wave2_drama3.json');
 
 const settings = {
     port: Number(process.env.AUDIO_STUDIO_BRIDGE_PORT || 5020),
@@ -49,6 +51,18 @@ for (let i = 2; i < process.argv.length; i += 2) {
 // Ensure cache directory exists
 fs.mkdirSync(CACHE_DIR, { recursive: true });
 
+function getVqSidecarPath(wavPath) {
+    return `${wavPath}.vq.json`;
+}
+
+function unlinkWavAndSidecar(wavPath) {
+    try { fs.unlinkSync(wavPath); } catch (_) {}
+    try {
+        const vqPath = getVqSidecarPath(wavPath);
+        if (fs.existsSync(vqPath)) fs.unlinkSync(vqPath);
+    } catch (_) {}
+}
+
 function pruneVoiceCache({ keepStoryId = '', deleteAll = false, maxAgeMs = 0 } = {}) {
     if (!fs.existsSync(CACHE_DIR)) return { deleted: 0, remaining: 0 };
     const cleanKeepPrefix = keepStoryId
@@ -65,15 +79,18 @@ function pruneVoiceCache({ keepStoryId = '', deleteAll = false, maxAgeMs = 0 } =
         try { stat = fs.statSync(fullPath); } catch (_) { continue; }
 
         if (deleteAll) {
-            try { fs.unlinkSync(fullPath); deleted++; } catch (_) {}
+            unlinkWavAndSidecar(fullPath);
+            deleted++;
             continue;
         }
         if (cleanKeepPrefix && !f.startsWith(cleanKeepPrefix)) {
-            try { fs.unlinkSync(fullPath); deleted++; } catch (_) {}
+            unlinkWavAndSidecar(fullPath);
+            deleted++;
             continue;
         }
         if (maxAgeMs > 0 && (now - stat.mtimeMs) > maxAgeMs) {
-            try { fs.unlinkSync(fullPath); deleted++; } catch (_) {}
+            unlinkWavAndSidecar(fullPath);
+            deleted++;
             continue;
         }
         const m = f.match(/^(.+_master)_[a-zA-Z0-9]+\.wav$/i);
@@ -82,12 +99,23 @@ function pruneVoiceCache({ keepStoryId = '', deleteAll = false, maxAgeMs = 0 } =
             const prev = byMasterPrefix.get(key);
             if (!prev || stat.mtimeMs > prev.mtimeMs) {
                 if (prev) {
-                    try { fs.unlinkSync(prev.fullPath); deleted++; } catch (_) {}
+                    unlinkWavAndSidecar(prev.fullPath);
+                    deleted++;
                 }
                 byMasterPrefix.set(key, { fullPath, mtimeMs: stat.mtimeMs });
             } else {
-                try { fs.unlinkSync(fullPath); deleted++; } catch (_) {}
+                unlinkWavAndSidecar(fullPath);
+                deleted++;
             }
+        }
+    }
+
+    // Remove orphan .vq.json sidecars whose backing .wav no longer exists
+    for (const f of fs.readdirSync(CACHE_DIR)) {
+        if (!f.toLowerCase().endsWith('.vq.json')) continue;
+        const wavCompanion = path.join(CACHE_DIR, f.slice(0, -'.vq.json'.length));
+        if (!fs.existsSync(wavCompanion)) {
+            try { fs.unlinkSync(path.join(CACHE_DIR, f)); } catch (_) {}
         }
     }
 
@@ -178,10 +206,19 @@ const state = {
     activeProc: null,
     procStartTime: null,
     activeStoryPrefix: '',
+    activeWave2RequestedSig: null,
+    activeOffload: null,
     cudaWarmupSuppressed: 0,
     cudaWarmupFirstLogged: false,
+    cudaGraphReuseSuppressed: 0,
     logRing: [],
-    swapMode: settings.swapMode
+    swapMode: settings.swapMode,
+    perfStats: {
+        last: null,
+        recent: [],
+        avgRealtimeX: null,
+        avgRtf: null
+    }
 };
 
 function pushLog(msg) {
@@ -200,6 +237,11 @@ function logDaemonStreamChunk(streamLabel, chunk) {
     for (const rawLine of rawLines) {
         const line = rawLine.trim();
         if (!line) continue;
+        // Resident hybrid mode emits "CUDA Graph id N reused" ~36 times per generated frame; drop cleanly
+        if (/cuda graph id \d+ reused/i.test(line)) {
+            state.cudaGraphReuseSuppressed = (state.cudaGraphReuseSuppressed || 0) + 1;
+            continue;
+        }
         if (/cuda graph warmup complete/i.test(line)) {
             if (!state.cudaWarmupFirstLogged) {
                 state.cudaWarmupFirstLogged = true;
@@ -332,6 +374,8 @@ async function stopActiveDaemon() {
     state.activeWave = null;
     state.activeModel = null;
     state.procStartTime = null;
+    state.activeWave2RequestedSig = null;
+    state.activeOffload = null;
 
     const closed = await waitForPortClosed(settings.daemonPort, 10000);
     if (!closed) {
@@ -343,7 +387,200 @@ async function stopActiveDaemon() {
     }
 }
 
-async function activateWave(waveNumber) {
+function normalizeWave2Overrides(raw = {}) {
+    const src = (raw && typeof raw === 'object') ? raw : {};
+    const profileRaw = String(src.offloadProfile || src.profile || 'auto').trim().toLowerCase();
+    const offloadProfile = ['auto', 'resident_hybrid', 'pinned_cache', 'custom'].includes(profileRaw)
+        ? profileRaw
+        : 'auto';
+    const runModeRaw = String(src.runMode || src.mode || 'streaming').trim().toLowerCase();
+    const runMode = (runModeRaw === 'offline' || runModeRaw === 'streaming') ? runModeRaw : 'streaming';
+    const norm = {
+        offloadProfile,
+        runMode,
+        cpuExpertLayers: (src.cpuExpertLayers !== undefined && src.cpuExpertLayers !== null && src.cpuExpertLayers !== '')
+            ? Math.max(0, Math.min(40, Math.round(Number(src.cpuExpertLayers))))
+            : null,
+        diskExperts: (typeof src.diskExperts === 'boolean') ? src.diskExperts : null,
+        pinExperts: (typeof src.pinExperts === 'boolean') ? src.pinExperts : null,
+        expertCacheSize: (src.expertCacheSize !== undefined && src.expertCacheSize !== null && src.expertCacheSize !== '')
+            ? Math.max(8, Math.min(256, Math.round(Number(src.expertCacheSize))))
+            : null,
+        codecBackend: (src.codecBackend === 'cpu' || src.codecBackend === 'same') ? src.codecBackend : null,
+        contextLength: (src.contextLength !== undefined && src.contextLength !== null && Number.isFinite(Number(src.contextLength)))
+            ? Math.max(2048, Math.min(32768, Math.round(Number(src.contextLength))))
+            : null,
+        threads: (src.threads !== undefined && src.threads !== null && Number.isFinite(Number(src.threads)))
+            ? Math.max(1, Math.min(32, Math.round(Number(src.threads))))
+            : null,
+        ggufFile: typeof src.ggufFile === 'string' && src.ggufFile.trim() ? src.ggufFile.trim() : null,
+        forceRestart: Boolean(src.forceRestart)
+    };
+    const sig = JSON.stringify({
+        offloadProfile: norm.offloadProfile,
+        runMode: norm.runMode,
+        cpuExpertLayers: norm.cpuExpertLayers,
+        diskExperts: norm.diskExperts,
+        pinExperts: norm.pinExperts,
+        expertCacheSize: norm.expertCacheSize,
+        codecBackend: norm.codecBackend,
+        contextLength: norm.contextLength,
+        threads: norm.threads,
+        ggufFile: norm.ggufFile
+    });
+    return { norm, sig };
+}
+
+function resolveWave2RuntimeConfig(baseCfgPath, overridesNorm, vramStatus) {
+    const cfg = JSON.parse(fs.readFileSync(baseCfgPath, 'utf8'));
+    const models = Array.isArray(cfg.models) ? cfg.models : [];
+    const primaryOpts = (models[0] && models[0].session_options) || {};
+
+    if (overridesNorm.ggufFile) {
+        const candidate = path.isAbsolute(overridesNorm.ggufFile)
+            ? overridesNorm.ggufFile
+            : path.join('D:\\AI_Projects\\Audiocpp\\audio.cpp\\models\\Drama-3-GGUF', overridesNorm.ggufFile);
+        if (fs.existsSync(candidate)) {
+            for (const m of models) m.path = candidate;
+        }
+    }
+
+    const activePath = String((models[0] && models[0].path) || '').toLowerCase();
+    let expertLayerMb = 432.0;
+    if (activePath.includes('q2_k')) expertLayerMb = 252.0;
+    else if (activePath.includes('q3_k')) expertLayerMb = 330.0;
+    const baseReductionMb = activePath.includes('backbone-4bit') ? 1150 : 0;
+
+    const baseCtx = parseInt(primaryOpts['fish_drama3.context_length'], 10);
+    const contextLength = overridesNorm.contextLength || (Number.isFinite(baseCtx) ? baseCtx : 8192);
+    const threads = overridesNorm.threads || Number(cfg.threads) || 6;
+    cfg.threads = threads;
+
+    const baseCodec = primaryOpts['fish_drama3.codec_backend'] === 'cpu' ? 'cpu' : 'same';
+    let codecBackend = overridesNorm.codecBackend || baseCodec;
+    let diskExperts = primaryOpts['fish_drama3.disk_experts'] === 'true';
+    let pinExperts = primaryOpts['fish_drama3.pin_experts'] === 'true';
+    let cpuExpertLayers = Number.isFinite(parseInt(primaryOpts['fish_drama3.cpu_expert_layers'], 10))
+        ? parseInt(primaryOpts['fish_drama3.cpu_expert_layers'], 10)
+        : 0;
+    let expertCacheSize = Number.isFinite(parseInt(primaryOpts['fish_drama3.expert_cache_size'], 10))
+        ? parseInt(primaryOpts['fish_drama3.expert_cache_size'], 10)
+        : 44;
+
+    const freeMb = Number(vramStatus?.free_mb) || 0;
+    const kvMb = Math.round(606 * (contextLength / 8192));
+    const computeSafeMinCpuLayers = (targetCodec) => {
+        if (freeMb <= 0) return null;
+        const baseVramMb = (targetCodec === 'cpu' ? 5310 : 6150) + kvMb - baseReductionMb;
+        const safetyMarginMb = 1000;
+        const availForExperts = Math.max(0, freeMb - baseVramMb - safetyMarginMb);
+        const maxGpuLayers = Math.min(40, Math.max(0, Math.floor(availForExperts / expertLayerMb)));
+        return 40 - maxGpuLayers;
+    };
+    const computeSafeMaxSlots = (targetCodec) => {
+        if (freeMb <= 0) return null;
+        const baseVramMb = (targetCodec === 'cpu' ? 5350 : 6650) + kvMb - baseReductionMb;
+        const availForCache = Math.max(0, freeMb - baseVramMb - 1000);
+        const mbPerSlotAllLayers = (40 * expertLayerMb) / 256;
+        return Math.max(8, Math.min(256, Math.floor(availForCache / mbPerSlotAllLayers)));
+    };
+
+    const profile = overridesNorm.offloadProfile || 'auto';
+    if (profile === 'pinned_cache') {
+        diskExperts = true;
+        pinExperts = overridesNorm.pinExperts !== null ? overridesNorm.pinExperts : true;
+        cpuExpertLayers = 0;
+        const desiredSlots = overridesNorm.expertCacheSize !== null ? overridesNorm.expertCacheSize : expertCacheSize;
+        const maxSafeSlots = computeSafeMaxSlots(codecBackend);
+        expertCacheSize = maxSafeSlots !== null
+            ? Math.max(8, Math.min(desiredSlots, maxSafeSlots))
+            : Math.max(8, Math.min(256, desiredSlots));
+    } else if (profile === 'resident_hybrid') {
+        diskExperts = false;
+        pinExperts = false;
+        const safeMinCpu = computeSafeMinCpuLayers(codecBackend);
+        if (overridesNorm.cpuExpertLayers !== null) {
+            cpuExpertLayers = overridesNorm.cpuExpertLayers;
+            if (safeMinCpu !== null && cpuExpertLayers < safeMinCpu) {
+                pushLog(`[Offload Clamp] Requested cpu_expert_layers=${cpuExpertLayers} exceeds free VRAM (${freeMb} MiB); clamping to cpu_expert_layers=${safeMinCpu}.`);
+                cpuExpertLayers = safeMinCpu;
+            }
+        } else {
+            cpuExpertLayers = safeMinCpu !== null ? safeMinCpu : 36;
+        }
+    } else if (profile === 'auto') {
+        const safeMinCpu = computeSafeMinCpuLayers(codecBackend);
+        if (safeMinCpu === null || safeMinCpu > 12) {
+            // On 12-16 GB GPUs with Q4_K_S, pinned_cache + streaming outperforms resident_hybrid by ~22%
+            diskExperts = true;
+            pinExperts = true;
+            cpuExpertLayers = 0;
+            const maxSafeSlots = computeSafeMaxSlots(codecBackend);
+            const desiredSlots = overridesNorm.expertCacheSize !== null ? overridesNorm.expertCacheSize : 54;
+            expertCacheSize = maxSafeSlots !== null
+                ? Math.max(8, Math.min(desiredSlots, maxSafeSlots))
+                : Math.max(8, Math.min(256, Math.min(desiredSlots, expertCacheSize)));
+        } else {
+            // Ample VRAM (e.g., 24+ GB GPU or smaller Q2_K/Q3_K quant): resident_hybrid keeps >=28/40 layers on GPU
+            diskExperts = false;
+            pinExperts = false;
+            cpuExpertLayers = safeMinCpu;
+        }
+    } else {
+        // Custom: honor explicit flags while enforcing backbone.cpp invariant
+        if (overridesNorm.diskExperts !== null) diskExperts = overridesNorm.diskExperts;
+        if (overridesNorm.pinExperts !== null) pinExperts = overridesNorm.pinExperts;
+        if (overridesNorm.cpuExpertLayers !== null) cpuExpertLayers = overridesNorm.cpuExpertLayers;
+        if (overridesNorm.expertCacheSize !== null) expertCacheSize = overridesNorm.expertCacheSize;
+        if (diskExperts && cpuExpertLayers > 0) {
+            pushLog(`[Offload Warning] Disabling disk_experts because cpu_expert_layers=${cpuExpertLayers} > 0 (avoids token-by-token prefill fallback).`);
+            diskExperts = false;
+            pinExperts = false;
+        }
+        if (pinExperts && !diskExperts) pinExperts = false;
+    }
+
+    const runMode = overridesNorm.runMode || 'streaming';
+    for (const m of models) {
+        m.mode = runMode;
+        const opts = { ...(m.session_options || {}) };
+        opts['fish_drama3.disk_experts'] = String(diskExperts);
+        opts['fish_drama3.pin_experts'] = String(pinExperts);
+        opts['fish_drama3.cpu_expert_layers'] = String(cpuExpertLayers);
+        opts['fish_drama3.context_length'] = String(contextLength);
+        opts['fish_drama3.codec_backend'] = codecBackend;
+        opts['fish_drama3.backbone_prefill_cache_mb'] = opts['fish_drama3.backbone_prefill_cache_mb'] || '512';
+        opts['fish_drama3.tower_prefill_cache_mb'] = opts['fish_drama3.tower_prefill_cache_mb'] || '512';
+        if (diskExperts) {
+            opts['fish_drama3.expert_cache_size'] = String(expertCacheSize);
+        } else {
+            delete opts['fish_drama3.expert_cache_size'];
+        }
+        m.session_options = opts;
+    }
+
+    fs.mkdirSync(path.dirname(RUNTIME_WAVE2_CONFIG_PATH), { recursive: true });
+    fs.writeFileSync(RUNTIME_WAVE2_CONFIG_PATH, JSON.stringify(cfg, null, 2));
+
+    const offloadSummary = {
+        profile,
+        run_mode: runMode,
+        mode: diskExperts ? 'pinned_cache' : 'resident_hybrid',
+        disk_experts: diskExperts,
+        pin_experts: pinExperts,
+        gpu_expert_layers: diskExperts ? 0 : (40 - cpuExpertLayers),
+        cpu_expert_layers: cpuExpertLayers,
+        expert_cache_size: diskExperts ? expertCacheSize : null,
+        codec_backend: codecBackend,
+        context_length: contextLength,
+        threads,
+        free_vram_mb_at_start: freeMb || null,
+        model_path: (models[0] && models[0].path) || ''
+    };
+    return { configPath: RUNTIME_WAVE2_CONFIG_PATH, offloadSummary };
+}
+
+async function activateWave(waveNumber, overrides = {}) {
     const wave = Number(waveNumber);
     if (![1, 2, 3].includes(wave)) {
         throw new Error(`Invalid wave number: ${waveNumber}. Expected 1, 2, or 3.`);
@@ -361,15 +598,22 @@ async function activateWave(waveNumber) {
         };
     }
 
+    const { norm: wave2Norm, sig: wave2Sig } = normalizeWave2Overrides(overrides);
+
     // Pattern A: child process manager
     const daemonAlive = await isPortListening(settings.daemonPort);
     if (state.activeWave === wave && daemonAlive) {
-        return {
-            status: 'ok',
-            active_wave: wave,
-            active_model: state.activeModel,
-            already_active: true
-        };
+        const wave2Changed = wave === 2 && (wave2Norm.forceRestart || (state.activeWave2RequestedSig !== null && wave2Sig !== state.activeWave2RequestedSig));
+        if (!wave2Changed) {
+            return {
+                status: 'ok',
+                active_wave: wave,
+                active_model: state.activeModel,
+                already_active: true,
+                offload: state.activeOffload
+            };
+        }
+        pushLog(`[Offload] Wave 2 settings changed (${wave2Norm.offloadProfile}); restarting Drama-3 daemon cleanly...`);
     }
 
     await stopActiveDaemon();
@@ -387,13 +631,28 @@ async function activateWave(waveNumber) {
         throw new Error('Audio.cpp executable not found. Install audiocpp_server or configure ELLIPSISPROSE_AUDIOCPP_DIR.');
     }
 
-    const configFile = WAVE_CONFIGS[wave];
+    let configFile = WAVE_CONFIGS[wave];
     if (!fs.existsSync(configFile)) {
         throw new Error(`Configuration preset not found: ${configFile}`);
     }
 
+    let resolvedOffload = null;
+    if (wave === 2) {
+        const resolved = resolveWave2RuntimeConfig(configFile, wave2Norm, vramBefore);
+        configFile = resolved.configPath;
+        resolvedOffload = resolved.offloadSummary;
+        pushLog(
+            `[Offload] Wave 2 (${resolvedOffload.mode}, run=${resolvedOffload.run_mode}, profile=${resolvedOffload.profile}): ` +
+            (resolvedOffload.disk_experts
+                ? `disk_experts=true, pin=${resolvedOffload.pin_experts}, cache_slots=${resolvedOffload.expert_cache_size}/256`
+                : `GPU_layers=${resolvedOffload.gpu_expert_layers}/40, CPU_layers=${resolvedOffload.cpu_expert_layers}/40`) +
+            `, codec=${resolvedOffload.codec_backend}, ctx=${resolvedOffload.context_length}, threads=${resolvedOffload.threads}`
+        );
+    }
+
     state.cudaWarmupSuppressed = 0;
     state.cudaWarmupFirstLogged = false;
+    state.cudaGraphReuseSuppressed = 0;
     pushLog(`Spawning Audio.cpp Wave ${wave} daemon (${WAVE_MODEL_IDS[wave]}) using ${bin}...`);
     const args = ['--config', configFile];
     const modelSpecsDir = 'D:\\AI_Projects\\Audiocpp\\audio.cpp\\model_specs';
@@ -415,6 +674,8 @@ async function activateWave(waveNumber) {
             state.activeProc = null;
             state.activeWave = null;
             state.activeModel = null;
+            state.activeWave2RequestedSig = null;
+            state.activeOffload = null;
         }
     });
 
@@ -422,6 +683,8 @@ async function activateWave(waveNumber) {
     state.activeWave = wave;
     state.activeModel = WAVE_MODEL_IDS[wave];
     state.procStartTime = Date.now();
+    state.activeWave2RequestedSig = wave === 2 ? wave2Sig : null;
+    state.activeOffload = resolvedOffload;
 
     const healthUrl = `http://127.0.0.1:${settings.daemonPort}/health`;
     pushLog(`Polling health at ${healthUrl}...`);
@@ -435,14 +698,6 @@ async function activateWave(waveNumber) {
             pushLog(`Audio.cpp Wave ${wave} daemon responded on fallback endpoint.`);
         } catch (e2) {
             await stopActiveDaemon();
-
-    const vramBefore = queryGpuVramStatus();
-    if (vramBefore) {
-        pushLog(`[GPU] ${vramBefore.gpu}: ${vramBefore.free_mb} MiB free / ${vramBefore.total_mb} MiB total (${vramBefore.used_mb} MiB used by other apps)`);
-        if (wave === 2 && vramBefore.free_mb < 8500) {
-            pushLog(`[GPU Warning] Only ${vramBefore.free_mb} MiB VRAM free before starting Drama-3. Close other GPU-resident models (e.g. LM Studio, Ollama, Koboldcpp) if synthesis slows down.`);
-        }
-    }
             throw new Error(`Failed to activate Wave ${wave} daemon: ${e.message}`);
         }
     }
@@ -451,7 +706,8 @@ async function activateWave(waveNumber) {
         status: 'ok',
         active_wave: wave,
         active_model: state.activeModel,
-        pid: proc.pid
+        pid: proc.pid,
+        offload: state.activeOffload
     };
 }
 
@@ -481,6 +737,7 @@ function isWaveConfigModelAvailable(waveNum, binPath, daemonAlive) {
         if (models.length === 0) return false;
         // If we have a local binary path, verify at least one declared model file exists when resolvable
         const baseDirs = [
+            AUDIOCPP_CONFIGS_DIR,
             binPath ? path.resolve(path.dirname(binPath), '..', '..') : '',
             'D:\\AI_Projects\\Audiocpp\\audio.cpp',
             ROOT_DIR
@@ -527,6 +784,13 @@ function handleHealth(req, res) {
             available_waves: availableWaves,
             active_wave: state.activeWave,
             active_model: state.activeModel,
+            offload: state.activeOffload,
+            perf: {
+                last: state.perfStats.last,
+                avgRealtimeX: state.perfStats.avgRealtimeX,
+                avgRtf: state.perfStats.avgRtf,
+                sampleCount: state.perfStats.recent.length
+            },
             uptime_seconds: state.procStartTime ? Math.round((Date.now() - state.procStartTime) / 1000) : 0,
             gpu_vram: queryGpuVramStatus(),
             cache_dir: CACHE_DIR,
@@ -560,6 +824,10 @@ function handlePutVoice(req, res, speakerKey) {
 
         try {
             fs.writeFileSync(filePath, buffer);
+            try {
+                const staleVq = getVqSidecarPath(filePath);
+                if (fs.existsSync(staleVq)) fs.unlinkSync(staleVq);
+            } catch (_) {}
             const refPath = path.resolve(filePath);
 
             // Immediately delete any superseded _master_<hash>.wav files for the exact same
@@ -571,7 +839,7 @@ function handlePutVoice(req, res, speakerKey) {
                     for (const existing of fs.readdirSync(CACHE_DIR)) {
                         if (!existing.toLowerCase().endsWith('.wav') || existing.toLowerCase() === fileName.toLowerCase()) continue;
                         if (existing.toLowerCase().startsWith(masterPrefix.toLowerCase())) {
-                            try { fs.unlinkSync(path.join(CACHE_DIR, existing)); } catch (_) {}
+                            unlinkWavAndSidecar(path.join(CACHE_DIR, existing));
                         }
                     }
                 } catch (_) {}
@@ -632,10 +900,8 @@ function handleDeleteVoice(req, res, speakerKey) {
     const filePath = path.join(CACHE_DIR, `${sanitized}.wav`);
     let deleted = false;
     if (fs.existsSync(filePath)) {
-        try {
-            fs.unlinkSync(filePath);
-            deleted = true;
-        } catch (_) {}
+        unlinkWavAndSidecar(filePath);
+        deleted = !fs.existsSync(filePath);
     }
     sendJson(res, 200, { status: 'ok', key: sanitized, deleted });
 }
@@ -699,7 +965,7 @@ function invalidateSpeakerVoices({ storyId = '', speakerAliases = [] } = {}) {
         }
         if (matches) {
             try {
-                fs.unlinkSync(path.join(CACHE_DIR, f));
+                unlinkWavAndSidecar(path.join(CACHE_DIR, f));
                 deleted++;
                 deletedFiles.push(f);
             } catch (_) {}
@@ -773,7 +1039,8 @@ function handleGetVoice(req, res, speakerKey) {
 
 function handleActivateWave(req, res, waveStr) {
     const waveNumber = parseInt(waveStr, 10);
-    activateWave(waveNumber)
+    readJsonBody(req)
+        .then(overrides => activateWave(waveNumber, overrides))
         .then(result => sendJson(res, 200, result))
         .catch(err => {
             pushLog(`activateWave error: ${err.message}`);
@@ -781,13 +1048,261 @@ function handleActivateWave(req, res, waveStr) {
         });
 }
 
-function handleProxyV1(req, res) {
-    const targetUrl = `http://127.0.0.1:${settings.daemonPort}${req.url}`;
-    const headers = { ...req.headers };
-    delete headers.host;
-    delete headers.connection;
+// ---------------------------------------------------------------------------
+// Drama-3 VQ Reference Code Sidecar Cache & Performance Telemetry
+// ---------------------------------------------------------------------------
+function computeFileSha256(filePath) {
+    const hash = crypto.createHash('sha256');
+    hash.update(fs.readFileSync(filePath));
+    return hash.digest('hex');
+}
 
+function loadCachedVqCodes(wavPath) {
+    try {
+        if (!fs.existsSync(wavPath)) return null;
+        const stat = fs.statSync(wavPath);
+        if (!stat.isFile() || stat.size < 44) return null;
+        const sidecarPath = getVqSidecarPath(wavPath);
+        const wavSha256 = computeFileSha256(wavPath);
+        if (fs.existsSync(sidecarPath)) {
+            const parsed = JSON.parse(fs.readFileSync(sidecarPath, 'utf8'));
+            if (
+                parsed &&
+                parsed.version === 1 &&
+                parsed.wavSize === stat.size &&
+                parsed.wavSha256 === wavSha256 &&
+                Array.isArray(parsed.vq_codes) &&
+                parsed.vq_codes.length === 10 &&
+                Array.isArray(parsed.vq_codes[0]) &&
+                parsed.vq_codes[0].length > 0
+            ) {
+                return { vq_codes: parsed.vq_codes, stat, wavSha256 };
+            }
+        }
+        return { vq_codes: null, stat, wavSha256 };
+    } catch (_) {
+        return null;
+    }
+}
+
+function saveCachedVqCodes(wavPath, stat, wavSha256, vqCodes) {
+    if (!Array.isArray(vqCodes) || vqCodes.length !== 10 || !Array.isArray(vqCodes[0]) || vqCodes[0].length === 0) {
+        return false;
+    }
+    const sidecarPath = getVqSidecarPath(wavPath);
+    const tmpPath = `${sidecarPath}.tmp.${process.pid}.${Date.now()}`;
+    const record = {
+        version: 1,
+        wavPath,
+        wavSize: stat.size,
+        wavMtimeMs: stat.mtimeMs,
+        wavSha256,
+        frames: vqCodes[0].length,
+        vq_codes: vqCodes
+    };
+    fs.writeFileSync(tmpPath, JSON.stringify(record));
+    fs.renameSync(tmpPath, sidecarPath);
+    return true;
+}
+
+function postDaemonJson(pathname, payloadObj, timeoutMs = 120000) {
+    return new Promise((resolve, reject) => {
+        const payloadBuf = Buffer.from(JSON.stringify(payloadObj), 'utf8');
+        const req = http.request(`http://127.0.0.1:${settings.daemonPort}${pathname}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': String(payloadBuf.length)
+            },
+            agent: proxyAgent,
+            timeout: timeoutMs
+        }, res => {
+            const chunks = [];
+            res.on('data', c => chunks.push(c));
+            res.on('end', () => {
+                const raw = Buffer.concat(chunks).toString('utf8');
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    try {
+                        resolve(JSON.parse(raw));
+                    } catch (e) {
+                        reject(new Error(`Invalid JSON from daemon ${pathname}: ${e.message}`));
+                    }
+                } else {
+                    reject(new Error(`Daemon ${pathname} HTTP ${res.statusCode}: ${raw.slice(0, 300)}`));
+                }
+            });
+        });
+        req.on('timeout', () => {
+            req.destroy();
+            reject(new Error(`Daemon ${pathname} request timed out after ${timeoutMs}ms`));
+        });
+        req.on('error', reject);
+        req.write(payloadBuf);
+        req.end();
+    });
+}
+
+async function resolveReferencesWithVqCodes(bodyObj) {
+    const meta = { hits: 0, encoded: 0, total: 0, encodeMs: 0, active: false };
+    if (!bodyObj || typeof bodyObj !== 'object' || !bodyObj.options || typeof bodyObj.options !== 'object') {
+        return { bodyObj, meta };
+    }
+    const isDramaTarget = state.activeWave === 2 || /drama/i.test(String(bodyObj.model || ''));
+    if (!isDramaTarget) {
+        return { bodyObj, meta };
+    }
+
+    const refKey = bodyObj.options.references !== undefined
+        ? 'references'
+        : (bodyObj.options.multi_reference_cond !== undefined ? 'multi_reference_cond' : null);
+    if (!refKey) {
+        return { bodyObj, meta };
+    }
+
+    const rawVal = bodyObj.options[refKey];
+    const wasString = typeof rawVal === 'string';
+    let refs = null;
+    try {
+        refs = wasString ? JSON.parse(rawVal) : rawVal;
+    } catch (_) {
+        return { bodyObj, meta };
+    }
+    if (!Array.isArray(refs) || refs.length === 0) {
+        return { bodyObj, meta };
+    }
+
+    meta.active = true;
+    meta.total = refs.length;
+    const byNormPath = new Map();
+    const missingList = [];
+
+    for (const desc of refs) {
+        if (!desc || typeof desc !== 'object') continue;
+        if (Array.isArray(desc.vq_codes) && desc.vq_codes.length === 10) {
+            meta.hits++;
+            continue;
+        }
+        const rawAudioPath = desc.audio_path || desc.audio;
+        if (typeof rawAudioPath !== 'string' || !rawAudioPath.trim()) continue;
+        const normKey = path.resolve(rawAudioPath).toLowerCase();
+        if (byNormPath.has(normKey)) {
+            const prev = byNormPath.get(normKey);
+            if (prev.vq_codes) meta.hits++;
+            continue;
+        }
+        const cacheProbe = loadCachedVqCodes(rawAudioPath);
+        if (!cacheProbe) {
+            byNormPath.set(normKey, { rawAudioPath, vq_codes: null, stat: null, wavSha256: null });
+            continue;
+        }
+        if (cacheProbe.vq_codes) {
+            meta.hits++;
+            byNormPath.set(normKey, { rawAudioPath, vq_codes: cacheProbe.vq_codes, stat: cacheProbe.stat, wavSha256: cacheProbe.wavSha256 });
+        } else {
+            const entry = {
+                rawAudioPath,
+                text: String(desc.text || 'Reference speech.').replace(/<\|speaker:\d+\|>/gi, '').trim() || 'Reference speech.',
+                vq_codes: null,
+                stat: cacheProbe.stat,
+                wavSha256: cacheProbe.wavSha256
+            };
+            byNormPath.set(normKey, entry);
+            missingList.push(entry);
+        }
+    }
+
+    if (missingList.length > 0) {
+        const encStart = Date.now();
+        try {
+            // Batch up to 16 references per encode_reference_only call (Drama-3 speaker tag limit 0..15)
+            for (let offset = 0; offset < missingList.length; offset += 16) {
+                const batch = missingList.slice(offset, offset + 16);
+                const encodeRefs = batch.map((item, idx) => ({
+                    text: `<|speaker:${idx}|> ${item.text}`,
+                    audio_path: item.rawAudioPath
+                }));
+                const taskResp = await postDaemonJson('/v1/tasks/run', {
+                    model: bodyObj.model || 'drama-3',
+                    request: {
+                        text: 'Prepare references.',
+                        options: {
+                            encode_reference_only: true,
+                            references: JSON.stringify(encodeRefs)
+                        }
+                    }
+                }, 300000);
+                const artifacts = Array.isArray(taskResp?.artifacts) ? taskResp.artifacts : [];
+                for (let idx = 0; idx < batch.length; idx++) {
+                    const art = artifacts.find(a => a && a.id === `drama3_reference_${idx}`) || artifacts[idx];
+                    if (!art || typeof art.payload !== 'string') continue;
+                    const decoded = JSON.parse(Buffer.from(art.payload, 'base64').toString('utf8'));
+                    if (Array.isArray(decoded?.vq_codes) && decoded.vq_codes.length === 10 && decoded.vq_codes[0]?.length > 0) {
+                        batch[idx].vq_codes = decoded.vq_codes;
+                        saveCachedVqCodes(batch[idx].rawAudioPath, batch[idx].stat, batch[idx].wavSha256, decoded.vq_codes);
+                        meta.encoded++;
+                    }
+                }
+            }
+        } catch (encErr) {
+            pushLog(`[VQ Cache Warning] encode_reference_only failed (${encErr.message}); falling back to raw audio_path.`);
+        }
+        meta.encodeMs = Date.now() - encStart;
+    }
+
+    const rewritten = refs.map(desc => {
+        if (!desc || typeof desc !== 'object') return desc;
+        if (Array.isArray(desc.vq_codes) && desc.vq_codes.length === 10) return desc;
+        const rawAudioPath = desc.audio_path || desc.audio;
+        if (typeof rawAudioPath !== 'string' || !rawAudioPath.trim()) return desc;
+        const entry = byNormPath.get(path.resolve(rawAudioPath).toLowerCase());
+        if (entry && Array.isArray(entry.vq_codes) && entry.vq_codes.length === 10) {
+            return { text: desc.text, vq_codes: entry.vq_codes };
+        }
+        return desc;
+    });
+
+    const nextBody = {
+        ...bodyObj,
+        options: {
+            ...bodyObj.options,
+            [refKey]: wasString ? JSON.stringify(rewritten) : rewritten
+        }
+    };
+    pushLog(`[VQ Cache] References: ${meta.hits}/${meta.total} cached hits, ${meta.encoded} newly encoded (${meta.encodeMs}ms).`);
+    return { bodyObj: nextBody, meta };
+}
+
+function recordWave2Perf(modelId, audioSec, wallSec, vqMeta) {
+    if (!(audioSec > 0 && wallSec > 0)) return;
+    const realtimeX = audioSec / wallSec;
+    const rtf = wallSec / audioSec;
+    const entry = {
+        ts: new Date().toISOString(),
+        model: modelId || 'drama-3',
+        audioSec: Number(audioSec.toFixed(2)),
+        wallSec: Number(wallSec.toFixed(2)),
+        realtimeX: Number(realtimeX.toFixed(3)),
+        rtf: Number(rtf.toFixed(3)),
+        vqHits: vqMeta?.hits || 0,
+        vqEncoded: vqMeta?.encoded || 0,
+        vqTotal: vqMeta?.total || 0
+    };
+    state.perfStats.last = entry;
+    state.perfStats.recent.push(entry);
+    if (state.perfStats.recent.length > 20) state.perfStats.recent.shift();
+    const sumAudio = state.perfStats.recent.reduce((s, e) => s + e.audioSec, 0);
+    const sumWall = state.perfStats.recent.reduce((s, e) => s + e.wallSec, 0);
+    state.perfStats.avgRealtimeX = sumWall > 0 ? Number((sumAudio / sumWall).toFixed(3)) : null;
+    state.perfStats.avgRtf = sumAudio > 0 ? Number((sumWall / sumAudio).toFixed(3)) : null;
+    pushLog(
+        `[Perf] Wave 2 ${entry.model}: ${entry.audioSec.toFixed(1)}s audio in ${entry.wallSec.toFixed(1)}s -> ` +
+        `${entry.realtimeX.toFixed(2)}x realtime (RTF ${entry.rtf.toFixed(2)}) | rolling=${state.perfStats.avgRealtimeX.toFixed(2)}x`
+    );
+}
+
+function forwardProxyRequest(req, res, targetUrl, headers, bodyBuffer = null, telemetryCtx = null) {
     let finished = false;
+    const reqStartMs = Date.now();
     const proxyReq = http.request(targetUrl, {
         method: req.method,
         headers,
@@ -803,6 +1318,29 @@ function handleProxyV1(req, res) {
             }
         }
         res.writeHead(proxyRes.statusCode);
+
+        if (telemetryCtx && proxyRes.statusCode >= 200 && proxyRes.statusCode < 300) {
+            let hdrBuf = Buffer.alloc(0);
+            let totalBytes = 0;
+            proxyRes.on('data', chunk => {
+                totalBytes += chunk.length;
+                if (hdrBuf.length < 44) {
+                    const needed = 44 - hdrBuf.length;
+                    hdrBuf = Buffer.concat([hdrBuf, chunk.subarray(0, needed)]);
+                }
+            });
+            proxyRes.on('end', () => {
+                if (hdrBuf.length >= 44 && hdrBuf.toString('ascii', 0, 4) === 'RIFF' && hdrBuf.toString('ascii', 8, 12) === 'WAVE') {
+                    const byteRate = hdrBuf.readUInt32LE(28);
+                    if (byteRate > 0) {
+                        const audioSec = Math.max(0, (totalBytes - 44) / byteRate);
+                        const wallSec = (Date.now() - reqStartMs) / 1000;
+                        recordWave2Perf(telemetryCtx.modelId, audioSec, wallSec, telemetryCtx.vqMeta);
+                    }
+                }
+            });
+        }
+
         proxyRes.pipe(res);
     });
 
@@ -824,7 +1362,69 @@ function handleProxyV1(req, res) {
         });
     });
 
-    req.pipe(proxyReq);
+    req.on('aborted', () => {
+        if (!finished) {
+            finished = true;
+            proxyReq.destroy();
+        }
+    });
+    res.on('close', () => {
+        if (!res.writableFinished && !finished) {
+            finished = true;
+            proxyReq.destroy();
+        }
+    });
+
+    if (bodyBuffer !== null) {
+        proxyReq.write(bodyBuffer);
+        proxyReq.end();
+    } else {
+        req.pipe(proxyReq);
+    }
+}
+
+function handleProxyV1(req, res, pathname = '') {
+    const targetUrl = `http://127.0.0.1:${settings.daemonPort}${req.url}`;
+    const headers = { ...req.headers };
+    delete headers.host;
+    delete headers.connection;
+
+    const isSpeechPost = req.method === 'POST' && (pathname === '/v1/audio/speech' || req.url.split('?')[0] === '/v1/audio/speech');
+    if (!isSpeechPost) {
+        return forwardProxyRequest(req, res, targetUrl, headers, null, null);
+    }
+
+    const chunks = [];
+    req.on('data', c => chunks.push(c));
+    req.on('end', async () => {
+        const rawBuf = Buffer.concat(chunks);
+        let parsed = null;
+        try {
+            parsed = JSON.parse(rawBuf.toString('utf8'));
+        } catch (_) {
+            return forwardProxyRequest(req, res, targetUrl, headers, rawBuf, null);
+        }
+
+        const isDramaModel = state.activeWave === 2 || /drama/i.test(String(parsed?.model || ''));
+        let finalBuf = rawBuf;
+        let vqMeta = null;
+        if (isDramaModel) {
+            try {
+                const resolved = await resolveReferencesWithVqCodes(parsed);
+                vqMeta = resolved.meta;
+                finalBuf = Buffer.from(JSON.stringify(resolved.bodyObj), 'utf8');
+                delete headers['transfer-encoding'];
+                headers['content-length'] = String(finalBuf.length);
+            } catch (vqErr) {
+                pushLog(`[VQ Cache Warning] Unexpected error resolving references (${vqErr.message}); forwarding raw payload.`);
+            }
+        }
+        const telemetryCtx = isDramaModel ? { modelId: parsed?.model || state.activeModel || 'drama-3', vqMeta } : null;
+        forwardProxyRequest(req, res, targetUrl, headers, finalBuf, telemetryCtx);
+    });
+    req.on('error', err => {
+        sendJson(res, 400, { error: `Failed to read speech request body: ${err.message}` });
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -887,7 +1487,7 @@ const server = http.createServer((req, res) => {
 
     // Route: POST /v1/* (Reverse proxy to Audio.cpp daemon)
     if (pathname.startsWith('/v1/')) {
-        return handleProxyV1(req, res);
+        return handleProxyV1(req, res, pathname);
     }
 
     // Fallback 404

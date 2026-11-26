@@ -17,11 +17,15 @@ set "PARAM2=%~2"
 set "NON_INTERACTIVE=0"
 set "CLI_CHOICE="
 
-rem Check if first param is a direct choice number (1-4) or "all"
+rem Check if first param is a direct choice number (1-6), "all", "q3", or "q2"
 if "%PARAM1%"=="1" (set "CLI_CHOICE=1" & set "NON_INTERACTIVE=1" & set "TARGET_DIR=")
 if "%PARAM1%"=="2" (set "CLI_CHOICE=2" & set "NON_INTERACTIVE=1" & set "TARGET_DIR=")
 if "%PARAM1%"=="3" (set "CLI_CHOICE=3" & set "NON_INTERACTIVE=1" & set "TARGET_DIR=")
 if "%PARAM1%"=="4" (set "CLI_CHOICE=4" & set "NON_INTERACTIVE=1" & set "TARGET_DIR=")
+if "%PARAM1%"=="5" (set "CLI_CHOICE=5" & set "NON_INTERACTIVE=1" & set "TARGET_DIR=")
+if "%PARAM1%"=="6" (set "CLI_CHOICE=6" & set "NON_INTERACTIVE=1" & set "TARGET_DIR=")
+if /i "%PARAM1%"=="q3" (set "CLI_CHOICE=5" & set "NON_INTERACTIVE=1" & set "TARGET_DIR=")
+if /i "%PARAM1%"=="q2" (set "CLI_CHOICE=6" & set "NON_INTERACTIVE=1" & set "TARGET_DIR=")
 if /i "%PARAM1%"=="all" (set "CLI_CHOICE=1" & set "NON_INTERACTIVE=1" & set "TARGET_DIR=")
 
 if not defined CLI_CHOICE if defined PARAM1 (
@@ -30,6 +34,10 @@ if not defined CLI_CHOICE if defined PARAM1 (
     if "%PARAM2%"=="2" (set "CLI_CHOICE=2" & set "NON_INTERACTIVE=1")
     if "%PARAM2%"=="3" (set "CLI_CHOICE=3" & set "NON_INTERACTIVE=1")
     if "%PARAM2%"=="4" (set "CLI_CHOICE=4" & set "NON_INTERACTIVE=1")
+    if "%PARAM2%"=="5" (set "CLI_CHOICE=5" & set "NON_INTERACTIVE=1")
+    if "%PARAM2%"=="6" (set "CLI_CHOICE=6" & set "NON_INTERACTIVE=1")
+    if /i "%PARAM2%"=="q3" (set "CLI_CHOICE=5" & set "NON_INTERACTIVE=1")
+    if /i "%PARAM2%"=="q2" (set "CLI_CHOICE=6" & set "NON_INTERACTIVE=1")
     if /i "%PARAM2%"=="all" (set "CLI_CHOICE=1" & set "NON_INTERACTIVE=1")
 )
 
@@ -91,12 +99,14 @@ echo       - Wave 2: Fish Audio Drama-3 MoE Backbone Q4_K_S (~23.0 GB)
 echo       - Wave 3: Whisper Base ASR Q8_0 + VAD (~155 MB)
 echo.
 echo   [2] Wave 1 Only: Breeze 2 TTS (Voice Design + Narration, ~5.4 GB)
-echo   [3] Wave 2 Only: Fish Audio Drama-3 (Multi-Speaker Dialogue Engine, ~23.0 GB)
-echo   [4] Wave 3 Only: Whisper Verifier + VAD (Silence Trimming & ASR, ~155 MB)
-echo   [5] Change Target Directory
-echo   [6] Exit
+echo   [3] Wave 2 Only: Fish Audio Drama-3 Q4_K_S (Default Dialogue Engine, ~23.0 GB)
+echo   [4] Wave 3 Only: Whisper Verifier + VAD (Silence Trimming ^& ASR, ~155 MB)
+echo   [5] Wave 2 Alt:  Fish Audio Drama-3 Q3_K_S (~19.0 GB - Faster on 12-16 GB VRAM)
+echo   [6] Wave 2 Alt:  Fish Audio Drama-3 Q2_K (~15.9 GB - Fastest / Lowest VRAM)
+echo   [7] Change Target Directory
+echo   [8] Exit
 echo -------------------------------------------------------------------------------
-set /p "CHOICE=Enter choice [1-6] (Default is 1): "
+set /p "CHOICE=Enter choice [1-8] (Default is 1): "
 if not defined CHOICE set "CHOICE=1"
 
 :process_choice
@@ -104,10 +114,12 @@ if "%CHOICE%"=="1" goto :download_all
 if "%CHOICE%"=="2" goto :download_wave1
 if "%CHOICE%"=="3" goto :download_wave2
 if "%CHOICE%"=="4" goto :download_wave3
-if "%CHOICE%"=="5" goto :change_dir
-if "%CHOICE%"=="6" goto :done
+if "%CHOICE%"=="5" goto :download_wave2_q3
+if "%CHOICE%"=="6" goto :download_wave2_q2
+if "%CHOICE%"=="7" goto :change_dir
+if "%CHOICE%"=="8" goto :done
 
-echo Invalid selection. Please choose 1 to 6.
+echo Invalid selection. Please choose 1 to 8.
 echo.
 goto :menu
 
@@ -142,6 +154,14 @@ goto :finished
 call :do_wave3
 goto :finished
 
+:download_wave2_q3
+call :do_wave2_q3
+goto :finished
+
+:download_wave2_q2
+call :do_wave2_q2
+goto :finished
+
 rem ---------------------------------------------------------------------------
 rem Wave 1: Breeze 2 TTS
 rem ---------------------------------------------------------------------------
@@ -174,6 +194,30 @@ if not exist "%W2_DIR%" mkdir "%W2_DIR%"
 
 rem Fish Audio Drama-3 MoE Backbone (8bit, Q4_K_S experts, bundled codec)
 call :download_file "https://huggingface.co/Jmica/Drama-3-GGUF/resolve/main/drama-3-backbone-8bit-experts-Q4_K_S.gguf" "%W2_DIR%\drama-3-backbone-8bit-experts-Q4_K_S.gguf" "Fish Audio Drama-3 Backbone (Q4_K_S MoE, ~23.0 GB)"
+
+exit /b 0
+
+:do_wave2_q3
+echo.
+echo ===============================================================================
+echo [WAVE 2 ALT] Downloading Fish Audio Drama-3 Dialogue Model (Q3_K_S)
+echo ===============================================================================
+set "W2_DIR=%TARGET_DIR%\models\Drama-3-GGUF"
+if not exist "%W2_DIR%" mkdir "%W2_DIR%"
+
+call :download_file "https://huggingface.co/Jmica/Drama-3-GGUF/resolve/main/drama-3-backbone-8bit-experts-Q3_K_S.gguf" "%W2_DIR%\drama-3-backbone-8bit-experts-Q3_K_S.gguf" "Fish Audio Drama-3 Backbone (Q3_K_S MoE, ~19.0 GB)"
+
+exit /b 0
+
+:do_wave2_q2
+echo.
+echo ===============================================================================
+echo [WAVE 2 ALT] Downloading Fish Audio Drama-3 Dialogue Model (Q2_K)
+echo ===============================================================================
+set "W2_DIR=%TARGET_DIR%\models\Drama-3-GGUF"
+if not exist "%W2_DIR%" mkdir "%W2_DIR%"
+
+call :download_file "https://huggingface.co/Jmica/Drama-3-GGUF/resolve/main/drama-3-backbone-8bit-experts-Q2_K.gguf" "%W2_DIR%\drama-3-backbone-8bit-experts-Q2_K.gguf" "Fish Audio Drama-3 Backbone (Q2_K MoE, ~15.9 GB)"
 
 exit /b 0
 
@@ -269,6 +313,12 @@ if exist "%TARGET_DIR%\models\Drama-3-GGUF\drama-3-backbone-8bit-experts-Q4_K_S.
 ) else (
     echo [MISSING] Wave 2: models\Drama-3-GGUF\drama-3-backbone-8bit-experts-Q4_K_S.gguf
     set /a MISSING+=1
+)
+if exist "%TARGET_DIR%\models\Drama-3-GGUF\drama-3-backbone-8bit-experts-Q3_K_S.gguf" (
+    echo [OK] Wave 2 Alt: models\Drama-3-GGUF\drama-3-backbone-8bit-experts-Q3_K_S.gguf
+)
+if exist "%TARGET_DIR%\models\Drama-3-GGUF\drama-3-backbone-8bit-experts-Q2_K.gguf" (
+    echo [OK] Wave 2 Alt: models\Drama-3-GGUF\drama-3-backbone-8bit-experts-Q2_K.gguf
 )
 
 rem Check Wave 3

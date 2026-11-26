@@ -17,13 +17,16 @@
       "family": "fish_drama3",
       "path": "D:\\AI_Projects\\Audiocpp\\audio.cpp\\models\\Drama-3-GGUF\\drama-3-backbone-8bit-experts-Q4_K_S.gguf",
       "task": "clon",
-      "mode": "offline",
+      "mode": "streaming",
       "session_options": {
         "fish_drama3.disk_experts": "true",
         "fish_drama3.pin_experts": "true",
         "fish_drama3.cpu_expert_layers": "0",
-        "fish_drama3.expert_cache_size": "32",
-        "fish_drama3.context_length": "8192"
+        "fish_drama3.expert_cache_size": "44",
+        "fish_drama3.codec_backend": "same",
+        "fish_drama3.context_length": "8192",
+        "fish_drama3.backbone_prefill_cache_mb": "512",
+        "fish_drama3.tower_prefill_cache_mb": "512"
       },
       "default_request_options": {
         "text_chunk_size": "8000",
