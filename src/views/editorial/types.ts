@@ -111,6 +111,8 @@ export interface EditorialTransactionItem {
     combinedDirective?: string;
     gateResults?: EditorialGateResult[];
     attemptHistory?: EditorialAttemptHistoryItem[];
+    /** Why the edit did not commit (text changed, conflict, failed gates). */
+    skipReason?: string;
     [key: string]: unknown;
 }
 

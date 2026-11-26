@@ -671,6 +671,9 @@ export async function conveneAdversarialTribunal(
                   : 3;
         let C = isIgnored ? 1 : 5;
         let R = 4;
+        let judgeVerdict = '';
+        let judgeProblem = '';
+        let judgeDirective = '';
 
         let prosecutorArg = `Grounded evidence at ${dos.startAnchor} confirms ${dos.category}: ${dos.rootCauseAnalysis}`;
         let defenseArg = isIgnored
@@ -697,16 +700,13 @@ export async function conveneAdversarialTribunal(
                 if (dArg) defenseArg = dArg.trim();
                 if (jRat) judicialRationale = jRat.trim();
 
-                const rubMatch = tribRaw.match(
-                    /<RubricScores[^>]*E="(\d)"[^>]*I="(\d)"[^>]*D="(\d)"[^>]*C="(\d)"[^>]*R="(\d)"/i
-                );
-                if (rubMatch) {
-                    E = Math.max(1, Math.min(5, parseInt(rubMatch[1], 10)));
-                    I = Math.max(1, Math.min(5, parseInt(rubMatch[2], 10)));
-                    D = Math.max(1, Math.min(5, parseInt(rubMatch[3], 10)));
-                    C = Math.max(1, Math.min(5, parseInt(rubMatch[4], 10)));
-                    R = Math.max(1, Math.min(5, parseInt(rubMatch[5], 10)));
-                }
+                const rubric = parseTribunalRubric(tribRaw);
+                if (rubric) ({ E, I, D, C, R } = rubric);
+                judgeVerdict = (tribRaw.match(
+                    /<JudgeRuling[^>]*\bverdict=["'](APPROVED_FOR_COMPILATION|INFORMATIONAL_ONLY|VETOED_FALSE_POSITIVE|VETOED_LOW_PRIORITY)["']/i
+                )?.[1] || '').toUpperCase();
+                judgeProblem = (extractTag(tribRaw, 'ProblemStatement') || '').trim();
+                judgeDirective = (extractTag(tribRaw, 'SurgicalDirective') || '').trim();
             } catch (e) {
                 console.warn(`[Tribunal] Using deterministic rubric scoring for ${dos.id}:`, e);
             }
@@ -723,6 +723,15 @@ export async function conveneAdversarialTribunal(
         } else if (priorityScore < 45.0) {
             verdict = 'INFORMATIONAL_ONLY';
         }
+        // The judge's own ruling can only make the outcome stricter: a judge who vetoes a case or
+        // marks it informational is not overruled by scores that happen to add up to 45.
+        if (
+            verdict === 'APPROVED_FOR_COMPILATION' &&
+            judgeVerdict &&
+            judgeVerdict !== 'APPROVED_FOR_COMPILATION'
+        ) {
+            verdict = judgeVerdict;
+        }
 
         const ticket: EditorialTicket = {
             id: `tkt_${i + 1}_${dos.sceneId}`,
@@ -734,8 +743,10 @@ export async function conveneAdversarialTribunal(
             startAnchor: dos.startAnchor,
             endAnchor: dos.endAnchor,
             verbatimOriginal: dos.citedEvidence?.[0]?.verbatimQuote || '',
-            problemStatement: dos.rootCauseAnalysis,
-            surgicalDirective: dos.proposedRemediation,
+            // The judge's ticket text is written for the editor and says what must be preserved;
+            // the investigator's analysis is the fallback when the judge gave none.
+            problemStatement: judgeProblem || dos.rootCauseAnalysis,
+            surgicalDirective: judgeDirective || dos.proposedRemediation,
             rubricScores: { E, I, D, C, R },
             priorityScore,
             verdict
@@ -758,6 +769,29 @@ export async function conveneAdversarialTribunal(
     }
 
     return { tribunalCases, verifiedTickets };
+}
+
+/**
+ * Reads the five tribunal rubric scores from <RubricScores>, in any attribute order and with
+ * single or double quotes. The old pattern needed E, I, D, C, R in exactly that order, so a judge
+ * that wrote them differently was silently replaced by the deterministic all-high scores.
+ */
+export function parseTribunalRubric(
+    raw: unknown
+): { E: number; I: number; D: number; C: number; R: number } | null {
+    const tag = (typeof raw === 'string' ? raw : '').match(/<RubricScores\b[^>]*>/i)?.[0];
+    if (!tag) return null;
+    const read = (axis: string): number | null => {
+        const m = tag.match(new RegExp(`\\b${axis}=["'](\\d+(?:\\.\\d+)?)["']`));
+        return m ? Math.max(1, Math.min(5, Math.round(Number(m[1])))) : null;
+    };
+    const E = read('E');
+    const I = read('I');
+    const D = read('D');
+    const C = read('C');
+    const R = read('R');
+    if (E === null || I === null || D === null || C === null || R === null) return null;
+    return { E, I, D, C, R };
 }
 
 /** Phase 3 Compiler: merges overlapping paragraph tickets into Wave 1/2/3 transactions with 35% churn cap. */

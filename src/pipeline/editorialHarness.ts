@@ -24,6 +24,7 @@ import {
     type AestheticConstitution,
     type AuthorVoiceDNA,
     type CompiledThreeWaveEditPlan,
+    type DraftedStorySceneItem,
     type EditPlanTransaction,
     type EditorialStoryInput,
     type FullManuscriptTelemetryReport,
@@ -31,6 +32,7 @@ import {
     type Layer0EvaluationReport,
     type ManuscriptPatchResult,
     type NarrativeStateGraph,
+    type SceneTelemetryReport,
     type TribunalCase,
     type VerificationGateReport
 } from '@/domain/editorial';
@@ -64,6 +66,8 @@ export interface EditorialHarnessSummary {
     totalTransactions: number;
     committedTransactions: number;
     rolledBackTransactions: number;
+    /** Edits skipped because their target text changed before they ran. */
+    skippedTransactions: number;
 }
 
 export interface HarnessAttemptHistoryEntry {
@@ -79,6 +83,8 @@ export interface ExtendedEditPlanTransaction
         Record<string, unknown> {
     transaction_id?: string;
     sceneKey?: string;
+    /** Why the last run did not commit this edit (stale span, conflict, failed gates). */
+    skipReason?: string;
     proseKey?: string;
     attempts_used?: number;
     attemptHistory?: HarnessAttemptHistoryEntry[];
@@ -107,6 +113,8 @@ export interface EditorialHarnessState extends Record<string, unknown> {
     } | null;
     editPlan: CompiledThreeWaveEditPlan | null;
     preRunProseSnapshot: Record<string, unknown>;
+    /** Scenes with harness edits that "Revert all" still has to undo. */
+    touchedProseKeys: string[];
     summary: EditorialHarnessSummary;
     logs: Array<{
         id: string;
@@ -142,6 +150,325 @@ function resolveWaveAgentPrompt(
           ? 'mesoSceneSurgeonAgent'
           : 'microLineStylistAgent';
     return PROMPTS[agentPromptKey] || PROMPTS.microLineStylistAgent;
+}
+
+/** Feedback rounds an edit gets before it is rolled back. */
+export const HARNESS_MAX_ATTEMPTS = 3;
+
+export type HarnessTransactionStatus =
+    | 'COMMITTED'
+    | 'ROLLED_BACK'
+    | 'NO_OP_CLEAN'
+    | 'SKIPPED_STALE'
+    | 'SKIPPED_CONFLICT';
+
+/** Wraps text in CDATA, splitting any "]]>" inside it so prose can never close the section early. */
+function cdata(text: unknown): string {
+    return `<![CDATA[${String(text ?? '').replace(/\]\]>/g, ']]]]><![CDATA[>')}]]>`;
+}
+
+/** Builds the editor prompt for one round of one transaction. Shared by full runs and single runs. */
+export function buildEditorPatchPrompt({
+    tx,
+    sceneItem,
+    voiceXml,
+    constitutionXml,
+    attempt,
+    maxAttempts = HARNESS_MAX_ATTEMPTS,
+    attemptHistory
+}: {
+    tx: ExtendedEditPlanTransaction;
+    sceneItem: DraftedStorySceneItem;
+    voiceXml: string;
+    constitutionXml: string;
+    attempt: number;
+    maxAttempts?: number;
+    attemptHistory: HarnessAttemptHistoryEntry[];
+}): string {
+    const startParaId = String(tx.startAnchor || '').split(':s')[0];
+    const pList = sceneItem.normalized?.paragraphs || [];
+    const pIdx = pList.findIndex((p) => p.id === startParaId);
+    const prevParaText = pIdx > 0 ? pList[pIdx - 1]?.text || '' : '';
+    const nextParaText = pIdx >= 0 && pIdx < pList.length - 1 ? pList[pIdx + 1]?.text || '' : '';
+
+    let feedbackXml = '';
+    if (attemptHistory.length > 0) {
+        feedbackXml =
+            `<FeedbackFromPriorRounds current_round="${attempt}" max_rounds="${maxAttempts}">\n` +
+            attemptHistory
+                .map(
+                    (h) =>
+                        `  <PriorAttempt round="${h.attempt}">\n    <RejectedSpan>${cdata(h.proposedSpan || '')}</RejectedSpan>\n    <FailureDiagnostic>${escapeHarnessXml(h.feedback?.diagnostic || '')}</FailureDiagnostic>\n    <RequiredCorrectionDirective>${escapeHarnessXml(h.feedback?.correction || '')}</RequiredCorrectionDirective>\n  </PriorAttempt>`
+                )
+                .join('\n') +
+            `\n  <Round${attempt}Directive>Do NOT repeat or closely paraphrase any rejected replacement above. You MUST take a fundamentally fresh craft approach that satisfies the RequiredCorrectionDirective while strictly preserving <AuthorVoiceDNA>.</Round${attempt}Directive>\n</FeedbackFromPriorRounds>`;
+    }
+
+    return `${voiceXml}\n${constitutionXml}\n<TargetScene id="${tx.sceneId}">
+  <PrecedingContext>${cdata(prevParaText)}</PrecedingContext>
+  <AtomicEditTransaction id="${tx.transactionId}" wave="${tx.wave}" start_anchor="${tx.startAnchor}" end_anchor="${tx.endAnchor}">
+    <Problem>${escapeHarnessXml(tx.combinedProblem)}</Problem>
+    <SurgicalDirective>${escapeHarnessXml(tx.combinedDirective)}</SurgicalDirective>
+    <OriginalSpanVerifier>${cdata(tx.verbatimOriginal)}</OriginalSpanVerifier>
+  </AtomicEditTransaction>
+  <FollowingContext>${cdata(nextParaText)}</FollowingContext>
+</TargetScene>
+${feedbackXml ? `${feedbackXml}\n` : ''}Emit a <ManuscriptPatchTransaction transaction_id="${tx.transactionId}" target_scene="${tx.sceneId}">
+  <PatchOperation type="REPLACE_SPAN" start_anchor="${tx.startAnchor}" end_anchor="${tx.endAnchor}">
+    <OriginalSpanVerifier>${cdata(tx.verbatimOriginal)}</OriginalSpanVerifier>
+    <ReplacementSpan>
+      <!-- Fresh revised prose resolving the ticket and satisfying Round ${attempt} feedback -->
+    </ReplacementSpan>
+  </PatchOperation>
+</ManuscriptPatchTransaction>`;
+}
+
+export interface HarnessTransactionOutcome {
+    status: HarnessTransactionStatus;
+    attemptsUsed: number;
+    attemptHistory: HarnessAttemptHistoryEntry[];
+    beforeProse: string;
+    /** The patched scene prose when committed; otherwise the unchanged prose. */
+    afterProse: string;
+    beforeSpan: string;
+    afterSpan: string;
+    gateResults: VerificationGateReport[];
+    postTelemetry?: SceneTelemetryReport;
+    /** Why the edit did not commit, in one line. Empty when committed. */
+    reason: string;
+}
+
+/**
+ * Runs one transaction through edit -> 4 gates -> feedback, up to HARNESS_MAX_ATTEMPTS rounds.
+ * Pure with respect to the story: it never writes prose, it only reports what should happen.
+ */
+export async function runHarnessTransaction({
+    tx,
+    wave,
+    sceneItem,
+    story,
+    voiceDna,
+    constitution,
+    nsg,
+    callAI,
+    useLLM,
+    bannedPhrases,
+    slopConfig,
+    label
+}: {
+    tx: ExtendedEditPlanTransaction;
+    wave: { waveId?: unknown; waveKey?: unknown; name?: unknown };
+    sceneItem: DraftedStorySceneItem;
+    story: EditorialStoryInput;
+    voiceDna?: AuthorVoiceDNA | null;
+    constitution?: AestheticConstitution | null;
+    nsg?: NarrativeStateGraph | null;
+    callAI: PipelineRuntimeContext['callAI'] | null;
+    useLLM: boolean;
+    bannedPhrases: string[];
+    slopConfig: ReturnType<PipelineRuntimeContext['getSlopConfig']>;
+    label: string;
+}): Promise<HarnessTransactionOutcome> {
+    const beforeProse = sceneItem.proseText;
+    const preTelemetry = runSceneNlpTelemetry(sceneItem, story, bannedPhrases, slopConfig);
+    const canCallLLM = useLLM && typeof callAI === 'function';
+    const attemptHistory: HarnessAttemptHistoryEntry[] = [];
+    let lastPatchRes: ManuscriptPatchResult | null = null;
+    let lastGates: VerificationGateReport[] = [];
+
+    for (let attempt = 1; attempt <= HARNESS_MAX_ATTEMPTS; attempt++) {
+        let rawPatchOutput: string | null = null;
+        if (canCallLLM) {
+            try {
+                rawPatchOutput = await callAI(
+                    buildEditorPatchPrompt({
+                        tx,
+                        sceneItem,
+                        voiceXml: asString(voiceDna?.xml),
+                        constitutionXml: asString(constitution?.xml),
+                        attempt,
+                        attemptHistory
+                    }),
+                    resolveWaveAgentPrompt(wave, tx),
+                    false,
+                    `${label} (${tx.transactionId} - R${attempt}/${HARNESS_MAX_ATTEMPTS})`,
+                    'Polish'
+                );
+            } catch (llmErr) {
+                // The model is unreachable: fall back to the offline repair for this round.
+                console.warn(
+                    `[EditorialHarness] Editor call failed for ${tx.transactionId} round ${attempt}; using the offline repair:`,
+                    llmErr
+                );
+            }
+        }
+
+        const patchRes = applyManuscriptPatchToScene(
+            sceneItem,
+            tx,
+            rawPatchOutput,
+            story,
+            attempt,
+            attemptHistory[attemptHistory.length - 1]?.feedback
+        );
+        lastPatchRes = patchRes;
+
+        if (patchRes.stale) {
+            // The text this edit was planned against is gone. Another round cannot fix that, and
+            // the old behaviour (overwrite the whole paragraph) destroyed text nobody reviewed.
+            return {
+                status: 'SKIPPED_STALE',
+                attemptsUsed: attempt,
+                attemptHistory,
+                beforeProse,
+                afterProse: beforeProse,
+                beforeSpan: tx.verbatimOriginal,
+                afterSpan: tx.verbatimOriginal,
+                gateResults: [],
+                reason: patchRes.error || 'Target span changed since the plan was compiled.'
+            };
+        }
+
+        const gateSuite = await runFourGateVerificationSuite({
+            sceneItem,
+            patchedResult: patchRes,
+            transaction: tx,
+            baselineTelemetry: preTelemetry,
+            nsg,
+            constitution,
+            voiceDna,
+            story,
+            slopConfig,
+            callAIFn: canCallLLM ? callAI : null,
+            useLLM
+        });
+        lastGates = gateSuite.gates;
+
+        if (gateSuite.allPassed && asString(patchRes.updatedFullProse).trim() !== beforeProse.trim()) {
+            return {
+                status: 'COMMITTED',
+                attemptsUsed: attempt,
+                attemptHistory,
+                beforeProse,
+                afterProse: asString(patchRes.updatedFullProse),
+                beforeSpan: asString(patchRes.beforeSpan),
+                afterSpan: asString(patchRes.afterSpan),
+                gateResults: gateSuite.gates,
+                postTelemetry: gateSuite.postTelemetry,
+                reason: ''
+            };
+        }
+
+        const feedback = compileGateFailureFeedback(gateSuite, patchRes, attempt);
+        attemptHistory.push({
+            attempt,
+            proposedSpan: patchRes.afterSpan,
+            failedGates: gateSuite.gates.filter((g) => !g.passed).map((g) => g.gate),
+            feedback,
+            gateResults: gateSuite.gates
+        });
+
+        // Without a model, every round of the offline repair is the same edit, so once the
+        // gates reject it twice with nothing new to try there is no point in a third round.
+        const sameAsLastRound =
+            !canCallLLM &&
+            attemptHistory.length >= 2 &&
+            attemptHistory[attemptHistory.length - 1].proposedSpan ===
+                attemptHistory[attemptHistory.length - 2].proposedSpan;
+        if (sameAsLastRound) break;
+    }
+
+    const candidateFull = lastPatchRes?.updatedFullProse || beforeProse;
+    return {
+        status: candidateFull.trim() === beforeProse.trim() ? 'NO_OP_CLEAN' : 'ROLLED_BACK',
+        attemptsUsed: attemptHistory.length,
+        attemptHistory,
+        beforeProse,
+        afterProse: beforeProse,
+        beforeSpan: lastPatchRes?.beforeSpan || tx.verbatimOriginal,
+        afterSpan: lastPatchRes?.afterSpan || tx.verbatimOriginal,
+        gateResults: lastGates,
+        reason:
+            attemptHistory[attemptHistory.length - 1]?.feedback?.diagnostic ||
+            'Failed verification gates'
+    };
+}
+
+/** Copies an outcome onto the stored transaction so the Editorial view can show it. */
+function recordOutcome(
+    tx: ExtendedEditPlanTransaction,
+    outcome: HarnessTransactionOutcome,
+    proseKey: string
+): void {
+    tx.status = outcome.status;
+    tx.attempts_used = outcome.attemptsUsed;
+    tx.attemptHistory = outcome.attemptHistory;
+    tx.proseKey = proseKey;
+    tx.beforeProse = outcome.beforeProse;
+    tx.afterProse = outcome.afterProse;
+    tx.beforeSpan = outcome.beforeSpan;
+    tx.afterSpan = outcome.afterSpan;
+    tx.gateResults = outcome.gateResults;
+    if (outcome.reason) tx.skipReason = outcome.reason;
+    else delete tx.skipReason;
+}
+
+/** Reads the text of a prose entry, whether it is stored as a string or as { final, draft }. */
+function proseEntryText(entry: unknown): string {
+    if (typeof entry === 'string') return entry;
+    const rec = asOptionalRecord(entry);
+    return asString(rec?.final || rec?.draft || rec?.prose);
+}
+
+/** Writes patched prose into a prose map, keeping the entry's other fields. */
+function writePatchedProse(
+    proseMap: Record<string, unknown>,
+    proseKey: string,
+    text: string,
+    transactionId: string
+): void {
+    proseMap[proseKey] = {
+        ...asRecord(proseMap[proseKey]),
+        final: text,
+        draft: text,
+        editorial_harness_patched: true,
+        last_patch_tx: transactionId
+    };
+}
+
+/** Finds a transaction in a plan by id (either spelling of the id field). */
+function findPlanTransaction(
+    editPlan: CompiledThreeWaveEditPlan | undefined,
+    transactionId: string
+): { tx: ExtendedEditPlanTransaction; wave: CompiledThreeWaveEditPlan['waves'][number] } | null {
+    for (const w of editPlan?.waves || []) {
+        const found = (w.transactions || []).find(
+            (t) =>
+                ((t as ExtendedEditPlanTransaction).transactionId ||
+                    (t as ExtendedEditPlanTransaction).transaction_id) === transactionId
+        ) as ExtendedEditPlanTransaction | undefined;
+        if (found) return { tx: found, wave: w };
+    }
+    return null;
+}
+
+/**
+ * The snapshot "Revert all" restores. A scene keeps its old entry only while harness edits from an
+ * earlier run are still live in it; every other scene is snapshotted as it is now. Before, the
+ * first run's snapshot was kept forever, so "Revert all" could restore a months-old version of a
+ * scene the author had rewritten by hand, and scenes written later had no entry at all.
+ */
+export function buildPreRunProseSnapshot(
+    existingSnapshot: unknown,
+    touchedProseKeys: readonly string[],
+    currentProse: unknown
+): Record<string, unknown> {
+    const previous = asRecord(existingSnapshot);
+    const snapshot = JSON.parse(JSON.stringify(currentProse || {})) as Record<string, unknown>;
+    for (const key of touchedProseKeys) {
+        if (key in previous) snapshot[key] = previous[key];
+    }
+    return snapshot;
 }
 
 /** Runs the 5-Phase Autonomous Editorial Harness across one scene or the full manuscript. */
@@ -457,10 +784,22 @@ export async function runAutonomousEditorialHarness(
             );
         }
 
-        const preRunProseSnapshot = (workingHarness.preRunProseSnapshot ||
-            JSON.parse(JSON.stringify(workingStory.prose || {}))) as Record<string, unknown>;
-        let committedCount = 0;
-        let rejectedCount = 0;
+        const previouslyTouched = Array.isArray(workingHarness.touchedProseKeys)
+            ? (workingHarness.touchedProseKeys as string[])
+            : [];
+        const preRunProseSnapshot = buildPreRunProseSnapshot(
+            workingHarness.preRunProseSnapshot,
+            previouslyTouched,
+            workingStory.prose
+        );
+        // Prose as it was when this run started. Commits are merged back only into scenes that
+        // still match it, so an author's edit made while the harness ran is never overwritten.
+        const runStartProse = JSON.parse(JSON.stringify(baseStory.prose || {})) as Record<
+            string,
+            unknown
+        >;
+        // Which scenes this run changed, and which transactions did it.
+        const committedThisRun = new Map<string, ExtendedEditPlanTransaction[]>();
 
         if (
             (mode === 'full_pipeline' || mode === 'execute_plan') &&
@@ -507,185 +846,62 @@ export async function runAutonomousEditorialHarness(
                         subStep: 'Phases 4–5: Surgical Patch & 4-Gate CI/CD'
                     });
 
-                    const beforeProse = sceneItem.proseText;
-                    const preTelemetry = runSceneNlpTelemetry(
+                    const outcome = await runHarnessTransaction({
+                        tx,
+                        wave,
                         sceneItem,
-                        workingStory as unknown as EditorialStoryInput,
+                        story: workingStory as unknown as EditorialStoryInput,
+                        voiceDna,
+                        constitution,
+                        nsg,
+                        callAI: callAIIfEnabled,
+                        useLLM,
                         bannedPhrases,
-                        slopConfig
-                    );
+                        slopConfig,
+                        label: `Editorial Harness ${wave.name || wave.waveId}`
+                    });
+                    recordOutcome(tx, outcome, sceneItem.proseKey);
 
-                    let attempt = 1;
-                    const maxAttempts = 3;
-                    let lastGateSuite:
-                        | Awaited<ReturnType<typeof runFourGateVerificationSuite>>
-                        | null = null;
-                    let lastPatchRes: ManuscriptPatchResult | null = null;
-                    const attemptHistory: HarnessAttemptHistoryEntry[] = [];
-
-                    while (attempt <= maxAttempts) {
-                        let rawPatchOutput: string | null = null;
-                        if (useLLM && typeof callAIIfEnabled === 'function') {
-                            try {
-                                const sysPrompt = resolveWaveAgentPrompt(wave, tx);
-                                const startParaId = String(tx.startAnchor || '').split(':s')[0];
-                                const pList = sceneItem.normalized?.paragraphs || [];
-                                const pIdx = pList.findIndex((p) => p.id === startParaId);
-                                const prevParaText = pIdx > 0 ? pList[pIdx - 1]?.text || '' : '';
-                                const nextParaText =
-                                    pIdx >= 0 && pIdx < pList.length - 1
-                                        ? pList[pIdx + 1]?.text || ''
-                                        : '';
-
-                                let feedbackXml = '';
-                                if (attemptHistory.length > 0) {
-                                    feedbackXml =
-                                        `<FeedbackFromPriorRounds current_round="${attempt}" max_rounds="${maxAttempts}">\n` +
-                                        attemptHistory
-                                            .map(
-                                                (h) =>
-                                                    `  <PriorAttempt round="${h.attempt}">\n    <RejectedSpan><![CDATA[${h.proposedSpan || ''}]]></RejectedSpan>\n    <FailureDiagnostic>${escapeHarnessXml(h.feedback?.diagnostic || '')}</FailureDiagnostic>\n    <RequiredCorrectionDirective>${escapeHarnessXml(h.feedback?.correction || '')}</RequiredCorrectionDirective>\n  </PriorAttempt>`
-                                            )
-                                            .join('\n') +
-                                        `\n  <Round${attempt}Directive>Do NOT repeat or closely paraphrase any rejected replacement above. You MUST take a fundamentally fresh craft approach that satisfies the RequiredCorrectionDirective while strictly preserving <AuthorVoiceDNA>.</Round${attempt}Directive>\n</FeedbackFromPriorRounds>`;
-                                }
-
-                                const userPrompt = `${voiceDna?.xml || ''}\n${constitution?.xml || ''}\n<TargetScene id="${tx.sceneId}">
-  <PrecedingContext><![CDATA[${prevParaText}]]></PrecedingContext>
-  <AtomicEditTransaction id="${tx.transactionId}" wave="${tx.wave}" start_anchor="${tx.startAnchor}" end_anchor="${tx.endAnchor}">
-    <Problem>${escapeHarnessXml(tx.combinedProblem)}</Problem>
-    <SurgicalDirective>${escapeHarnessXml(tx.combinedDirective)}</SurgicalDirective>
-    <OriginalSpanVerifier><![CDATA[${tx.verbatimOriginal}]]></OriginalSpanVerifier>
-  </AtomicEditTransaction>
-  <FollowingContext><![CDATA[${nextParaText}]]></FollowingContext>
-</TargetScene>
-${feedbackXml ? `${feedbackXml}\n` : ''}Emit a <ManuscriptPatchTransaction transaction_id="${tx.transactionId}" target_scene="${tx.sceneId}">
-  <PatchOperation type="REPLACE_SPAN" start_anchor="${tx.startAnchor}" end_anchor="${tx.endAnchor}">
-    <OriginalSpanVerifier><![CDATA[${tx.verbatimOriginal}]]></OriginalSpanVerifier>
-    <ReplacementSpan>
-      <!-- Fresh revised prose resolving the ticket and satisfying Round ${attempt} feedback -->
-    </ReplacementSpan>
-  </PatchOperation>
-</ManuscriptPatchTransaction>`;
-                                rawPatchOutput = await callAIIfEnabled(
-                                    userPrompt,
-                                    sysPrompt,
-                                    false,
-                                    `Editorial Harness ${wave.name || wave.waveId} (${tx.transactionId} - R${attempt}/${maxAttempts})`,
-                                    'Polish'
-                                );
-                            } catch (llmErr) {
-                                console.warn(
-                                    `[EditorialHarness] Specialist LLM fallback to deterministic surgical repair for ${tx.transactionId} round ${attempt}:`,
-                                    llmErr
-                                );
-                            }
-                        }
-
-                        const patchRes = applyManuscriptPatchToScene(
-                            sceneItem,
-                            tx,
-                            rawPatchOutput,
-                            workingStory as unknown as EditorialStoryInput,
-                            attempt,
-                            attemptHistory[attemptHistory.length - 1]?.feedback
+                    if (outcome.status === 'COMMITTED') {
+                        const workingProseMap = asRecord(workingStory.prose);
+                        writePatchedProse(
+                            workingProseMap,
+                            sceneItem.proseKey,
+                            outcome.afterProse,
+                            tx.transactionId
                         );
-                        lastPatchRes = patchRes;
-
-                        const gateSuite = await runFourGateVerificationSuite({
-                            sceneItem,
-                            patchedResult: patchRes,
-                            transaction: tx,
-                            baselineTelemetry: preTelemetry,
-                            nsg,
-                            constitution,
-                            voiceDna,
-                            story: workingStory as unknown as EditorialStoryInput,
-                            slopConfig,
-                            callAIFn: callAIIfEnabled,
-                            useLLM
-                        });
-                        lastGateSuite = gateSuite;
-
-                        if (
-                            gateSuite.allPassed &&
-                            asString(patchRes.updatedFullProse).trim() !== beforeProse.trim()
-                        ) {
-                            const sKey = sceneItem.proseKey;
-                            const workingProseMap = asRecord(workingStory.prose);
-                            const prevProseEntry = workingProseMap[sKey];
-                            workingProseMap[sKey] = {
-                                ...asRecord(prevProseEntry),
-                                final: patchRes.updatedFullProse,
-                                draft: patchRes.updatedFullProse,
-                                editorial_harness_patched: true,
-                                last_patch_tx: tx.transactionId
-                            };
-                            workingStory.prose = workingProseMap;
-                            tx.status = 'COMMITTED';
-                            tx.attempts_used = attempt;
-                            tx.attemptHistory = attemptHistory;
-                            tx.proseKey = sKey;
-                            tx.beforeProse = beforeProse;
-                            tx.afterProse = patchRes.updatedFullProse;
-                            tx.beforeSpan = patchRes.beforeSpan;
-                            tx.afterSpan = patchRes.afterSpan;
-                            tx.gateResults = gateSuite.gates;
-                            committedCount++;
-
-                            if (fullTelemetry) {
-                                fullTelemetry.sceneTelemetryMap[sceneItem.sceneId] =
-                                    gateSuite.postTelemetry;
-                            }
-                            appendHarnessLog(
-                                `${wave.waveId} CI/CD`,
-                                `COMMITTED [${tx.transactionId}] (${wave.specialistAgent}) on ${tx.sceneId}: All 4 Literary CI/CD Gates PASSED on round ${attempt}/${maxAttempts}${attempt > 1 ? ' (Feedback loop resolved prior failures)' : ''}.`,
-                                'success'
-                            );
-                            break;
-                        } else {
-                            const feedback = compileGateFailureFeedback(gateSuite, patchRes, attempt);
-                            attemptHistory.push({
-                                attempt,
-                                proposedSpan: patchRes.afterSpan,
-                                failedGates: (gateSuite.gates || [])
-                                    .filter((g) => !g.passed)
-                                    .map((g) => g.gate),
-                                feedback,
-                                gateResults: gateSuite.gates
-                            });
-
-                            appendHarnessLog(
-                                `${wave.waveId} CI/CD`,
-                                `Round ${attempt}/${maxAttempts} REJECTED for [${tx.transactionId}] (${feedback.diagnostic}). Initiating feedback loop retry...`,
-                                'warning'
-                            );
-                            attempt++;
+                        workingStory.prose = workingProseMap;
+                        committedThisRun.set(sceneItem.proseKey, [
+                            ...(committedThisRun.get(sceneItem.proseKey) || []),
+                            tx
+                        ]);
+                        if (fullTelemetry && outcome.postTelemetry) {
+                            fullTelemetry.sceneTelemetryMap[sceneItem.sceneId] =
+                                outcome.postTelemetry;
                         }
-                    }
-
-                    if (tx.status !== 'COMMITTED') {
-                        const candidateFull = lastPatchRes?.updatedFullProse || beforeProse;
-                        tx.status =
-                            candidateFull.trim() === beforeProse.trim()
-                                ? 'NO_OP_CLEAN'
-                                : 'ROLLED_BACK';
-                        tx.attempts_used = maxAttempts;
-                        tx.attemptHistory = attemptHistory;
-                        tx.proseKey = sceneItem.proseKey;
-                        tx.beforeProse = beforeProse;
-                        tx.afterProse = beforeProse;
-                        tx.beforeSpan = lastPatchRes?.beforeSpan || tx.verbatimOriginal;
-                        tx.afterSpan = lastPatchRes?.afterSpan || tx.verbatimOriginal;
-                        tx.gateResults = lastGateSuite ? lastGateSuite.gates : [];
-                        if (tx.status === 'ROLLED_BACK') {
-                            rejectedCount++;
-                            const lastReason =
-                                attemptHistory[attemptHistory.length - 1]?.feedback?.diagnostic ||
-                                'Failed verification gates';
+                        appendHarnessLog(
+                            `${wave.waveId} CI/CD`,
+                            `COMMITTED [${tx.transactionId}] (${wave.specialistAgent}) on ${tx.sceneId}: All 4 Literary CI/CD Gates PASSED on round ${outcome.attemptsUsed}/${HARNESS_MAX_ATTEMPTS}${outcome.attemptsUsed > 1 ? ' (Feedback loop resolved prior failures)' : ''}.`,
+                            'success'
+                        );
+                    } else if (outcome.status === 'SKIPPED_STALE') {
+                        appendHarnessLog(
+                            `${wave.waveId} CI/CD`,
+                            `SKIPPED [${tx.transactionId}] on ${tx.sceneId}: ${outcome.reason} Run the review again to plan against the current text.`,
+                            'warning'
+                        );
+                    } else {
+                        outcome.attemptHistory.forEach((h) =>
                             appendHarnessLog(
                                 `${wave.waveId} CI/CD`,
-                                `ROLLED BACK [${tx.transactionId}] on ${tx.sceneId}: Worktree discarded after ${maxAttempts} feedback rounds (${lastReason}) to protect manuscript integrity.`,
+                                `Round ${h.attempt}/${HARNESS_MAX_ATTEMPTS} REJECTED for [${tx.transactionId}] (${h.feedback.diagnostic}).`,
+                                'warning'
+                            )
+                        );
+                        if (outcome.status === 'ROLLED_BACK') {
+                            appendHarnessLog(
+                                `${wave.waveId} CI/CD`,
+                                `ROLLED BACK [${tx.transactionId}] on ${tx.sceneId}: Worktree discarded after ${outcome.attemptsUsed} feedback round(s) (${outcome.reason}) to protect manuscript integrity.`,
                                 'warning'
                             );
                         }
@@ -717,6 +933,38 @@ ${feedbackXml ? `${feedbackXml}\n` : ''}Emit a <ManuscriptPatchTransaction trans
                   )
                 : 0;
 
+        // If the author opened another story while this ran, the results belong to the story the
+        // run started on, not the one now open.
+        const runStoryId = asString(baseStory.id);
+        const liveStory = ctx.getStory();
+        const switchedStory = Boolean(runStoryId) && asString(liveStory?.id) !== runStoryId;
+        // A scene the author edited while the harness was running keeps the author's text. Its
+        // edits are marked as conflicts instead of being counted as committed and then dropped.
+        const liveProse = asRecord(switchedStory ? baseStory.prose : liveStory.prose);
+        const conflictedKeys = new Set<string>();
+        committedThisRun.forEach((txs, key) => {
+            if (proseEntryText(liveProse[key]) === proseEntryText(runStartProse[key])) return;
+            conflictedKeys.add(key);
+            txs.forEach((tx) => {
+                tx.status = 'SKIPPED_CONFLICT';
+                tx.afterProse = tx.beforeProse;
+                tx.skipReason = 'The scene was edited while the harness ran; your edit was kept.';
+                appendHarnessLog(
+                    'Merge',
+                    `SKIPPED [${tx.transactionId}] on ${tx.sceneId}: the scene changed while the harness ran, so your version was kept.`,
+                    'warning'
+                );
+            });
+        });
+        const mergedKeys = Array.from(committedThisRun.keys()).filter((k) => !conflictedKeys.has(k));
+
+        const planTxs = (editPlan?.waves || []).flatMap(
+            (w) => (w.transactions || []) as ExtendedEditPlanTransaction[]
+        );
+        const countStatus = (...statuses: string[]): number =>
+            planTxs.filter((tx) => statuses.includes(String(tx.status))).length;
+        const touchedProseKeys = Array.from(new Set([...previouslyTouched, ...mergedKeys]));
+
         const harnessState: EditorialHarnessState = {
             lastRunAt: new Date().toISOString(),
             mode,
@@ -741,6 +989,7 @@ ${feedbackXml ? `${feedbackXml}\n` : ''}Emit a <ManuscriptPatchTransaction trans
             tribunalResult,
             editPlan,
             preRunProseSnapshot,
+            touchedProseKeys,
             summary: {
                 scenesEvaluated: Object.keys(layer0Map).length,
                 meanDivergence: postMeanDivergence,
@@ -752,54 +1001,41 @@ ${feedbackXml ? `${feedbackXml}\n` : ''}Emit a <ManuscriptPatchTransaction trans
                         (tribunalResult?.verifiedTickets?.length || 0)
                 ),
                 totalTransactions: editPlan?.allTransactions?.length || 0,
-                committedTransactions: committedCount,
-                rolledBackTransactions: rejectedCount
+                // Counted from the plan, so "Execute plan" after a review reports the whole plan
+                // rather than only what this click changed.
+                committedTransactions: countStatus('COMMITTED'),
+                rolledBackTransactions: countStatus('ROLLED_BACK'),
+                skippedTransactions: countStatus('SKIPPED_STALE', 'SKIPPED_CONFLICT')
             },
             logs: runLogs.slice(-100)
         };
+        const committedNow = Array.from(committedThisRun.entries())
+            .filter(([key]) => !conflictedKeys.has(key))
+            .reduce((n, [, txs]) => n + txs.length, 0);
 
-        const committedProseKeys = new Set<string>();
-        (editPlan?.waves || []).forEach((w) => {
-            (w.transactions || []).forEach((tx) => {
-                const extTx = tx as ExtendedEditPlanTransaction;
-                if (extTx.status === 'COMMITTED' && extTx.proseKey) {
-                    committedProseKeys.add(extTx.proseKey);
-                }
-            });
-        });
-
-        const finalHarnessStory = ctx.setStory((prev) => {
+        const mergeInto = (prev: PipelineStory): PipelineStory => {
             const prevProseMap = asRecord(prev.prose);
             const mergedProse: Record<string, unknown> = { ...prevProseMap };
             const workingProseMap = asRecord(workingStory.prose);
-            committedProseKeys.forEach((sKey) => {
-                if (workingProseMap[sKey]) {
-                    const currentEntry = prevProseMap[sKey];
-                    const currentRec = asOptionalRecord(currentEntry);
-                    const currentFinal =
-                        typeof currentEntry === 'string'
-                            ? currentEntry
-                            : asString(currentRec?.final || currentRec?.prose);
-                    const preRunEntry = preRunProseSnapshot[sKey];
-                    const preRunRec = asOptionalRecord(preRunEntry);
-                    const preRunFinal =
-                        typeof preRunEntry === 'string'
-                            ? preRunEntry
-                            : asString(preRunRec?.final || preRunRec?.prose);
-                    if (!preRunFinal || currentFinal === preRunFinal) {
-                        mergedProse[sKey] = {
-                            ...asRecord(currentEntry),
-                            ...asRecord(workingProseMap[sKey])
-                        };
-                    }
-                }
+            mergedKeys.forEach((sKey) => {
+                // Same guard as above, re-checked against the state the update actually sees.
+                if (proseEntryText(prevProseMap[sKey]) !== proseEntryText(runStartProse[sKey])) return;
+                mergedProse[sKey] = {
+                    ...asRecord(prevProseMap[sKey]),
+                    ...asRecord(workingProseMap[sKey])
+                };
             });
             return {
                 ...prev,
                 prose: mergedProse,
                 editorial_harness: harnessState
             };
-        });
+        };
+        const finalHarnessStory = switchedStory
+            ? mergeInto(baseStory)
+            : ctx.setStory((prev) =>
+                  runStoryId && asString(prev?.id) !== runStoryId ? prev : mergeInto(prev)
+              );
         const savedId = asString(finalHarnessStory?.id);
         if (savedId) {
             await storyStore.saveStory(savedId, finalHarnessStory);
@@ -811,7 +1047,7 @@ ${feedbackXml ? `${feedbackXml}\n` : ''}Emit a <ManuscriptPatchTransaction trans
         const toastSummary =
             mode === 'review_only'
                 ? `Editorial Review complete! ${harnessState.summary.verifiedTicketsCount} verified tickets queued across 3 waves.`
-                : `Editorial Harness complete! ${committedCount} surgical revision(s) passed all 4 CI/CD gates.`;
+                : `Editorial Harness complete! ${committedNow} surgical revision(s) passed all 4 CI/CD gates.${harnessState.summary.skippedTransactions ? ` ${harnessState.summary.skippedTransactions} skipped because their text had changed.` : ''}`;
         ctx.showToast(toastSummary, 'success');
         return harnessState;
     } catch (err) {
@@ -829,6 +1065,60 @@ ${feedbackXml ? `${feedbackXml}\n` : ''}Emit a <ManuscriptPatchTransaction trans
     }
 }
 
+/**
+ * Undoes one committed edit in `text`. Works when the scene is exactly as the edit left it, or when
+ * the edit's replacement text appears exactly once (so other edits to the scene survive). Returns
+ * null when neither holds: restoring the whole-scene snapshot then would silently throw away every
+ * later change to the scene, which the old revert did.
+ */
+export function undoCommittedSpan(
+    text: string,
+    tx: Pick<ExtendedEditPlanTransaction, 'beforeProse' | 'afterProse' | 'beforeSpan' | 'afterSpan'>
+): string | null {
+    if (tx.afterProse && tx.beforeProse !== undefined && text.trim() === tx.afterProse.trim()) {
+        return tx.beforeProse;
+    }
+    const after = tx.afterSpan || '';
+    if (!after.trim() || tx.beforeSpan === undefined) return null;
+    const match = locateNeedle(text, after, true);
+    if (!match) return null;
+    const again = locateNeedle(text.slice(match.end), after, true);
+    if (again) return null; // ambiguous: the replacement text occurs more than once
+    return text.slice(0, match.start) + tx.beforeSpan + text.slice(match.end);
+}
+
+/** Recomputes telemetry and the narrative graph after prose changed outside a full run. */
+function refreshHarnessAnalysis(
+    ctx: PipelineRuntimeContext,
+    harness: Record<string, unknown>,
+    workingStory: PipelineStory
+): void {
+    const updatedTelemetry = runFullManuscriptNlpTelemetry(
+        workingStory as unknown as EditorialStoryInput,
+        ctx.getBannedPhrases(),
+        ctx.getSlopConfig()
+    );
+    harness.fullTelemetry = updatedTelemetry;
+    harness.nsg = compileNarrativeStateGraph(
+        workingStory as unknown as EditorialStoryInput,
+        updatedTelemetry
+    );
+}
+
+/** Recounts the plan's committed / rolled back / skipped totals into the stored summary. */
+function recountSummary(harness: Record<string, unknown>): void {
+    const plan = harness.editPlan as CompiledThreeWaveEditPlan | undefined;
+    const txs = (plan?.waves || []).flatMap((w) => (w.transactions || []) as ExtendedEditPlanTransaction[]);
+    const count = (...statuses: string[]): number =>
+        txs.filter((tx) => statuses.includes(String(tx.status))).length;
+    harness.summary = {
+        ...asRecord(harness.summary),
+        committedTransactions: count('COMMITTED'),
+        rolledBackTransactions: count('ROLLED_BACK'),
+        skippedTransactions: count('SKIPPED_STALE', 'SKIPPED_CONFLICT')
+    };
+}
+
 /** Executes a single pending transaction from the compiled 3-Wave Edit Plan via 4-Gate CI/CD. */
 export async function executeSingleHarnessTransaction(
     ctx: PipelineRuntimeContext,
@@ -843,241 +1133,140 @@ export async function executeSingleHarnessTransaction(
         `Executing transaction ${transactionId} through 4-Gate CI/CD...`
     );
 
-    const editorialUseDeepLLM = ctx.getEditorialUseDeepLLM?.() ?? true;
-    const bannedPhrases = ctx.getBannedPhrases();
-    const slopConfig = ctx.getSlopConfig();
+    const useLLM = ctx.getEditorialUseDeepLLM?.() ?? true;
 
     try {
         const workingStory = JSON.parse(JSON.stringify(story)) as PipelineStory;
         const harness = asRecord(workingStory.editorial_harness);
         const editPlan = harness.editPlan as CompiledThreeWaveEditPlan;
-        let targetTx: ExtendedEditPlanTransaction | null = null;
-        let targetWave: CompiledThreeWaveEditPlan['waves'][number] | null = null;
-
-        for (const w of editPlan?.waves || []) {
-            const found = (w.transactions || []).find(
-                (t) =>
-                    ((t as ExtendedEditPlanTransaction).transactionId ||
-                        (t as ExtendedEditPlanTransaction).transaction_id) === transactionId
-            ) as ExtendedEditPlanTransaction | undefined;
-            if (found) {
-                targetTx = found;
-                targetWave = w;
-                break;
-            }
-        }
-        if (!targetTx) {
+        const found = findPlanTransaction(editPlan, transactionId);
+        if (!found) {
             ctx.showToast(`Transaction ${transactionId} not found.`, 'warning');
             return;
         }
+        const { tx: targetTx, wave: targetWave } = found;
 
-        const scenesList = getDraftedStoryScenesList(workingStory as unknown as EditorialStoryInput);
-        const sceneItem = scenesList.find(
-            (s) => s.sceneId === targetTx.sceneId || s.proseKey === targetTx.proseKey
-        );
-        if (!sceneItem) {
+        const findScene = (s: PipelineStory): DraftedStorySceneItem | undefined =>
+            getDraftedStoryScenesList(s as unknown as EditorialStoryInput).find(
+                (sc) => sc.sceneId === targetTx.sceneId || sc.proseKey === targetTx.proseKey
+            );
+        const liveScene = findScene(workingStory);
+        if (!liveScene) {
             ctx.showToast(`Target scene ${targetTx.sceneId} has no drafted prose.`, 'warning');
             return;
         }
+        const sKey = liveScene.proseKey;
+        const liveText = liveScene.proseText;
 
-        const beforeProse = sceneItem.proseText;
-        const preTelemetry = runSceneNlpTelemetry(
-            sceneItem,
-            workingStory as unknown as EditorialStoryInput,
-            bannedPhrases,
-            slopConfig
-        );
-
-        let attempt = 1;
-        const maxAttempts = 3;
-        let lastGateSuite: Awaited<ReturnType<typeof runFourGateVerificationSuite>> | null = null;
-        let lastPatchRes: ManuscriptPatchResult | null = null;
-        const attemptHistory: HarnessAttemptHistoryEntry[] = [];
-
-        while (attempt <= maxAttempts) {
-            let rawPatchOutput: string | null = null;
-            if (editorialUseDeepLLM) {
-                try {
-                    const sysPrompt = resolveWaveAgentPrompt(targetWave || {}, targetTx);
-                    const startParaId = String(targetTx.startAnchor || '').split(':s')[0];
-                    const pList = sceneItem.normalized?.paragraphs || [];
-                    const pIdx = pList.findIndex((p) => p.id === startParaId);
-                    const prevParaText = pIdx > 0 ? pList[pIdx - 1]?.text || '' : '';
-                    const nextParaText =
-                        pIdx >= 0 && pIdx < pList.length - 1 ? pList[pIdx + 1]?.text || '' : '';
-
-                    let feedbackXml = '';
-                    if (attemptHistory.length > 0) {
-                        feedbackXml =
-                            `<FeedbackFromPriorRounds current_round="${attempt}" max_rounds="${maxAttempts}">\n` +
-                            attemptHistory
-                                .map(
-                                    (h) =>
-                                        `  <PriorAttempt round="${h.attempt}">\n    <RejectedSpan><![CDATA[${h.proposedSpan || ''}]]></RejectedSpan>\n    <FailureDiagnostic>${escapeHarnessXml(h.feedback?.diagnostic || '')}</FailureDiagnostic>\n    <RequiredCorrectionDirective>${escapeHarnessXml(h.feedback?.correction || '')}</RequiredCorrectionDirective>\n  </PriorAttempt>`
-                                )
-                                .join('\n') +
-                            `\n  <Round${attempt}Directive>Do NOT repeat or closely paraphrase any rejected replacement above. You MUST take a fundamentally fresh craft approach that satisfies the RequiredCorrectionDirective while strictly preserving <AuthorVoiceDNA>.</Round${attempt}Directive>\n</FeedbackFromPriorRounds>`;
-                    }
-
-                    const voiceXml = asString(asOptionalRecord(harness.voiceDna)?.xml);
-                    const constitutionXml = asString(asOptionalRecord(harness.constitution)?.xml);
-                    const userPrompt = `${voiceXml}\n${constitutionXml}\n<TargetScene id="${targetTx.sceneId}">
-  <PrecedingContext><![CDATA[${prevParaText}]]></PrecedingContext>
-  <AtomicEditTransaction id="${targetTx.transactionId}" wave="${targetTx.wave}" start_anchor="${targetTx.startAnchor}" end_anchor="${targetTx.endAnchor}">
-    <Problem>${escapeHarnessXml(targetTx.combinedProblem)}</Problem>
-    <SurgicalDirective>${escapeHarnessXml(targetTx.combinedDirective)}</SurgicalDirective>
-    <OriginalSpanVerifier><![CDATA[${targetTx.verbatimOriginal}]]></OriginalSpanVerifier>
-  </AtomicEditTransaction>
-  <FollowingContext><![CDATA[${nextParaText}]]></FollowingContext>
-</TargetScene>
-${feedbackXml ? `${feedbackXml}\n` : ''}Emit a <ManuscriptPatchTransaction transaction_id="${targetTx.transactionId}" target_scene="${targetTx.sceneId}">
-  <PatchOperation type="REPLACE_SPAN" start_anchor="${targetTx.startAnchor}" end_anchor="${targetTx.endAnchor}">
-    <OriginalSpanVerifier><![CDATA[${targetTx.verbatimOriginal}]]></OriginalSpanVerifier>
-    <ReplacementSpan>
-      <!-- Revised prose resolving the ticket and satisfying Round ${attempt} feedback -->
-    </ReplacementSpan>
-  </PatchOperation>
-</ManuscriptPatchTransaction>`;
-                    rawPatchOutput = await ctx.callAI(
-                        userPrompt,
-                        sysPrompt,
-                        false,
-                        `Editorial Harness Single Tx (${targetTx.transactionId} - R${attempt}/${maxAttempts})`,
-                        'Polish'
-                    );
-                } catch (llmErr) {
-                    console.warn(
-                        `[executeSingleHarnessTransaction] LLM fallback for ${targetTx.transactionId} round ${attempt}:`,
-                        llmErr
-                    );
-                }
-            }
-
-            const patchRes = applyManuscriptPatchToScene(
-                sceneItem,
-                targetTx,
-                rawPatchOutput,
-                workingStory as unknown as EditorialStoryInput,
-                attempt,
-                attemptHistory[attemptHistory.length - 1]?.feedback
-            );
-            lastPatchRes = patchRes;
-
-            const gateSuite = await runFourGateVerificationSuite({
-                sceneItem,
-                patchedResult: patchRes,
-                transaction: targetTx,
-                baselineTelemetry: preTelemetry,
-                nsg: harness.nsg as NarrativeStateGraph | undefined,
-                constitution: harness.constitution as AestheticConstitution | undefined,
-                voiceDna: harness.voiceDna as AuthorVoiceDNA | undefined,
-                story: workingStory as unknown as EditorialStoryInput,
-                slopConfig,
-                callAIFn: editorialUseDeepLLM ? ctx.callAI : null,
-                useLLM: editorialUseDeepLLM
-            });
-            lastGateSuite = gateSuite;
-
-            if (
-                gateSuite.allPassed &&
-                asString(patchRes.updatedFullProse).trim() !== beforeProse.trim()
-            ) {
-                const sKey = sceneItem.proseKey;
-                const proseMap = asRecord(workingStory.prose);
-                proseMap[sKey] = {
-                    ...asRecord(proseMap[sKey]),
-                    final: patchRes.updatedFullProse,
-                    draft: patchRes.updatedFullProse,
-                    editorial_harness_patched: true,
-                    last_patch_tx: targetTx.transactionId
-                };
-                workingStory.prose = proseMap;
-                targetTx.status = 'COMMITTED';
-                targetTx.attempts_used = attempt;
-                targetTx.attemptHistory = attemptHistory;
-                targetTx.proseKey = sceneItem.proseKey;
-                targetTx.beforeProse = beforeProse;
-                targetTx.afterProse = patchRes.updatedFullProse;
-                targetTx.beforeSpan = patchRes.beforeSpan;
-                targetTx.afterSpan = patchRes.afterSpan;
-                targetTx.gateResults = gateSuite.gates;
-
-                const updatedTelemetry = runFullManuscriptNlpTelemetry(
-                    workingStory as unknown as EditorialStoryInput,
-                    bannedPhrases,
-                    slopConfig
-                );
-                harness.fullTelemetry = updatedTelemetry;
-                harness.nsg = compileNarrativeStateGraph(
-                    workingStory as unknown as EditorialStoryInput,
-                    updatedTelemetry
-                );
-                const summaryRec = asRecord(harness.summary);
-                summaryRec.committedTransactions =
-                    Number(summaryRec.committedTransactions || 0) + 1;
-                harness.summary = summaryRec;
-
+        // "Re-Run Patch" on a committed edit tries again from the text before that edit. The old
+        // code searched the already-edited scene for the original span, found nothing, and then
+        // replaced the whole paragraph.
+        const previousTx = targetTx.status === 'COMMITTED'
+            ? (JSON.parse(JSON.stringify(targetTx)) as ExtendedEditPlanTransaction)
+            : null;
+        let evalStory = workingStory;
+        let sceneItem = liveScene;
+        if (previousTx) {
+            const restored = undoCommittedSpan(liveText, targetTx);
+            if (restored === null) {
                 ctx.showToast(
-                    `Transaction ${transactionId} PASSED all 4 CI/CD gates on round ${attempt}/${maxAttempts}!`,
-                    'success'
+                    `Transaction ${transactionId} can't be re-run: its scene has changed since the edit. Run the review again to plan against the current text.`,
+                    'warning'
                 );
-                break;
-            } else {
-                const feedback = compileGateFailureFeedback(gateSuite, patchRes, attempt);
-                attemptHistory.push({
-                    attempt,
-                    proposedSpan: patchRes.afterSpan,
-                    failedGates: (gateSuite.gates || [])
-                        .filter((g) => !g.passed)
-                        .map((g) => g.gate),
-                    feedback,
-                    gateResults: gateSuite.gates
-                });
-                attempt++;
+                return;
             }
+            evalStory = JSON.parse(JSON.stringify(workingStory)) as PipelineStory;
+            const evalProse = asRecord(evalStory.prose);
+            evalProse[sKey] = { ...asRecord(evalProse[sKey]), final: restored, draft: restored };
+            evalStory.prose = evalProse;
+            sceneItem = findScene(evalStory) || liveScene;
         }
 
-        if (targetTx.status !== 'COMMITTED') {
-            targetTx.status =
-                asString(lastPatchRes?.updatedFullProse || beforeProse).trim() === beforeProse.trim()
-                    ? 'NO_OP_CLEAN'
-                    : 'ROLLED_BACK';
-            targetTx.attempts_used = maxAttempts;
-            targetTx.attemptHistory = attemptHistory;
-            targetTx.proseKey = sceneItem.proseKey;
-            targetTx.beforeProse = beforeProse;
-            targetTx.afterProse = beforeProse;
-            targetTx.beforeSpan = lastPatchRes?.beforeSpan || targetTx.verbatimOriginal;
-            targetTx.afterSpan = lastPatchRes?.afterSpan || targetTx.verbatimOriginal;
-            targetTx.gateResults = lastGateSuite ? lastGateSuite.gates : [];
-            const lastReason =
-                attemptHistory[attemptHistory.length - 1]?.feedback?.diagnostic ||
-                'Verification gates failed';
+        const outcome = await runHarnessTransaction({
+            tx: targetTx,
+            wave: targetWave,
+            sceneItem,
+            story: evalStory as unknown as EditorialStoryInput,
+            voiceDna: harness.voiceDna as AuthorVoiceDNA | undefined,
+            constitution: harness.constitution as AestheticConstitution | undefined,
+            nsg: harness.nsg as NarrativeStateGraph | undefined,
+            callAI: useLLM ? ctx.callAI : null,
+            useLLM,
+            bannedPhrases: ctx.getBannedPhrases(),
+            slopConfig: ctx.getSlopConfig(),
+            label: 'Editorial Harness Single Tx'
+        });
+
+        let proseChanged = false;
+        if (outcome.status === 'COMMITTED') {
+            recordOutcome(targetTx, outcome, sKey);
+            const proseMap = asRecord(workingStory.prose);
+            writePatchedProse(proseMap, sKey, outcome.afterProse, targetTx.transactionId);
+            workingStory.prose = proseMap;
+            proseChanged = true;
+
+            const touched = Array.isArray(harness.touchedProseKeys)
+                ? (harness.touchedProseKeys as string[])
+                : [];
+            if (!touched.includes(sKey)) {
+                harness.preRunProseSnapshot = {
+                    ...asRecord(harness.preRunProseSnapshot),
+                    [sKey]: { ...asRecord(asRecord(story.prose)[sKey]), final: outcome.beforeProse, draft: outcome.beforeProse }
+                };
+                harness.touchedProseKeys = [...touched, sKey];
+            }
+            refreshHarnessAnalysis(ctx, harness, workingStory);
             ctx.showToast(
-                `Transaction ${transactionId} was rolled back after 3 feedback rounds (${lastReason}).`,
+                `Transaction ${transactionId} PASSED all 4 CI/CD gates on round ${outcome.attemptsUsed}/${HARNESS_MAX_ATTEMPTS}!`,
+                'success'
+            );
+        } else if (previousTx) {
+            // The retry did not beat the gates; the edit that was already committed stays.
+            Object.keys(targetTx).forEach((k) => delete (targetTx as Record<string, unknown>)[k]);
+            Object.assign(targetTx, previousTx);
+            ctx.showToast(
+                `The re-run of ${transactionId} did not pass the gates (${outcome.reason}). The earlier committed edit was kept.`,
+                'warning'
+            );
+        } else {
+            recordOutcome(targetTx, outcome, sKey);
+            ctx.showToast(
+                outcome.status === 'SKIPPED_STALE'
+                    ? `Transaction ${transactionId} was skipped: ${outcome.reason}`
+                    : outcome.status === 'NO_OP_CLEAN'
+                      ? `Transaction ${transactionId} produced no change.`
+                      : `Transaction ${transactionId} was rolled back after ${outcome.attemptsUsed} feedback round(s) (${outcome.reason}).`,
                 'warning'
             );
         }
+        recountSummary(harness);
 
+        const storyId = asString(story.id);
+        let conflicted = false;
         const finalTxStory = ctx.setStory((prev) => {
-            const sKey = sceneItem.proseKey;
+            if (storyId && asString(prev?.id) !== storyId) return prev;
             const prevProseMap = asRecord(prev.prose);
             const nextProse = { ...prevProseMap };
-            const workingProseMap = asRecord(workingStory.prose);
-            if (targetTx.status === 'COMMITTED' && sKey && workingProseMap[sKey]) {
-                nextProse[sKey] = {
-                    ...asRecord(prevProseMap[sKey]),
-                    ...asRecord(workingProseMap[sKey])
-                };
+            if (proseChanged) {
+                if (proseEntryText(prevProseMap[sKey]) === liveText) {
+                    nextProse[sKey] = {
+                        ...asRecord(prevProseMap[sKey]),
+                        ...asRecord(asRecord(workingStory.prose)[sKey])
+                    };
+                } else {
+                    conflicted = true;
+                }
             }
-            return {
-                ...prev,
-                prose: nextProse,
-                editorial_harness: harness
-            };
+            return { ...prev, prose: nextProse, editorial_harness: harness };
         });
+        if (conflicted) {
+            ctx.showToast(
+                `The scene changed while ${transactionId} ran, so your version was kept and the edit was not applied.`,
+                'warning'
+            );
+        }
         const savedId = asString(finalTxStory?.id);
-        if (savedId) {
+        if (savedId && savedId === storyId) {
             await storyStore.saveStory(savedId, finalTxStory);
         }
     } catch (err) {
@@ -1089,7 +1278,7 @@ ${feedbackXml ? `${feedbackXml}\n` : ''}Emit a <ManuscriptPatchTransaction trans
     }
 }
 
-/** Reverts a single committed Editorial Harness transaction surgically (or via scene snapshot). */
+/** Reverts a single committed Editorial Harness transaction, leaving the rest of the scene alone. */
 export async function revertHarnessTransaction(
     ctx: PipelineRuntimeContext,
     transactionId: string
@@ -1099,24 +1288,12 @@ export async function revertHarnessTransaction(
 
     const workingStory = JSON.parse(JSON.stringify(story)) as PipelineStory;
     const harness = asRecord(workingStory.editorial_harness);
-    const editPlan = harness.editPlan as CompiledThreeWaveEditPlan;
-
-    let targetTx: ExtendedEditPlanTransaction | null = null;
-    for (const w of editPlan?.waves || []) {
-        const found = (w.transactions || []).find(
-            (t) =>
-                ((t as ExtendedEditPlanTransaction).transactionId ||
-                    (t as ExtendedEditPlanTransaction).transaction_id) === transactionId
-        ) as ExtendedEditPlanTransaction | undefined;
-        if (found) {
-            targetTx = found;
-            break;
-        }
-    }
-    if (!targetTx) {
+    const found = findPlanTransaction(harness.editPlan as CompiledThreeWaveEditPlan, transactionId);
+    if (!found) {
         ctx.showToast('Transaction not found.', 'warning');
         return;
     }
+    const targetTx = found.tx;
 
     const sKey = targetTx.proseKey || targetTx.sceneKey;
     const proseMap = asRecord(workingStory.prose);
@@ -1126,32 +1303,12 @@ export async function revertHarnessTransaction(
     }
 
     const currentEntry = proseMap[sKey];
-    const entryRec = asOptionalRecord(currentEntry);
-    const currentProse =
-        typeof currentEntry === 'string'
-            ? currentEntry
-            : asString(entryRec?.final || entryRec?.draft || entryRec?.prose);
-
-    let revertedProse: string | null = null;
-    let revertedVia: 'surgical' | 'full_snapshot' = 'full_snapshot';
-
-    if (targetTx.afterSpan && targetTx.beforeSpan && currentProse) {
-        const match = locateNeedle(currentProse, targetTx.afterSpan, true);
-        if (match) {
-            const pre = currentProse.slice(0, match.start);
-            const post = currentProse.slice(match.end);
-            revertedProse = pre + targetTx.beforeSpan + post;
-            revertedVia = 'surgical';
-        }
-    }
-
-    if (!revertedProse && targetTx.beforeProse) {
-        revertedProse = targetTx.beforeProse;
-        revertedVia = 'full_snapshot';
-    }
-
-    if (!revertedProse) {
-        ctx.showToast('No pre-transaction prose snapshot available to revert.', 'warning');
+    const revertedProse = undoCommittedSpan(proseEntryText(currentEntry), targetTx);
+    if (revertedProse === null) {
+        ctx.showToast(
+            `Can't revert ${transactionId} safely: the scene has changed since the edit and its text can't be found exactly once. Your current text was left as it is.`,
+            'warning'
+        );
         return;
     }
 
@@ -1162,19 +1319,67 @@ export async function revertHarnessTransaction(
     };
     workingStory.prose = proseMap;
     targetTx.status = 'REVERTED';
+    recountSummary(harness);
+    refreshHarnessAnalysis(ctx, harness, workingStory);
 
-    const bannedPhrases = ctx.getBannedPhrases();
-    const slopConfig = ctx.getSlopConfig();
-    const updatedTelemetry = runFullManuscriptNlpTelemetry(
-        workingStory as unknown as EditorialStoryInput,
-        bannedPhrases,
-        slopConfig
+    ctx.setStory(workingStory);
+    const savedId = asString(workingStory.id);
+    if (savedId) {
+        await storyStore.saveStory(savedId, workingStory);
+    }
+    ctx.showToast(`Reverted transaction ${transactionId}; the rest of the scene was kept.`, 'info');
+}
+
+/**
+ * Restores every scene the harness edited to its pre-harness text and marks committed
+ * transactions reverted. Scenes the harness never touched, including ones written after it ran,
+ * are left alone; the old version replaced the whole prose map and deleted those.
+ */
+export async function revertAllHarnessTransactions(
+    ctx: PipelineRuntimeContext
+): Promise<void> {
+    const story = ctx.getStory();
+    const storedHarness = asOptionalRecord(story.editorial_harness);
+    const snapshot = asOptionalRecord(storedHarness?.preRunProseSnapshot);
+    if (!snapshot) {
+        ctx.showToast('No pre-run manuscript snapshot found to restore.', 'warning');
+        return;
+    }
+
+    const workingStory = JSON.parse(JSON.stringify(story)) as PipelineStory;
+    const harness = asRecord(workingStory.editorial_harness);
+    const editPlan = harness.editPlan as CompiledThreeWaveEditPlan | undefined;
+    const planTxs = (editPlan?.waves || []).flatMap(
+        (w) => (w.transactions || []) as ExtendedEditPlanTransaction[]
     );
-    harness.fullTelemetry = updatedTelemetry;
-    harness.nsg = compileNarrativeStateGraph(
-        workingStory as unknown as EditorialStoryInput,
-        updatedTelemetry
+    // Stories saved before touchedProseKeys existed also count scenes the plan edited (committed
+    // or individually reverted since) and scenes whose prose carries the harness's patch flag.
+    const touched = new Set<string>(
+        Array.isArray(harness.touchedProseKeys) ? (harness.touchedProseKeys as string[]) : []
     );
+    planTxs.forEach((tx) => {
+        if ((tx.status === 'COMMITTED' || tx.status === 'REVERTED') && tx.proseKey) {
+            touched.add(tx.proseKey);
+        }
+    });
+    const proseMap = asRecord(workingStory.prose);
+    Object.entries(proseMap).forEach(([key, entry]) => {
+        if (asOptionalRecord(entry)?.editorial_harness_patched) touched.add(key);
+    });
+
+    let restored = 0;
+    touched.forEach((key) => {
+        if (!(key in snapshot)) return;
+        proseMap[key] = JSON.parse(JSON.stringify(snapshot[key]));
+        restored++;
+    });
+    workingStory.prose = proseMap;
+    planTxs.forEach((tx) => {
+        if (tx.status === 'COMMITTED') tx.status = 'REVERTED';
+    });
+    harness.touchedProseKeys = [];
+    recountSummary(harness);
+    refreshHarnessAnalysis(ctx, harness, workingStory);
 
     ctx.setStory(workingStory);
     const savedId = asString(workingStory.id);
@@ -1182,53 +1387,7 @@ export async function revertHarnessTransaction(
         await storyStore.saveStory(savedId, workingStory);
     }
     ctx.showToast(
-        revertedVia === 'surgical'
-            ? `Surgically reverted transaction ${transactionId} (preserved other scene edits).`
-            : `Reverted transaction ${transactionId} and restored scene snapshot.`,
+        `Restored ${restored} scene(s) to their pre-harness text. Other scenes were left as they are.`,
         'info'
     );
-}
-
-/** Restores all manuscript prose to the pre-harness snapshot and marks committed transactions reverted. */
-export async function revertAllHarnessTransactions(
-    ctx: PipelineRuntimeContext
-): Promise<void> {
-    const story = ctx.getStory();
-    const snapshot = asOptionalRecord(story.editorial_harness)?.preRunProseSnapshot;
-    if (!snapshot) {
-        ctx.showToast('No pre-run manuscript snapshot found to restore.', 'warning');
-        return;
-    }
-
-    const workingStory = JSON.parse(JSON.stringify(story)) as PipelineStory;
-    workingStory.prose = JSON.parse(JSON.stringify(snapshot));
-    const harness = asRecord(workingStory.editorial_harness);
-    const editPlan = harness.editPlan as CompiledThreeWaveEditPlan | undefined;
-    if (editPlan?.waves) {
-        editPlan.waves.forEach((w) => {
-            (w.transactions || []).forEach((tx) => {
-                if (tx.status === 'COMMITTED') tx.status = 'REVERTED';
-            });
-        });
-    }
-
-    const bannedPhrases = ctx.getBannedPhrases();
-    const slopConfig = ctx.getSlopConfig();
-    const updatedTelemetry = runFullManuscriptNlpTelemetry(
-        workingStory as unknown as EditorialStoryInput,
-        bannedPhrases,
-        slopConfig
-    );
-    harness.fullTelemetry = updatedTelemetry;
-    harness.nsg = compileNarrativeStateGraph(
-        workingStory as unknown as EditorialStoryInput,
-        updatedTelemetry
-    );
-
-    ctx.setStory(workingStory);
-    const savedId = asString(workingStory.id);
-    if (savedId) {
-        await storyStore.saveStory(savedId, workingStory);
-    }
-    ctx.showToast('Restored full manuscript prose to pre-harness snapshot.', 'info');
 }
