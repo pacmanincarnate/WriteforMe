@@ -1,10 +1,9 @@
 /**
  * @module compat/testApi
- * The `window.*` names that code OUTSIDE `src/` depends on. This is the public contract of the
- * compatibility bridge: everything else registered by `src/legacy/register*Globals.ts` exists only
- * for the monolith and may be pruned once nothing in `src/` reads it (plan §4.4), but these names
- * must keep resolving or the Verification Gate (tests/e2e/golden_suite.mjs) and external tooling
- * break.
+ * The `window.*` names that code OUTSIDE `src/` depends on. This is the whole public contract:
+ * `src/windowApi.ts` publishes the module-level names and the app shell publishes its handles.
+ * These names must keep resolving or the Verification Gate (tests/e2e/golden_suite.mjs) and
+ * external tooling break.
  *
  * `tests/unit/test-api-contract.test.ts` keeps this file honest in both directions: the golden
  * suite may not use a global that is not listed here, and every listed name must still be
@@ -60,8 +59,8 @@ export const TEST_API_MODULE_GLOBALS = [
 ] as const;
 
 /**
- * Handles into the running app, published by the app shell while it renders (today
- * `src/legacy/MonolithApp.jsx`, in Phase 7 `src/App.tsx` or the hooks that own them).
+ * Handles into the running app, published by the app shell (`src/App.tsx`, through
+ * `publishAppGlobal`) while it renders, or by the hooks that own them.
  */
 export const TEST_API_APP_GLOBALS = [
     'distillLore',

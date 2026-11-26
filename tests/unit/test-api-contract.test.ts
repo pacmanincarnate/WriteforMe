@@ -22,13 +22,7 @@ function windowNamesUsedBy(files: string[]): string[] {
 
 describe('public window contract (src/compat/testApi.ts)', () => {
     beforeAll(async () => {
-        await import('@/legacy/setupGlobals');
-        await import('@/legacy/registerFoundationGlobals');
-        await import('@/legacy/registerDomainGlobals');
-        await import('@/legacy/registerServiceGlobals');
-        await import('@/legacy/registerStoreGlobals');
-        await import('@/legacy/registerPipelineGlobals');
-        await import('@/legacy/registerUiGlobals');
+        await import('@/windowApi');
     }, 60000);
 
     it('lists exactly the globals the golden suite uses', () => {
@@ -50,12 +44,12 @@ describe('public window contract (src/compat/testApi.ts)', () => {
 
     it('every app-level global is published by the app shell', () => {
         const shell = [
-            read('src/legacy/MonolithApp.jsx'),
+            read('src/App.tsx'),
             ...fs
                 .readdirSync(path.resolve(process.cwd(), 'src/hooks'))
                 .map((file) => read(`src/hooks/${file}`))
         ].join('\n');
-        const missing = TEST_API_APP_GLOBALS.filter((name) => !shell.includes(`window.${name} = `));
+        const missing = TEST_API_APP_GLOBALS.filter((name) => !shell.includes(`window.${name} = `) && !shell.includes(`publishAppGlobal('${name}', `));
         expect(missing).toEqual([]);
     });
 

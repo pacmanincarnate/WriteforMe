@@ -129,6 +129,39 @@ function ensureLegacyBaseline() {
     return LEGACY_BASELINE_REL;
 }
 
+const LEGACY_SITE_REL = 'scratch/legacy_site';
+// Static files the pre-refactor page loads from next to index.html. They used to sit at the repo
+// root; the modular build keeps its own copies in public/, so the legacy site is rebuilt from git.
+const LEGACY_STATIC_FILES = [
+    'sw.js', 'manifest.webmanifest', 'ELPIcon2.jpg', 'apple-touch-icon.png', 'favicon.ico',
+    'favicon-16x16.png', 'favicon-32x32.png', 'icon-192.png', 'icon-512.png',
+    'icon-maskable-192.png', 'icon-maskable-512.png'
+];
+
+/**
+ * Builds a servable copy of the pre-refactor app (index.html plus its service worker, manifest and
+ * icons at the baseline ref) and returns its directory. Serve it with indexFile 'index.html'.
+ */
+function ensureLegacySite() {
+    const indexRel = ensureLegacyBaseline();
+    const siteDir = path.join(ROOT_DIR, LEGACY_SITE_REL);
+    fs.mkdirSync(siteDir, { recursive: true });
+    fs.copyFileSync(path.join(ROOT_DIR, indexRel), path.join(siteDir, 'index.html'));
+    const ref = process.env.LEGACY_BASELINE_REF || DEFAULT_LEGACY_BASELINE_REF;
+    for (const file of LEGACY_STATIC_FILES) {
+        const target = path.join(siteDir, file);
+        if (fs.existsSync(target)) continue;
+        const shown = spawnSync('git', ['show', `${ref}:${file}`], { cwd: ROOT_DIR, maxBuffer: 64 * 1024 * 1024 });
+        if (shown.status === 0 && shown.stdout && shown.stdout.length > 0) {
+            fs.writeFileSync(target, shown.stdout);
+        } else if (file !== 'sw.js' && fs.existsSync(path.join(ROOT_DIR, 'public', file))) {
+            // No git history for the baseline (LEGACY_BASELINE_PATH): icons are unchanged, the old worker is not available.
+            fs.copyFileSync(path.join(ROOT_DIR, 'public', file), target);
+        }
+    }
+    return siteDir;
+}
+
 const EXPECTED_PROMPT_KEYS = [
     'scenePlannerAgent', 'conceptualDevelopment', 'characterDevelopment', 'storyArc', 'arcReview',
     'actAgent', 'actReview', 'storySoFarAgent', 'continuityBridgeAgent', 'bridgeSceneGeneratorAgent',
@@ -393,7 +426,10 @@ function startStaticHttpServer({ port, mountPrefix = '/', staticDir = ROOT_DIR, 
         });
         server.on('error', reject);
         server.listen(port, '127.0.0.1', () => resolve({
-            close: () => new Promise((r) => server.close(() => r()))
+            close: () => new Promise((r) => {
+                server.close(() => r());
+                server.closeAllConnections();
+            })
         }));
     });
 }
@@ -414,6 +450,7 @@ async function startLocalAppServer({ port, staticDir, dataDir }) {
             return {
                 close: async () => {
                     try { proc.kill(); } catch (_) {}
+                    for (let n = 0; n < 25 && (await isPortOpen(port)); n++) await sleep(200);
                 }
             };
         }
@@ -1666,6 +1703,76 @@ function comparePipelineRuns(legacy, modern, results) {
     return promptDiffList;
 }
 
+/**
+ * Offline support (service worker built from src/sw.ts). Runs after the core suite, on the same
+ * browser profile, so the story the suite saved is still in IndexedDB. The server is stopped for
+ * real (no network emulation), the page is reloaded, and the app has to come up from the precache
+ * with the user's data intact. `stopServer` leaves nothing listening on the port.
+ */
+async function runOfflineSuite({ cdp, exceptions, baseUrl, stopServer, results }) {
+    const assert = (name, cond, detail = '') => {
+        if (cond) {
+            results.passed.push(name);
+            console.log(`  [PASS] ${name}`);
+        } else {
+            results.failed.push({ name, detail });
+            console.error(`  [FAIL] ${name}${detail ? ' -> ' + detail : ''}`);
+        }
+    };
+
+    await waitForAppMount(cdp, baseUrl);
+    let sw = null;
+    for (let i = 0; i < 40; i++) {
+        sw = await cdp.eval(`(async () => {
+            const reg = await navigator.serviceWorker.getRegistration();
+            const names = await caches.keys();
+            const precacheName = names.find((n) => n.startsWith('workbox-precache'));
+            const precached = precacheName ? (await (await caches.open(precacheName)).keys()).map((r) => r.url) : [];
+            const stories = await window.storyStore.listStories();
+            return {
+                active: Boolean(reg && reg.active && reg.active.state === 'activated'),
+                controlled: Boolean(navigator.serviceWorker.controller),
+                script: reg && reg.active ? reg.active.scriptURL : '',
+                scope: reg ? reg.scope : '',
+                cacheNames: names,
+                precachedCount: precached.length,
+                hasIndex: precached.some((u) => u.includes('index.html')),
+                storyIds: stories.map((st) => st.id).sort()
+            };
+        })()`, true);
+        if (sw.active && sw.controlled && sw.precachedCount >= 15) break;
+        await sleep(500);
+    }
+    assert('Offline: service worker is active, controls the page and is scoped to the app path',
+        sw.active && sw.controlled && sw.script === baseUrl + 'sw.js' && sw.scope === baseUrl, JSON.stringify({ ...sw, storyIds: undefined }));
+    assert('Offline: every built file is precached and no legacy cache is left behind',
+        sw.precachedCount >= 15 && sw.hasIndex && !sw.cacheNames.some((n) => n.startsWith('ellipsisprose-static-')),
+        JSON.stringify({ precachedCount: sw.precachedCount, cacheNames: sw.cacheNames }));
+
+    await stopServer();
+    const exceptionsBefore = exceptions.length;
+    let offlineState = null;
+    let offlineError = '';
+    try {
+        offlineState = await waitForAppMount(cdp, baseUrl);
+    } catch (err) {
+        offlineError = String(err && err.message ? err.message : err);
+    }
+    assert('Offline: app boots from the precache with the server stopped',
+        Boolean(offlineState) && offlineState.rootLen > 2000 && offlineState.promptCount >= 59, offlineError || JSON.stringify(offlineState));
+
+    const after = offlineState
+        ? await cdp.eval(`(async () => {
+            const stories = await window.storyStore.listStories();
+            return { storyIds: stories.map((st) => st.id).sort(), activeId: localStorage.getItem('ellipsisprose_active_story_id') };
+        })()`, true)
+        : { storyIds: [], activeId: null };
+    assert('Offline: stories and settings in the browser are untouched by the worker',
+        sw.storyIds.length > 0 && JSON.stringify(after.storyIds) === JSON.stringify(sw.storyIds) && Boolean(after.activeId),
+        JSON.stringify({ before: sw.storyIds, after }));
+    assert('Offline: no uncaught exceptions while offline', exceptions.length === exceptionsBefore, exceptions.slice(exceptionsBefore).join(' | '));
+}
+
 async function runMode(opts) {
     const results = { mode: opts.mode, passed: [], failed: [] };
     const tmpBase = fs.mkdtempSync(path.join(os.tmpdir(), 'ellipsis-golden-'));
@@ -1681,8 +1788,7 @@ async function runMode(opts) {
         const cdpPort = await getFreePort();
 
         if (opts.mode === 'legacy') {
-            const legacyPath = ensureLegacyBaseline();
-            server = await startStaticHttpServer({ port, staticDir: ROOT_DIR, indexFile: legacyPath });
+            server = await startStaticHttpServer({ port, staticDir: ensureLegacySite(), indexFile: 'index.html' });
             session = await launchChromeSession(userDataDir, cdpPort);
             await runCoreSuite({ ...session, baseUrl: `http://127.0.0.1:${port}/`, screenshotDir: opts.screenshots, results });
         } else if (opts.mode === 'local') {
@@ -1693,6 +1799,7 @@ async function runMode(opts) {
             server = await startLocalAppServer({ port, staticDir: distDir, dataDir });
             session = await launchChromeSession(userDataDir, cdpPort);
             await runCoreSuite({ ...session, baseUrl: `http://127.0.0.1:${port}/`, screenshotDir: opts.screenshots, results });
+            await runOfflineSuite({ ...session, baseUrl: `http://127.0.0.1:${port}/`, stopServer: () => server.close(), results });
         } else if (opts.mode === 'subpath') {
             const distDir = path.join(ROOT_DIR, 'dist');
             if (!fs.existsSync(path.join(distDir, 'index.html'))) {
@@ -1711,6 +1818,7 @@ async function runMode(opts) {
                 results.failed.push({ name: api404CheckName, detail });
                 console.error(`  [FAIL] ${api404CheckName} -> ${detail}`);
             }
+            await runOfflineSuite({ ...session, baseUrl: `http://127.0.0.1:${port}/WriteforMe/`, stopServer: () => server.close(), results });
         } else if (opts.mode === 'singlefile') {
             const sfDir = path.join(ROOT_DIR, 'dist-singlefile');
             const sfFile = path.join(sfDir, 'EllipsisProse-portable.html');
@@ -1737,7 +1845,7 @@ async function runMode(opts) {
                 const runCdpPort = await getFreePort();
                 const profile = path.join(tmpBase, `chrome-prof-${label}`);
                 if (label === 'legacy') {
-                    server = await startStaticHttpServer({ port: runPort, staticDir: ROOT_DIR, indexFile: ensureLegacyBaseline() });
+                    server = await startStaticHttpServer({ port: runPort, staticDir: ensureLegacySite(), indexFile: 'index.html' });
                 } else {
                     if (!fs.existsSync(path.join(distDir, 'index.html'))) throw new Error('dist/index.html missing — run npm run build first');
                     server = await startStaticHttpServer({ port: runPort, staticDir: distDir, indexFile: 'index.html' });
@@ -1764,12 +1872,12 @@ async function runMode(opts) {
                 console.log(`[golden] Wrote pipeline transcript -> ${opts.out}`);
             }
         } else if (opts.mode === 'upgrade') {
-            const legacyPath = ensureLegacyBaseline();
+            const legacySiteDir = ensureLegacySite();
             const distDir = path.join(ROOT_DIR, 'dist');
             if (!fs.existsSync(path.join(distDir, 'index.html'))) throw new Error('dist/index.html missing');
 
             // Step A: Boot legacy app on fixed origin & seed IDB + localStorage via real app APIs
-            server = await startStaticHttpServer({ port, staticDir: ROOT_DIR, indexFile: legacyPath });
+            server = await startStaticHttpServer({ port, staticDir: legacySiteDir, indexFile: 'index.html' });
             session = await launchChromeSession(userDataDir, cdpPort);
             const originUrl = `http://127.0.0.1:${port}/`;
             await waitForAppMount(session.cdp, originUrl);
@@ -1777,6 +1885,16 @@ async function runMode(opts) {
             await session.cdp.eval(`window.EllipsisProseBridge.setModelConfig({ provider: 'gemini', apiKey: 'AIzaGoldenTestKey12345' })`, true);
             await waitForAppMount(session.cdp, originUrl);
             await sleep(800);
+            // The old hand-written worker installs here; the new build has to take over from it below.
+            let legacyWorker = { registered: false, cacheNames: [] };
+            for (let i = 0; i < 20; i++) {
+                legacyWorker = await session.cdp.eval(`(async () => {
+                    const reg = await navigator.serviceWorker.getRegistration();
+                    return { registered: Boolean(reg && reg.active), cacheNames: await caches.keys() };
+                })()`, true);
+                if (legacyWorker.registered && legacyWorker.cacheNames.some((n) => n.startsWith('ellipsisprose-static-'))) break;
+                await sleep(500);
+            }
             // Navigate to about:blank so Chrome flushes LevelDB localStorage cleanly before process exit
             await session.cdp.send('Page.navigate', { url: 'about:blank' });
             await sleep(500);
@@ -1824,6 +1942,36 @@ async function runMode(opts) {
             } else {
                 results.failed.push({ name: 'Upgrade migration', detail: JSON.stringify(upgraded) });
                 console.error('  [FAIL] Upgrade migration ->', upgraded);
+            }
+
+            let takeover = null;
+            for (let i = 0; i < 40; i++) {
+                takeover = await session.cdp.eval(`(async () => {
+                    const reg = await navigator.serviceWorker.getRegistration();
+                    const names = await caches.keys();
+                    const precacheName = names.find((n) => n.startsWith('workbox-precache'));
+                    return {
+                        active: Boolean(reg && reg.active && reg.active.state === 'activated'),
+                        cacheNames: names,
+                        precachedCount: precacheName ? (await (await caches.open(precacheName)).keys()).length : 0,
+                        storyTitle: (await window.storyStore.loadStory('golden_story_1'))?.title
+                    };
+                })()`, true);
+                if (takeover.active && takeover.precachedCount >= 15 && !takeover.cacheNames.some((n) => n.startsWith('ellipsisprose-static-'))) break;
+                await sleep(500);
+            }
+            const hadLegacyCache = legacyWorker.registered && legacyWorker.cacheNames.some((n) => n.startsWith('ellipsisprose-static-'));
+            const takeoverName = 'Upgrade: new service worker replaces the old one, removes its cache and leaves user data alone';
+            const takeoverOk = hadLegacyCache && takeover.active && takeover.precachedCount >= 15
+                && !takeover.cacheNames.some((n) => n.startsWith('ellipsisprose-static-'))
+                && takeover.storyTitle === 'The Salt Clock';
+            if (takeoverOk) {
+                results.passed.push(takeoverName);
+                console.log(`  [PASS] ${takeoverName}`);
+            } else {
+                const detail = JSON.stringify({ legacyWorker, takeover });
+                results.failed.push({ name: takeoverName, detail });
+                console.error(`  [FAIL] ${takeoverName} -> ${detail}`);
             }
         } else {
             throw new Error(`Unknown mode: ${opts.mode}`);

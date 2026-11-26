@@ -349,3 +349,30 @@ export async function persistImportedStory(
         firstSceneCoord: { seqIdx: startSeq, sceneIdx: startSc }
     };
 }
+
+export interface ImportedStorySummary {
+    /** Toast headline. */
+    message: string;
+    title: string;
+    coverSrc: string | null;
+    audioCount: number;
+    /** Scenes with prose, falling back to the number of imported audio scenes. */
+    totalScenes: number;
+    firstSceneCoord: { seqIdx: number; sceneIdx: number };
+}
+
+/** What to tell the user after an import: headline plus the figures for the "book card" toast. */
+export function summarizeImportedStory(result: PersistImportedStoryResult): ImportedStorySummary {
+    const audioCount = result.importedAudioCount;
+    return {
+        message:
+            audioCount > 0
+                ? `Ready with ${audioCount} offline audio scene${audioCount === 1 ? '' : 's'}`
+                : 'Story imported and ready',
+        title: (result.story.title as string | undefined) || 'Untitled Story',
+        coverSrc: result.coverUrl,
+        audioCount,
+        totalScenes: result.totalDraftedScenes || audioCount || 0,
+        firstSceneCoord: result.firstSceneCoord
+    };
+}
