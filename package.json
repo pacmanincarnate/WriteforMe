@@ -1,6 +1,6 @@
 {
   "name": "ellipsisprose",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "EllipsisProse AI-Powered Novel Writing Web Application",
   "main": "server.js",
   "engines": {
