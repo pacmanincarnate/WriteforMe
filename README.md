@@ -22,3 +22,7 @@ EllipsisProse runs many LLM calls to draft your story from start to finished pro
 I won't take your money, this is fully open source and freely offered. I wanted to see if I could make it, and I wanted cheap, personalized content to listen to on transit or when working out. I'm offering it here for anyone who wants to try it out, since I've spent a long time getting it to the quality it's now.
 
 As for the APIs, the cost can vary significantly, based on a number of factors. Koboldcpp runs locally (I recommend Qwen3.6-35B-A3B-Uncensored-HauhauCS-Aggressive, personally) and is completely free and pretty fast. When I use a cloud model, I use DeepSeek 4 Flash. To generate a full novel, I pay less than $2. DeepSeek Pro is closer to $5-10, and Claude models are quite a bit more than that at pay-per-token costs (but likely higher quality). You definitely get what you pay for, but the locally generated novels are not bad, and the DeepSeek Flash novels are genuinely enjoyable reading material. Because we break the process down so much and guide generation at each step with very specific context and prompting, the model size really only affects nuance.
+
+## Working on the code
+
+Run `npm ci` once, then `npm run check` before you commit. It runs every test layer and ends with `ALL GOOD` or `FAILED`. `npm run check:quick` is the fast version for while you are editing. See [docs/TESTING.md](docs/TESTING.md).
