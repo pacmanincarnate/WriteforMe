@@ -4,6 +4,7 @@
  * Tier 0.2 Staggered Character Interviews, and Tier 1.1 Story Arc seeding.
  */
 
+import { STORAGE_KEYS } from '@/config';
 import {
     cleanCharacterNameFromVoiceProfile,
     extractPersonalizedReferenceTextFromInterview,
@@ -1505,7 +1506,7 @@ BEGIN STORY ARC CRITIQUE REVIEW
         const embService = ctx.getEmbeddingService();
         if (isActiveStoryForRag && embService?.isConfigured()) {
             safeLocalStorageSet(
-                'ellipsisprose_rag_fingerprint',
+                STORAGE_KEYS.ragFingerprint,
                 computeLoreFingerprint(
                     activeStoryId,
                     finalLore as LoreItem[],

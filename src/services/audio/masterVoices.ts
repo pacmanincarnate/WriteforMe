@@ -5,7 +5,11 @@
  * non-destructive cast voice registration.
  */
 
-import { migrateAudioDramaSettings, type AudioDramaSettings } from '@/config';
+import {
+    DEFAULT_SERVICE_URLS,
+    migrateAudioDramaSettings,
+    type AudioDramaSettings
+} from '@/config';
 import {
     BREEZE_MASTER_GUIDANCE_SCALE,
     RAIN_SENTENCE,
@@ -97,13 +101,13 @@ export async function getCachedSpeakerMasterVoice(
     speakerKey: VoiceCastMember | string | null | undefined,
     story: AudioStoryLike | null | undefined,
     settings: Partial<AudioDramaSettings> | Record<string, unknown> = {},
-    targetUrl = 'http://127.0.0.1:5020',
+    targetUrl: string = DEFAULT_SERVICE_URLS.audioStudioBridge,
     signal: AbortSignal | null = null
 ): Promise<MasterVoiceRecordLike | null> {
     const identity = resolveSpeakerVoiceIdentity(speakerKey, story, settings);
     const { masterKey, uploadKey } = identity;
 
-    let normalizedTarget = (targetUrl || 'http://127.0.0.1:5020').trim();
+    let normalizedTarget = (targetUrl || DEFAULT_SERVICE_URLS.audioStudioBridge).trim();
     if (!/^https?:\/\//i.test(normalizedTarget)) normalizedTarget = 'http://' + normalizedTarget;
     normalizedTarget = normalizedTarget.replace(/\/+$/, '');
 
@@ -133,7 +137,7 @@ export async function ensureSpeakerMasterVoice(
     speakerKey: VoiceCastMember | string | null | undefined,
     story: AudioStoryLike | null | undefined,
     settings: Partial<AudioDramaSettings> | Record<string, unknown> = {},
-    targetUrl = 'http://127.0.0.1:5020',
+    targetUrl: string = DEFAULT_SERVICE_URLS.audioStudioBridge,
     signal: AbortSignal | null = null
 ): Promise<MasterVoiceRecord> {
     const identity = resolveSpeakerVoiceIdentity(speakerKey, story, settings);
@@ -157,7 +161,7 @@ export async function ensureSpeakerMasterVoice(
             ? effRec.breezeModelId
             : 'breeze-tts';
 
-    let normalizedTarget = (targetUrl || 'http://127.0.0.1:5020').trim();
+    let normalizedTarget = (targetUrl || DEFAULT_SERVICE_URLS.audioStudioBridge).trim();
     if (!/^https?:\/\//i.test(normalizedTarget)) normalizedTarget = 'http://' + normalizedTarget;
     normalizedTarget = normalizedTarget.replace(/\/+$/, '');
 
@@ -505,7 +509,7 @@ export async function resolveSpeakersMasterMap(
     if (speakersList.length === 0) return { anchorsMap, calibratedFromCache: true };
 
     const missingSpeakers: string[] = [];
-    const cleanBridgeUrl = String(bridgeUrl || 'http://127.0.0.1:5020')
+    const cleanBridgeUrl = String(bridgeUrl || DEFAULT_SERVICE_URLS.audioStudioBridge)
         .trim()
         .replace(/\/+$/, '');
 

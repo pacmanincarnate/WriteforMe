@@ -6,7 +6,13 @@
  * Archivist commit, blueprint cascade patching, and single-scene auto-write.
  */
 
-import { NARRATIVE_MODES, STRUCTURAL_MODALITIES, type NarrativeModeDefinition } from '@/config';
+import {
+    DEFAULT_SERVICE_URLS,
+    DEFAULT_TOKEN_LIMITS,
+    NARRATIVE_MODES,
+    STRUCTURAL_MODALITIES,
+    type NarrativeModeDefinition
+} from '@/config';
 import {
     extractDialogueStats,
     getDeterministicVoiceSeed,
@@ -1489,7 +1495,7 @@ ${dynamicBannedList.map((p) => `- ${p}`).join('\n')}
         else if (targetProvider === 'openrouter') effectiveApiKey = creds.openRouterKey || '';
         else if (targetProvider === 'nanogpt') effectiveApiKey = creds.nanoGptKey || '';
         else if (targetProvider === 'koboldcpp') {
-            effectiveBaseUrl = creds.koboldUrl || 'http://localhost:5001';
+            effectiveBaseUrl = creds.koboldUrl || DEFAULT_SERVICE_URLS.koboldcpp;
         } else if (targetProvider === 'codex') {
             effectiveBaseUrl = creds.codexUrl || CLI_BRIDGE_DEFAULT_URLS.codex;
         } else if (targetProvider === 'claude') {
@@ -1553,7 +1559,7 @@ ${isAudioDramaStory ? 'Begin writing current scene audio drama script.' : 'Begin
                         | undefined,
                     max_tokens:
                         targetProvider === 'openrouter'
-                            ? creds.openRouterMaxTokens || 65536
+                            ? creds.openRouterMaxTokens || DEFAULT_TOKEN_LIMITS.openRouterMaxTokens
                             : isLocalProvider(targetProvider)
                               ? 32768
                               : 16384,

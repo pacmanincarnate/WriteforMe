@@ -3,19 +3,23 @@
  * AbortController-backed fetch wrapper protecting request initiation and streaming body reads.
  */
 
+import { TIMEOUTS_MS } from '@/config';
+
 export type FetchTimeoutOptions = RequestInit;
 
 /** Executes `fetch` with a deadline across both connection setup and response body consumption. */
 export async function fetchWithTimeout(
     url: RequestInfo | URL,
     options: FetchTimeoutOptions = {},
-    timeoutMs: number | false | null = 120000
+    timeoutMs: number | false | null = TIMEOUTS_MS.defaultFetch
 ): Promise<Response> {
     if (timeoutMs === 0 || timeoutMs === false || timeoutMs === null) {
         return await fetch(url, options);
     }
     const finalTimeout =
-        timeoutMs !== undefined && timeoutMs !== null && timeoutMs > 0 ? timeoutMs : 120000;
+        timeoutMs !== undefined && timeoutMs !== null && timeoutMs > 0
+            ? timeoutMs
+            : TIMEOUTS_MS.defaultFetch;
     const controller = new AbortController();
     let isCompleted = false;
     const id = setTimeout(() => {

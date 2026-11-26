@@ -4,6 +4,8 @@
  * erase. React-free; stores are passed in.
  */
 
+import { STORAGE_KEYS } from '@/config';
+
 interface PrefixImageStore {
     deleteImagesByPrefix(prefix: string): Promise<unknown>;
     deleteImage(id: string): Promise<void>;
@@ -35,11 +37,11 @@ export interface EraseAllStores {
 
 /** localStorage keys that point at the open story and selection; removed by a factory reset. */
 export const FACTORY_RESET_STORAGE_KEYS = [
-    'ellipsisprose_story',
-    'ellipsisprose_active_story_id',
-    'ellipsisprose_selectedAct',
-    'ellipsisprose_selectedSequence',
-    'ellipsisprose_selectedScene'
+    STORAGE_KEYS.story,
+    STORAGE_KEYS.activeStoryId,
+    STORAGE_KEYS.selectedAct,
+    STORAGE_KEYS.selectedSequence,
+    STORAGE_KEYS.selectedScene
 ] as const;
 
 /**

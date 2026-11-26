@@ -7,6 +7,7 @@
  */
 
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { STORAGE_KEYS } from '@/config';
 import {
     STORY_RESET_STAGES,
     buildRolledBackStoryState,
@@ -158,7 +159,7 @@ export function useStoryReset<TStory extends ResetStory = ResetStory>(
 
         // Rebuild world memory from the lore that survived.
         params.graphManager?.current?.buildGraph(nextStory.lore || []);
-        removeStorageKey('ellipsisprose_rag_fingerprint');
+        removeStorageKey(STORAGE_KEYS.ragFingerprint);
         const vectors = params.vectorStore?.current;
         if (vectors) {
             try {

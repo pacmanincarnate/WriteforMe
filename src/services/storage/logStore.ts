@@ -3,8 +3,12 @@
  * IndexedDB store for per-story verbose pipeline logs with quota-aware compaction.
  */
 
+import { IDB_DATABASES, STORAGE_KEYS } from '@/config';
 import { ResilientIdbStore, isQuotaExceededIdbError } from './idbBase';
 import { studioCacheStore } from './studioCacheStore';
+
+const LOG_DB = IDB_DATABASES.log;
+const LOGS_STORE = LOG_DB.stores.logs;
 
 interface LogRecord {
     id: string;
@@ -16,13 +20,13 @@ interface LogRecord {
 export class LogStore extends ResilientIdbStore {
     private _quotaWarned?: boolean;
 
-    constructor(dbName = 'EllipsisLogStore') {
-        super(dbName, 1);
+    constructor(dbName: string = LOG_DB.name) {
+        super(dbName, LOG_DB.version);
     }
 
     override onUpgrade(db: IDBDatabase): void {
-        if (!db.objectStoreNames.contains('logs')) {
-            db.createObjectStore('logs', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(LOGS_STORE)) {
+            db.createObjectStore(LOGS_STORE, { keyPath: 'id' });
         }
     }
 
@@ -47,8 +51,8 @@ export class LogStore extends ResilientIdbStore {
 
     async saveLogs(storyId: string, logsArray: unknown[]): Promise<void> {
         const writeOnce = (payload: unknown[]): Promise<void> =>
-            this.runTransaction<void>('logs', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('logs').put({ id: storyId, logs: payload, timestamp: Date.now() });
+            this.runTransaction<void>(LOGS_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(LOGS_STORE).put({ id: storyId, logs: payload, timestamp: Date.now() });
                 tx.oncomplete = () => resolve();
             });
         try {
@@ -84,10 +88,10 @@ export class LogStore extends ResilientIdbStore {
 
     async loadLogs(storyId: string): Promise<unknown[]> {
         return this.runTransaction<unknown[]>(
-            'logs',
+            LOGS_STORE,
             'readonly',
             (tx, _db, resolve, reject) => {
-                const request = tx.objectStore('logs').get(storyId);
+                const request = tx.objectStore(LOGS_STORE).get(storyId);
                 request.onsuccess = () => {
                     const result = request.result as LogRecord | undefined;
                     resolve(result ? result.logs : []);
@@ -98,8 +102,8 @@ export class LogStore extends ResilientIdbStore {
     }
 
     async clearLogs(storyId: string): Promise<void> {
-        return this.runTransaction<void>('logs', 'readwrite', (tx, _db, resolve) => {
-            tx.objectStore('logs').delete(storyId);
+        return this.runTransaction<void>(LOGS_STORE, 'readwrite', (tx, _db, resolve) => {
+            tx.objectStore(LOGS_STORE).delete(storyId);
             tx.oncomplete = () => resolve();
         });
     }
@@ -129,7 +133,7 @@ export async function recoverOrphanedLogs(
 ): Promise<RecoverOrphanedLogsResult> {
     let fallbackId = 'story_default';
     try {
-        fallbackId = localStorage.getItem('ellipsisprose_active_story_id') || 'story_default';
+        fallbackId = localStorage.getItem(STORAGE_KEYS.activeStoryId) || 'story_default';
     } catch {
         // Ignore restricted storage access
     }

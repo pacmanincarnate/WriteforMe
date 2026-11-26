@@ -3,11 +3,16 @@
  * Hybrid Disk-Vault + IndexedDB store for Audio Drama scene and full-sequence MP3 renders.
  */
 
+import { IDB_DATABASES } from '@/config';
 import { ensureMp3AudioBlob } from '@/services/audio/codec';
 import { ResilientIdbStore, isQuotaExceededIdbError } from './idbBase';
 import { toAsciiHeaderJson } from './imageStore';
 import { studioCacheStore } from './studioCacheStore';
 import { probeLocalVaultAvailability } from './vaultDetector';
+
+const AUDIO_DB = IDB_DATABASES.audio;
+const SCENE_AUDIO_STORE = AUDIO_DB.stores.sceneAudio;
+const SEQUENCE_AUDIO_STORE = AUDIO_DB.stores.sequenceAudio;
 
 export interface SceneAudioConfig {
     storyId: string;
@@ -104,20 +109,20 @@ export interface SequenceAudioMeta {
 
 /** Hybrid Disk-Vault + IndexedDB audio drama scene & sequence audio persistence. */
 export class AudioStore extends ResilientIdbStore {
-    constructor(dbName = 'EllipsisAudioStore') {
-        super(dbName, 2);
+    constructor(dbName: string = AUDIO_DB.name) {
+        super(dbName, AUDIO_DB.version);
     }
 
     override onUpgrade(db: IDBDatabase): void {
-        if (!db.objectStoreNames.contains('scene_audio')) {
-            const store = db.createObjectStore('scene_audio', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(SCENE_AUDIO_STORE)) {
+            const store = db.createObjectStore(SCENE_AUDIO_STORE, { keyPath: 'id' });
             store.createIndex('storyId', 'storyId', { unique: false });
             store.createIndex('story_seq_scene', ['storyId', 'seqIdx', 'sceneIdx'], {
                 unique: true
             });
         }
-        if (!db.objectStoreNames.contains('sequence_audio')) {
-            const seqStore = db.createObjectStore('sequence_audio', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(SEQUENCE_AUDIO_STORE)) {
+            const seqStore = db.createObjectStore(SEQUENCE_AUDIO_STORE, { keyPath: 'id' });
             seqStore.createIndex('storyId', 'storyId', { unique: false });
             seqStore.createIndex('story_seq', ['storyId', 'seqIdx'], { unique: true });
         }
@@ -213,11 +218,11 @@ export class AudioStore extends ResilientIdbStore {
     private async _evictOldestIdbSceneAudio(countToEvict = 3): Promise<number> {
         try {
             const entries = await this.runTransaction<Array<{ id: string; updatedAt: number }>>(
-                'scene_audio',
+                SCENE_AUDIO_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
                     const list: Array<{ id: string; updatedAt: number }> = [];
-                    const req = tx.objectStore('scene_audio').openCursor();
+                    const req = tx.objectStore(SCENE_AUDIO_STORE).openCursor();
                     req.onsuccess = (e) => {
                         const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
                         if (cursor) {
@@ -237,8 +242,8 @@ export class AudioStore extends ResilientIdbStore {
             if (entries.length === 0) return 0;
             entries.sort((a, b) => a.updatedAt - b.updatedAt);
             const toDelete = entries.slice(0, Math.min(countToEvict, entries.length)).map((e) => e.id);
-            await this.runTransaction<void>('scene_audio', 'readwrite', (tx, _db, resolve) => {
-                const store = tx.objectStore('scene_audio');
+            await this.runTransaction<void>(SCENE_AUDIO_STORE, 'readwrite', (tx, _db, resolve) => {
+                const store = tx.objectStore(SCENE_AUDIO_STORE);
                 for (const id of toDelete) store.delete(id);
                 tx.oncomplete = () => resolve();
             });
@@ -252,9 +257,9 @@ export class AudioStore extends ResilientIdbStore {
         try {
             await this.runTransaction<void>(
                 (db) =>
-                    db.objectStoreNames.contains('sequence_audio')
-                        ? ['scene_audio', 'sequence_audio']
-                        : ['scene_audio'],
+                    db.objectStoreNames.contains(SEQUENCE_AUDIO_STORE)
+                        ? [SCENE_AUDIO_STORE, SEQUENCE_AUDIO_STORE]
+                        : [SCENE_AUDIO_STORE],
                 'readwrite',
                 (tx, _db, resolve) => {
                     Array.from(tx.objectStoreNames).forEach((storeName) =>
@@ -370,8 +375,8 @@ export class AudioStore extends ResilientIdbStore {
         );
 
         const writeOnce = (): Promise<SceneAudioRecord> =>
-            this.runTransaction<SceneAudioRecord>('scene_audio', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('scene_audio').put(record);
+            this.runTransaction<SceneAudioRecord>(SCENE_AUDIO_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(SCENE_AUDIO_STORE).put(record);
                 tx.oncomplete = () => resolve(record);
             });
         try {
@@ -419,10 +424,10 @@ export class AudioStore extends ResilientIdbStore {
         let idbRec: SceneAudioRecord | null;
         try {
             idbRec = await this.runTransaction<SceneAudioRecord | null>(
-                'scene_audio',
+                SCENE_AUDIO_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
-                    const request = tx.objectStore('scene_audio').get(id);
+                    const request = tx.objectStore(SCENE_AUDIO_STORE).get(id);
                     request.onsuccess = () =>
                         resolve((request.result as SceneAudioRecord | undefined) || null);
                     request.onerror = () => reject(request.error);
@@ -444,10 +449,10 @@ export class AudioStore extends ResilientIdbStore {
         if (!storyId) return [];
         const [idbMeta, diskMeta] = await Promise.all([
             this.runTransaction<SceneAudioMeta[]>(
-                'scene_audio',
+                SCENE_AUDIO_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
-                    const index = tx.objectStore('scene_audio').index('storyId');
+                    const index = tx.objectStore(SCENE_AUDIO_STORE).index('storyId');
                     const metaList: SceneAudioMeta[] = [];
                     // Stream via cursor so metadata refreshes never hold all multi-MB scene blobs in RAM at once
                     const request = index.openCursor(IDBKeyRange.only(storyId));
@@ -521,10 +526,10 @@ export class AudioStore extends ResilientIdbStore {
     async getAllStoryAudioRecords(storyId: string): Promise<SceneAudioRecord[]> {
         if (!storyId) return [];
         const idbRecords = await this.runTransaction<SceneAudioRecord[]>(
-            'scene_audio',
+            SCENE_AUDIO_STORE,
             'readonly',
             (tx, _db, resolve, reject) => {
-                const index = tx.objectStore('scene_audio').index('storyId');
+                const index = tx.objectStore(SCENE_AUDIO_STORE).index('storyId');
                 const request = index.getAll(storyId);
                 request.onsuccess = () =>
                     resolve((request.result as SceneAudioRecord[] | undefined) || []);
@@ -563,8 +568,8 @@ export class AudioStore extends ResilientIdbStore {
                       { method: 'DELETE' }
                   ).catch(() => null)
                 : Promise.resolve(null),
-            this.runTransaction<void>('scene_audio', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('scene_audio').delete(id);
+            this.runTransaction<void>(SCENE_AUDIO_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(SCENE_AUDIO_STORE).delete(id);
                 tx.oncomplete = () => resolve();
             }).catch(() => {})
         ]);
@@ -631,10 +636,10 @@ export class AudioStore extends ResilientIdbStore {
 
         const writeOnce = (): Promise<SequenceAudioRecord | null> =>
             this.runTransaction<SequenceAudioRecord | null>(
-                'sequence_audio',
+                SEQUENCE_AUDIO_STORE,
                 'readwrite',
                 (tx, _db, resolve) => {
-                    tx.objectStore('sequence_audio').put(record);
+                    tx.objectStore(SEQUENCE_AUDIO_STORE).put(record);
                     tx.oncomplete = () => resolve(record);
                 },
                 { skipIfMissing: true, fallbackValue: null }
@@ -674,10 +679,10 @@ export class AudioStore extends ResilientIdbStore {
         let idbRec: SequenceAudioRecord | null;
         try {
             idbRec = await this.runTransaction<SequenceAudioRecord | null>(
-                'sequence_audio',
+                SEQUENCE_AUDIO_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
-                    const request = tx.objectStore('sequence_audio').get(id);
+                    const request = tx.objectStore(SEQUENCE_AUDIO_STORE).get(id);
                     request.onsuccess = () =>
                         resolve((request.result as SequenceAudioRecord | undefined) || null);
                     request.onerror = () => reject(request.error);
@@ -700,10 +705,10 @@ export class AudioStore extends ResilientIdbStore {
         if (!storyId) return [];
         const [idbMeta, diskMeta] = await Promise.all([
             this.runTransaction<SequenceAudioMeta[]>(
-                'sequence_audio',
+                SEQUENCE_AUDIO_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
-                    const index = tx.objectStore('sequence_audio').index('storyId');
+                    const index = tx.objectStore(SEQUENCE_AUDIO_STORE).index('storyId');
                     const metaList: SequenceAudioMeta[] = [];
                     const request = index.openCursor(IDBKeyRange.only(storyId));
                     request.onsuccess = (event) => {
@@ -767,10 +772,10 @@ export class AudioStore extends ResilientIdbStore {
     async getAllStorySequenceAudioRecords(storyId: string): Promise<SequenceAudioRecord[]> {
         if (!storyId) return [];
         const idbRecords = await this.runTransaction<SequenceAudioRecord[]>(
-            'sequence_audio',
+            SEQUENCE_AUDIO_STORE,
             'readonly',
             (tx, _db, resolve, reject) => {
-                const index = tx.objectStore('sequence_audio').index('storyId');
+                const index = tx.objectStore(SEQUENCE_AUDIO_STORE).index('storyId');
                 const request = index.getAll(storyId);
                 request.onsuccess = () =>
                     resolve((request.result as SequenceAudioRecord[] | undefined) || []);
@@ -808,10 +813,10 @@ export class AudioStore extends ResilientIdbStore {
                   ).catch(() => null)
                 : Promise.resolve(null),
             this.runTransaction<void>(
-                'sequence_audio',
+                SEQUENCE_AUDIO_STORE,
                 'readwrite',
                 (tx, _db, resolve) => {
-                    tx.objectStore('sequence_audio').delete(id);
+                    tx.objectStore(SEQUENCE_AUDIO_STORE).delete(id);
                     tx.oncomplete = () => resolve();
                 },
                 { skipIfMissing: true, fallbackValue: undefined }
@@ -830,9 +835,9 @@ export class AudioStore extends ResilientIdbStore {
                 : Promise.resolve(null),
             this.runTransaction<void>(
                 (db) =>
-                    db.objectStoreNames.contains('sequence_audio')
-                        ? ['scene_audio', 'sequence_audio']
-                        : ['scene_audio'],
+                    db.objectStoreNames.contains(SEQUENCE_AUDIO_STORE)
+                        ? [SCENE_AUDIO_STORE, SEQUENCE_AUDIO_STORE]
+                        : [SCENE_AUDIO_STORE],
                 'readwrite',
                 (tx, _db, resolve, reject) => {
                     Array.from(tx.objectStoreNames).forEach((storeName) => {
@@ -857,9 +862,9 @@ export class AudioStore extends ResilientIdbStore {
     async clear(): Promise<void> {
         return this.runTransaction<void>(
             (db) =>
-                db.objectStoreNames.contains('sequence_audio')
-                    ? ['scene_audio', 'sequence_audio']
-                    : ['scene_audio'],
+                db.objectStoreNames.contains(SEQUENCE_AUDIO_STORE)
+                    ? [SCENE_AUDIO_STORE, SEQUENCE_AUDIO_STORE]
+                    : [SCENE_AUDIO_STORE],
             'readwrite',
             (tx, _db, resolve) => {
                 Array.from(tx.objectStoreNames).forEach((storeName) =>

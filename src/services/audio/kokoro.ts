@@ -4,6 +4,8 @@
  * and browser CacheStorage cleanup helper.
  */
 
+import { CDN_URLS, DEFAULT_TTS_MODELS } from '@/config';
+
 export type KokoroWorkerHandle = Worker & {
     _blobUrl?: string;
 };
@@ -25,7 +27,7 @@ export function createKokoroWorker(): KokoroWorkerHandle {
         '            return;',
         "        } else if (type === 'init') {",
         '            const { modelId, dtype, device } = payload || {};',
-        "            const targetModel = modelId || 'onnx-community/Kokoro-82M-v1.0-ONNX';",
+        `            const targetModel = modelId || '${DEFAULT_TTS_MODELS.kokoro}';`,
         "            const targetDtype = dtype || 'q8';",
         '            // Enforce WASM by default. WebGPU with q8 produces known tensor dequantization corruption in Chromium/Opera.',
         "            const requestedDevice = (device === 'auto' || !device) ? 'wasm' : device;",
@@ -40,22 +42,22 @@ export function createKokoroWorker(): KokoroWorkerHandle {
         '                try {',
         "                    self.postMessage({ type: 'status', id, status: 'loading-library', progress: 5, message: 'Loading kokoro-js ML library...' });",
         '                    try {',
-        "                        const { env } = await import('https://esm.sh/@huggingface/transformers@3.3.3');",
+        `                        const { env } = await import('${CDN_URLS.transformersJs}');`,
         '                        env.backends.onnx.wasm.numThreads = 1;',
         '                        env.backends.onnx.wasm.simd = true;',
         '                        env.backends.onnx.wasm.proxy = false;',
-        "                        env.backends.onnx.wasm.wasmPaths = 'https://esm.sh/@huggingface/transformers@3.3.3/dist/';",
+        `                        env.backends.onnx.wasm.wasmPaths = '${CDN_URLS.transformersWasmPath}';`,
         '                    } catch(e) {',
         "                        console.warn('Could not pre-configure transformers.js env', e);",
         '                    }',
-        "                    const { KokoroTTS } = await import('https://esm.sh/kokoro-js@1.2.0');",
+        `                    const { KokoroTTS } = await import('${CDN_URLS.kokoroJs}');`,
         '',
         '                    // Check if model weights are already cached in browser CacheStorage',
         '                    let isModelCached = false;',
         '                    try {',
         "                        if (typeof caches !== 'undefined') {",
         "                            const cache = await caches.open('transformers-cache');",
-        "                            const match = await cache.match('https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx');",
+        `                            const match = await cache.match('${CDN_URLS.kokoroModelQuantized}');`,
         '                            if (match) isModelCached = true;',
         '                        }',
         '                    } catch (cErr) {}',
@@ -141,7 +143,7 @@ export function createKokoroWorker(): KokoroWorkerHandle {
         '                    try {',
         "                        if (typeof caches !== 'undefined' && preloadVoice !== 'system_native') {",
         "                            const voiceCache = await caches.open('kokoro-voices');",
-        "                            const voiceUrl = 'https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/' + preloadVoice + '.bin';",
+        `                            const voiceUrl = '${CDN_URLS.kokoroVoicesBase}' + preloadVoice + '.bin';`,
         '                            const match = await voiceCache.match(voiceUrl);',
         '                            if (!match) {',
         "                                self.postMessage({ type: 'status', id, status: 'loading-voice', progress: 95, message: 'Pre-caching neural voice (' + preloadVoice + ')...' });",

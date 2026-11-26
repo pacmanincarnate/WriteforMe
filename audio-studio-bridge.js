@@ -19,6 +19,7 @@ const path = require('path');
 const os = require('os');
 const net = require('net');
 const crypto = require('crypto');
+const PORTS = require('./src/config/ports.json');
 
 // ---------------------------------------------------------------------------
 // Configuration & CLI Argument Parsing
@@ -43,8 +44,8 @@ function resolveDaemonCwd(binPath) {
 }
 
 const settings = {
-    port: Number(process.env.AUDIO_STUDIO_BRIDGE_PORT || 5020),
-    daemonPort: Number(process.env.AUDIOCPP_PORT || 8080),
+    port: Number(process.env.AUDIO_STUDIO_BRIDGE_PORT || PORTS.audioStudioBridge),
+    daemonPort: Number(process.env.AUDIOCPP_PORT || PORTS.audioCpp),
     bind: process.env.AUDIO_STUDIO_BRIDGE_BIND || '127.0.0.1',
     swapMode: process.env.AUDIO_STUDIO_SWAP_MODE || 'patternA', // 'patternA' | 'patternB'
     audiocppDir: process.env.ELLIPSISPROSE_AUDIOCPP_DIR || '',

@@ -6,10 +6,20 @@
 
 import { create } from 'zustand';
 import {
+    API_TIMEOUT_BOUNDS,
+    DEFAULT_API_TIMEOUT_SEC,
     DEFAULT_AUDIO_DRAMA_SETTINGS,
     DEFAULT_BANNED_PHRASES,
+    DEFAULT_COMFY_CONFIG,
+    DEFAULT_IMAGE_MODELS,
+    DEFAULT_LLM_MODELS,
     DEFAULT_READER_SETTINGS,
+    DEFAULT_SAVED_MODELS,
+    DEFAULT_SERVICE_URLS,
+    DEFAULT_THINKING_BUDGETS,
+    DEFAULT_TOKEN_LIMITS,
     NANO_GPT_DEFAULT_MODELS,
+    STORAGE_KEYS,
     TTS_PIPELINE_TIERS,
     migrateAudioDramaSettings,
     type AudioDramaSettings,
@@ -164,31 +174,31 @@ export function applyThemeToDom(theme: ThemeMode): void {
 }
 
 export function readInitialSettingsState(): SettingsState {
-    const apiProvider = readStorageString('ellipsisprose_api_provider', 'gemini');
+    const apiProvider = readStorageString(STORAGE_KEYS.apiProvider, 'gemini');
     const embeddingProvider =
-        readStorageString('ellipsisprose_embedding_provider') ||
+        readStorageString(STORAGE_KEYS.embeddingProvider) ||
         (isCliBridgeProvider(apiProvider) ? 'gemini' : apiProvider);
-    const geminiModel = readStorageString('ellipsisprose_gemini_model', 'gemini-2.0-flash');
-    const koboldModel = readStorageString('ellipsisprose_kobold_model', 'koboldcpp');
+    const geminiModel = readStorageString(STORAGE_KEYS.geminiModel, DEFAULT_LLM_MODELS.gemini);
+    const koboldModel = readStorageString(STORAGE_KEYS.koboldModel, DEFAULT_LLM_MODELS.koboldcpp);
 
-    const rawImageModel = readStorageString('ellipsisprose_image_model');
+    const rawImageModel = readStorageString(STORAGE_KEYS.imageModel);
     const imageModel =
         rawImageModel && rawImageModel !== 'imagen-3.0-generate-002'
             ? rawImageModel
-            : 'gemini-3.1-flash-image';
+            : DEFAULT_IMAGE_MODELS.gemini;
 
     const bannedPhrases = readStorageJson<string[]>(
-        'ellipsisprose_banned_phrases',
+        STORAGE_KEYS.bannedPhrases,
         [...DEFAULT_BANNED_PHRASES]
     );
     const rawSlop = readStorageJson<Partial<SlopConfig> | null>(
-        'ellipsisprose_slop_config_v1',
+        STORAGE_KEYS.slopConfigV1,
         null
     );
     const slopConfig = normalizeSlopConfig(rawSlop, bannedPhrases);
 
     const savedReader = readStorageJson<Partial<ReaderSettings> | null>(
-        'ellipsisprose_reader_settings',
+        STORAGE_KEYS.readerSettings,
         null
     );
     const normalizedReader: ReaderSettings = savedReader
@@ -200,7 +210,7 @@ export function readInitialSettingsState(): SettingsState {
         : { ...DEFAULT_READER_SETTINGS };
 
     const savedAudioDrama = readStorageJson<Partial<AudioDramaSettings> | null>(
-        'ellipsisprose_audio_drama_settings',
+        STORAGE_KEYS.audioDramaSettings,
         null
     );
     const audioDramaSettings: AudioDramaSettings = savedAudioDrama
@@ -208,104 +218,136 @@ export function readInitialSettingsState(): SettingsState {
         : { ...DEFAULT_AUDIO_DRAMA_SETTINGS };
 
     return {
-        theme: readStorageString('ellipsisprose_theme', 'light'),
-        enableReview: readStorageBool('ellipsisprose_enable_review', true),
-        enableStylePolish: readStorageBool('ellipsisprose_enable_style_polish', true),
+        theme: readStorageString(STORAGE_KEYS.theme, 'light'),
+        enableReview: readStorageBool(STORAGE_KEYS.enableReview, true),
+        enableStylePolish: readStorageBool(STORAGE_KEYS.enableStylePolish, true),
         enableAudioDramaDirectionPass: readStorageBool(
-            'ellipsisprose_enable_audio_drama_direction',
+            STORAGE_KEYS.enableAudioDramaDirection,
             true
         ),
         apiProvider,
         embeddingProvider,
-        apiKey: readStorageString('gemini_api_key', ''),
-        apiTimeout: readStorageInt('ellipsisprose_api_timeout', 120, 5, 1800),
-        geminiModel,
-        openRouterKey: readStorageString('ellipsisprose_openrouter_key', ''),
-        openRouterModel: readStorageString(
-            'ellipsisprose_openrouter_model',
-            'google/gemini-2.0-flash-001'
+        apiKey: readStorageString(STORAGE_KEYS.geminiApiKey, ''),
+        apiTimeout: readStorageInt(
+            STORAGE_KEYS.apiTimeout,
+            DEFAULT_API_TIMEOUT_SEC,
+            API_TIMEOUT_BOUNDS.min,
+            API_TIMEOUT_BOUNDS.max
         ),
-        openRouterMaxTokens: readStorageInt('ellipsisprose_openrouter_max_tokens', 65536),
-        nanoGptKey: readStorageString('ellipsisprose_nanogpt_key', ''),
-        nanoGptModel: readStorageString('ellipsisprose_nanogpt_model', 'gpt-4o'),
-        koboldUrl: readStorageString('ellipsisprose_kobold_url', 'http://localhost:5001'),
+        geminiModel,
+        openRouterKey: readStorageString(STORAGE_KEYS.openRouterKey, ''),
+        openRouterModel: readStorageString(
+            STORAGE_KEYS.openRouterModel,
+            DEFAULT_LLM_MODELS.openrouter
+        ),
+        openRouterMaxTokens: readStorageInt(
+            STORAGE_KEYS.openRouterMaxTokens,
+            DEFAULT_TOKEN_LIMITS.openRouterMaxTokens
+        ),
+        nanoGptKey: readStorageString(STORAGE_KEYS.nanoGptKey, ''),
+        nanoGptModel: readStorageString(STORAGE_KEYS.nanoGptModel, DEFAULT_LLM_MODELS.nanogpt),
+        koboldUrl: readStorageString(STORAGE_KEYS.koboldUrl, DEFAULT_SERVICE_URLS.koboldcpp),
         koboldModel,
-        koboldLoadedModel: koboldModel || 'koboldcpp',
-        codexUrl: readStorageString('ellipsisprose_codex_url', 'http://localhost:5010'),
-        codexModel: readStorageString('ellipsisprose_codex_model', 'gpt-5.6-luna'),
-        claudeUrl: readStorageString('ellipsisprose_claude_url', CLI_BRIDGE_DEFAULT_URLS.claude),
-        claudeModel: readStorageString('ellipsisprose_claude_model', 'sonnet'),
-        savedModels: readStorageJson<string[]>('ellipsisprose_saved_models', [
-            'google/gemini-2.0-flash-001'
+        koboldLoadedModel: koboldModel || DEFAULT_LLM_MODELS.koboldcpp,
+        codexUrl: readStorageString(STORAGE_KEYS.codexUrl, CLI_BRIDGE_DEFAULT_URLS.codex),
+        codexModel: readStorageString(STORAGE_KEYS.codexModel, DEFAULT_LLM_MODELS.codex),
+        claudeUrl: readStorageString(STORAGE_KEYS.claudeUrl, CLI_BRIDGE_DEFAULT_URLS.claude),
+        claudeModel: readStorageString(STORAGE_KEYS.claudeModel, DEFAULT_LLM_MODELS.claude),
+        savedModels: readStorageJson<string[]>(STORAGE_KEYS.savedModels, [
+            ...DEFAULT_SAVED_MODELS
         ]),
         devProvider:
-            readStorageString('ellipsisprose_dev_provider') ||
-            readStorageString('ellipsisprose_api_provider') ||
+            readStorageString(STORAGE_KEYS.devProvider) ||
+            readStorageString(STORAGE_KEYS.apiProvider) ||
             'gemini',
         devModel:
-            readStorageString('ellipsisprose_dev_model') ||
-            readStorageString('ellipsisprose_gemini_model') ||
-            'gemini-2.0-flash',
-        reviewProvider: readStorageString('ellipsisprose_review_provider', ''),
-        reviewModel: readStorageString('ellipsisprose_review_model', ''),
-        proseProvider: readStorageString('ellipsisprose_prose_provider', ''),
-        proseModel: readStorageString('ellipsisprose_prose_model', ''),
-        useProseModel: readStorageBool('ellipsisprose_use_prose_model', false),
-        geminiProseModel: readStorageString('ellipsisprose_gemini_prose_model', ''),
-        openRouterProseModel: readStorageString('ellipsisprose_openrouter_prose_model', ''),
-        nanoGptProseModel: readStorageString('ellipsisprose_nanogpt_prose_model', ''),
-        koboldProseModel: readStorageString('ellipsisprose_kobold_prose_model', ''),
-        codexProseModel: readStorageString('ellipsisprose_codex_prose_model', ''),
-        enableThinkingAct: readStorageBool('ellipsisprose_enable_thinking_act', true),
-        enableThinkingScene: readStorageBool('ellipsisprose_enable_thinking_scene', true),
-        enableThinkingWriting: readStorageBool('ellipsisprose_enable_thinking_writing', true),
-        thinkingBudgetStoryArc: readStorageInt('ellipsisprose_thinking_budget_story_arc', 16384),
-        thinkingBudgetAct: readStorageInt('ellipsisprose_thinking_budget_act', 16384),
-        thinkingBudgetScene: readStorageInt('ellipsisprose_thinking_budget_scene', 16384),
-        thinkingBudgetWriting: readStorageInt('ellipsisprose_thinking_budget_writing', 16384),
-        enableNarrativeLenses: readStorageBool('ellipsisprose_enable_narrative_lenses_v2', true),
+            readStorageString(STORAGE_KEYS.devModel) ||
+            readStorageString(STORAGE_KEYS.geminiModel) ||
+            DEFAULT_LLM_MODELS.gemini,
+        reviewProvider: readStorageString(STORAGE_KEYS.reviewProvider, ''),
+        reviewModel: readStorageString(STORAGE_KEYS.reviewModel, ''),
+        proseProvider: readStorageString(STORAGE_KEYS.proseProvider, ''),
+        proseModel: readStorageString(STORAGE_KEYS.proseModel, ''),
+        useProseModel: readStorageBool(STORAGE_KEYS.useProseModel, false),
+        geminiProseModel: readStorageString(STORAGE_KEYS.geminiProseModel, ''),
+        openRouterProseModel: readStorageString(STORAGE_KEYS.openRouterProseModel, ''),
+        nanoGptProseModel: readStorageString(STORAGE_KEYS.nanoGptProseModel, ''),
+        koboldProseModel: readStorageString(STORAGE_KEYS.koboldProseModel, ''),
+        codexProseModel: readStorageString(STORAGE_KEYS.codexProseModel, ''),
+        enableThinkingAct: readStorageBool(STORAGE_KEYS.enableThinkingAct, true),
+        enableThinkingScene: readStorageBool(STORAGE_KEYS.enableThinkingScene, true),
+        enableThinkingWriting: readStorageBool(STORAGE_KEYS.enableThinkingWriting, true),
+        thinkingBudgetStoryArc: readStorageInt(
+            STORAGE_KEYS.thinkingBudgetStoryArc,
+            DEFAULT_THINKING_BUDGETS.storyArc
+        ),
+        thinkingBudgetAct: readStorageInt(
+            STORAGE_KEYS.thinkingBudgetAct,
+            DEFAULT_THINKING_BUDGETS.act
+        ),
+        thinkingBudgetScene: readStorageInt(
+            STORAGE_KEYS.thinkingBudgetScene,
+            DEFAULT_THINKING_BUDGETS.scene
+        ),
+        thinkingBudgetWriting: readStorageInt(
+            STORAGE_KEYS.thinkingBudgetWriting,
+            DEFAULT_THINKING_BUDGETS.writing
+        ),
+        enableNarrativeLenses: readStorageBool(STORAGE_KEYS.enableNarrativeLensesV2, true),
         customModes: readStorageJson<Record<string, Record<string, unknown>>>(
-            'ellipsisprose_custom_modes',
+            STORAGE_KEYS.customModes,
             {}
         ),
         bannedPhrases,
         slopConfig,
-        cascadeSceneChanges: readStorageBool('ellipsisprose_directive_cascade', true),
-        verifyDirectiveEdits: readStorageBool('ellipsisprose_directive_verify', true),
-        editorialUseDeepLLM: readStorageBool('ellipsisprose_editorial_deep_llm', false),
-        enableEditorialHarnessAutopilot: readStorageBool('ellipsisprose_editorial_autopilot', true),
-        enableMcpBridge: readStorageBool('ellipsisprose_enable_mcp_bridge', false),
-        imageProvider: readStorageString('ellipsisprose_image_provider', 'gemini'),
+        cascadeSceneChanges: readStorageBool(STORAGE_KEYS.directiveCascade, true),
+        verifyDirectiveEdits: readStorageBool(STORAGE_KEYS.directiveVerify, true),
+        editorialUseDeepLLM: readStorageBool(STORAGE_KEYS.editorialDeepLlm, false),
+        enableEditorialHarnessAutopilot: readStorageBool(STORAGE_KEYS.editorialAutopilot, true),
+        enableMcpBridge: readStorageBool(STORAGE_KEYS.enableMcpBridge, false),
+        imageProvider: readStorageString(STORAGE_KEYS.imageProvider, 'gemini'),
         imageModel,
-        imageApiKey: readStorageString('ellipsisprose_image_api_key', ''),
-        comfyUrl: readStorageString('ellipsisprose_comfy_url', 'http://127.0.0.1:8188'),
-        comfyUnet: readStorageString('ellipsisprose_comfy_unet', ''),
-        comfyClip: readStorageString('ellipsisprose_comfy_clip', ''),
-        comfyVae: readStorageString('ellipsisprose_comfy_vae', ''),
-        comfyLora: readStorageString('ellipsisprose_comfy_lora', ''),
-        comfyLoraStrength: readStorageNumber('ellipsisprose_comfy_lora_strength', 0.8),
-        comfySteps: readStorageNumber('ellipsisprose_comfy_steps', 8),
-        comfyCfg: readStorageNumber('ellipsisprose_comfy_cfg', 1),
-        comfySampler: readStorageString('ellipsisprose_comfy_sampler', 'euler'),
-        comfyScheduler: readStorageString('ellipsisprose_comfy_scheduler', 'simple'),
-        comfyTimeoutSec: readStorageNumber('ellipsisprose_comfy_timeout_sec', 600),
+        imageApiKey: readStorageString(STORAGE_KEYS.imageApiKey, ''),
+        comfyUrl: readStorageString(STORAGE_KEYS.comfyUrl, DEFAULT_SERVICE_URLS.comfyui),
+        comfyUnet: readStorageString(STORAGE_KEYS.comfyUnet, ''),
+        comfyClip: readStorageString(STORAGE_KEYS.comfyClip, ''),
+        comfyVae: readStorageString(STORAGE_KEYS.comfyVae, ''),
+        comfyLora: readStorageString(STORAGE_KEYS.comfyLora, ''),
+        comfyLoraStrength: readStorageNumber(
+            STORAGE_KEYS.comfyLoraStrength,
+            DEFAULT_COMFY_CONFIG.loraStrength
+        ),
+        comfySteps: readStorageNumber(STORAGE_KEYS.comfySteps, DEFAULT_COMFY_CONFIG.steps),
+        comfyCfg: readStorageNumber(STORAGE_KEYS.comfyCfg, DEFAULT_COMFY_CONFIG.cfg),
+        comfySampler: readStorageString(
+            STORAGE_KEYS.comfySampler,
+            DEFAULT_COMFY_CONFIG.sampler
+        ),
+        comfyScheduler: readStorageString(
+            STORAGE_KEYS.comfyScheduler,
+            DEFAULT_COMFY_CONFIG.scheduler
+        ),
+        comfyTimeoutSec: readStorageNumber(
+            STORAGE_KEYS.comfyTimeoutSec,
+            DEFAULT_COMFY_CONFIG.timeoutSec
+        ),
         customImageStyles: readStorageJson<Array<Record<string, unknown>>>(
-            'ellipsisprose_custom_image_styles',
+            STORAGE_KEYS.customImageStyles,
             []
         ),
         readerSettings: normalizedReader,
         audioDramaSettings,
         geminiModelsList: [],
         geminiImageModelsList: readSessionJson<GeminiImageModelInfo[]>(
-            'ellipsisprose_gemini_image_models_cache',
+            STORAGE_KEYS.geminiImageModelsCache,
             []
         ),
         openRouterModelsList: readStorageJson<ModelDescriptor[]>(
-            'ellipsisprose_openrouter_models_cache',
+            STORAGE_KEYS.openRouterModelsCache,
             []
         ),
         nanoGptModelsList: readStorageJson<ModelDescriptor[]>(
-            'ellipsisprose_nanogpt_models_cache',
+            STORAGE_KEYS.nanoGptModelsCache,
             [...NANO_GPT_DEFAULT_MODELS]
         ),
         codexModelsList: [],
@@ -335,14 +377,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
             typeof nextOrUpdater === 'function' ? nextOrUpdater(get().theme) : nextOrUpdater;
         set({ theme: next });
         applyThemeToDom(next);
-        writeStorageValue('ellipsisprose_theme', next);
+        writeStorageValue(STORAGE_KEYS.theme, next);
     },
 
     toggleTheme: () => {
         const next: ThemeMode = get().theme === 'dark' ? 'light' : 'dark';
         set({ theme: next });
         applyThemeToDom(next);
-        writeStorageValue('ellipsisprose_theme', next);
+        writeStorageValue(STORAGE_KEYS.theme, next);
     },
 
     updateSetting: (key, value, storageKey) => {
@@ -359,7 +401,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     updateReaderSetting: (key, val) => {
         const next = { ...get().readerSettings, [key]: val };
         set({ readerSettings: next });
-        writeStorageValue('ellipsisprose_reader_settings', JSON.stringify(next));
+        writeStorageValue(STORAGE_KEYS.readerSettings, JSON.stringify(next));
     },
 
     setReaderSettings: (nextOrUpdater) => {
@@ -368,7 +410,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
                 ? nextOrUpdater(get().readerSettings)
                 : nextOrUpdater;
         set({ readerSettings: next });
-        writeStorageValue('ellipsisprose_reader_settings', JSON.stringify(next));
+        writeStorageValue(STORAGE_KEYS.readerSettings, JSON.stringify(next));
     },
 
     updateAudioDramaSetting: (key, val) => {
@@ -389,7 +431,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
                         : 3;
         }
         set({ audioDramaSettings: next });
-        writeStorageValue('ellipsisprose_audio_drama_settings', JSON.stringify(next));
+        writeStorageValue(STORAGE_KEYS.audioDramaSettings, JSON.stringify(next));
     },
 
     setAudioDramaSettings: (nextOrUpdater) => {
@@ -398,7 +440,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
                 ? nextOrUpdater(get().audioDramaSettings)
                 : nextOrUpdater;
         set({ audioDramaSettings: next });
-        writeStorageValue('ellipsisprose_audio_drama_settings', JSON.stringify(next));
+        writeStorageValue(STORAGE_KEYS.audioDramaSettings, JSON.stringify(next));
     },
 
     getModelSettingsSnapshot: () => {

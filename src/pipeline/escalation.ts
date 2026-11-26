@@ -4,6 +4,7 @@
  * 3-attempt escalation loop, and human-in-the-loop intervention handling.
  */
 
+import { RETRY_LIMITS } from '@/config';
 import {
     cleanCharacterNameFromVoiceProfile,
     isAudioDramaScriptText,
@@ -466,7 +467,7 @@ FINAL ESCALATION PROTOCOL:
                 `Parser failed to extract required tags from generator response.\nError: ${msg}\nRaw Output Snippet:\n${genOutput ? `${genOutput.slice(0, 500)}...` : '(No output)'}`,
                 {
                     attempt,
-                    maxAttempts: 3,
+                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                     tierName,
                     actionTaken: nextAction,
                     rawOutputSnippet: genOutput ? genOutput.slice(0, 500) : null
@@ -591,7 +592,7 @@ FINAL ESCALATION PROTOCOL:
                         null,
                         {
                             attempt,
-                            maxAttempts: 3,
+                            maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                             tierName,
                             type: 'pre_review_gate',
                             actionTaken: `Intercepted ${defectiveBeats.length} trivial MRU beats for surgical repair`
@@ -636,7 +637,7 @@ FINAL ESCALATION PROTOCOL:
                                 null,
                                 {
                                     attempt,
-                                    maxAttempts: 3,
+                                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                     tierName,
                                     type: 'surgical_repair',
                                     actionTaken: 'Proceeding to Reviewer LLM'
@@ -650,7 +651,7 @@ FINAL ESCALATION PROTOCOL:
                             'Repair could not resolve trivial MRUs.',
                             {
                                 attempt,
-                                maxAttempts: 3,
+                                maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                 tierName,
                                 actionTaken:
                                     attempt < 3
@@ -685,7 +686,7 @@ FINAL ESCALATION PROTOCOL:
                         null,
                         {
                             attempt,
-                            maxAttempts: 3,
+                            maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                             tierName,
                             type: 'pre_review_gate',
                             actionTaken: `Intercepted ${defectiveScenes.length} flat value shifts for surgical repair`
@@ -730,7 +731,7 @@ FINAL ESCALATION PROTOCOL:
                                 null,
                                 {
                                     attempt,
-                                    maxAttempts: 3,
+                                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                     tierName,
                                     type: 'surgical_repair',
                                     actionTaken: 'Proceeding to Reviewer LLM'
@@ -744,7 +745,7 @@ FINAL ESCALATION PROTOCOL:
                             'Repair could not resolve flat value shifts.',
                             {
                                 attempt,
-                                maxAttempts: 3,
+                                maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                 tierName,
                                 actionTaken:
                                     attempt < 3
@@ -769,7 +770,7 @@ FINAL ESCALATION PROTOCOL:
                     null,
                     {
                         attempt,
-                        maxAttempts: 3,
+                        maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                         tierName,
                         type: 'structural_gate',
                         actionTaken: nextAction,
@@ -795,7 +796,7 @@ FINAL ESCALATION PROTOCOL:
                 null,
                 {
                     attempt,
-                    maxAttempts: 3,
+                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                     tierName,
                     type: 'structural_gate',
                     actionTaken:
@@ -868,7 +869,7 @@ FINAL ESCALATION PROTOCOL:
                 null,
                 {
                     attempt,
-                    maxAttempts: 3,
+                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                     tierName,
                     type: 'review_gate',
                     actionTaken: 'Review bypassed; advancing to next pipeline step'
@@ -938,7 +939,7 @@ FINAL ESCALATION PROTOCOL:
                 null,
                 {
                     attempt,
-                    maxAttempts: 3,
+                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                     tierName,
                     type: 'review_gate',
                     actionTaken: 'Advancing to next pipeline step'
@@ -957,7 +958,7 @@ FINAL ESCALATION PROTOCOL:
             null,
             {
                 attempt,
-                maxAttempts: 3,
+                maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                 tierName,
                 type: 'review_gate',
                 actionTaken: 'Checking RSI context and surgical editor repair options',
@@ -993,7 +994,7 @@ FINAL ESCALATION PROTOCOL:
                 null,
                 {
                     attempt,
-                    maxAttempts: 3,
+                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                     tierName,
                     type: 'rsi_patch',
                     actionTaken: nextAction
@@ -1111,7 +1112,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                 parseError instanceof Error ? parseError.stack || msg : msg,
                                 {
                                     attempt,
-                                    maxAttempts: 3,
+                                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                     tierName,
                                     actionTaken: 'Aborting surgical loop and escalating attempt'
                                 }
@@ -1159,7 +1160,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                 null,
                                 {
                                     attempt,
-                                    maxAttempts: 3,
+                                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                     tierName,
                                     type: 'surgical_repair',
                                     actionTaken: 'Advancing to next pipeline step'
@@ -1191,7 +1192,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                             null,
                             {
                                 attempt,
-                                maxAttempts: 3,
+                                maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                 tierName,
                                 type: 'surgical_repair',
                                 actionTaken:
@@ -1216,7 +1217,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                             null,
                             {
                                 attempt,
-                                maxAttempts: 3,
+                                maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                 tierName,
                                 type: 'surgical_repair',
                                 actionTaken: 'Aborting surgical passes for this attempt.'
@@ -1234,7 +1235,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                         surgicalError instanceof Error ? surgicalError.stack || msg : msg,
                         {
                             attempt,
-                            maxAttempts: 3,
+                            maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                             tierName,
                             actionTaken: 'Aborting surgical loop for this attempt'
                         }
@@ -1332,7 +1333,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                     parseError instanceof Error ? parseError.stack || msg : msg,
                                     {
                                         attempt,
-                                        maxAttempts: 3,
+                                        maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                         tierName,
                                         actionTaken:
                                             'Aborting structural surgical loop and escalating attempt'
@@ -1371,7 +1372,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                     null,
                                     {
                                         attempt,
-                                        maxAttempts: 3,
+                                        maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                         tierName,
                                         type: 'surgical_repair',
                                         actionTaken: 'Advancing to next pipeline step'
@@ -1408,7 +1409,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                 null,
                                 {
                                     attempt,
-                                    maxAttempts: 3,
+                                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                     tierName,
                                     type: 'surgical_repair',
                                     actionTaken:
@@ -1439,7 +1440,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                                 null,
                                 {
                                     attempt,
-                                    maxAttempts: 3,
+                                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                     tierName,
                                     type: 'surgical_repair',
                                     actionTaken: 'Aborting surgical passes for this attempt.'
@@ -1460,7 +1461,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
                             surgicalError instanceof Error ? surgicalError.stack || msg : msg,
                             {
                                 attempt,
-                                maxAttempts: 3,
+                                maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
                                 tierName,
                                 actionTaken: 'Aborting surgical loop for this attempt'
                             }
@@ -1517,7 +1518,7 @@ ${innerCritique ? `\n<critique_analysis>\n${innerCritique}\n</critique_analysis>
         `Cumulative deviation reasons:\n${deviationReasons.map((r) => `- ${r}`).join('\n')}\n\nLast Critique:\n${lastCritique || '(None)'}`,
         {
             attempt: 3,
-            maxAttempts: 3,
+            maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
             tierName,
             actionTaken: finalAction,
             errors: deviationReasons

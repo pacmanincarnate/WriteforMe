@@ -4,7 +4,11 @@
  * unified `StudioPipeline` public facade.
  */
 
-import { migrateAudioDramaSettings, type AudioDramaSettings } from '@/config';
+import {
+    DEFAULT_SERVICE_URLS,
+    migrateAudioDramaSettings,
+    type AudioDramaSettings
+} from '@/config';
 import {
     CANONICAL_VOCAL_EVENTS,
     DRAMA3_SCOPED_TAGS,
@@ -174,14 +178,12 @@ export async function runStudioRenderJob({
 
     const effectiveSettings = migrateAudioDramaSettings(settings) as Partial<AudioDramaSettings> &
         Record<string, unknown>;
-    const bridgeUrl = String(effectiveSettings.studioBridgeUrl || 'http://127.0.0.1:5020').replace(
-        /\/+$/,
-        ''
-    );
-    const audioCppUrl = String(effectiveSettings.audioCppUrl || 'http://127.0.0.1:8080').replace(
-        /\/+$/,
-        ''
-    );
+    const bridgeUrl = String(
+        effectiveSettings.studioBridgeUrl || DEFAULT_SERVICE_URLS.audioStudioBridge
+    ).replace(/\/+$/, '');
+    const audioCppUrl = String(
+        effectiveSettings.audioCppUrl || DEFAULT_SERVICE_URLS.audioCpp
+    ).replace(/\/+$/, '');
 
     if (onProgress) {
         onProgress({

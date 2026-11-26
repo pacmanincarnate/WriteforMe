@@ -7,7 +7,14 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ChangeEvent, Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { DEFAULT_IMAGE_STYLES, type ImageStylePreset } from '@/config';
+import {
+    DEFAULT_COMFY_CONFIG,
+    DEFAULT_IMAGE_MODELS,
+    DEFAULT_IMAGE_STYLES,
+    DEFAULT_SERVICE_URLS,
+    STORAGE_KEYS,
+    type ImageStylePreset
+} from '@/config';
 import { formatSceneSummary, getSceneActiveCast, type ActiveCastMember } from '@/domain/story';
 import {
     cleanImagePrompt,
@@ -166,16 +173,16 @@ export function useStoryImages({
     );
 
     const [imageProvider, setImageProvider] = useState(
-        () => localStorage.getItem('ellipsisprose_image_provider') || 'gemini'
+        () => localStorage.getItem(STORAGE_KEYS.imageProvider) || 'gemini'
     );
     const [imageModel, setImageModel] = useState(() => {
-        const saved = localStorage.getItem('ellipsisprose_image_model');
+        const saved = localStorage.getItem(STORAGE_KEYS.imageModel);
         if (saved && saved !== 'imagen-3.0-generate-002') return saved;
-        return 'gemini-3.1-flash-image';
+        return DEFAULT_IMAGE_MODELS.gemini;
     });
     const [geminiImageModelsList, setGeminiImageModelsList] = useState<GeminiImageModelInfo[]>(() => {
         try {
-            const cached = sessionStorage.getItem('ellipsisprose_gemini_image_models_cache');
+            const cached = sessionStorage.getItem(STORAGE_KEYS.geminiImageModelsCache);
             return cached ? (JSON.parse(cached) as GeminiImageModelInfo[]) : [];
         } catch {
             return [];
@@ -183,40 +190,40 @@ export function useStoryImages({
     });
     const [isFetchingImageModels, setIsFetchingImageModels] = useState(false);
     const [imageApiKey, setImageApiKey] = useState(
-        () => localStorage.getItem('ellipsisprose_image_api_key') || ''
+        () => localStorage.getItem(STORAGE_KEYS.imageApiKey) || ''
     );
     const [comfyUrl, setComfyUrl] = useState(
-        () => localStorage.getItem('ellipsisprose_comfy_url') || 'http://127.0.0.1:8188'
+        () => localStorage.getItem(STORAGE_KEYS.comfyUrl) || DEFAULT_SERVICE_URLS.comfyui
     );
     const [comfyUnet, setComfyUnet] = useState(
-        () => localStorage.getItem('ellipsisprose_comfy_unet') || ''
+        () => localStorage.getItem(STORAGE_KEYS.comfyUnet) || ''
     );
     const [comfyClip, setComfyClip] = useState(
-        () => localStorage.getItem('ellipsisprose_comfy_clip') || ''
+        () => localStorage.getItem(STORAGE_KEYS.comfyClip) || ''
     );
     const [comfyVae, setComfyVae] = useState(
-        () => localStorage.getItem('ellipsisprose_comfy_vae') || ''
+        () => localStorage.getItem(STORAGE_KEYS.comfyVae) || ''
     );
     const [comfyLora, setComfyLora] = useState(
-        () => localStorage.getItem('ellipsisprose_comfy_lora') || ''
+        () => localStorage.getItem(STORAGE_KEYS.comfyLora) || ''
     );
     const [comfyLoraStrength, setComfyLoraStrength] = useState(() =>
-        Number(localStorage.getItem('ellipsisprose_comfy_lora_strength') ?? 0.8)
+        Number(localStorage.getItem(STORAGE_KEYS.comfyLoraStrength) ?? DEFAULT_COMFY_CONFIG.loraStrength)
     );
     const [comfySteps, setComfySteps] = useState(() =>
-        Number(localStorage.getItem('ellipsisprose_comfy_steps') ?? 8)
+        Number(localStorage.getItem(STORAGE_KEYS.comfySteps) ?? DEFAULT_COMFY_CONFIG.steps)
     );
     const [comfyCfg, setComfyCfg] = useState(() =>
-        Number(localStorage.getItem('ellipsisprose_comfy_cfg') ?? 1)
+        Number(localStorage.getItem(STORAGE_KEYS.comfyCfg) ?? DEFAULT_COMFY_CONFIG.cfg)
     );
     const [comfySampler, setComfySampler] = useState(
-        () => localStorage.getItem('ellipsisprose_comfy_sampler') || 'euler'
+        () => localStorage.getItem(STORAGE_KEYS.comfySampler) || DEFAULT_COMFY_CONFIG.sampler
     );
     const [comfyScheduler, setComfyScheduler] = useState(
-        () => localStorage.getItem('ellipsisprose_comfy_scheduler') || 'simple'
+        () => localStorage.getItem(STORAGE_KEYS.comfyScheduler) || DEFAULT_COMFY_CONFIG.scheduler
     );
     const [comfyTimeoutSec, setComfyTimeoutSec] = useState(() =>
-        Number(localStorage.getItem('ellipsisprose_comfy_timeout_sec') ?? 600)
+        Number(localStorage.getItem(STORAGE_KEYS.comfyTimeoutSec) ?? DEFAULT_COMFY_CONFIG.timeoutSec)
     );
     const [comfyStatus, setComfyStatus] = useState<ComfyStatusInfo>({
         online: false,
@@ -234,7 +241,7 @@ export function useStoryImages({
     });
     const comfyRefreshId = useRef(0);
     const [customImageStyles, setCustomImageStyles] = useState<ImageStylePreset[]>(() => {
-        const saved = localStorage.getItem('ellipsisprose_custom_image_styles');
+        const saved = localStorage.getItem(STORAGE_KEYS.customImageStyles);
         return saved ? (JSON.parse(saved) as ImageStylePreset[]) : [];
     });
 
@@ -257,49 +264,49 @@ export function useStoryImages({
 
     // Persist Image Settings
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_image_provider', imageProvider);
+        safeLocalStorageSet(STORAGE_KEYS.imageProvider, imageProvider);
     }, [imageProvider]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_image_model', imageModel);
+        safeLocalStorageSet(STORAGE_KEYS.imageModel, imageModel);
     }, [imageModel]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_image_api_key', imageApiKey);
+        safeLocalStorageSet(STORAGE_KEYS.imageApiKey, imageApiKey);
     }, [imageApiKey]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_url', comfyUrl);
+        safeLocalStorageSet(STORAGE_KEYS.comfyUrl, comfyUrl);
     }, [comfyUrl]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_unet', comfyUnet);
+        safeLocalStorageSet(STORAGE_KEYS.comfyUnet, comfyUnet);
     }, [comfyUnet]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_clip', comfyClip);
+        safeLocalStorageSet(STORAGE_KEYS.comfyClip, comfyClip);
     }, [comfyClip]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_vae', comfyVae);
+        safeLocalStorageSet(STORAGE_KEYS.comfyVae, comfyVae);
     }, [comfyVae]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_lora', comfyLora);
+        safeLocalStorageSet(STORAGE_KEYS.comfyLora, comfyLora);
     }, [comfyLora]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_lora_strength', comfyLoraStrength);
+        safeLocalStorageSet(STORAGE_KEYS.comfyLoraStrength, comfyLoraStrength);
     }, [comfyLoraStrength]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_steps', comfySteps);
+        safeLocalStorageSet(STORAGE_KEYS.comfySteps, comfySteps);
     }, [comfySteps]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_cfg', comfyCfg);
+        safeLocalStorageSet(STORAGE_KEYS.comfyCfg, comfyCfg);
     }, [comfyCfg]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_sampler', comfySampler);
+        safeLocalStorageSet(STORAGE_KEYS.comfySampler, comfySampler);
     }, [comfySampler]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_scheduler', comfyScheduler);
+        safeLocalStorageSet(STORAGE_KEYS.comfyScheduler, comfyScheduler);
     }, [comfyScheduler]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_comfy_timeout_sec', comfyTimeoutSec);
+        safeLocalStorageSet(STORAGE_KEYS.comfyTimeoutSec, comfyTimeoutSec);
     }, [comfyTimeoutSec]);
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_custom_image_styles', customImageStyles);
+        safeLocalStorageSet(STORAGE_KEYS.customImageStyles, customImageStyles);
     }, [customImageStyles]);
 
     // Load Cover Image from IndexedDB

@@ -10,6 +10,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { STORAGE_KEYS } from '@/config';
 import {
     chunkLoreText,
     combineImportedLoreText,
@@ -23,7 +24,7 @@ import { extractTextFromFile } from '@/services/documents';
 import { storyStore } from '@/services/storage';
 import { safeLocalStorageSet } from '@/utils';
 
-export const DRAFT_LORE_FILES_STORAGE_KEY = 'ellipsisprose_draft_lore_files';
+export const DRAFT_LORE_FILES_STORAGE_KEY = STORAGE_KEYS.draftLoreFiles;
 /** Larger drafts are kept in memory only; localStorage quotas are small. */
 const MAX_PERSISTED_DRAFT_CHARS = 1500000;
 

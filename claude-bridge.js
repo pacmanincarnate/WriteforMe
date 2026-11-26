@@ -23,8 +23,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const PORTS = require('./src/config/ports.json');
 
-const USAGE = 'Usage: node claude-bridge.js [--port 5011] [--concurrency 2] [--timeout 600] [--bind 127.0.0.1] [--cli-path <path to claude>]';
+const USAGE = `Usage: node claude-bridge.js [--port ${PORTS.claudeBridge}] [--concurrency 2] [--timeout 600] [--bind 127.0.0.1] [--cli-path <path to claude>]`;
 // Claude Code has no command that lists models. Its aliases always point at the newest model of
 // each family; a plan may not include all of them, which is only known when a request is sent.
 const MODELS = [['sonnet', 'Sonnet (newest)'], ['opus', 'Opus (newest)'], ['haiku', 'Haiku (newest)'], ['fable', 'Fable (newest)']];
@@ -40,7 +41,7 @@ const ROLE_LABELS = { user: 'User', assistant: 'Assistant' };
 
 function parseSettings(argv, env) {
     const settings = {
-        port: env.CLAUDE_BRIDGE_PORT || 5011,
+        port: env.CLAUDE_BRIDGE_PORT || PORTS.claudeBridge,
         concurrency: env.CLAUDE_BRIDGE_CONCURRENCY || 2,
         timeout: env.CLAUDE_BRIDGE_TIMEOUT || 600,
         bind: env.CLAUDE_BRIDGE_BIND || '127.0.0.1',

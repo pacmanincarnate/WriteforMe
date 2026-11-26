@@ -5,6 +5,13 @@
  * cache_control breakpoints, and automatic 400/404 fallback retries.
  */
 
+import {
+    APP_HTTP_HEADERS,
+    CACHE_TTLS_MS,
+    CLOUD_API_URLS,
+    DEFAULT_LLM_MODELS,
+    STORAGE_KEYS
+} from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 import { cleanJson, extractReasoningAndContent } from '@/utils';
 import {
@@ -101,8 +108,8 @@ interface OpenRouterResponsePayload {
     };
 }
 
-export const OPENROUTER_SMART_ROUTING_TTL_MS = 30 * 60 * 1000;
-export const OPENROUTER_STICKY_PIN_TTL_MS = 60 * 60 * 1000;
+export const OPENROUTER_SMART_ROUTING_TTL_MS = CACHE_TTLS_MS.openRouterSmartRouting;
+export const OPENROUTER_STICKY_PIN_TTL_MS = CACHE_TTLS_MS.openRouterStickyPin;
 export const OPENROUTER_PREFERRED_MIN_THROUGHPUT = 35;
 
 const openRouterSmartRoutingCache = new Map<string, CachedRoutingEntry>();
@@ -124,9 +131,9 @@ export function getOpenRouterModelLimits(modelId = ''): OpenRouterModelLimits {
     try {
         const cachedStr =
             (typeof sessionStorage !== 'undefined' &&
-                sessionStorage.getItem('ellipsisprose_openrouter_models_cache')) ||
+                sessionStorage.getItem(STORAGE_KEYS.openRouterModelsCache)) ||
             (typeof localStorage !== 'undefined' &&
-                localStorage.getItem('ellipsisprose_openrouter_models_cache'));
+                localStorage.getItem(STORAGE_KEYS.openRouterModelsCache));
         if (cachedStr) {
             const cachedList = JSON.parse(cachedStr) as CachedCatalogModelEntry[];
             if (Array.isArray(cachedList)) {
@@ -550,7 +557,7 @@ export async function getOpenRouterSmartRouting(
 
     const fetchPromise = (async (): Promise<OpenRouterSmartRoutingProfile | null> => {
         try {
-            const url = `https://openrouter.ai/api/v1/models/${encodeURIComponent(
+            const url = `${CLOUD_API_URLS.openRouterModels}/${encodeURIComponent(
                 author
             )}/${encodeURIComponent(slug)}/endpoints`;
             const res = await fetchWithTimeout(url, { method: 'GET' }, 4000);
@@ -625,7 +632,7 @@ export async function callOpenRouter(
         const key = apiKey ? apiKey.trim() : '';
         if (!key) throw new Error('OpenRouter API Key is missing. Please add it in Settings.');
 
-        const modelId = model || 'google/gemini-2.0-flash-001';
+        const modelId = model || DEFAULT_LLM_MODELS.openrouter;
         const limits = getOpenRouterModelLimits(modelId);
 
         const requestedTokens =
@@ -875,14 +882,14 @@ export async function callOpenRouter(
 
         const sendChatCompletion = (): Promise<Response> =>
             fetchWithTimeout(
-                'https://openrouter.ai/api/v1/chat/completions',
+                CLOUD_API_URLS.openRouterChat,
                 {
                     method: 'POST',
                     headers: {
                         Authorization: `Bearer ${key}`,
                         'Content-Type': 'application/json',
                         'HTTP-Referer': getWindowHref(),
-                        'X-Title': 'EllipsisProse'
+                        'X-Title': APP_HTTP_HEADERS.title
                     },
                     body: JSON.stringify(payload)
                 },
@@ -995,7 +1002,7 @@ export async function callOpenRouter(
                     errMsg.toLowerCase().includes('credit')
                 ) {
                     throw new Error(
-                        `OpenRouter Insufficient Credits (402): Your OpenRouter account is out of credits. Please refill at https://openrouter.ai/credits. Details: ${errMsg}`
+                        `OpenRouter Insufficient Credits (402): Your OpenRouter account is out of credits. Please refill at ${CLOUD_API_URLS.openRouterCreditsPage}. Details: ${errMsg}`
                     );
                 } else if (response.status === 403) {
                     throw new Error(

@@ -180,11 +180,6 @@ export const DEFAULT_GEMINI_IMAGE_MODELS: readonly ImageStylePreset[] = [
         id: 'gemini-3-pro-image',
         name: 'Nano Banana Pro (gemini-3-pro-image)',
         description: 'Google Gemini 3 Pro high-fidelity image model'
-    },
-    {
-        id: 'gemini-2.5-flash-image',
-        name: 'Nano Banana (gemini-2.5-flash-image)',
-        description: 'Google Gemini 2.5 Flash Image model'
     }
 ];
 

@@ -9,14 +9,13 @@
 
 import { useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { DEFAULT_SERVICE_URLS, TIMEOUTS_MS } from '@/config';
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 
 /** Pause while another step is still finishing, and between steps so the UI can paint. */
 export const AUTOPILOT_BUSY_POLL_MS = 200;
 export const AUTOPILOT_STEP_GAP_MS = 500;
-const KOBOLD_PREFLIGHT_TIMEOUT_MS = 2000;
-const DEFAULT_KOBOLD_URL = 'http://localhost:5001';
 
 export interface UseAutopilotControlParams {
     continuousAutopilot: boolean;
@@ -73,7 +72,7 @@ export async function isKoboldReachable(koboldUrl: string | null | undefined): P
     const targetUrl = normalizeKoboldUrl(koboldUrl);
     try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), KOBOLD_PREFLIGHT_TIMEOUT_MS);
+        const timer = setTimeout(() => controller.abort(), TIMEOUTS_MS.koboldPreflight);
         const response = await fetch(`${targetUrl}/v1/models`, { method: 'GET', signal: controller.signal });
         clearTimeout(timer);
         return response.ok;
@@ -83,7 +82,7 @@ export async function isKoboldReachable(koboldUrl: string | null | undefined): P
 }
 
 export function normalizeKoboldUrl(koboldUrl: string | null | undefined): string {
-    return (koboldUrl || DEFAULT_KOBOLD_URL).replace(/\/+$/, '');
+    return (koboldUrl || DEFAULT_SERVICE_URLS.koboldcpp).replace(/\/+$/, '');
 }
 
 export interface UseAutopilotLoopParams {

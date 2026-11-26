@@ -5,6 +5,7 @@
  */
 
 import { create } from 'zustand';
+import { STORAGE_KEYS } from '@/config';
 import {
     readStorageBool,
     readStorageNullableString,
@@ -160,7 +161,7 @@ function readNullableInt(key: string): number | null {
 }
 
 function resolveDefaultMatrixView(): 'grid' | 'list' {
-    const saved = readStorageNullableString('ellipsisprose_matrix_view');
+    const saved = readStorageNullableString(STORAGE_KEYS.matrixView);
     if (saved === 'grid' || saved === 'list') return saved;
     if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
         return window.matchMedia('(max-width: 767px)').matches ? 'list' : 'grid';
@@ -228,20 +229,20 @@ function readInitialUiStorageSlice(): Pick<
     | 'matrixView'
 > {
     const seqSaved =
-        readStorageNullableString('ellipsisprose_selectedSequence') ||
-        readStorageNullableString('ellipsisprose_selectedChapter');
+        readStorageNullableString(STORAGE_KEYS.selectedSequence) ||
+        readStorageNullableString(STORAGE_KEYS.selectedChapter);
     const parsedSeq = seqSaved !== null ? parseInt(seqSaved, 10) : NaN;
 
     return {
-        view: readStorageString('ellipsisprose_view', 'setup'),
-        selectedAct: readNullableInt('ellipsisprose_selectedAct'),
+        view: readStorageString(STORAGE_KEYS.view, 'setup'),
+        selectedAct: readNullableInt(STORAGE_KEYS.selectedAct),
         selectedSequence: !isNaN(parsedSeq) ? parsedSeq : null,
-        selectedScene: readNullableInt('ellipsisprose_selectedScene'),
-        isInspectorMode: readStorageBool('ellipsisprose_inspector_mode', false),
-        isSidebarCollapsed: readStorageBool('ellipsisprose_sidebar_collapsed', false),
-        settingsTab: readStorageString('ellipsisprose_settings_tab', 'models'),
-        libraryViewMode: readStorageString('ellipsisprose_library_view_mode', 'grid'),
-        librarySortBy: readStorageString('ellipsisprose_library_sort_by', 'recent'),
+        selectedScene: readNullableInt(STORAGE_KEYS.selectedScene),
+        isInspectorMode: readStorageBool(STORAGE_KEYS.inspectorMode, false),
+        isSidebarCollapsed: readStorageBool(STORAGE_KEYS.sidebarCollapsed, false),
+        settingsTab: readStorageString(STORAGE_KEYS.settingsTab, 'models'),
+        libraryViewMode: readStorageString(STORAGE_KEYS.libraryViewMode, 'grid'),
+        librarySortBy: readStorageString(STORAGE_KEYS.librarySortBy, 'recent'),
         matrixView: resolveDefaultMatrixView()
     };
 }
@@ -258,7 +259,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
         const next =
             typeof nextOrUpdater === 'function' ? nextOrUpdater(get().view) : nextOrUpdater;
         set({ view: next });
-        writeStorageValue('ellipsisprose_view', next);
+        writeStorageValue(STORAGE_KEYS.view, next);
         return next;
     },
 
@@ -271,7 +272,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
         const next =
             typeof nextOrUpdater === 'function' ? nextOrUpdater(get().selectedAct) : nextOrUpdater;
         set({ selectedAct: next });
-        writeNullableInt('ellipsisprose_selectedAct', next);
+        writeNullableInt(STORAGE_KEYS.selectedAct, next);
     },
 
     setSelectedSequence: (nextOrUpdater) => {
@@ -280,14 +281,14 @@ export const useUiStore = create<UiStore>((set, get) => ({
                 ? nextOrUpdater(get().selectedSequence)
                 : nextOrUpdater;
         set({ selectedSequence: next });
-        writeNullableInt('ellipsisprose_selectedSequence', next);
+        writeNullableInt(STORAGE_KEYS.selectedSequence, next);
     },
 
     setSelectedScene: (nextOrUpdater) => {
         const next =
             typeof nextOrUpdater === 'function' ? nextOrUpdater(get().selectedScene) : nextOrUpdater;
         set({ selectedScene: next });
-        writeNullableInt('ellipsisprose_selectedScene', next);
+        writeNullableInt(STORAGE_KEYS.selectedScene, next);
     },
 
     setIsInspectorMode: (nextOrUpdater) => {
@@ -296,7 +297,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
                 ? nextOrUpdater(get().isInspectorMode)
                 : nextOrUpdater;
         set({ isInspectorMode: next });
-        writeStorageValue('ellipsisprose_inspector_mode', String(next));
+        writeStorageValue(STORAGE_KEYS.inspectorMode, String(next));
         if (typeof window !== 'undefined') {
             (window as unknown as { isInspectorMode?: boolean }).isInspectorMode = next;
         }
@@ -319,7 +320,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
                 ? nextOrUpdater(get().isSidebarCollapsed)
                 : nextOrUpdater;
         set({ isSidebarCollapsed: next });
-        writeStorageValue('ellipsisprose_sidebar_collapsed', String(next));
+        writeStorageValue(STORAGE_KEYS.sidebarCollapsed, String(next));
     },
 
     toggleSidebarCollapsed: () => {
@@ -329,17 +330,17 @@ export const useUiStore = create<UiStore>((set, get) => ({
 
     setSettingsTab: (tab) => {
         set({ settingsTab: tab });
-        writeStorageValue('ellipsisprose_settings_tab', tab);
+        writeStorageValue(STORAGE_KEYS.settingsTab, tab);
     },
 
     setLibraryViewMode: (mode) => {
         set({ libraryViewMode: mode });
-        writeStorageValue('ellipsisprose_library_view_mode', mode);
+        writeStorageValue(STORAGE_KEYS.libraryViewMode, mode);
     },
 
     setLibrarySortBy: (sortBy) => {
         set({ librarySortBy: sortBy });
-        writeStorageValue('ellipsisprose_library_sort_by', sortBy);
+        writeStorageValue(STORAGE_KEYS.librarySortBy, sortBy);
     },
 
     setLibrarySearchQuery: (query) => {
@@ -348,7 +349,7 @@ export const useUiStore = create<UiStore>((set, get) => ({
 
     setMatrixView: (mode) => {
         set({ matrixView: mode });
-        writeStorageValue('ellipsisprose_matrix_view', mode);
+        writeStorageValue(STORAGE_KEYS.matrixView, mode);
     },
 
     setToast: (toast) => {

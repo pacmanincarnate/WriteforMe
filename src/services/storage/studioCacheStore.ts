@@ -4,8 +4,13 @@
  * and rendered audio segments (`renders` store) with LRU RAM caching and quota pruning.
  */
 
+import { AUDIO_DSP_DEFAULTS, IDB_DATABASES } from '@/config';
 import { ensureMp3AudioBlob } from '@/services/audio/codec';
 import { ResilientIdbStore, isQuotaExceededIdbError } from './idbBase';
+
+const STUDIO_CACHE_DB = IDB_DATABASES.studioCache;
+const VOICES_STORE = STUDIO_CACHE_DB.stores.voices;
+const RENDERS_STORE = STUDIO_CACHE_DB.stores.renders;
 
 export interface StudioVoiceRecord {
     key: string;
@@ -31,8 +36,8 @@ interface RenderMetaEntry {
 export class StudioCacheStore extends ResilientIdbStore {
     private _memRenders: Map<string, StudioRenderRecord>;
 
-    constructor(dbName = 'EllipsisStudioCache') {
-        super(dbName, 1);
+    constructor(dbName: string = STUDIO_CACHE_DB.name) {
+        super(dbName, STUDIO_CACHE_DB.version);
         this._memRenders = new Map();
     }
 
@@ -47,21 +52,21 @@ export class StudioCacheStore extends ResilientIdbStore {
     }
 
     override onUpgrade(db: IDBDatabase): void {
-        if (!db.objectStoreNames.contains('voices')) {
-            db.createObjectStore('voices', { keyPath: 'key' });
+        if (!db.objectStoreNames.contains(VOICES_STORE)) {
+            db.createObjectStore(VOICES_STORE, { keyPath: 'key' });
         }
-        if (!db.objectStoreNames.contains('renders')) {
-            db.createObjectStore('renders', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(RENDERS_STORE)) {
+            db.createObjectStore(RENDERS_STORE, { keyPath: 'id' });
         }
     }
 
     async getVoice(key: string): Promise<StudioVoiceRecord | null> {
         try {
             return await this.runTransaction<StudioVoiceRecord | null>(
-                'voices',
+                VOICES_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
-                    const req = tx.objectStore('voices').get(key);
+                    const req = tx.objectStore(VOICES_STORE).get(key);
                     req.onsuccess = () =>
                         resolve((req.result as StudioVoiceRecord | undefined) || null);
                     req.onerror = () => reject(req.error);
@@ -75,8 +80,8 @@ export class StudioCacheStore extends ResilientIdbStore {
 
     async putVoice(key: string, data: Record<string, unknown>): Promise<void> {
         const writeVoice = (): Promise<void> =>
-            this.runTransaction<void>('voices', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('voices').put({ key, ...data, timestamp: Date.now() });
+            this.runTransaction<void>(VOICES_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(VOICES_STORE).put({ key, ...data, timestamp: Date.now() });
                 tx.oncomplete = () => resolve();
             });
         try {
@@ -104,10 +109,10 @@ export class StudioCacheStore extends ResilientIdbStore {
         }
         try {
             return await this.runTransaction<StudioRenderRecord | null>(
-                'renders',
+                RENDERS_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
-                    const req = tx.objectStore('renders').get(id);
+                    const req = tx.objectStore(RENDERS_STORE).get(id);
                     req.onsuccess = () =>
                         resolve((req.result as StudioRenderRecord | undefined) || null);
                     req.onerror = () => reject(req.error);
@@ -121,11 +126,11 @@ export class StudioCacheStore extends ResilientIdbStore {
 
     private async _listRenderMeta(): Promise<RenderMetaEntry[]> {
         return this.runTransaction<RenderMetaEntry[]>(
-            'renders',
+            RENDERS_STORE,
             'readonly',
             (tx, _db, resolve, reject) => {
                 const entries: RenderMetaEntry[] = [];
-                const req = tx.objectStore('renders').openCursor();
+                const req = tx.objectStore(RENDERS_STORE).openCursor();
                 req.onsuccess = (e) => {
                     const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
                     if (cursor) {
@@ -147,8 +152,8 @@ export class StudioCacheStore extends ResilientIdbStore {
 
     private async _deleteRenderIds(ids: string[]): Promise<number> {
         if (!Array.isArray(ids) || ids.length === 0) return 0;
-        await this.runTransaction<void>('renders', 'readwrite', (tx, _db, resolve) => {
-            const store = tx.objectStore('renders');
+        await this.runTransaction<void>(RENDERS_STORE, 'readwrite', (tx, _db, resolve) => {
+            const store = tx.objectStore(RENDERS_STORE);
             for (const id of ids) {
                 store.delete(id);
             }
@@ -237,7 +242,7 @@ export class StudioCacheStore extends ResilientIdbStore {
         let preparedData = data;
         const rawBlob = preparedData?.audioBlob;
         if (rawBlob instanceof Blob && rawBlob.size > 0 && rawBlob.type !== 'audio/mpeg') {
-            const mp3Blob = await ensureMp3AudioBlob(rawBlob, 128);
+            const mp3Blob = await ensureMp3AudioBlob(rawBlob, AUDIO_DSP_DEFAULTS.mp3BitrateKbps);
             preparedData = { ...preparedData, audioBlob: mp3Blob };
         }
         const record: StudioRenderRecord = { id, ...preparedData, timestamp: Date.now() };
@@ -259,8 +264,8 @@ export class StudioCacheStore extends ResilientIdbStore {
         }
 
         const writeOnce = (): Promise<void> =>
-            this.runTransaction<void>('renders', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('renders').put(record);
+            this.runTransaction<void>(RENDERS_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(RENDERS_STORE).put(record);
                 tx.oncomplete = () => resolve();
             });
 
@@ -299,8 +304,8 @@ export class StudioCacheStore extends ResilientIdbStore {
 
     async clearVoicesForStory(storyId: string): Promise<void> {
         try {
-            await this.runTransaction<void>('voices', 'readwrite', (tx, _db, resolve, reject) => {
-                const store = tx.objectStore('voices');
+            await this.runTransaction<void>(VOICES_STORE, 'readwrite', (tx, _db, resolve, reject) => {
+                const store = tx.objectStore(VOICES_STORE);
                 const req = store.openCursor();
                 req.onsuccess = (e) => {
                     const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
@@ -338,8 +343,8 @@ export class StudioCacheStore extends ResilientIdbStore {
         }
         const lowerPrefixes = Array.from(aliasSet).map((a) => `${cleanStoryLower}_${a}_`);
         try {
-            await this.runTransaction<void>('voices', 'readwrite', (tx, _db, resolve, reject) => {
-                const store = tx.objectStore('voices');
+            await this.runTransaction<void>(VOICES_STORE, 'readwrite', (tx, _db, resolve, reject) => {
+                const store = tx.objectStore(VOICES_STORE);
                 const req = store.openCursor();
                 req.onsuccess = (e) => {
                     const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;
@@ -369,8 +374,8 @@ export class StudioCacheStore extends ResilientIdbStore {
     async clearAllRenders({ keepMemory = false }: { keepMemory?: boolean } = {}): Promise<void> {
         if (!keepMemory) this._memRenders.clear();
         try {
-            await this.runTransaction<void>('renders', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('renders').clear();
+            await this.runTransaction<void>(RENDERS_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(RENDERS_STORE).clear();
                 tx.oncomplete = () => resolve();
             });
         } catch (err) {
@@ -392,8 +397,8 @@ export class StudioCacheStore extends ResilientIdbStore {
             if (matchesStory(key)) this._memRenders.delete(key);
         }
         try {
-            await this.runTransaction<void>('renders', 'readwrite', (tx, _db, resolve, reject) => {
-                const store = tx.objectStore('renders');
+            await this.runTransaction<void>(RENDERS_STORE, 'readwrite', (tx, _db, resolve, reject) => {
+                const store = tx.objectStore(RENDERS_STORE);
                 const req = store.openCursor();
                 req.onsuccess = (e) => {
                     const cursor = (e.target as IDBRequest<IDBCursorWithValue | null>).result;

@@ -5,20 +5,21 @@
  * browser storage before React mounts.
  */
 
+import { STORAGE_KEYS, STORAGE_PREFIXES } from '@/config';
 import { isLocalStorageVaultAvailable, probeLocalVaultAvailability } from './vaultDetector';
 
 export const DISK_SETTINGS_EXCLUDED_KEYS = new Set<string>([
-    'ellipsisprose_story',
-    'ellipsisprose_openrouter_models_cache',
-    'ellipsisprose_nanogpt_models_cache',
-    'ellipsisprose_rag_fingerprint'
+    STORAGE_KEYS.story,
+    STORAGE_KEYS.openRouterModelsCache,
+    STORAGE_KEYS.nanoGptModelsCache,
+    STORAGE_KEYS.ragFingerprint
 ]);
 
 export const DISK_SETTINGS_API_KEY_NAMES = new Set<string>([
-    'gemini_api_key',
-    'ellipsisprose_openrouter_key',
-    'ellipsisprose_nanogpt_key',
-    'ellipsisprose_image_api_key'
+    STORAGE_KEYS.geminiApiKey,
+    STORAGE_KEYS.openRouterKey,
+    STORAGE_KEYS.nanoGptKey,
+    STORAGE_KEYS.imageApiKey
 ]);
 
 export function isPersistableSettingsKey(key: unknown): key is string {
@@ -27,7 +28,9 @@ export function isPersistableSettingsKey(key: unknown): key is string {
         key.length > 0 &&
         key.length <= 200 &&
         !DISK_SETTINGS_EXCLUDED_KEYS.has(key) &&
-        (key === 'gemini_api_key' || key.startsWith('ellipsisprose_') || key.startsWith('kokoro_'))
+        (key === STORAGE_KEYS.geminiApiKey ||
+            key.startsWith(STORAGE_PREFIXES.app) ||
+            key.startsWith(STORAGE_PREFIXES.kokoro))
     );
 }
 
@@ -195,7 +198,7 @@ export const diskSettingsVault: DiskSettingsVault = (() => {
                 shouldHydrate = true;
             } else if (DISK_SETTINGS_API_KEY_NAMES.has(k) && !localVal.trim() && diskVal.trim()) {
                 shouldHydrate = true;
-            } else if (k === 'ellipsisprose_audio_drama_settings') {
+            } else if (k === STORAGE_KEYS.audioDramaSettings) {
                 try {
                     const localObj = JSON.parse(localVal) as Record<string, unknown> | null;
                     const diskObj = JSON.parse(diskVal) as Record<string, unknown> | null;

@@ -4,6 +4,7 @@
  * sampler tuning, GBNF grammar support, cloud-model sanitization, and health probe.
  */
 
+import { DEFAULT_SERVICE_URLS } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 import { isCliBridgeProvider } from '@/types';
 import { cleanJson, extractReasoningAndContent } from '@/utils';
@@ -83,7 +84,7 @@ export async function callKoboldCPP(
     optionsOrUndefined: LlmCallOptions = {}
 ): Promise<unknown> {
     try {
-        let baseUrl = 'http://localhost:5001';
+        let baseUrl: string = DEFAULT_SERVICE_URLS.koboldcpp;
         let model: string;
         let prompt: string;
         let systemPrompt: string;
@@ -132,7 +133,7 @@ export async function callKoboldCPP(
         const cleanBaseUrl =
             baseUrl && String(baseUrl).trim()
                 ? String(baseUrl).trim().replace(/\/+$/, '')
-                : 'http://localhost:5001';
+                : DEFAULT_SERVICE_URLS.koboldcpp;
 
         let sanitizedKoboldModel = model;
         const globalLoaded = getGlobalKoboldLoadedModel();
@@ -542,12 +543,12 @@ export async function callKoboldCPP(
 }
 
 export async function checkKoboldCPPStatus(
-    baseUrl = 'http://localhost:5001'
+    baseUrl: string = DEFAULT_SERVICE_URLS.koboldcpp
 ): Promise<KoboldStatusResult> {
     const cleanUrl =
         baseUrl && String(baseUrl).trim()
             ? String(baseUrl).trim().replace(/\/+$/, '')
-            : 'http://localhost:5001';
+            : DEFAULT_SERVICE_URLS.koboldcpp;
     try {
         const response = await fetchWithTimeout(
             `${cleanUrl}/v1/models`,

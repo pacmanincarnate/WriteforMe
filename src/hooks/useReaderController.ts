@@ -7,7 +7,12 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction, TouchEvent } from 'react';
-import { DEFAULT_READER_SETTINGS, type ReaderSettings } from '@/config';
+import {
+    DEFAULT_READER_SETTINGS,
+    STORAGE_KEYS,
+    UI_DELAYS_MS,
+    type ReaderSettings
+} from '@/config';
 import { countWords, readingMinutes, safeLocalStorageSet } from '@/utils';
 import { measureReaderPages } from '@/views/reader';
 
@@ -164,7 +169,7 @@ export function useReaderController({
 }: UseReaderControllerParams): UseReaderControllerResult {
     const [readerSettings, setReaderSettings] = useState<ReaderSettings>(() => {
         try {
-            const saved = localStorage.getItem('ellipsisprose_reader_settings');
+            const saved = localStorage.getItem(STORAGE_KEYS.readerSettings);
             if (saved) {
                 const parsed = JSON.parse(saved) as Partial<ReaderSettings>;
                 if ((parsed.ttsDevice as string | undefined) === 'auto') {
@@ -179,7 +184,7 @@ export function useReaderController({
     });
 
     useEffect(() => {
-        safeLocalStorageSet('ellipsisprose_reader_settings', JSON.stringify(readerSettings));
+        safeLocalStorageSet(STORAGE_KEYS.readerSettings, JSON.stringify(readerSettings));
     }, [readerSettings]);
     const readerSettingsRef = useRef<ReaderSettings>(readerSettings);
     readerSettingsRef.current = readerSettings;
@@ -552,7 +557,7 @@ export function useReaderController({
                     if (targetEl) {
                         scrollReaderToElement(targetEl, true);
                     }
-                }, 60);
+                }, UI_DELAYS_MS.scrollRetry);
                 saveReadingProgress(chapterIdx, 0, 0);
             } else {
                 if (initialPage === -1 || initialPage === 'last') {
@@ -566,7 +571,7 @@ export function useReaderController({
                     saveReadingProgress(chapterIdx, 0, initialPage);
                 }
             }
-            setTimeout(() => setIsSceneTransitioning(false), 420);
+            setTimeout(() => setIsSceneTransitioning(false), UI_DELAYS_MS.sceneTransition);
         },
         [
             isFollowingAudioRef,
@@ -640,7 +645,7 @@ export function useReaderController({
                     if (targetEl) {
                         scrollReaderToElement(targetEl, true);
                     }
-                }, 60);
+                }, UI_DELAYS_MS.scrollRetry);
                 saveReadingProgress(seqIdx, sceneIdx, 0);
             } else {
                 if (seqIdx === selectedSequence && readerColumnsContainerRef.current) {
@@ -672,7 +677,7 @@ export function useReaderController({
                     pendingTargetSceneRef.current = { seqIdx, sceneIdx };
                 }
             }
-            setTimeout(() => setIsSceneTransitioning(false), 420);
+            setTimeout(() => setIsSceneTransitioning(false), UI_DELAYS_MS.sceneTransition);
         },
         [
             isFollowingAudioRef,
@@ -956,14 +961,14 @@ export function useReaderController({
                         pendingScrollTargetRef.current = null;
                     } else if (attempts < 5) {
                         attempts++;
-                        setTimeout(tryScroll, 60);
+                        setTimeout(tryScroll, UI_DELAYS_MS.scrollRetry);
                     }
                 } else if (attempts < 5) {
                     attempts++;
-                    setTimeout(tryScroll, 60);
+                    setTimeout(tryScroll, UI_DELAYS_MS.scrollRetry);
                 }
             };
-            const timer = setTimeout(tryScroll, 60);
+            const timer = setTimeout(tryScroll, UI_DELAYS_MS.scrollRetry);
             return () => clearTimeout(timer);
         }
         return undefined;

@@ -6,6 +6,7 @@
  * & 4-Gate CI/CD verification), plus single-transaction execution and surgical/full rollback.
  */
 
+import { RETRY_LIMITS } from '@/config';
 import {
     applyManuscriptPatchToScene,
     compileAestheticConstitution,
@@ -153,7 +154,7 @@ function resolveWaveAgentPrompt(
 }
 
 /** Feedback rounds an edit gets before it is rolled back. */
-export const HARNESS_MAX_ATTEMPTS = 3;
+export const HARNESS_MAX_ATTEMPTS = RETRY_LIMITS.editorialHarnessMaxAttempts;
 
 export type HarnessTransactionStatus =
     | 'COMMITTED'

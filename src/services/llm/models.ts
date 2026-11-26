@@ -3,7 +3,7 @@
  * Remote model catalog normalization, search, and fetching for OpenRouter and nano-GPT.
  */
 
-import { NANO_GPT_DEFAULT_MODELS } from '@/config';
+import { CLOUD_API_URLS, NANO_GPT_DEFAULT_MODELS } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 import type { ModelDescriptor } from '@/types';
 
@@ -177,7 +177,7 @@ export async function fetchNanoGPTModels(
 
     try {
         const response = await fetchWithTimeout(
-            'https://nano-gpt.com/api/v1/models?detailed=true',
+            CLOUD_API_URLS.nanoGptModels,
             { method: 'GET', headers },
             15000
         );
@@ -223,7 +223,7 @@ export async function searchNanoGPTModels(
     }
 
     try {
-        const searchUrl = `https://nano-gpt.com/api/explore/search?type=text&q=${encodeURIComponent(
+        const searchUrl = `${CLOUD_API_URLS.nanoGptSearch}?type=text&q=${encodeURIComponent(
             trimmedQuery
         )}`;
         const response = await fetchWithTimeout(
@@ -289,7 +289,7 @@ export async function fetchOpenRouterModels(apiKey = ''): Promise<OpenRouterCata
     }
     try {
         const response = await fetchWithTimeout(
-            'https://openrouter.ai/api/v1/models',
+            CLOUD_API_URLS.openRouterModels,
             { method: 'GET', headers },
             15000
         );

@@ -10,6 +10,7 @@
 
 import { useEffect } from 'react';
 import type { MutableRefObject } from 'react';
+import { STORAGE_KEYS } from '@/config';
 import {
     createDefaultStoryTemplate,
     hydrateFallbackStory,
@@ -50,8 +51,8 @@ export interface UseStoryHydrationParams {
     store?: Pick<typeof storyStore, 'loadStory' | 'listStories' | 'saveStory'>;
 }
 
-export const ACTIVE_STORY_STORAGE_KEY = 'ellipsisprose_active_story_id';
-export const RAG_FINGERPRINT_STORAGE_KEY = 'ellipsisprose_rag_fingerprint';
+export const ACTIVE_STORY_STORAGE_KEY = STORAGE_KEYS.activeStoryId;
+export const RAG_FINGERPRINT_STORAGE_KEY = STORAGE_KEYS.ragFingerprint;
 
 export function useStoryHydration({
     activeStoryId,

@@ -5,14 +5,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
-import { generateRandomArchetypes, type ArchetypeOption } from '@/config';
+import { STORAGE_KEYS, generateRandomArchetypes, type ArchetypeOption } from '@/config';
 import { safeLocalStorageSet } from '@/utils';
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 
-export const NARRATIVE_LENSES_STORAGE_KEY = 'ellipsisprose_enable_narrative_lenses_v2';
+export const NARRATIVE_LENSES_STORAGE_KEY = STORAGE_KEYS.enableNarrativeLensesV2;
 /** Older builds read this key; it is still written so a downgrade keeps the preference. */
-export const NARRATIVE_LENSES_LEGACY_STORAGE_KEY = 'ellipsisprose_enable_narrative_lenses';
+export const NARRATIVE_LENSES_LEGACY_STORAGE_KEY = STORAGE_KEYS.enableNarrativeLenses;
 
 /**
  * Master toggle for Narrative Lenses. On by default, so narrative styles shape scene drafting

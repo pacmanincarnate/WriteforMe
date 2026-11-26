@@ -9,8 +9,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import {
     DEFAULT_AUDIO_DRAMA_SETTINGS,
+    DEFAULT_SERVICE_URLS,
+    DEFAULT_TTS_MODELS,
     KOKORO_VOICES,
     SILENT_WAV_DATA_URI,
+    STORAGE_KEYS,
     TTS_PIPELINE_TIERS,
     type AudioDramaSettings,
     type ReaderSettings
@@ -902,14 +905,14 @@ export function useTtsPlayback(params: UseTtsPlaybackParams): UseTtsPlaybackResu
                 tier === 'mobile-constrained' ? 'q4' : readerSettingsRef.current.ttsDtype || 'q8';
 
             if (typeof window !== 'undefined' && window.localStorage) {
-                const lastDtype = window.localStorage.getItem('kokoro_last_dtype');
+                const lastDtype = window.localStorage.getItem(STORAGE_KEYS.kokoroLastDtype);
                 if (lastDtype !== targetDtype) {
                     try {
                         await clearKokoroModelCache();
                     } catch {
                         // Ignore CacheStorage errors
                     }
-                    window.localStorage.setItem('kokoro_last_dtype', targetDtype);
+                    window.localStorage.setItem(STORAGE_KEYS.kokoroLastDtype, targetDtype);
                 }
             }
 
@@ -924,7 +927,7 @@ export function useTtsPlayback(params: UseTtsPlaybackParams): UseTtsPlaybackResu
             worker.postMessage({
                 type: 'init',
                 payload: {
-                    modelId: 'onnx-community/Kokoro-82M-v1.0-ONNX',
+                    modelId: DEFAULT_TTS_MODELS.kokoro,
                     dtype: targetDtype,
                     device: targetDevice,
                     voice: readerSettingsRef.current.ttsVoice || 'af_heart'
@@ -976,10 +979,9 @@ export function useTtsPlayback(params: UseTtsPlaybackParams): UseTtsPlaybackResu
         }
 
         if (tier >= 2) {
-            const bridgeUrl = String(s.studioBridgeUrl || 'http://127.0.0.1:5020').replace(
-                /\/+$/,
-                ''
-            );
+            const bridgeUrl = String(
+                s.studioBridgeUrl || DEFAULT_SERVICE_URLS.audioStudioBridge
+            ).replace(/\/+$/, '');
             const isLocalhost = /:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|\/|$)/i.test(
                 bridgeUrl
             );
@@ -1065,7 +1067,7 @@ export function useTtsPlayback(params: UseTtsPlaybackParams): UseTtsPlaybackResu
             const hasOptedIn =
                 typeof window !== 'undefined' &&
                 window.localStorage &&
-                window.localStorage.getItem('kokoro_opt_in') === 'true';
+                window.localStorage.getItem(STORAGE_KEYS.kokoroOptIn) === 'true';
             if (!hasOptedIn) {
                 demotedFrom = demotedFrom ?? desiredTier;
                 demotedFromLabel = demotedFromLabel || TIER_NAMES[tier];
@@ -2291,7 +2293,7 @@ export function useTtsPlayback(params: UseTtsPlaybackParams): UseTtsPlaybackResu
             typeof window !== 'undefined' &&
             window.localStorage
         ) {
-            window.localStorage.setItem('kokoro_opt_in', 'true');
+            window.localStorage.setItem(STORAGE_KEYS.kokoroOptIn, 'true');
         }
 
         clearTtsWatchdog();

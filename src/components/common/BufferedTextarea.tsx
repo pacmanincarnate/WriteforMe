@@ -5,6 +5,7 @@
  */
 
 import React, { useEffect, useRef, useState } from 'react';
+import { UI_DELAYS_MS } from '@/config';
 
 export interface BufferedTextareaProps {
     value?: string;
@@ -22,7 +23,7 @@ export const BufferedTextarea = React.memo(function BufferedTextarea({
     placeholder = '',
     className = '',
     rows = 2,
-    debounceMs = 350,
+    debounceMs = UI_DELAYS_MS.textareaDebounce,
     disabled = false
 }: BufferedTextareaProps) {
     const [localVal, setLocalVal] = useState(value || '');

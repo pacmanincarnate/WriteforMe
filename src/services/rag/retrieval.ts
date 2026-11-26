@@ -3,6 +3,7 @@
  * Client-side Okapi BM25 lexical ranking and hybrid Vector + BM25 + Knowledge Graph lore retrieval.
  */
 
+import { RAG_LIMITS } from '@/config';
 import { STOP_WORDS, expandQueryLocally, type GraphManager } from '@/domain/lore';
 import type { LoreItem } from '@/types';
 import type { EmbeddingService } from './embeddingService';
@@ -51,7 +52,7 @@ export function searchLoreLexical(
     // 2. Tokenize and clean query
     let expandedQuery = query;
     if (!query.startsWith('Concept:')) {
-        const extra = expandQueryLocally(query, 6);
+        const extra = expandQueryLocally(query, RAG_LIMITS.queryExpansionLexical);
         if (extra) expandedQuery = `${query} ${extra}`;
     }
 
@@ -94,7 +95,7 @@ export function searchLoreLexical(
     });
 
     const avgdl = Math.max(1, totalLength / N);
-    const k1 = 1.2;
+    const k1 = RAG_LIMITS.bm25K1;
     const b = 0.75;
 
     // 4. Calculate Document Frequency (df) for query terms
@@ -137,7 +138,10 @@ export function searchLoreLexical(
             const fTopic = doc.topicTokens.filter((t) => t === term).length;
             const fDetail = doc.detailTokens.filter((t) => t === term).length;
             const fRelated = doc.relatedTokens.filter((t) => t === term).length;
-            const weightedTf = fTopic * 4.0 + fDetail * 1.0 + fRelated * 2.0;
+            const weightedTf =
+                fTopic * RAG_LIMITS.bm25Weights.topic +
+                fDetail * RAG_LIMITS.bm25Weights.detail +
+                fRelated * RAG_LIMITS.bm25Weights.related;
 
             if (weightedTf > 0) {
                 const tfComponent =
@@ -197,7 +201,7 @@ export async function retrieveLoreContext(
         try {
             let searchKey = query;
             if (!query.startsWith('Concept:')) {
-                const expanded = expandQueryLocally(query, 8);
+                const expanded = expandQueryLocally(query, RAG_LIMITS.queryExpansionVector);
                 if (expanded) searchKey = `${query} ${expanded}`;
             }
 

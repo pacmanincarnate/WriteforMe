@@ -5,7 +5,12 @@
  * meta-commentary filtering, and Audio Drama normalization.
  */
 
-import { getPipelineStepInfo } from '@/config';
+import {
+    CLOUD_API_URLS,
+    DEFAULT_SERVICE_URLS,
+    LOG_AND_PROMPT_LIMITS,
+    getPipelineStepInfo
+} from '@/config';
 import { CLI_BRIDGE_DEFAULT_URLS, isCliBridgeProvider, isLocalProvider } from '@/types';
 import {
     isAudioDramaScriptText,
@@ -26,7 +31,7 @@ import type {
     OpenAICompatibleFullResult
 } from './types';
 
-export const DEFAULT_PROMPT_LOG_CAP = 250;
+export const DEFAULT_PROMPT_LOG_CAP = LOG_AND_PROMPT_LIMITS.promptLogCap;
 
 export interface AgenticLoopParams {
     provider?: string;
@@ -171,16 +176,16 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
     const logCap = DEFAULT_PROMPT_LOG_CAP;
     const resolveEndpoint = (): string => {
         if (effectiveProvider === 'gemini') {
-            return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+            return `${CLOUD_API_URLS.geminiModels}/${model}:generateContent`;
         }
-        if (effectiveProvider === 'nanogpt') return 'https://nano-gpt.com/api/v1/chat/completions';
+        if (effectiveProvider === 'nanogpt') return CLOUD_API_URLS.nanoGptChat;
         if (effectiveProvider === 'openrouter') {
-            return 'https://openrouter.ai/api/v1/chat/completions';
+            return CLOUD_API_URLS.openRouterChat;
         }
         if (isCliBridgeProvider(effectiveProvider)) {
             return `${baseUrl || CLI_BRIDGE_DEFAULT_URLS[effectiveProvider]}/v1/chat/completions`;
         }
-        return `${baseUrl || 'http://localhost:5001'}/v1/chat/completions`;
+        return `${baseUrl || DEFAULT_SERVICE_URLS.koboldcpp}/v1/chat/completions`;
     };
 
     const runLoggedAgenticTurn = async <TResult>(
@@ -645,7 +650,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                             const targetUrl =
                                 isCliBridgeProvider(effectiveProvider)
                                     ? baseUrl || CLI_BRIDGE_DEFAULT_URLS[effectiveProvider]
-                                    : baseUrl || 'http://localhost:5001';
+                                    : baseUrl || DEFAULT_SERVICE_URLS.koboldcpp;
                             return callKoboldCPP(targetUrl, model, '', systemPrompt, false, {
                                 ...turnOpts,
                                 provider: effectiveProvider,
@@ -700,7 +705,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                         const targetUrl =
                             isCliBridgeProvider(effectiveProvider)
                                 ? baseUrl || CLI_BRIDGE_DEFAULT_URLS[effectiveProvider]
-                                : baseUrl || 'http://localhost:5001';
+                                : baseUrl || DEFAULT_SERVICE_URLS.koboldcpp;
                         return callKoboldCPP(
                             targetUrl,
                             model,

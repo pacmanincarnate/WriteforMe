@@ -1,0 +1,10 @@
+{
+  "web": 3000,
+  "mcpBridge": 3002,
+  "koboldcpp": 5001,
+  "codexBridge": 5010,
+  "claudeBridge": 5011,
+  "audioStudioBridge": 5020,
+  "audioCpp": 8080,
+  "comfyui": 8188
+}

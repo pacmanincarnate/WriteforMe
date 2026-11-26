@@ -1,9 +1,11 @@
+import fs from "fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { WebSocketServer } from "ws";
 
-const WS_PORT = process.env.ELLIPSIS_MCP_PORT ? parseInt(process.env.ELLIPSIS_MCP_PORT, 10) : 3002;
+const PORTS = JSON.parse(fs.readFileSync(new URL("../src/config/ports.json", import.meta.url), "utf8"));
+const WS_PORT = process.env.ELLIPSIS_MCP_PORT ? parseInt(process.env.ELLIPSIS_MCP_PORT, 10) : PORTS.mcpBridge;
 
 let activeSocket = null;
 let cachedBrowserStatus = null;
@@ -60,7 +62,7 @@ function sendToBrowser(action, params = {}, timeoutMs = 45000) {
     if (!activeSocket || activeSocket.readyState !== 1) {
         throw new Error(
             "EllipsisProse web app is not connected to the MCP bridge.\n" +
-            "Please ensure EllipsisProse is open in your browser (e.g. at http://127.0.0.1:3000) and that the page is loaded."
+            "Please ensure EllipsisProse is open in your browser (e.g. at http://127.0.0.1:" + PORTS.web + ") and that the page is loaded."
         );
     }
     const id = `req_${reqIdCounter++}_${Date.now()}`;
@@ -95,7 +97,7 @@ server.tool(
                         text: JSON.stringify({
                             connected: false,
                             wsPort: WS_PORT,
-                            message: "EllipsisProse is not currently connected. Please open http://127.0.0.1:3000 in your browser."
+                            message: `EllipsisProse is not currently connected. Please open http://127.0.0.1:${PORTS.web} in your browser.`
                         }, null, 2)
                     }
                 ]
@@ -166,10 +168,10 @@ server.tool(
     "Changes the selected model API provider, model, and endpoint settings across the application or specific role (dev, review, prose) in EllipsisProse.",
     {
         provider: z.enum(["gemini", "openrouter", "nanogpt", "koboldcpp", "codex", "claude"]).describe("The AI model API provider to select."),
-        model: z.string().optional().describe("The specific model ID to set (e.g., 'gemini-2.0-flash', 'google/gemini-2.0-flash-001', 'gpt-4o', 'anthropic/claude-3.5-sonnet')."),
+        model: z.string().optional().describe("The specific model ID to set (e.g., 'gemini-3.8-flash', 'deepseek/deepseek-flash-latest', 'gpt-4o', 'anthropic/claude-3.5-sonnet')."),
         role: z.enum(["all", "dev", "review", "prose"]).optional().default("all").describe("Role to apply to: 'all' (primary and all tiers), 'dev' (Master/Development), 'review' (Reviewer), or 'prose' (Prose Writer)."),
         apiKey: z.string().optional().describe("Optional API key to set for the provider (stored securely in browser localStorage)."),
-        baseUrl: z.string().optional().describe("Optional endpoint URL for local providers (e.g. 'http://localhost:5001' for KoboldCPP, 'http://localhost:5010' for Codex Bridge, 'http://localhost:5011' for Claude Code Bridge).")
+        baseUrl: z.string().optional().describe(`Optional endpoint URL for local providers (e.g. 'http://localhost:${PORTS.koboldcpp}' for KoboldCPP, 'http://localhost:${PORTS.codexBridge}' for Codex Bridge, 'http://localhost:${PORTS.claudeBridge}' for Claude Code Bridge).`)
     },
     async ({ provider, model, role, apiKey, baseUrl }) => {
         const result = await sendToBrowser("setModelConfig", {

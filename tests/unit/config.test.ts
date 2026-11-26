@@ -7,14 +7,20 @@ import {
     BANNED_CHARACTER_NAMES,
     DEFAULT_AUDIO_DRAMA_SETTINGS,
     DEFAULT_BANNED_PHRASES,
+    DEFAULT_GEMINI_IMAGE_MODELS,
+    DEFAULT_LLM_MODELS,
     DEFAULT_READER_SETTINGS,
+    DEFAULT_SAVED_MODELS,
+    DEFAULT_SERVICE_URLS,
     ELEVENLABS_VOICES,
     GEMINI_PREBUILT_VOICES,
     KOKORO_VOICES,
     KOKORO_VOICE_GROUPS,
+    LOCAL_PORTS,
     NARRATIVE_MODES,
     PIPELINE_STEPS_META,
     PIPELINE_STEP_SPEC,
+    STORAGE_KEYS,
     STRUCTURAL_MODALITIES,
     TTS_PIPELINE_TIERS,
     VIEW_LABELS,
@@ -84,5 +90,24 @@ describe('Config Banks & Audio Settings Migration', () => {
         const rootPkg = (await import('../../package.json')).default;
         expect(APP_VERSION).toBe(rootPkg.version);
         expect(APP_VERSION).toMatch(/^\d+\.\d+\.\d+/);
+    });
+
+    it('centralizes default models, local ports/service URLs, and storage keys without deprecated Gemini 2.5 defaults', () => {
+        expect(DEFAULT_LLM_MODELS.gemini).toBe('gemini-3.8-flash');
+        expect(DEFAULT_LLM_MODELS.openrouter).toBe('deepseek/deepseek-flash-latest');
+        expect(DEFAULT_SAVED_MODELS).toContain('deepseek/deepseek-flash-latest');
+        expect(DEFAULT_GEMINI_IMAGE_MODELS.some((m) => m.id === 'gemini-2.5-flash-image')).toBe(false);
+
+        expect(DEFAULT_SERVICE_URLS.web).toBe(`http://localhost:${LOCAL_PORTS.web}`);
+        expect(DEFAULT_SERVICE_URLS.koboldcpp).toBe(`http://localhost:${LOCAL_PORTS.koboldcpp}`);
+        expect(DEFAULT_SERVICE_URLS.codexBridge).toBe(`http://localhost:${LOCAL_PORTS.codexBridge}`);
+        expect(DEFAULT_SERVICE_URLS.claudeBridge).toBe(`http://localhost:${LOCAL_PORTS.claudeBridge}`);
+        expect(DEFAULT_SERVICE_URLS.audioStudioBridge).toBe(`http://127.0.0.1:${LOCAL_PORTS.audioStudioBridge}`);
+        expect(DEFAULT_SERVICE_URLS.audioCpp).toBe(`http://127.0.0.1:${LOCAL_PORTS.audioCpp}`);
+        expect(DEFAULT_SERVICE_URLS.comfyui).toBe(`http://127.0.0.1:${LOCAL_PORTS.comfyui}`);
+        expect(DEFAULT_SERVICE_URLS.mcpBridge).toBe(`ws://127.0.0.1:${LOCAL_PORTS.mcpBridge}`);
+
+        const keyValues = Object.values(STORAGE_KEYS);
+        expect(new Set(keyValues).size).toBe(keyValues.length);
     });
 });

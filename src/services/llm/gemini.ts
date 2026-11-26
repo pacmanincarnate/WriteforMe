@@ -4,6 +4,7 @@
  * mode, native function calling, and token telemetry callbacks.
  */
 
+import { CLOUD_API_URLS, DEFAULT_LLM_MODELS, DEFAULT_TOKEN_LIMITS } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 import { cleanJson, extractReasoningAndContent } from '@/utils';
 import type {
@@ -40,9 +41,10 @@ export async function callGemini(
     try {
         const key = apiKey ? apiKey.trim() : '';
         if (!key) throw new Error('API Key is missing. Please add it in Settings.');
-        const modelId = (model || 'gemini-2.0-flash').replace(/^(google\/|models\/)+/, '');
+        const modelId = (model || DEFAULT_LLM_MODELS.gemini).replace(/^(google\/|models\/)+/, '');
 
-        const requestedTokens = options.max_tokens || options.maxTokens || 8192;
+        const requestedTokens =
+            options.max_tokens || options.maxTokens || DEFAULT_TOKEN_LIMITS.geminiDefaultMaxTokens;
         let targetMaxTokens = requestedTokens;
 
         const hasTools = Boolean(options.tools && Array.isArray(options.tools) && options.tools.length > 0);
@@ -70,7 +72,7 @@ export async function callGemini(
                 };
             }
         } else if (!options.thinking || !options.thinking.enabled || options.thinking.budget === 0) {
-            // Explicitly disable thinking for hybrid/thinking-by-default models (e.g. Gemini 2.5 Flash, 3.7 Flash)
+            // Explicitly disable thinking for hybrid/thinking-by-default models (e.g. Gemini 3.8 Flash, 3.7 Flash)
             const isGemini3 = modelId.includes('gemini-3') || modelId.includes('gemini-3.5');
             generationConfig.thinkingConfig = isGemini3
                 ? { thinkingLevel: 'MINIMAL' }
@@ -114,7 +116,7 @@ export async function callGemini(
         };
 
         const response = await fetchWithTimeout(
-            `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`,
+            `${CLOUD_API_URLS.geminiModels}/${modelId}:generateContent`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },

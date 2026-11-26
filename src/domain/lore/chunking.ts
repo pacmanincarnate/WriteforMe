@@ -4,6 +4,7 @@
  * lore title migration, and 5-tier map-reduce section partitioning.
  */
 
+import { RAG_LIMITS } from '@/config';
 import type { LoreItem } from '@/types';
 
 export interface BoundaryAwareChunk {
@@ -33,7 +34,7 @@ export interface SemanticLoreSection {
 }
 
 /** Derives a concise title from the leading sentence of a lore text passage. */
-export function deriveLoreTitle(text: unknown, max = 60): string {
+export function deriveLoreTitle(text: unknown, max: number = RAG_LIMITS.loreTitleMaxChars): string {
     let title = String(text || '')
         .trim()
         .replace(/\s+/g, ' ')
@@ -67,8 +68,8 @@ export function migrateLoreTitles<T extends Partial<LoreItem>>(lore: T[]): T[] {
 /** Splits an oversized paragraph along sentence and word boundaries. */
 export function splitParagraphIntoSentenceChunks(
     paragraph: string,
-    targetSize = 1800,
-    maxSize = 2500
+    targetSize: number = RAG_LIMITS.chunkTargetSize,
+    maxSize: number = RAG_LIMITS.chunkMaxSize
 ): string[] {
     const sentences = paragraph.split(/(?<=[.!?])\s+/);
     const chunks: string[] = [];
@@ -115,8 +116,8 @@ export function extractLeadingHeading(text: unknown): string {
 /** Splits lore text into chunks respecting markdown headings, paragraph breaks, and sentences. */
 export function splitTextIntoBoundaryAwareChunks(
     text: unknown,
-    targetSize = 1800,
-    maxSize = 2500,
+    targetSize: number = RAG_LIMITS.chunkTargetSize,
+    maxSize: number = RAG_LIMITS.chunkMaxSize,
     minSize = 250
 ): BoundaryAwareChunk[] {
     if (!text || typeof text !== 'string') return [];

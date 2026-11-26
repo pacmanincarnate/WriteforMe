@@ -3,9 +3,13 @@
  * Hybrid Disk-Vault + IndexedDB store for story covers, scene illustrations, and character images.
  */
 
+import { IDB_DATABASES } from '@/config';
 import { ResilientIdbStore, isQuotaExceededIdbError } from './idbBase';
 import { studioCacheStore } from './studioCacheStore';
 import { probeLocalVaultAvailability } from './vaultDetector';
+
+const IMAGE_DB = IDB_DATABASES.image;
+const IMAGES_STORE = IMAGE_DB.stores.images;
 
 /** Escapes non-ASCII characters as `\uXXXX` so JSON metadata is safe in HTTP headers. */
 export function toAsciiHeaderJson(obj: unknown): string {
@@ -41,15 +45,15 @@ export class ImageStore extends ResilientIdbStore {
     private _diskImageIds: Set<string> | null;
     private _diskKeysPromise: Promise<Set<string> | null> | null;
 
-    constructor(dbName = 'EllipsisImageStore') {
-        super(dbName, 1);
+    constructor(dbName: string = IMAGE_DB.name) {
+        super(dbName, IMAGE_DB.version);
         this._diskImageIds = null;
         this._diskKeysPromise = null;
     }
 
     override onUpgrade(db: IDBDatabase): void {
-        if (!db.objectStoreNames.contains('images')) {
-            db.createObjectStore('images', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(IMAGES_STORE)) {
+            db.createObjectStore(IMAGES_STORE, { keyPath: 'id' });
         }
     }
 
@@ -130,8 +134,8 @@ export class ImageStore extends ResilientIdbStore {
             body: JSON.stringify({ id, dataUrl, timestamp })
         });
         const writeIdb = (): Promise<void> =>
-            this.runTransaction<void>('images', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('images').put({ id, dataUrl, timestamp });
+            this.runTransaction<void>(IMAGES_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(IMAGES_STORE).put({ id, dataUrl, timestamp });
                 tx.oncomplete = () => resolve();
             });
 
@@ -161,10 +165,10 @@ export class ImageStore extends ResilientIdbStore {
         let idbVal: string | null;
         try {
             idbVal = await this.runTransaction<string | null>(
-                'images',
+                IMAGES_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
-                    const request = tx.objectStore('images').get(id);
+                    const request = tx.objectStore(IMAGES_STORE).get(id);
                     request.onsuccess = () => {
                         const result = request.result as ImageIdbRecord | undefined;
                         resolve(result ? result.dataUrl : null);
@@ -188,8 +192,8 @@ export class ImageStore extends ResilientIdbStore {
         }
         const diskUrl = diskRes?.ok ? diskRes.data?.record?.dataUrl || null : null;
         if (diskUrl) {
-            this.runTransaction<void>('images', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('images').put({
+            this.runTransaction<void>(IMAGES_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(IMAGES_STORE).put({
                     id,
                     dataUrl: diskUrl,
                     timestamp: diskRes?.data?.record?.timestamp || Date.now()
@@ -204,8 +208,8 @@ export class ImageStore extends ResilientIdbStore {
     async deleteImage(id: string): Promise<void> {
         const [diskRes] = await Promise.all([
             this._fetchImageVault(`/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-            this.runTransaction<void>('images', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('images').delete(id);
+            this.runTransaction<void>(IMAGES_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(IMAGES_STORE).delete(id);
                 tx.oncomplete = () => resolve();
             }).catch(() => {})
         ]);
@@ -219,10 +223,10 @@ export class ImageStore extends ResilientIdbStore {
         const merged = new Map<string, StoredImageItem>();
         try {
             const idbItems = await this.runTransaction<StoredImageItem[]>(
-                'images',
+                IMAGES_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
-                    const store = tx.objectStore('images');
+                    const store = tx.objectStore(IMAGES_STORE);
                     const results: StoredImageItem[] = [];
                     const req = store.openCursor();
                     req.onsuccess = (event) => {
@@ -283,8 +287,8 @@ export class ImageStore extends ResilientIdbStore {
         if (!prefix) return 0;
         const [diskRes, idbCount] = await Promise.all([
             this._fetchImageVault(`?prefix=${encodeURIComponent(prefix)}`, { method: 'DELETE' }),
-            this.runTransaction<number>('images', 'readwrite', (tx, _db, resolve, reject) => {
-                const store = tx.objectStore('images');
+            this.runTransaction<number>(IMAGES_STORE, 'readwrite', (tx, _db, resolve, reject) => {
+                const store = tx.objectStore(IMAGES_STORE);
                 let deletedCount = 0;
                 const req = store.openCursor();
                 req.onsuccess = (event) => {
@@ -314,8 +318,8 @@ export class ImageStore extends ResilientIdbStore {
     async clear(): Promise<void> {
         const [diskRes] = await Promise.all([
             this._fetchImageVault('', { method: 'DELETE' }),
-            this.runTransaction<void>('images', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('images').clear();
+            this.runTransaction<void>(IMAGES_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(IMAGES_STORE).clear();
                 tx.oncomplete = () => resolve();
             }).catch(() => {})
         ]);

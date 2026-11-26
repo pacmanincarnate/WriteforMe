@@ -3,8 +3,12 @@
  * IndexedDB-backed semantic vector store supporting cosine-similarity search and redundancy checks.
  */
 
+import { IDB_DATABASES } from '@/config';
 import { cosineSimilarity } from '@/domain/lore';
 import { ResilientIdbStore } from '@/services/storage';
+
+const VECTOR_DB = IDB_DATABASES.vector;
+const VECTORS_STORE = VECTOR_DB.stores.vectors;
 
 export interface VectorRecord<TMeta = Record<string, unknown>> {
     id: string;
@@ -20,13 +24,13 @@ export interface ScoredVectorRecord<TMeta = Record<string, unknown>> extends Vec
 
 /** IndexedDB semantic vector store backed by `ResilientIdbStore`. */
 export class VectorStore extends ResilientIdbStore {
-    constructor(dbName = 'EllipsisVectorStore') {
-        super(dbName, 1);
+    constructor(dbName: string = VECTOR_DB.name) {
+        super(dbName, VECTOR_DB.version);
     }
 
     override onUpgrade(db: IDBDatabase): void {
-        if (!db.objectStoreNames.contains('vectors')) {
-            db.createObjectStore('vectors', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(VECTORS_STORE)) {
+            db.createObjectStore(VECTORS_STORE, { keyPath: 'id' });
         }
     }
 
@@ -36,18 +40,18 @@ export class VectorStore extends ResilientIdbStore {
         vector: number[],
         metadata: TMeta = {} as TMeta
     ): Promise<void> {
-        return this.runTransaction<void>('vectors', 'readwrite', (tx, _db, resolve) => {
-            tx.objectStore('vectors').put({ id, text, vector, metadata, timestamp: Date.now() });
+        return this.runTransaction<void>(VECTORS_STORE, 'readwrite', (tx, _db, resolve) => {
+            tx.objectStore(VECTORS_STORE).put({ id, text, vector, metadata, timestamp: Date.now() });
             tx.oncomplete = () => resolve();
         });
     }
 
     async getAll<TMeta = Record<string, unknown>>(): Promise<VectorRecord<TMeta>[]> {
         return this.runTransaction<VectorRecord<TMeta>[]>(
-            'vectors',
+            VECTORS_STORE,
             'readonly',
             (tx, _db, resolve, reject) => {
-                const request = tx.objectStore('vectors').getAll();
+                const request = tx.objectStore(VECTORS_STORE).getAll();
                 request.onsuccess = () =>
                     resolve((request.result as VectorRecord<TMeta>[] | undefined) || []);
                 request.onerror = () => reject(request.error);
@@ -84,8 +88,8 @@ export class VectorStore extends ResilientIdbStore {
     }
 
     async clear(): Promise<void> {
-        return this.runTransaction<void>('vectors', 'readwrite', (tx, _db, resolve) => {
-            tx.objectStore('vectors').clear();
+        return this.runTransaction<void>(VECTORS_STORE, 'readwrite', (tx, _db, resolve) => {
+            tx.objectStore(VECTORS_STORE).clear();
             tx.oncomplete = () => resolve();
         });
     }

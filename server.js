@@ -2,8 +2,9 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const PORTS = require('./src/config/ports.json');
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || PORTS.web;
 const ROOT = __dirname;
 
 const DATA_DIR = process.env.ELLIPSIS_DATA_DIR

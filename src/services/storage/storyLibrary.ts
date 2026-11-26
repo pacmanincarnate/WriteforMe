@@ -54,8 +54,10 @@ export interface LibraryStores {
     } | null;
 }
 
+import { LEGACY_STORY_RECORD_ID } from '@/config';
+
 /** Legacy single-story record id from before the library existed; never shown. */
-export const LEGACY_STORY_RECORD_ID = 'current_story';
+export { LEGACY_STORY_RECORD_ID };
 
 /**
  * Lists saved stories for the library. The story open in the editor is always included, with its

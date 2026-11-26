@@ -19,9 +19,10 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const PORTS = require('./src/config/ports.json');
 
 const settings = {
-    port: process.env.CODEX_BRIDGE_PORT || 5010,
+    port: process.env.CODEX_BRIDGE_PORT || PORTS.codexBridge,
     concurrency: process.env.CODEX_BRIDGE_CONCURRENCY || 2,
     timeout: process.env.CODEX_BRIDGE_TIMEOUT || 600,
     bind: process.env.CODEX_BRIDGE_BIND || '127.0.0.1',

@@ -7,6 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { STORAGE_KEYS } from '@/config';
 import {
     connectMcpBridge,
     createBridgeApi,
@@ -19,7 +20,7 @@ import {
     type EllipsisProseBridgeApi
 } from '@/services/bridge';
 
-export const MCP_BRIDGE_ENABLED_STORAGE_KEY = 'ellipsisprose_enable_mcp_bridge';
+export const MCP_BRIDGE_ENABLED_STORAGE_KEY = STORAGE_KEYS.enableMcpBridge;
 
 export interface UseMcpBridgeParams {
     /** Current app state the bridge reports on. Pass a fresh object every render. */

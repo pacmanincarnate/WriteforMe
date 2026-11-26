@@ -4,6 +4,7 @@
  * (preserving always-thinking GLM models), JSON mode, and native tool calling.
  */
 
+import { CLOUD_API_URLS, DEFAULT_LLM_MODELS } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 import { cleanJson, extractReasoningAndContent } from '@/utils';
 import {
@@ -46,7 +47,7 @@ export async function callNanoGPT(
 
         const opts: LlmCallOptions = typeof options === 'object' && options !== null ? options : {};
 
-        const modelId = model || 'gpt-4o';
+        const modelId = model || DEFAULT_LLM_MODELS.nanogpt;
         const messages: LlmChatMessage[] =
             opts.messages && Array.isArray(opts.messages)
                 ? opts.messages
@@ -103,7 +104,7 @@ export async function callNanoGPT(
         payload.max_completion_tokens = targetMaxTokens;
 
         const response = await fetchWithTimeout(
-            'https://nano-gpt.com/api/v1/chat/completions',
+            CLOUD_API_URLS.nanoGptChat,
             {
                 method: 'POST',
                 headers: {

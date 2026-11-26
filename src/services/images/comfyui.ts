@@ -3,6 +3,7 @@
  * ComfyUI Krea 2 workflow builder, default model picker, and async queue/poll client.
  */
 
+import { DEFAULT_COMFY_CONFIG, DEFAULT_SERVICE_URLS } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 
 export interface ComfyDimensions {
@@ -166,9 +167,12 @@ type ComfyObjectInfoResponse = Record<
 
 /** Probes ComfyUI `system_stats` and Krea 2 loader node options, sorting Krea/Qwen entries first. */
 export async function fetchComfyInfoCatalog(
-    comfyUrl = 'http://127.0.0.1:8188'
+    comfyUrl: string = DEFAULT_SERVICE_URLS.comfyui
 ): Promise<ComfyDiscoveryResult> {
-    const baseUrl = (String(comfyUrl || '').trim() || 'http://127.0.0.1:8188').replace(/\/+$/, '');
+    const baseUrl = (String(comfyUrl || '').trim() || DEFAULT_SERVICE_URLS.comfyui).replace(
+        /\/+$/,
+        ''
+    );
     const emptyOptions: ComfyOptionsCatalog = {
         unet: [],
         clip: [],
@@ -277,11 +281,15 @@ export async function generateComfyImage(
         throw new Error('ComfyUI: choose the Krea 2 diffusion model, text encoder and VAE in Settings');
     }
 
-    const baseUrl = (String(options.url || '').trim() || 'http://127.0.0.1:8188').replace(/\/+$/, '');
+    const baseUrl = (String(options.url || '').trim() || DEFAULT_SERVICE_URLS.comfyui).replace(
+        /\/+$/,
+        ''
+    );
     const rawTimeout = options.timeoutSec;
-    const timeoutSec = typeof rawTimeout === 'number' && Number.isFinite(rawTimeout) && rawTimeout > 0
-        ? rawTimeout
-        : 600;
+    const timeoutSec =
+        typeof rawTimeout === 'number' && Number.isFinite(rawTimeout) && rawTimeout > 0
+            ? rawTimeout
+            : DEFAULT_COMFY_CONFIG.timeoutSec;
     const started = Date.now();
     const controller = new AbortController();
     const seedParts = crypto.getRandomValues(new Uint32Array(2));

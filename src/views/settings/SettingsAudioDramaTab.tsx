@@ -18,7 +18,13 @@ import {
     Volume2,
     EditButton
 } from '@/components';
-import { KOKORO_VOICES, TTS_PIPELINE_TIERS, type AudioDramaSettings } from '@/config';
+import {
+    DEFAULT_SERVICE_URLS,
+    DEFAULT_TTS_MODELS,
+    KOKORO_VOICES,
+    TTS_PIPELINE_TIERS,
+    type AudioDramaSettings
+} from '@/config';
 import {
     RAIN_SENTENCE,
     estimateReferenceTextSeconds,
@@ -129,8 +135,12 @@ export const SettingsAudioDramaTab: React.FC<SettingsAudioDramaTabProps> = ({
               : [];
 
     const handleTestHybridConnection = async () => {
-        const bridgeUrl = String(audioDramaSettings.studioBridgeUrl || 'http://127.0.0.1:5020').replace(/\/+$/, '');
-        const targetUrl = String(audioDramaSettings.audioCppUrl || 'http://127.0.0.1:8080').replace(/\/+$/, '');
+        const bridgeUrl = String(
+            audioDramaSettings.studioBridgeUrl || DEFAULT_SERVICE_URLS.audioStudioBridge
+        ).replace(/\/+$/, '');
+        const targetUrl = String(
+            audioDramaSettings.audioCppUrl || DEFAULT_SERVICE_URLS.audioCpp
+        ).replace(/\/+$/, '');
         showToast('Checking Audio Studio Bridge & Audio.cpp...', 'info');
         try {
             const bridgeRes = await fetchWithTimeout(`${bridgeUrl}/health`, { method: 'GET' }, 3000).catch(
@@ -313,9 +323,12 @@ export const SettingsAudioDramaTab: React.FC<SettingsAudioDramaTabProps> = ({
                             </label>
                             <input
                                 type="text"
-                                value={audioDramaSettings.studioBridgeUrl || 'http://127.0.0.1:5020'}
+                                value={
+                                    audioDramaSettings.studioBridgeUrl ||
+                                    DEFAULT_SERVICE_URLS.audioStudioBridge
+                                }
                                 onChange={(e) => updateAudioDramaSetting('studioBridgeUrl', e.target.value)}
-                                placeholder="http://127.0.0.1:5020"
+                                placeholder={DEFAULT_SERVICE_URLS.audioStudioBridge}
                                 className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
                             />
                         </div>
@@ -325,9 +338,9 @@ export const SettingsAudioDramaTab: React.FC<SettingsAudioDramaTabProps> = ({
                             </label>
                             <input
                                 type="text"
-                                value={audioDramaSettings.audioCppUrl || 'http://127.0.0.1:8080'}
+                                value={audioDramaSettings.audioCppUrl || DEFAULT_SERVICE_URLS.audioCpp}
                                 onChange={(e) => updateAudioDramaSetting('audioCppUrl', e.target.value)}
-                                placeholder="http://127.0.0.1:8080"
+                                placeholder={DEFAULT_SERVICE_URLS.audioCpp}
                                 className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold"
                             />
                         </div>
@@ -669,15 +682,15 @@ export const SettingsAudioDramaTab: React.FC<SettingsAudioDramaTabProps> = ({
                                 Gemini TTS Model
                             </label>
                             <select
-                                value={audioDramaSettings.geminiModel || 'gemini-3.8-flash-tts'}
+                                value={audioDramaSettings.geminiModel || DEFAULT_TTS_MODELS.geminiTts}
                                 onChange={(e) => updateAudioDramaSetting('geminiModel', e.target.value)}
                                 className="w-full bg-surface border border-edge-strong rounded-xl px-3 py-2 text-xs text-ink-800 font-mono outline-none focus:border-gold cursor-pointer"
                             >
-                                <option value="gemini-3.8-flash-tts">
-                                    gemini-3.8-flash-tts (High Fidelity Studio)
+                                <option value={DEFAULT_TTS_MODELS.geminiTts}>
+                                    {DEFAULT_TTS_MODELS.geminiTts} (High Fidelity Studio)
                                 </option>
-                                <option value="gemini-3.8-flash-lite-tts">
-                                    gemini-3.8-flash-lite-tts (Ultra-Fast Flash Lite)
+                                <option value={DEFAULT_TTS_MODELS.geminiTtsLite}>
+                                    {DEFAULT_TTS_MODELS.geminiTtsLite} (Ultra-Fast Flash Lite)
                                 </option>
                             </select>
                         </div>

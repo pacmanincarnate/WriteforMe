@@ -3,6 +3,7 @@
  * Multi-provider image generation dispatcher (ComfyUI, Gemini Imagen / generateContent, OpenRouter).
  */
 
+import { APP_HTTP_HEADERS, CLOUD_API_URLS, DEFAULT_IMAGE_MODELS } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 import { generateComfyImage, type ComfyGenerationOptions } from './comfyui';
 
@@ -80,17 +81,17 @@ export async function generateImage(
     }
 
     if (prov === 'gemini') {
-        let cleanModel = (model || 'gemini-3.1-flash-image')
+        let cleanModel = (model || DEFAULT_IMAGE_MODELS.gemini)
             .trim()
             .replace(/:(predict|generateImages|generateContent)$/, '');
         if (cleanModel === 'imagen-3.0-generate-002') {
-            cleanModel = 'gemini-3.1-flash-image';
-            config.onModelMigrated?.('gemini-3.1-flash-image');
+            cleanModel = DEFAULT_IMAGE_MODELS.gemini;
+            config.onModelMigrated?.(DEFAULT_IMAGE_MODELS.gemini);
         }
         const isLegacyImagen = cleanModel.startsWith('imagen-');
 
         if (isLegacyImagen) {
-            const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:predict?key=${encodeURIComponent(key)}`;
+            const url = `${CLOUD_API_URLS.geminiModels}/${cleanModel}:predict?key=${encodeURIComponent(key)}`;
             const payload = {
                 instances: [{ prompt }],
                 parameters: { sampleCount: 1, aspectRatio, outputMimeType: 'image/jpeg' }
@@ -126,7 +127,7 @@ export async function generateImage(
             return `data:${mimeType};base64,${b64}`;
         }
 
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${cleanModel}:generateContent?key=${encodeURIComponent(key)}`;
+        const url = `${CLOUD_API_URLS.geminiModels}/${cleanModel}:generateContent?key=${encodeURIComponent(key)}`;
         const promptWithAspect =
             aspectRatio && !prompt.toLowerCase().includes('aspect ratio')
                 ? `${prompt} (Aspect ratio: ${aspectRatio})`
@@ -170,7 +171,7 @@ export async function generateImage(
     }
 
     if (prov === 'openrouter') {
-        const url = 'https://openrouter.ai/api/v1/chat/completions';
+        const url = CLOUD_API_URLS.openRouterChat;
         const payload = {
             model,
             messages: [{ role: 'user', content: prompt }],
@@ -187,7 +188,7 @@ export async function generateImage(
                     'Content-Type': 'application/json',
                     Authorization: `Bearer ${key}`,
                     'HTTP-Referer': referer,
-                    'X-Title': 'EllipsisProse'
+                    'X-Title': APP_HTTP_HEADERS.title
                 },
                 body: JSON.stringify(payload)
             },

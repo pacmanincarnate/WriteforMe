@@ -9,6 +9,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import {
     DEFAULT_AUDIO_DRAMA_SETTINGS,
+    DEFAULT_SERVICE_URLS,
+    STORAGE_KEYS,
     TTS_PIPELINE_TIERS,
     migrateAudioDramaSettings,
     type AudioDramaSettings
@@ -338,7 +340,7 @@ export function useVoiceManagement(
 
     const [audioDramaSettings, setAudioDramaSettings] = useState<AudioDramaSettings>(() => {
         try {
-            const saved = localStorage.getItem('ellipsisprose_audio_drama_settings');
+            const saved = localStorage.getItem(STORAGE_KEYS.audioDramaSettings);
             if (saved) {
                 return migrateAudioDramaSettings(JSON.parse(saved) as Record<string, unknown>);
             }
@@ -350,7 +352,7 @@ export function useVoiceManagement(
 
     useEffect(() => {
         safeLocalStorageSet(
-            'ellipsisprose_audio_drama_settings',
+            STORAGE_KEYS.audioDramaSettings,
             JSON.stringify(audioDramaSettings)
         );
     }, [audioDramaSettings]);
@@ -541,7 +543,9 @@ export function useVoiceManagement(
 
                     if (clearBridgeWav) {
                         const effCfg = audioDramaSettingsRef.current;
-                        let bridgeUrl = String(effCfg?.studioBridgeUrl || 'http://127.0.0.1:5020')
+                        let bridgeUrl = String(
+                            effCfg?.studioBridgeUrl || DEFAULT_SERVICE_URLS.audioStudioBridge
+                        )
                             .trim()
                             .replace(/\/+$/, '');
                         if (bridgeUrl) {
@@ -838,7 +842,7 @@ export function useVoiceManagement(
                     let targetUrl = String(
                         effectiveSettings.studioBridgeUrl ||
                             effectiveSettings.audioCppUrl ||
-                            'http://127.0.0.1:5020'
+                            DEFAULT_SERVICE_URLS.audioStudioBridge
                     ).trim();
                     if (!/^https?:\/\//i.test(targetUrl)) targetUrl = `http://${targetUrl}`;
                     targetUrl = targetUrl.replace(/\/+$/, '');
@@ -1401,7 +1405,9 @@ export function useVoiceManagement(
                 stopAllAudioPlayback();
                 try {
                     const effCfg = audioDramaSettingsRef.current;
-                    let bridgeUrl = String(effCfg?.studioBridgeUrl || 'http://127.0.0.1:5020')
+                    let bridgeUrl = String(
+                        effCfg?.studioBridgeUrl || DEFAULT_SERVICE_URLS.audioStudioBridge
+                    )
                         .trim()
                         .replace(/\/+$/, '');
                     if (bridgeUrl && !/^https?:\/\//i.test(bridgeUrl)) {

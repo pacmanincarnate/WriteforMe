@@ -4,12 +4,16 @@
  * and automatic legacy migration.
  */
 
+import { IDB_DATABASES, LEGACY_STORY_RECORD_ID, STORAGE_KEYS } from '@/config';
 import { computeStoryProgressMetrics } from '@/domain/story';
 import { safeJsonStringify } from '@/utils';
 import { audioStore } from './audioStore';
 import { ResilientIdbStore, isQuotaExceededIdbError } from './idbBase';
 import { studioCacheStore } from './studioCacheStore';
 import { probeLocalVaultAvailability } from './vaultDetector';
+
+const STORY_DB = IDB_DATABASES.story;
+const STORIES_STORE = STORY_DB.stores.stories;
 
 export interface StoryRecord {
     id: string;
@@ -32,14 +36,14 @@ export class StoryStore extends ResilientIdbStore {
     private _memStories: Map<string, StoryRecord>;
     private _migrated?: boolean;
 
-    constructor(dbName = 'EllipsisStoryStore') {
-        super(dbName, 1);
+    constructor(dbName: string = STORY_DB.name) {
+        super(dbName, STORY_DB.version);
         this._memStories = new Map();
     }
 
     override onUpgrade(db: IDBDatabase): void {
-        if (!db.objectStoreNames.contains('stories')) {
-            db.createObjectStore('stories', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains(STORIES_STORE)) {
+            db.createObjectStore(STORIES_STORE, { keyPath: 'id' });
         }
     }
 
@@ -69,8 +73,8 @@ export class StoryStore extends ResilientIdbStore {
     ): Promise<boolean> {
         const record: StoryRecord = { id, data: cleanData, timestamp };
         const writeOnce = (): Promise<void> =>
-            this.runTransaction<void>('stories', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('stories').put(record);
+            this.runTransaction<void>(STORIES_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(STORIES_STORE).put(record);
                 tx.oncomplete = () => resolve();
             });
         try {
@@ -117,15 +121,15 @@ export class StoryStore extends ResilientIdbStore {
     async migrateLegacyStory(db: IDBDatabase | null = this.db): Promise<void> {
         if (!db) return;
         // Use the already-opened handle directly so onOpened never deadlocks awaiting this.ready
-        const legacy = await this.rawGet('current_story', db);
+        const legacy = await this.rawGet(LEGACY_STORY_RECORD_ID, db);
         if (legacy) {
             await this.rawPut('story_default', legacy.data, db);
-            await this.rawDelete('current_story', db);
+            await this.rawDelete(LEGACY_STORY_RECORD_ID, db);
             console.log("Legacy story migrated to 'story_default'.");
         }
         try {
             if (typeof localStorage === 'undefined') return;
-            const localSaved = localStorage.getItem('ellipsisprose_story');
+            const localSaved = localStorage.getItem(STORAGE_KEYS.story);
             if (localSaved) {
                 const parsed = JSON.parse(localSaved) as Record<string, unknown> | null;
                 if (
@@ -146,7 +150,7 @@ export class StoryStore extends ResilientIdbStore {
                         );
                     }
                 }
-                localStorage.removeItem('ellipsisprose_story');
+                localStorage.removeItem(STORAGE_KEYS.story);
                 console.log('Reclaimed localStorage quota by clearing legacy story key.');
             }
         } catch (e) {
@@ -160,11 +164,11 @@ export class StoryStore extends ResilientIdbStore {
                 reject(new Error('IndexedDB database handle is not open for rawGet'));
                 return;
             }
-            const tx = db.transaction('stories', 'readonly');
+            const tx = db.transaction(STORIES_STORE, 'readonly');
             tx.onerror = () => reject(tx.error || new Error('IndexedDB rawGet transaction error'));
             tx.onabort = () =>
                 reject(tx.error || new DOMException('IndexedDB rawGet aborted', 'AbortError'));
-            const request = tx.objectStore('stories').get(key);
+            const request = tx.objectStore(STORIES_STORE).get(key);
             request.onsuccess = () => resolve(request.result as StoryRecord | undefined);
             request.onerror = () => reject(request.error);
         });
@@ -180,8 +184,8 @@ export class StoryStore extends ResilientIdbStore {
                 reject(new Error('IndexedDB database handle is not open for rawPut'));
                 return;
             }
-            const tx = db.transaction('stories', 'readwrite');
-            tx.objectStore('stories').put({ id, data: storyData, timestamp: Date.now() });
+            const tx = db.transaction(STORIES_STORE, 'readwrite');
+            tx.objectStore(STORIES_STORE).put({ id, data: storyData, timestamp: Date.now() });
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error || new Error('IndexedDB rawPut transaction error'));
             tx.onabort = () =>
@@ -195,8 +199,8 @@ export class StoryStore extends ResilientIdbStore {
                 reject(new Error('IndexedDB database handle is not open for rawDelete'));
                 return;
             }
-            const tx = db.transaction('stories', 'readwrite');
-            tx.objectStore('stories').delete(key);
+            const tx = db.transaction(STORIES_STORE, 'readwrite');
+            tx.objectStore(STORIES_STORE).delete(key);
             tx.oncomplete = () => resolve();
             tx.onerror = () => reject(tx.error || new Error('IndexedDB rawDelete transaction error'));
             tx.onabort = () =>
@@ -272,10 +276,10 @@ export class StoryStore extends ResilientIdbStore {
         if (!id) return null;
         const [idbRecord, diskRes] = await Promise.all([
             this.runTransaction<StoryRecord | null>(
-                'stories',
+                STORIES_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
-                    const request = tx.objectStore('stories').get(id);
+                    const request = tx.objectStore(STORIES_STORE).get(id);
                     request.onsuccess = () =>
                         resolve((request.result as StoryRecord | undefined) || null);
                     request.onerror = () => reject(request.error);
@@ -328,11 +332,11 @@ export class StoryStore extends ResilientIdbStore {
     async listStories(): Promise<StoryRecord[]> {
         const [idbList, diskRes] = await Promise.all([
             this.runTransaction<StoryRecord[]>(
-                'stories',
+                STORIES_STORE,
                 'readonly',
                 (tx, _db, resolve, reject) => {
                     const entries: StoryRecord[] = [];
-                    const req = tx.objectStore('stories').openCursor();
+                    const req = tx.objectStore(STORIES_STORE).openCursor();
                     req.onsuccess = (event) => {
                         const cursor = (event.target as IDBRequest<IDBCursorWithValue | null>)
                             .result;
@@ -410,8 +414,8 @@ export class StoryStore extends ResilientIdbStore {
         this._memStories.delete(id);
         await Promise.all([
             this._fetchDiskJson(`/stories/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-            this.runTransaction<void>('stories', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('stories').delete(id);
+            this.runTransaction<void>(STORIES_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(STORIES_STORE).delete(id);
                 tx.oncomplete = () => resolve();
             }).catch(() => {})
         ]);
@@ -421,8 +425,8 @@ export class StoryStore extends ResilientIdbStore {
         this._memStories.clear();
         await Promise.all([
             this._fetchDiskJson('/clear-all', { method: 'POST' }),
-            this.runTransaction<void>('stories', 'readwrite', (tx, _db, resolve) => {
-                tx.objectStore('stories').clear();
+            this.runTransaction<void>(STORIES_STORE, 'readwrite', (tx, _db, resolve) => {
+                tx.objectStore(STORIES_STORE).clear();
                 tx.oncomplete = () => resolve();
             }).catch(() => {})
         ]);

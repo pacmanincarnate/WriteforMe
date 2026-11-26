@@ -4,6 +4,9 @@
  * 4-tier pipeline definitions, default audio studio settings, and migration.
  */
 
+import { DEFAULT_TTS_MODELS } from './defaults';
+import { DEFAULT_SERVICE_URLS } from './endpoints';
+
 export interface KokoroVoiceEntry {
     id: string;
     name: string;
@@ -173,8 +176,8 @@ export const DEFAULT_AUDIO_DRAMA_SETTINGS: AudioDramaSettings = {
     enabled: true,
     pipelineTier: 3,
     backend: 'hybrid',
-    audioCppUrl: 'http://127.0.0.1:8080',
-    studioBridgeUrl: 'http://127.0.0.1:5020',
+    audioCppUrl: DEFAULT_SERVICE_URLS.audioCpp,
+    studioBridgeUrl: DEFAULT_SERVICE_URLS.audioStudioBridge,
     breezeModelId: 'breeze-tts',
     breezeAudioTemperature: 0.35,
     dramaModelId: 'drama-3',
@@ -198,7 +201,7 @@ export const DEFAULT_AUDIO_DRAMA_SETTINGS: AudioDramaSettings = {
     targetLufsNarration: -16.5,
     truePeakLimitDb: -1.5,
     geminiApiKey: '',
-    geminiModel: 'gemini-3.8-flash-tts',
+    geminiModel: DEFAULT_TTS_MODELS.geminiTts,
     openRouterApiKey: '',
     openRouterModel: 'elevenlabs/eleven-v4',
     autoFallbackToBrowser: true
@@ -236,9 +239,9 @@ export function migrateAudioDramaSettings(saved: Record<string, unknown> | null 
         migrated.backend = 'hybrid';
     }
 
-    if (!migrated.studioBridgeUrl) migrated.studioBridgeUrl = 'http://127.0.0.1:5020';
+    if (!migrated.studioBridgeUrl) migrated.studioBridgeUrl = DEFAULT_SERVICE_URLS.audioStudioBridge;
     if (!migrated.audioCppUrl || migrated.audioCppUrl === 'http://127.0.0.1:8081') {
-        migrated.audioCppUrl = 'http://127.0.0.1:8080';
+        migrated.audioCppUrl = DEFAULT_SERVICE_URLS.audioCpp;
     }
     if (!migrated.breezeModelId || migrated.breezeModelId === 'breeze_director') {
         migrated.breezeModelId = 'breeze-tts';

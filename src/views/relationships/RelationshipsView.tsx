@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { STORAGE_KEYS } from '@/config';
 import {
     Activity,
     EditorialSubNav,
@@ -319,7 +320,7 @@ export function RelationshipsView({
                                             setMatrixView(mode);
                                             try {
                                                 localStorage.setItem(
-                                                    'ellipsisprose_matrix_view',
+                                                    STORAGE_KEYS.matrixView,
                                                     mode
                                                 );
                                             } catch {

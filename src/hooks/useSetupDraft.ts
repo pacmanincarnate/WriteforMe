@@ -7,15 +7,16 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { STORAGE_KEYS } from '@/config';
 import { safeLocalStorageSet } from '@/utils';
 
 export const SETUP_DRAFT_STORAGE_KEYS = {
-    title: 'ellipsisprose_draft_title',
-    concept: 'ellipsisprose_draft_concept',
-    authorNote: 'ellipsisprose_draft_author_note',
-    writingMode: 'ellipsisprose_draft_writing_mode',
-    bookType: 'ellipsisprose_draft_book_type',
-    customWords: 'ellipsisprose_draft_custom_words'
+    title: STORAGE_KEYS.draftTitle,
+    concept: STORAGE_KEYS.draftConcept,
+    authorNote: STORAGE_KEYS.draftAuthorNote,
+    writingMode: STORAGE_KEYS.draftWritingMode,
+    bookType: STORAGE_KEYS.draftBookType,
+    customWords: STORAGE_KEYS.draftCustomWords
 } as const;
 
 export type SetupWritingMode = 'novel' | 'audio_drama';

@@ -8,10 +8,11 @@
 
 import { useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { STORAGE_KEYS } from '@/config';
 import { usePersistedBoolean } from './usePersistedBoolean';
 
-export const EDITORIAL_DEEP_LLM_STORAGE_KEY = 'ellipsisprose_editorial_deep_llm';
-export const EDITORIAL_AUTOPILOT_STORAGE_KEY = 'ellipsisprose_editorial_autopilot';
+export const EDITORIAL_DEEP_LLM_STORAGE_KEY = STORAGE_KEYS.editorialDeepLlm;
+export const EDITORIAL_AUTOPILOT_STORAGE_KEY = STORAGE_KEYS.editorialAutopilot;
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 

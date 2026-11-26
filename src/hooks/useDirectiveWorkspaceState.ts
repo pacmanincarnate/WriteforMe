@@ -8,11 +8,12 @@
 
 import { useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
+import { STORAGE_KEYS } from '@/config';
 import type { DirectivePlan } from '@/domain/story';
 import { usePersistedBoolean } from './usePersistedBoolean';
 
-export const DIRECTIVE_CASCADE_STORAGE_KEY = 'ellipsisprose_directive_cascade';
-export const DIRECTIVE_VERIFY_STORAGE_KEY = 'ellipsisprose_directive_verify';
+export const DIRECTIVE_CASCADE_STORAGE_KEY = STORAGE_KEYS.directiveCascade;
+export const DIRECTIVE_VERIFY_STORAGE_KEY = STORAGE_KEYS.directiveVerify;
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 

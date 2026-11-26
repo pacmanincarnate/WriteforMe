@@ -3,6 +3,7 @@
  * Tier 1.1 Story Arc Planner, Tier 2.1/2.2 Act Architect, and Tier 3.1/3.2 8-Sequence Weaver.
  */
 
+import { STORAGE_KEYS } from '@/config';
 import {
     buildSequencePromptContext,
     type ContinuityStoryState
@@ -1218,7 +1219,7 @@ export function touchStatusQuoFingerprint(
     const emb = ctx.getEmbeddingService();
     if (emb?.isConfigured()) {
         safeLocalStorageSet(
-            'ellipsisprose_rag_fingerprint',
+            STORAGE_KEYS.ragFingerprint,
             computeLoreFingerprint(storyId, loreList, emb.getProviderLabel())
         );
     }

@@ -4,17 +4,18 @@
  * nano-GPT, KoboldCPP, and Codex Bridge.
  */
 
+import {
+    APP_HTTP_HEADERS,
+    CLOUD_API_URLS,
+    DEFAULT_EMBEDDING_MODELS,
+    DEFAULT_SERVICE_URLS,
+    LOCAL_PORTS,
+    RETRY_LIMITS,
+    TIMEOUTS_MS
+} from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 
 export type EmbeddingProvider = 'gemini' | 'openrouter' | 'nanogpt' | 'koboldcpp' | 'codex' | string;
-
-const PROVIDER_EMBEDDING_MODELS: Record<string, string> = {
-    gemini: 'gemini-embedding-001',
-    openrouter: 'qwen/qwen3-embedding-8b',
-    nanogpt: 'text-embedding-3-small',
-    koboldcpp: 'default',
-    codex: 'local'
-};
 
 /** Multi-provider embedding API client with rate-limit backoff retries. */
 export class EmbeddingService {
@@ -26,8 +27,8 @@ export class EmbeddingService {
     constructor(
         apiKey = '',
         provider: EmbeddingProvider = 'gemini',
-        baseUrl = 'http://localhost:5001',
-        codexUrl = 'http://localhost:5010'
+        baseUrl: string = DEFAULT_SERVICE_URLS.koboldcpp,
+        codexUrl: string = DEFAULT_SERVICE_URLS.codexBridge
     ) {
         this.apiKey = apiKey;
         this.provider = provider;
@@ -40,7 +41,7 @@ export class EmbeddingService {
     }
 
     getProviderLabel(): string {
-        return `${this.provider}|${PROVIDER_EMBEDDING_MODELS[this.provider]}`;
+        return `${this.provider}|${(DEFAULT_EMBEDDING_MODELS as Record<string, string>)[this.provider]}`;
     }
 
     async getEmbedding(text: string): Promise<number[] | null> {
@@ -61,8 +62,8 @@ export class EmbeddingService {
     static async fetchWithBackoff(
         url: string,
         options: RequestInit,
-        timeoutMs = 30000,
-        maxRetries = 3
+        timeoutMs: number = TIMEOUTS_MS.embedding,
+        maxRetries: number = RETRY_LIMITS.embeddingMaxRetries
     ): Promise<Response> {
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             const response = await fetchWithTimeout(url, options, timeoutMs);
@@ -88,15 +89,15 @@ export class EmbeddingService {
     async fetchWithBackoff(
         url: string,
         options: RequestInit,
-        timeoutMs = 30000,
-        maxRetries = 3
+        timeoutMs: number = TIMEOUTS_MS.embedding,
+        maxRetries: number = RETRY_LIMITS.embeddingMaxRetries
     ): Promise<Response> {
         return EmbeddingService.fetchWithBackoff(url, options, timeoutMs, maxRetries);
     }
 
     async getGeminiEmbedding(text: string): Promise<number[] | null> {
-        const model = 'gemini-embedding-001';
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:embedContent`;
+        const model = DEFAULT_EMBEDDING_MODELS.gemini;
+        const url = `${CLOUD_API_URLS.geminiModels}/${model}:embedContent`;
         const response = await this.fetchWithBackoff(
             url,
             {
@@ -107,7 +108,7 @@ export class EmbeddingService {
                     content: { parts: [{ text }] }
                 })
             },
-            30000
+            TIMEOUTS_MS.embedding
         );
         if (!response.ok) {
             const err = await response.text();
@@ -118,26 +119,26 @@ export class EmbeddingService {
     }
 
     async getOpenRouterEmbedding(text: string): Promise<number[] | null> {
-        const model = 'qwen/qwen3-embedding-8b';
+        const model = DEFAULT_EMBEDDING_MODELS.openrouter;
         const referer =
             typeof window !== 'undefined' && window.location ? window.location.href : '';
 
         const response = await this.fetchWithBackoff(
-            'https://openrouter.ai/api/v1/embeddings',
+            CLOUD_API_URLS.openRouterEmbeddings,
             {
                 method: 'POST',
                 headers: {
                     Authorization: `Bearer ${this.apiKey}`,
                     'Content-Type': 'application/json',
                     'HTTP-Referer': referer,
-                    'X-Title': 'EllipsisProse'
+                    'X-Title': APP_HTTP_HEADERS.title
                 },
                 body: JSON.stringify({
                     model,
                     input: text
                 })
             },
-            30000
+            TIMEOUTS_MS.embedding
         );
 
         if (!response.ok) {
@@ -154,7 +155,7 @@ export class EmbeddingService {
         if (!key) throw new Error('nano-GPT API Key is missing. Please add it in Settings.');
 
         const response = await this.fetchWithBackoff(
-            'https://nano-gpt.com/api/v1/embeddings',
+            CLOUD_API_URLS.nanoGptEmbeddings,
             {
                 method: 'POST',
                 headers: {
@@ -162,11 +163,11 @@ export class EmbeddingService {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: 'text-embedding-3-small',
+                    model: DEFAULT_EMBEDDING_MODELS.nanogpt,
                     input: text
                 })
             },
-            30000
+            TIMEOUTS_MS.embedding
         );
 
         if (!response.ok) {
@@ -182,7 +183,7 @@ export class EmbeddingService {
         const cleanUrl =
             this.codexUrl && String(this.codexUrl).trim()
                 ? String(this.codexUrl).trim().replace(/\/+$/, '')
-                : 'http://localhost:5010';
+                : DEFAULT_SERVICE_URLS.codexBridge;
         const response = await this.fetchWithBackoff(
             `${cleanUrl}/v1/embeddings`,
             {
@@ -206,7 +207,7 @@ export class EmbeddingService {
         const cleanUrl =
             this.baseUrl && String(this.baseUrl).trim()
                 ? String(this.baseUrl).trim().replace(/\/+$/, '')
-                : 'http://localhost:5001';
+                : DEFAULT_SERVICE_URLS.koboldcpp;
         const response = await this.fetchWithBackoff(
             `${cleanUrl}/v1/embeddings`,
             {
@@ -219,13 +220,13 @@ export class EmbeddingService {
                     input: text
                 })
             },
-            30000
+            TIMEOUTS_MS.embedding
         );
 
         if (!response.ok) {
             const err = await response.text();
             throw new Error(
-                `KoboldCPP Embedding Failed: ${response.status} - ${err}. Please ensure KoboldCPP is running on port 5001 with --embedding flag enabled.`
+                `KoboldCPP Embedding Failed: ${response.status} - ${err}. Please ensure KoboldCPP is running on port ${LOCAL_PORTS.koboldcpp} with --embedding flag enabled.`
             );
         }
 

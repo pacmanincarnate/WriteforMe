@@ -4,7 +4,7 @@
  * (with Hybrid Studio delegation + smart backend fallback), and streaming full-novel stitcher.
  */
 
-import { DEFAULT_AUDIO_DRAMA_SETTINGS, type AudioDramaSettings } from '@/config';
+import { AUDIO_DSP_DEFAULTS, DEFAULT_AUDIO_DRAMA_SETTINGS, type AudioDramaSettings } from '@/config';
 import {
     applyHighPass75Hz,
     applyRaisedCosineFades,
@@ -182,7 +182,7 @@ export async function stitchAndEncodeChunksToMp3(
 
     const dialoguePauseMs = options.dialoguePauseMs ?? 240;
     const narratorPauseMs = options.narratorPauseMs ?? 440;
-    const kbps = options.kbps || 128;
+    const kbps = options.kbps || AUDIO_DSP_DEFAULTS.mp3BitrateKbps;
 
     const AudioCtx = getAudioContextCtor();
     const tempCtx = new AudioCtx();
@@ -243,9 +243,12 @@ export async function stitchAndEncodeChunksToMp3(
         throw new Error('Failed to decode audio chunks.');
     }
 
-    const rawSampleRate = decodedItems[0].audioBuf.sampleRate || 24000;
+    const rawSampleRate =
+        decodedItems[0].audioBuf.sampleRate || AUDIO_DSP_DEFAULTS.fallbackTtsSampleRate;
     const targetSampleRate =
-        rawSampleRate >= 16000 && rawSampleRate <= 48000 ? rawSampleRate : 24000;
+        rawSampleRate >= 16000 && rawSampleRate <= 48000
+            ? rawSampleRate
+            : AUDIO_DSP_DEFAULTS.fallbackTtsSampleRate;
 
     let totalLengthSamples = 0;
     const itemLayouts: Array<{
@@ -262,9 +265,11 @@ export async function stitchAndEncodeChunksToMp3(
 
         const rawChannel = new Float32Array(buf.getChannelData(0));
         applyHighPass75Hz(rawChannel, buf.sampleRate);
-        applyRaisedCosineFades(rawChannel, buf.sampleRate, 15);
-        const targetLufs = item.isNarrator ? -16.5 : -18.0;
-        levelSamplesToLufs(rawChannel, buf.sampleRate, targetLufs, -1.5);
+        applyRaisedCosineFades(rawChannel, buf.sampleRate, AUDIO_DSP_DEFAULTS.fadeMs);
+        const targetLufs = item.isNarrator
+            ? AUDIO_DSP_DEFAULTS.narratorTargetLufs
+            : AUDIO_DSP_DEFAULTS.dialogueTargetLufs;
+        levelSamplesToLufs(rawChannel, buf.sampleRate, targetLufs, AUDIO_DSP_DEFAULTS.peakLimitDb);
 
         const chunkSamples = Math.round(buf.duration * targetSampleRate);
         let pauseSamples = 0;
@@ -729,7 +734,7 @@ export async function exportSceneAudioMp3({
     const stitchedMeta = await stitchAndEncodeChunksToMp3(workingChunks, {
         dialoguePauseMs,
         narratorPauseMs,
-        kbps: 128,
+        kbps: AUDIO_DSP_DEFAULTS.mp3BitrateKbps,
         returnMeta: true
     });
     const mp3Blob = stitchedMeta.blob;
@@ -1114,7 +1119,7 @@ export async function exportSequenceAudioMp3({
     const mp3Blob = (await stitchAndEncodeChunksToMp3(allChunks, {
         dialoguePauseMs: Number(settingsRec?.dialoguePauseMs ?? 240),
         narratorPauseMs: Number(settingsRec?.narratorPauseMs ?? 440),
-        kbps: 128
+        kbps: AUDIO_DSP_DEFAULTS.mp3BitrateKbps
     })) as Blob;
 
     logAudioStageComplete(
@@ -1189,7 +1194,7 @@ export async function stitchAudioBlobsToMp3(
         throw new Error('MP3 encoder library failed to initialize.');
     }
 
-    const kbps = options.kbps || 128;
+    const kbps = options.kbps || AUDIO_DSP_DEFAULTS.mp3BitrateKbps;
     const defaultPauseMs = options.defaultPauseMs ?? 2000;
     const endPaddingMs = options.endPaddingMs ?? 500;
     const onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
@@ -1202,7 +1207,7 @@ export async function stitchAudioBlobsToMp3(
     const pcmBlock = new Int16Array(sampleBlockSize);
     const zeroBlock = new Int16Array(sampleBlockSize);
     let pcmBlockPos = 0;
-    let targetSampleRate = 44100;
+    let targetSampleRate: number = AUDIO_DSP_DEFAULTS.defaultSampleRate;
 
     const pushMp3Frame = (encoder: InstanceType<typeof lamejs.Mp3Encoder>, chunk: Int16Array): void => {
         const mp3buf = encoder.encodeBuffer(chunk);

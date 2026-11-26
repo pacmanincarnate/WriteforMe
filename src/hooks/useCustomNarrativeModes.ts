@@ -8,7 +8,12 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { NARRATIVE_MODES, NARRATIVE_MODE_ICONS, type NarrativeModeDefinition } from '@/config';
+import {
+    NARRATIVE_MODES,
+    NARRATIVE_MODE_ICONS,
+    STORAGE_KEYS,
+    type NarrativeModeDefinition
+} from '@/config';
 import {
     removeCustomMode,
     renameNarrativeModeInScenes,
@@ -19,7 +24,7 @@ import {
 import type { SceneBlueprint } from '@/types';
 import { safeLocalStorageSet } from '@/utils';
 
-export const CUSTOM_MODES_STORAGE_KEY = 'ellipsisprose_custom_modes';
+export const CUSTOM_MODES_STORAGE_KEY = STORAGE_KEYS.customModes;
 const DEFAULT_MODE_ICON = 'tag';
 
 type ToastVariant = 'success' | 'error' | 'info' | 'warning';

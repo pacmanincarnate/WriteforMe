@@ -4,6 +4,7 @@
  * Tier 6.5 Lore Extraction Agent, and bi-temporal World Updates synchronization.
  */
 
+import { RAG_LIMITS, STORAGE_KEYS } from '@/config';
 import {
     applyWorldUpdates,
     commitEpistemicSceneDeltas,
@@ -149,7 +150,7 @@ export async function distillLore(
         } catch (e) {
             console.error('[distillLore] Fast-path distillation failed:', e);
             ctx.showToast('Distillation failed, using raw notes fallback.', 'warning');
-            const fallback = `# WORLD PRIMER (Raw Fallback)\n\n${trimmedText.substring(0, 10000)}`;
+            const fallback = `# WORLD PRIMER (Raw Fallback)\n\n${trimmedText.substring(0, RAG_LIMITS.distillRawFallbackChars)}`;
             await applyPrimerToTarget(fallback);
             return fallback;
         }
@@ -241,7 +242,7 @@ export async function distillLore(
                 index: sec.index,
                 total: sec.total,
                 title: sec.title,
-                text: `### Section Briefing (${sec.title} - Extractive Fallback)\n${fallbackText.substring(0, 2000)}`
+                text: `### Section Briefing (${sec.title} - Extractive Fallback)\n${fallbackText.substring(0, RAG_LIMITS.distillSectionFallbackChars)}`
             });
         }
 
@@ -257,11 +258,11 @@ export async function distillLore(
 
     // TIER 3: REDUCE PHASE - SYNTHESIZE UNIFIED WORLD PRIMER
     let currentBriefings: SectionBriefing[] = [...sectionBriefings];
-    const MAX_REDUCE_INPUT_CHARS = 20000;
     let treeLevel = 1;
 
     while (
-        currentBriefings.map((b) => b.text).join('\n\n---\n\n').length > MAX_REDUCE_INPUT_CHARS &&
+        currentBriefings.map((b) => b.text).join('\n\n---\n\n').length >
+            RAG_LIMITS.distillMaxReduceInputChars &&
         currentBriefings.length > 3
     ) {
         if (isSuperseded()) return null;
@@ -290,7 +291,7 @@ export async function distillLore(
                     text:
                         clusterSummary && clusterSummary.trim()
                             ? clusterSummary.trim()
-                            : clusterText.substring(0, 4000)
+                            : clusterText.substring(0, RAG_LIMITS.distillClusterFallbackChars)
                 });
             } catch (clusterErr) {
                 console.warn(
@@ -300,7 +301,7 @@ export async function distillLore(
                 nextLevelBriefings.push({
                     index: Math.floor(i / clusterSize) + 1,
                     title: `Cluster (${clusterIndices})`,
-                    text: clusterText.substring(0, 4000)
+                    text: clusterText.substring(0, RAG_LIMITS.distillClusterFallbackChars)
                 });
             }
             if (i + clusterSize < currentBriefings.length) {
@@ -354,7 +355,7 @@ export async function ingestLore(
     rebuild: LoreRebuildControl | null = null
 ): Promise<IngestedLoreResult> {
     if (!rebuild) ctx.bumpRagIndexRevision();
-    safeLocalStorageSet('ellipsisprose_rag_fingerprint', '');
+    safeLocalStorageSet(STORAGE_KEYS.ragFingerprint, '');
     if (!rawItem || !rawItem.topic || !rawItem.detail) {
         return { ...rawItem, is_merged: false };
     }
@@ -486,7 +487,7 @@ export async function ingestLore(
     } finally {
         if (!rebuild) {
             ctx.bumpRagIndexRevision();
-            safeLocalStorageSet('ellipsisprose_rag_fingerprint', '');
+            safeLocalStorageSet(STORAGE_KEYS.ragFingerprint, '');
         }
     }
 }
@@ -565,7 +566,7 @@ export async function ingestLoreBatch(
             if (!rebuild.clearPending) {
                 const fingerprintItems = (fingerprintProcessed ? processedList : loreList) as LoreItem[];
                 safeLocalStorageSet(
-                    'ellipsisprose_rag_fingerprint',
+                    STORAGE_KEYS.ragFingerprint,
                     computeLoreFingerprint(storyId, fingerprintItems, service.getProviderLabel())
                 );
             }

@@ -17,12 +17,13 @@ const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
 const ROOT_DIR = __dirname;
+const PORTS = require('./src/config/ports.json');
 
 function parseArgs(argv) {
     const opts = {
-        webPort: Number(process.env.PORT || 3000),
-        bridgePort: Number(process.env.AUDIO_STUDIO_BRIDGE_PORT || 5020),
-        daemonPort: Number(process.env.AUDIOCPP_PORT || 8080),
+        webPort: Number(process.env.PORT || PORTS.web),
+        bridgePort: Number(process.env.AUDIO_STUDIO_BRIDGE_PORT || PORTS.audioStudioBridge),
+        daemonPort: Number(process.env.AUDIOCPP_PORT || PORTS.audioCpp),
         openBrowser: true,
         startBridge: true,
         prewarmAudio: process.env.ELLIPSISPROSE_PREWARM_AUDIO !== '0',

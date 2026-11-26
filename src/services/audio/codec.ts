@@ -5,6 +5,7 @@
  * MP3 encoding via bundled `lamejs`.
  */
 
+import { AUDIO_DSP_DEFAULTS, CDN_URLS, TIMEOUTS_MS } from '@/config';
 import {
     applyHighPass75Hz,
     applyRaisedCosineFades,
@@ -517,7 +518,7 @@ export function getStudioMasteringWorker(): Worker | null {
             'var lameLoaded = false;',
             'function ensureWorkerLame() {',
             '  if (lameLoaded && self.lamejs && self.lamejs.Mp3Encoder) return self.lamejs;',
-            "  importScripts('https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js');",
+            `  importScripts('${CDN_URLS.lamejs}');`,
             '  var lib = self.lamejs || (self.window && self.window.lamejs);',
             "  if (!lib || !lib.Mp3Encoder) throw new Error('lamejs unavailable inside worker');",
             '  self.lamejs = lib;',
@@ -549,7 +550,7 @@ export function getStudioMasteringWorker(): Worker | null {
             '  return Math.round((-0.691 + 10 * Math.log10(meanSquare)) * 10) / 10;',
             '}',
             'function applyHighPass75HzW(samples, sampleRate) {',
-            '  var omega = 2 * Math.PI * 75 / sampleRate;',
+            `  var omega = 2 * Math.PI * ${AUDIO_DSP_DEFAULTS.highPassHz} / sampleRate;`,
             '  var cosOmega = Math.cos(omega);',
             '  var alpha = Math.sin(omega) / (2 * Math.SQRT2);',
             '  var a0 = 1 + alpha;',
@@ -564,7 +565,7 @@ export function getStudioMasteringWorker(): Worker | null {
             '  }',
             '}',
             'function applyRaisedCosineFadesW(samples, sampleRate, fadeMs) {',
-            '  var fadeSamples = Math.min(Math.floor(((fadeMs || 15) / 1000) * sampleRate), Math.floor(samples.length / 2));',
+            `  var fadeSamples = Math.min(Math.floor(((fadeMs || ${AUDIO_DSP_DEFAULTS.fadeMs}) / 1000) * sampleRate), Math.floor(samples.length / 2));`,
             '  for (var i = 0; i < fadeSamples; i++) {',
             '    var gain = 0.5 * (1 - Math.cos(Math.PI * (i / fadeSamples)));',
             '    samples[i] *= gain;',
@@ -573,7 +574,7 @@ export function getStudioMasteringWorker(): Worker | null {
             '}',
             'function levelSamplesToLufsW(samples, sampleRate, targetLufs, peakLimitDb) {',
             '  var currentLufs = measureIntegratedLufsW(samples, sampleRate);',
-            '  if (currentLufs <= -70) return samples;',
+            `  if (currentLufs <= ${AUDIO_DSP_DEFAULTS.silenceGateLufs}) return samples;`,
             '  var linearGain = Math.pow(10, (targetLufs - currentLufs) / 20);',
             '  var maxPeak = Math.pow(10, peakLimitDb / 20);',
             '  for (var i = 0; i < samples.length; i++) {',
@@ -586,9 +587,9 @@ export function getStudioMasteringWorker(): Worker | null {
             '}',
             'function encodeMp3ChunksW(samples, sampleRate, kbps) {',
             '  var lib = ensureWorkerLame();',
-            '  var rawRate = Number(sampleRate) || 44100;',
-            '  var standardRates = [16000, 22050, 24000, 32000, 44100, 48000];',
-            '  var targetRate = standardRates.indexOf(rawRate) >= 0 ? rawRate : 44100;',
+            `  var rawRate = Number(sampleRate) || ${AUDIO_DSP_DEFAULTS.defaultSampleRate};`,
+            `  var standardRates = ${JSON.stringify(AUDIO_DSP_DEFAULTS.standardSampleRates)};`,
+            `  var targetRate = standardRates.indexOf(rawRate) >= 0 ? rawRate : ${AUDIO_DSP_DEFAULTS.defaultSampleRate};`,
             '  var pcm = samples;',
             '  if (rawRate !== targetRate) {',
             '    var ratio = rawRate / targetRate;',
@@ -603,7 +604,7 @@ export function getStudioMasteringWorker(): Worker | null {
             '    }',
             '    pcm = resampled;',
             '  }',
-            '  var mp3encoder = new lib.Mp3Encoder(1, targetRate, kbps || 128);',
+            `  var mp3encoder = new lib.Mp3Encoder(1, targetRate, kbps || ${AUDIO_DSP_DEFAULTS.mp3BitrateKbps});`,
             '  var mp3Buffers = [];',
             '  var sampleBlockSize = 1152;',
             '  var pcmBlock = new Int16Array(sampleBlockSize);',
@@ -646,17 +647,17 @@ export function getStudioMasteringWorker(): Worker | null {
             '    }',
             "    if (msg.type === 'master_timeline') {",
             '      ensureWorkerLame();',
-            '      var targetRate = Number(msg.targetRate) || 44100;',
+            `      var targetRate = Number(msg.targetRate) || ${AUDIO_DSP_DEFAULTS.defaultSampleRate};`,
             '      var masterTimeline = new Float32Array(msg.totalTimelineSamples);',
             '      var writePos = 0;',
             '      var items = msg.items || [];',
             '      for (var i = 0; i < items.length; i++) {',
             '        var it = items[i];',
             '        var src = new Float32Array(it.buffer);',
-            '        var sr = Number(it.sampleRate) || 44100;',
+            `        var sr = Number(it.sampleRate) || ${AUDIO_DSP_DEFAULTS.defaultSampleRate};`,
             '        applyHighPass75HzW(src, sr);',
-            '        applyRaisedCosineFadesW(src, sr, 15);',
-            '        levelSamplesToLufsW(src, sr, Number(it.targetLufs), -1.5);',
+            `        applyRaisedCosineFadesW(src, sr, ${AUDIO_DSP_DEFAULTS.fadeMs});`,
+            `        levelSamplesToLufsW(src, sr, Number(it.targetLufs), ${AUDIO_DSP_DEFAULTS.peakLimitDb});`,
             '        writePos += it.pauseSamples;',
             '        if (sr === targetRate) {',
             '          var copyLen = Math.min(src.length, masterTimeline.length - writePos);',
@@ -676,7 +677,7 @@ export function getStudioMasteringWorker(): Worker | null {
             '      }',
             '      var b0 = 0, b1 = 0, b2 = 0;',
             '      var linearGain = Math.pow(10, (Number(msg.roomToneDb) || -58.0) / 20);',
-            '      var peakLimit = Math.pow(10, -1.5 / 20);',
+            `      var peakLimit = Math.pow(10, ${AUDIO_DSP_DEFAULTS.peakLimitDb} / 20);`,
             '      for (var k = 0; k < masterTimeline.length; k++) {',
             '        var white = Math.random() * 2 - 1;',
             '        b0 = 0.99765 * b0 + white * 0.0990460;',
@@ -689,7 +690,7 @@ export function getStudioMasteringWorker(): Worker | null {
             '        masterTimeline[k] = val;',
             '      }',
             '      var timelineAudioSec = Number((masterTimeline.length / targetRate).toFixed(2));',
-            '      var mp3Buffers = encodeMp3ChunksW(masterTimeline, targetRate, msg.kbps || 128);',
+            `      var mp3Buffers = encodeMp3ChunksW(masterTimeline, targetRate, msg.kbps || ${AUDIO_DSP_DEFAULTS.mp3BitrateKbps});`,
             '      self.postMessage({ id: id, ok: true, buffers: mp3Buffers, timelineSeconds: timelineAudioSec }, mp3Buffers);',
             '      return;',
             '    }',
@@ -735,7 +736,7 @@ export function getStudioMasteringWorker(): Worker | null {
 export function postStudioWorkerTask(
     msg: Record<string, unknown>,
     transferList: Transferable[] = [],
-    timeoutMs = 120000
+    timeoutMs: number = TIMEOUTS_MS.masteringWorker
 ): Promise<StudioWorkerTaskResponse> {
     const worker = getStudioMasteringWorker();
     if (!worker) return Promise.reject(new Error('Studio mastering worker unavailable'));
@@ -771,8 +772,8 @@ export function ensureStudioMasteringWorkerReady(): Promise<boolean> {
 
 export async function encodePcmInMasteringWorker(
     samples: Float32Array,
-    sampleRate = 44100,
-    kbps = 128
+    sampleRate: number = AUDIO_DSP_DEFAULTS.defaultSampleRate,
+    kbps: number = AUDIO_DSP_DEFAULTS.mp3BitrateKbps
 ): Promise<Blob> {
     const ready = await ensureStudioMasteringWorkerReady();
     if (!ready) throw new Error('Mastering worker lamejs init unavailable');
@@ -780,7 +781,7 @@ export async function encodePcmInMasteringWorker(
     const res = await postStudioWorkerTask(
         { type: 'encode_mp3', buffer: copy.buffer, sampleRate, kbps },
         [copy.buffer],
-        120000
+        TIMEOUTS_MS.masteringWorker
     );
     return new Blob(res.buffers || [], { type: 'audio/mpeg' });
 }
@@ -791,8 +792,8 @@ export async function encodePcmInMasteringWorker(
  */
 export async function encodeFloat32PcmToMp3Blob(
     samples: Float32Array,
-    sampleRate = 44100,
-    kbps = 128
+    sampleRate: number = AUDIO_DSP_DEFAULTS.defaultSampleRate,
+    kbps: number = AUDIO_DSP_DEFAULTS.mp3BitrateKbps
 ): Promise<Blob> {
     if (!samples || samples.length === 0) {
         return new Blob([], { type: 'audio/mpeg' });
@@ -810,9 +811,11 @@ export async function encodeFloat32PcmToMp3Blob(
         throw new Error('MP3 encoder library failed to initialize.');
     }
 
-    const rawRate = Number(sampleRate) || 44100;
-    const standardRates = [16000, 22050, 24000, 32000, 44100, 48000];
-    const targetRate = standardRates.includes(rawRate) ? rawRate : 44100;
+    const rawRate = Number(sampleRate) || AUDIO_DSP_DEFAULTS.defaultSampleRate;
+    const standardRates = AUDIO_DSP_DEFAULTS.standardSampleRates;
+    const targetRate = standardRates.includes(rawRate)
+        ? rawRate
+        : AUDIO_DSP_DEFAULTS.defaultSampleRate;
 
     let pcm = samples;
     if (rawRate !== targetRate) {
@@ -862,7 +865,10 @@ export async function encodeFloat32PcmToMp3Blob(
     return new Blob(mp3Data, { type: 'audio/mpeg' });
 }
 
-export async function ensureMp3AudioBlob(blob: Blob, kbps = 128): Promise<Blob> {
+export async function ensureMp3AudioBlob(
+    blob: Blob,
+    kbps: number = AUDIO_DSP_DEFAULTS.mp3BitrateKbps
+): Promise<Blob> {
     if (!(blob instanceof Blob) || blob.size === 0) return blob;
     if (blob.type === 'audio/mpeg' || blob.type === 'audio/mp3') return blob;
     try {
@@ -870,7 +876,7 @@ export async function ensureMp3AudioBlob(blob: Blob, kbps = 128): Promise<Blob> 
         if (decoded && decoded.samples && decoded.samples.length > 0) {
             const mp3 = await encodeFloat32PcmToMp3Blob(
                 decoded.samples,
-                decoded.sampleRate || 44100,
+                decoded.sampleRate || AUDIO_DSP_DEFAULTS.defaultSampleRate,
                 kbps
             );
             if (mp3 && mp3.size > 0) return mp3;
@@ -888,7 +894,7 @@ export async function ensureMp3AudioBlob(blob: Blob, kbps = 128): Promise<Blob> 
 export async function stitchAudioBlobsWithPause(
     blobs: Blob[],
     pauseSec = 0.15,
-    targetLufs: number | null = -18.0
+    targetLufs: number | null = AUDIO_DSP_DEFAULTS.dialogueTargetLufs
 ): Promise<Blob | null> {
     if (!Array.isArray(blobs) || blobs.length === 0) return null;
     if (blobs.length === 1 && targetLufs === null) return blobs[0];
@@ -904,7 +910,7 @@ export async function stitchAudioBlobsWithPause(
     }
     if (decodedList.length === 0) return blobs[0] || null;
 
-    const targetSr = decodedList[0].sampleRate || 44100;
+    const targetSr = decodedList[0].sampleRate || AUDIO_DSP_DEFAULTS.defaultSampleRate;
     const pauseSamples = Math.round(pauseSec * targetSr);
     const totalSamples = decodedList.reduce(
         (acc, d, idx) => acc + d.samples.length + (idx < decodedList.length - 1 ? pauseSamples : 0),
@@ -931,11 +937,11 @@ export async function stitchAudioBlobsWithPause(
 
     if (typeof targetLufs === 'number' && Number.isFinite(targetLufs)) {
         applyHighPass75Hz(combined, targetSr);
-        applyRaisedCosineFades(combined, targetSr, 15);
-        levelSamplesToLufs(combined, targetSr, targetLufs, -1.5);
+        applyRaisedCosineFades(combined, targetSr, AUDIO_DSP_DEFAULTS.fadeMs);
+        levelSamplesToLufs(combined, targetSr, targetLufs, AUDIO_DSP_DEFAULTS.peakLimitDb);
     }
     try {
-        return await encodeFloat32PcmToMp3Blob(combined, targetSr, 128);
+        return await encodeFloat32PcmToMp3Blob(combined, targetSr, AUDIO_DSP_DEFAULTS.mp3BitrateKbps);
     } catch {
         return encodeFloat32PcmToWavBlob(combined, targetSr);
     }

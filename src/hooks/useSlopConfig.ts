@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
-import { DEFAULT_BANNED_PHRASES } from '@/config';
+import { DEFAULT_BANNED_PHRASES, STORAGE_KEYS } from '@/config';
 import {
     addCustomSlopPhrase,
     addSlopCategoryItem,
@@ -21,8 +21,8 @@ import {
 import type { SlopConfig, SlopPack } from '@/types';
 import { safeLocalStorageSet } from '@/utils';
 
-export const SLOP_CONFIG_STORAGE_KEY = 'ellipsisprose_slop_config_v1';
-export const BANNED_PHRASES_STORAGE_KEY = 'ellipsisprose_banned_phrases';
+export const SLOP_CONFIG_STORAGE_KEY = STORAGE_KEYS.slopConfigV1;
+export const BANNED_PHRASES_STORAGE_KEY = STORAGE_KEYS.bannedPhrases;
 
 type ToastVariant = 'success' | 'error' | 'info' | 'warning';
 

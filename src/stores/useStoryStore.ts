@@ -5,6 +5,7 @@
  */
 
 import { create } from 'zustand';
+import { STORAGE_KEYS } from '@/config';
 import { createDefaultStoryTemplate, type DefaultStoryTemplate } from '@/domain/lifecycle';
 import { readStorageString, writeStorageValue } from './storageHelpers';
 
@@ -72,7 +73,7 @@ export interface StoryStoreActions {
 export type StoryStore = StoryStoreState & StoryStoreActions;
 
 function readInitialStoryId(): string {
-    return readStorageString('ellipsisprose_active_story_id', 'story_default') || 'story_default';
+    return readStorageString(STORAGE_KEYS.activeStoryId, 'story_default') || 'story_default';
 }
 
 export const useStoryStore = create<StoryStore>((set, get) => {
@@ -97,7 +98,7 @@ export const useStoryStore = create<StoryStore>((set, get) => {
                     ? nextOrUpdater(get().activeStoryId)
                     : nextOrUpdater;
             set({ activeStoryId: next });
-            writeStorageValue('ellipsisprose_active_story_id', next);
+            writeStorageValue(STORAGE_KEYS.activeStoryId, next);
         },
 
         setStory: (updaterOrValue) => {

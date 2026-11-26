@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
+import { STORAGE_KEYS } from '@/config';
 import { createDefaultStoryTemplate } from '@/domain/lifecycle';
 import {
     audioStore,
@@ -27,9 +28,9 @@ import { safeLocalStorageSet } from '@/utils';
 type ToastVariant = 'success' | 'error' | 'info' | 'warning';
 type LibraryStory = Record<string, unknown> & { id?: string; title?: string };
 
-export const ACTIVE_STORY_ID_STORAGE_KEY = 'ellipsisprose_active_story_id';
-export const LIBRARY_VIEW_MODE_STORAGE_KEY = 'ellipsisprose_library_view_mode';
-export const LIBRARY_SORT_BY_STORAGE_KEY = 'ellipsisprose_library_sort_by';
+export const ACTIVE_STORY_ID_STORAGE_KEY = STORAGE_KEYS.activeStoryId;
+export const LIBRARY_VIEW_MODE_STORAGE_KEY = STORAGE_KEYS.libraryViewMode;
+export const LIBRARY_SORT_BY_STORAGE_KEY = STORAGE_KEYS.librarySortBy;
 
 export interface UseStoryLibraryParams<TStory extends LibraryStory = LibraryStory> {
     /** The story open in the editor, read at call time (latest value, not the render snapshot). */

@@ -4,7 +4,7 @@
  * Audio.cpp Hybrid Studio backend so concurrent callers never collide.
  */
 
-import { migrateAudioDramaSettings, type AudioDramaSettings } from '@/config';
+import { TIMEOUTS_MS, migrateAudioDramaSettings, type AudioDramaSettings } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 
 export interface LiveAudioCppWaveState {
@@ -100,7 +100,7 @@ export async function activateAudioCppWave(
     bridgeUrl: string,
     waveNum: number,
     signal: AbortSignal | null = null,
-    timeoutMs = 60000,
+    timeoutMs: number = TIMEOUTS_MS.audioCppQueue,
     settings: (Partial<AudioDramaSettings> & Record<string, unknown>) | null = null
 ): Promise<boolean> {
     const wave = Number(waveNum);

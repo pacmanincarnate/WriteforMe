@@ -4,6 +4,7 @@
  * Claude Code bridges.
  */
 
+import { CLOUD_API_URLS } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 import { CLI_BRIDGE_DEFAULT_URLS } from '@/types';
 import { checkKoboldCPPStatus, type KoboldStatusResult } from './koboldcpp';
@@ -75,7 +76,7 @@ export async function fetchGeminiCatalog(apiKey: string): Promise<GeminiCatalogR
         return { models: [], imageModels: [] };
     }
     const response = await fetchWithTimeout(
-        'https://generativelanguage.googleapis.com/v1beta/models?pageSize=100',
+        `${CLOUD_API_URLS.geminiModels}?pageSize=100`,
         { headers: { 'x-goog-api-key': apiKey } },
         15000
     );
@@ -97,7 +98,7 @@ export async function fetchGeminiImageModelsCatalog(
     const keyToUse = (apiKey || '').trim();
     if (!keyToUse) return [];
     const response = await fetchWithTimeout(
-        `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(keyToUse)}&pageSize=100`,
+        `${CLOUD_API_URLS.geminiModels}?key=${encodeURIComponent(keyToUse)}&pageSize=100`,
         { headers: { 'x-goog-api-key': keyToUse } },
         15000
     );

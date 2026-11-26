@@ -1,3 +1,5 @@
+import { DEFAULT_SERVICE_URLS } from '@/config/endpoints';
+
 export type ProviderId = 'gemini' | 'openrouter' | 'nanogpt' | 'koboldcpp' | 'codex' | 'claude';
 
 /**
@@ -5,8 +7,8 @@ export type ProviderId = 'gemini' | 'openrouter' | 'nanogpt' | 'koboldcpp' | 'co
  * OpenAI-compatible contract and run on the user's own CLI login, so they share one code path.
  */
 export const CLI_BRIDGE_DEFAULT_URLS = {
-    codex: 'http://localhost:5010',
-    claude: 'http://localhost:5011'
+    codex: DEFAULT_SERVICE_URLS.codexBridge,
+    claude: DEFAULT_SERVICE_URLS.claudeBridge
 } as const;
 export type CliBridgeProviderId = keyof typeof CLI_BRIDGE_DEFAULT_URLS;
 

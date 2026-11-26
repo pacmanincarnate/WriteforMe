@@ -4,6 +4,7 @@
  * thinking budget mapping, per-agent token ceilings, and Kobold sampler profiles.
  */
 
+import { DEFAULT_LLM_MODELS } from '@/config';
 import { isCloudModelName } from './koboldcpp';
 import { getKoboldLoadedModelName } from './koboldRuntime';
 import { getOpenRouterModelLimits } from './openrouter';
@@ -70,20 +71,20 @@ export function getDefaultModelForProvider(
     prov: string,
     settings: ProviderModelSettings = {}
 ): string {
-    if (prov === 'gemini') return settings.geminiModel || 'gemini-2.0-flash';
-    if (prov === 'openrouter') return settings.openRouterModel || 'google/gemini-2.0-flash-001';
-    if (prov === 'nanogpt') return settings.nanoGptModel || 'gpt-4o';
-    if (prov === 'codex') return settings.codexModel || 'gpt-5.6-luna';
-    if (prov === 'claude') return settings.claudeModel || 'sonnet';
+    if (prov === 'gemini') return settings.geminiModel || DEFAULT_LLM_MODELS.gemini;
+    if (prov === 'openrouter') return settings.openRouterModel || DEFAULT_LLM_MODELS.openrouter;
+    if (prov === 'nanogpt') return settings.nanoGptModel || DEFAULT_LLM_MODELS.nanogpt;
+    if (prov === 'codex') return settings.codexModel || DEFAULT_LLM_MODELS.codex;
+    if (prov === 'claude') return settings.claudeModel || DEFAULT_LLM_MODELS.claude;
     if (prov === 'koboldcpp') {
         return (
             settings.koboldLoadedModel ||
             getGlobalKoboldLoadedModel() ||
             settings.koboldModel ||
-            'koboldcpp'
+            DEFAULT_LLM_MODELS.koboldcpp
         );
     }
-    return 'gemini-2.0-flash';
+    return DEFAULT_LLM_MODELS.gemini;
 }
 
 /** Ensures a local KoboldCPP target never receives a cloud model identifier. */

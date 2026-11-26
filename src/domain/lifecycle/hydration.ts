@@ -4,7 +4,7 @@
  * shape, defaults for fields older saves lack, and the choice of which story to open at startup.
  */
 
-import { inferNarrativeModeForScene } from '@/config';
+import { inferNarrativeModeForScene, LEGACY_STORY_RECORD_ID } from '@/config';
 import { ensureEpistemicGraph, type ContinuityStoryState } from '@/domain/continuity';
 import { computeStoryProgressMetrics } from '@/domain/story';
 import { migrateStoryToSequences } from './migration';
@@ -23,9 +23,6 @@ export interface StoryRecordLike {
     data?: StoredStory | null;
     timestamp?: number;
 }
-
-/** Record id used before the library existed; never opened or listed. */
-const LEGACY_RECORD_ID = 'current_story';
 
 /**
  * Fills per-scene fields older saves lack: `valence` (from `end_valence`) and a narrative mode
@@ -138,7 +135,7 @@ export function isBlankStory(data: StoredStory | null | undefined): boolean {
 
 /** The most recently saved story that has any content, or null. */
 export function pickRecoverableStory(records: ReadonlyArray<StoryRecordLike>): StoryRecordLike | null {
-    const nonEmpty = records.filter((s) => s.id !== LEGACY_RECORD_ID && hasProgress(s.data)).sort(newestFirst);
+    const nonEmpty = records.filter((s) => s.id !== LEGACY_STORY_RECORD_ID && hasProgress(s.data)).sort(newestFirst);
     return nonEmpty[0] || null;
 }
 
@@ -147,7 +144,7 @@ export function pickRecoverableStory(records: ReadonlyArray<StoryRecordLike>): S
  * else the newest story of any kind, else null (first run).
  */
 export function pickStartupFallbackStory(records: ReadonlyArray<StoryRecordLike>): StoryRecordLike | null {
-    const valid = records.filter((s) => s.id !== LEGACY_RECORD_ID);
+    const valid = records.filter((s) => s.id !== LEGACY_STORY_RECORD_ID);
     if (!valid.length) return null;
     const nonEmpty = valid.filter((s) => hasProgress(s.data));
     const pool = nonEmpty.length > 0 ? nonEmpty : valid;

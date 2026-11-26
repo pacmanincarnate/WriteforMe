@@ -6,7 +6,14 @@
 
 import React from 'react';
 import { ChevronDown, RefreshCw, RotateCcw, UniversalModelSearch } from '@/components';
-import { DEFAULT_GEMINI_IMAGE_MODELS, DEFAULT_OPENROUTER_IMAGE_MODELS } from '@/config';
+import {
+    CLOUD_API_URLS,
+    DEFAULT_GEMINI_IMAGE_MODELS,
+    DEFAULT_IMAGE_MODELS,
+    DEFAULT_OPENROUTER_IMAGE_MODELS,
+    DEFAULT_SERVICE_URLS,
+    DEFAULT_TOKEN_LIMITS
+} from '@/config';
 import { getKoboldLoadedModelName } from '@/services/llm';
 import { CLI_BRIDGE_DEFAULT_URLS, isCliBridgeProvider } from '@/types';
 import type { SettingsModelsTabProps } from './types';
@@ -285,7 +292,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             <p className="text-[11px] text-ink-500">
                                 Get your key from{' '}
                                 <a
-                                    href="https://aistudio.google.com/app/apikey"
+                                    href={CLOUD_API_URLS.geminiApiKeysPage}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="text-gold-ink hover:underline font-medium"
@@ -317,7 +324,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             <p className="text-[11px] text-ink-500">
                                 Get your key from{' '}
                                 <a
-                                    href="https://openrouter.ai/keys"
+                                    href={CLOUD_API_URLS.openRouterKeysPage}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="text-gold-ink hover:underline font-medium"
@@ -335,12 +342,19 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                         Max Output Tokens
                                     </label>
                                     <span className="text-xs font-mono font-bold text-gold-ink">
-                                        {(openRouterMaxTokens || 65536).toLocaleString()} tok
+                                        {(
+                                            openRouterMaxTokens ||
+                                            DEFAULT_TOKEN_LIMITS.openRouterMaxTokens
+                                        ).toLocaleString()}{' '}
+                                        tok
                                     </span>
                                 </div>
                                 <select
                                     id="openrouter-max-tokens"
-                                    value={openRouterMaxTokens || 65536}
+                                    value={
+                                        openRouterMaxTokens ||
+                                        DEFAULT_TOKEN_LIMITS.openRouterMaxTokens
+                                    }
                                     onChange={(e) => setOpenRouterMaxTokens(parseInt(e.target.value, 10))}
                                     className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 outline-none focus:border-gold transition-colors font-mono"
                                 >
@@ -351,7 +365,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 </select>
                                 <p className="text-[11px] text-ink-500">
                                     Guarantees ample output token ceiling so reasoning models (Claude 3.7, DeepSeek
-                                    R1, Gemini 2.5, o1/o3-mini) do not exhaust their token budget during thinking.
+                                    R1, Gemini 3.8, o1/o3-mini) do not exhaust their token budget during thinking.
                                 </p>
                             </div>
                         </div>
@@ -377,7 +391,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             <p className="text-[11px] text-ink-500">
                                 Get your key from{' '}
                                 <a
-                                    href="https://nano-gpt.com"
+                                    href={CLOUD_API_URLS.nanoGptHomePage}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="text-gold-ink hover:underline font-medium"
@@ -404,11 +418,14 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 value={koboldUrl}
                                 onChange={(e) => setKoboldUrl(e.target.value)}
                                 className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
-                                placeholder="http://localhost:5001"
+                                placeholder={DEFAULT_SERVICE_URLS.koboldcpp}
                             />
                             <p className="text-[11px] text-ink-500">
                                 Default URL:{' '}
-                                <code className="text-ink-700 font-semibold font-mono">http://localhost:5001</code>.
+                                <code className="text-ink-700 font-semibold font-mono">
+                                    {DEFAULT_SERVICE_URLS.koboldcpp}
+                                </code>
+                                .
                                 KoboldCPP must be running locally.
                             </p>
                         </div>
@@ -429,7 +446,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 value={codexUrl}
                                 onChange={(e) => setCodexUrl(e.target.value)}
                                 className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
-                                placeholder="http://localhost:5010"
+                                placeholder={CLI_BRIDGE_DEFAULT_URLS.codex}
                             />
                             <div className="flex items-center justify-between gap-3 pt-1">
                                 <p className="text-[11px] text-ink-500 font-mono" role="status">
@@ -576,7 +593,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                         value={koboldUrl}
                                         onChange={(e) => setKoboldUrl(e.target.value)}
                                         className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 focus:border-gold outline-none font-mono"
-                                        placeholder="http://localhost:5001"
+                                        placeholder={DEFAULT_SERVICE_URLS.koboldcpp}
                                     />
                                 </div>
                             )}
@@ -590,7 +607,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                         value={codexUrl}
                                         onChange={(e) => setCodexUrl(e.target.value)}
                                         className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 focus:border-gold outline-none font-mono"
-                                        placeholder="http://localhost:5010"
+                                        placeholder={CLI_BRIDGE_DEFAULT_URLS.codex}
                                     />
                                 </div>
                             )}
@@ -1103,10 +1120,10 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                     setImageProvider(prov);
                                     if (prov === 'gemini') {
                                         const geminiDefault =
-                                            geminiImageModelsList[0]?.id || 'gemini-3.1-flash-image';
+                                            geminiImageModelsList[0]?.id || DEFAULT_IMAGE_MODELS.gemini;
                                         setImageModel(geminiDefault);
                                     } else if (prov === 'openrouter') {
-                                        setImageModel('stabilityai/stable-diffusion-xl');
+                                        setImageModel(DEFAULT_IMAGE_MODELS.openrouter);
                                     }
                                 }}
                                 className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none appearance-none transition-colors cursor-pointer"
@@ -1173,7 +1190,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                             type="text"
                                             value={imageModel === '__custom__' ? '' : imageModel}
                                             onChange={(e) => setImageModel(e.target.value)}
-                                            placeholder="Enter custom Gemini model ID (e.g. gemini-3.1-flash-image)"
+                                            placeholder={`Enter custom Gemini model ID (e.g. ${DEFAULT_IMAGE_MODELS.gemini})`}
                                             className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
                                         />
                                     )}
@@ -1248,7 +1265,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                     setComfyUrl(e.target.value);
                                 }}
                                 className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
-                                placeholder="http://127.0.0.1:8188"
+                                placeholder={DEFAULT_SERVICE_URLS.comfyui}
                             />
                         </div>
                         <div className="flex justify-between items-center gap-4">

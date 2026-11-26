@@ -5,7 +5,11 @@
  */
 
 import {
+    APP_HTTP_HEADERS,
+    CLOUD_API_URLS,
     DEFAULT_AUDIO_DRAMA_SETTINGS,
+    DEFAULT_SERVICE_URLS,
+    DEFAULT_TTS_MODELS,
     migrateAudioDramaSettings,
     type AudioDramaSettings
 } from '@/config';
@@ -138,11 +142,15 @@ export async function synthesizeDrama3SegmentChunk({
     const effectiveSettings = migrateAudioDramaSettings(
         settings || DEFAULT_AUDIO_DRAMA_SETTINGS
     ) as Partial<AudioDramaSettings> & Record<string, unknown>;
-    let bridgeUrl = String(effectiveSettings.studioBridgeUrl || 'http://127.0.0.1:5020').trim();
+    let bridgeUrl = String(
+        effectiveSettings.studioBridgeUrl || DEFAULT_SERVICE_URLS.audioStudioBridge
+    ).trim();
     if (!/^https?:\/\//i.test(bridgeUrl)) bridgeUrl = 'http://' + bridgeUrl;
     bridgeUrl = bridgeUrl.replace(/\/+$/, '');
 
-    let audioCppUrl = String(effectiveSettings.audioCppUrl || 'http://127.0.0.1:8080').trim();
+    let audioCppUrl = String(
+        effectiveSettings.audioCppUrl || DEFAULT_SERVICE_URLS.audioCpp
+    ).trim();
     if (!/^https?:\/\//i.test(audioCppUrl)) audioCppUrl = 'http://' + audioCppUrl;
     audioCppUrl = audioCppUrl.replace(/\/+$/, '');
 
@@ -637,7 +645,7 @@ export async function _rawSynthesizeAudioDramaChunk({
         let targetUrl = String(
             effectiveSettings.studioBridgeUrl ||
                 effectiveSettings.audioCppUrl ||
-                'http://127.0.0.1:5020'
+                DEFAULT_SERVICE_URLS.audioStudioBridge
         ).trim();
         if (!/^https?:\/\//i.test(targetUrl)) {
             targetUrl = 'http://' + targetUrl;
@@ -911,14 +919,14 @@ export async function _rawSynthesizeAudioDramaChunk({
         let res: Response;
         try {
             res = await fetchWithTimeout(
-                'https://openrouter.ai/api/v1/audio/speech',
+                CLOUD_API_URLS.openRouterAudioSpeech,
                 {
                     method: 'POST',
                     headers: {
                         Authorization: `Bearer ${effectiveKey}`,
                         'Content-Type': 'application/json',
-                        'HTTP-Referer': 'https://ellipsisprose.ai',
-                        'X-Title': 'EllipsisProse Audio Drama'
+                        'HTTP-Referer': APP_HTTP_HEADERS.referer,
+                        'X-Title': APP_HTTP_HEADERS.audioDramaTitle
                     },
                     body: JSON.stringify(payload),
                     ...(signal ? { signal } : {})
@@ -954,7 +962,7 @@ export async function _rawSynthesizeAudioDramaChunk({
             );
         }
 
-        const modelId = String(effSettingsRec.geminiModel || 'gemini-3.8-flash-tts');
+        const modelId = String(effSettingsRec.geminiModel || DEFAULT_TTS_MODELS.geminiTts);
         const mappedVoice = mapCharacterToGeminiVoice(
             voiceDescription,
             chunk.speaker || speakerLabel
@@ -990,7 +998,7 @@ export async function _rawSynthesizeAudioDramaChunk({
         let res: Response;
         try {
             res = await fetchWithTimeout(
-                'https://generativelanguage.googleapis.com/v1beta/interactions',
+                CLOUD_API_URLS.geminiInteractions,
                 {
                     method: 'POST',
                     headers: {
