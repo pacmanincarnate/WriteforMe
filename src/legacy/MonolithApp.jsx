@@ -1,5 +1,12 @@
 import React from 'react';
 import * as ReactDOMClient from 'react-dom/client';
+// Explicit imports for names this file used to pick up from window globals (Phase 7).
+import { applyThemeToDom, hydrateAllStoresFromStorage, usePipelineStore, useSettingsStore, useUiStore } from '@/stores';
+import { PROMPT_LOG_CAP } from '@/pipeline';
+import { applyWorldUpdates } from '@/domain/continuity';
+import { clearDirectivePlanResults } from '@/domain/story';
+import { createDefaultStoryTemplate } from '@/domain/lifecycle';
+import { retrieveLoreContext } from '@/services/rag';
 import {
     cleanJson,
     decodeXmlEntities,
