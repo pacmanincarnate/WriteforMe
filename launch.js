@@ -172,8 +172,13 @@ async function main() {
         const npmCmd = process.platform === 'win32' ? 'npm.cmd' : 'npm';
         const buildRes = spawnSync(npmCmd, ['run', 'build'], {
             cwd: ROOT_DIR,
-            stdio: 'inherit'
+            stdio: 'inherit',
+            // Node 20.12+/22 refuses to spawn .cmd files without a shell (EINVAL, status null).
+            shell: process.platform === 'win32'
         });
+        if (buildRes.error) {
+            throw new Error(`Vite build could not start: ${buildRes.error.message}`);
+        }
         if (buildRes.status !== 0) {
             throw new Error(`Vite build failed with exit code ${buildRes.status}`);
         }
