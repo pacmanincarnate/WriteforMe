@@ -22,7 +22,7 @@ if (worker.includes('__WB_MANIFEST')) {
 }
 
 /** Files that must not be precached. */
-const EXEMPT = new Set(['sw.js', '.nojekyll']);
+const EXEMPT = new Set(['sw.js', '.nojekyll', 'version.json']);
 
 function listFiles(dir, prefix = '') {
     return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {

@@ -8,7 +8,8 @@ const APP_VERSION: string = JSON.parse(fs.readFileSync(path.resolve(__dirname, '
 
 export default defineConfig({
     define: {
-        __APP_VERSION__: JSON.stringify(APP_VERSION)
+        __APP_VERSION__: JSON.stringify(APP_VERSION),
+        __APP_BUILD_ID__: JSON.stringify('test-build')
     },
     resolve: {
         alias: {

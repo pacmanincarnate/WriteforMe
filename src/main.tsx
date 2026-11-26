@@ -5,20 +5,30 @@ import './styles/sidebar.css';
 import './styles/library.css';
 import './styles/reader.css';
 import './styles/components.css';
+import { STORAGE_KEYS } from '@/config';
 import { installDefaultAudioStageLoggers } from '@/services/audio';
 import './windowApi';
 
 installDefaultAudioStageLoggers();
 import './App';
 
-const PRELOAD_RELOAD_GUARD_KEY = 'ellipsisprose_preload_reload_once';
+// Strip the cache-busting query parameter added by performHardReloadUpdate().
+try {
+    const currentUrl = new URL(window.location.href);
+    if (currentUrl.searchParams.has('_ep_updated')) {
+        currentUrl.searchParams.delete('_ep_updated');
+        window.history.replaceState(null, '', currentUrl.toString());
+    }
+} catch {
+    // Ignore history API restrictions (e.g. file:// or sandboxed frames)
+}
 
 window.addEventListener('vite:preloadError', (event) => {
     try {
-        const lastReload = sessionStorage.getItem(PRELOAD_RELOAD_GUARD_KEY);
+        const lastReload = sessionStorage.getItem(STORAGE_KEYS.preloadReloadOnce);
         const now = Date.now();
         if (!lastReload || now - Number(lastReload) > 30000) {
-            sessionStorage.setItem(PRELOAD_RELOAD_GUARD_KEY, String(now));
+            sessionStorage.setItem(STORAGE_KEYS.preloadReloadOnce, String(now));
             event.preventDefault();
             window.location.reload();
         }

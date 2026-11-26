@@ -10,7 +10,8 @@ const DEFAULTS = Object.freeze({
     setupDone: false,
     autostart: { koboldcpp: true, comfyui: true, audiocpp: true },
     koboldcpp: { modelPath: '', extraArgs: '' },
-    comfyui: { extraArgs: '' }
+    comfyui: { extraArgs: '' },
+    updates: { autoCheck: true, skippedVersion: '' }
 });
 
 function merge(base, over) {

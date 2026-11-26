@@ -42,10 +42,9 @@ re-downloading that exact URL. `server.js` and GitHub Pages both serve it correc
 
 ## What users see
 
-A new version downloads in the background while the app is open and takes effect on the next
-page load. If a tab that was open during a deploy asks for a file from the previous version that
-no longer exists, the app reloads itself once (the `vite:preloadError` handler in `src/main.tsx`).
-Work is autosaved to the browser before that.
+- **Automatic check on launch**: About two seconds after the web app opens online, it checks `./version.json` (which is never cached by the service worker) and the active service worker registration. Users can also trigger a manual check anytime from **Check for Updates** in the sidebar.
+- **Changelog & Hard Reload confirmation**: When a newer version or build is deployed on the Pages site, EllipsisProse fetches the release notes from GitHub (`pacmanincarnate/WriteforMe`) and opens an **Update Available** modal displaying **What's Changed**. Clicking **Hard Reload & Update** clears only EllipsisProse/Workbox Cache Storage entries, activates any waiting service worker, primes the browser cache, and reloads cleanly without touching IndexedDB or `localStorage` stories/settings.
+- **Background preload fallback**: If a tab that was open during a deploy asks for a lazy-loaded chunk from the previous version that no longer exists, the app reloads itself once (the `vite:preloadError` handler in `src/main.tsx`). Work is autosaved to the browser before that.
 
 ## Checks that guard this
 

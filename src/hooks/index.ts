@@ -33,3 +33,4 @@ export * from './useGenerationStatus';
 export * from './useRelationshipMatrix';
 export * from './useShellViewState';
 export * from './useContinuousAutopilot';
+export * from './useAppUpdates';

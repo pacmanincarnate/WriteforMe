@@ -18,6 +18,7 @@ import {
     Layers,
     Library,
     Play,
+    RefreshCw,
     Settings,
     Sparkles,
     Upload,
@@ -68,6 +69,11 @@ export interface StudioSidebarProps {
     handleExportAudioDramaTxt: () => void | Promise<void>;
     handleImport: (e: React.ChangeEvent<HTMLInputElement>) => void | Promise<void>;
     fileInputRef: React.RefObject<HTMLInputElement>;
+    hasAvailableUpdate?: boolean;
+    availableUpdateVersion?: string | null;
+    isCheckingUpdates?: boolean;
+    onCheckForUpdates?: () => void;
+    onOpenUpdateModal?: () => void;
 }
 
 export const StudioSidebar: React.FC<StudioSidebarProps> = ({
@@ -98,7 +104,12 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
     handleExportEpub,
     handleExportAudioDramaTxt,
     handleImport,
-    fileInputRef
+    fileInputRef,
+    hasAvailableUpdate = false,
+    availableUpdateVersion = null,
+    isCheckingUpdates = false,
+    onCheckForUpdates,
+    onOpenUpdateModal
 }) => {
     const displayActs: Act[] =
         story.acts && story.acts.length > 0
@@ -143,9 +154,21 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                         <div className="nav-label">
                             <h2 className="font-bold text-sm text-ink-900 tracking-tight flex items-center gap-1.5 font-display">
                                 EllipsisProse{' '}
-                                <span className="text-xs font-mono font-bold bg-mist-200/80 text-ink-700 px-2 py-0.5 rounded-full">
-                                    {APP_VERSION}
-                                </span>
+                                {hasAvailableUpdate && onOpenUpdateModal ? (
+                                    <button
+                                        type="button"
+                                        onClick={onOpenUpdateModal}
+                                        className="text-xs font-mono font-bold bg-gold-tint text-gold-ink border border-gold-edge px-2 py-0.5 rounded-full inline-flex items-center gap-1 hover:brightness-95 transition-all cursor-pointer"
+                                        title={`Update v${availableUpdateVersion || ''} available — click to review`}
+                                    >
+                                        <span>{APP_VERSION}</span>
+                                        <span className="w-1.5 h-1.5 rounded-full bg-gold animate-pulse" />
+                                    </button>
+                                ) : (
+                                    <span className="text-xs font-mono font-bold bg-mist-200/80 text-ink-700 px-2 py-0.5 rounded-full">
+                                        {APP_VERSION}
+                                    </span>
+                                )}
                             </h2>
                             <p className="text-xs text-ink-500 font-medium">AI Story Architect &amp; Studio</p>
                         </div>
@@ -558,6 +581,34 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                         >
                             <History size={15} /> <span className="nav-label">Author&apos;s Log</span>
                         </button>
+                        {onCheckForUpdates && (
+                            <button
+                                type="button"
+                                onClick={hasAvailableUpdate && onOpenUpdateModal ? onOpenUpdateModal : onCheckForUpdates}
+                                disabled={isCheckingUpdates}
+                                className="nav-btn"
+                                title={
+                                    hasAvailableUpdate
+                                        ? `Update v${availableUpdateVersion || ''} available — click to view changelog`
+                                        : 'Check for EllipsisProse updates'
+                                }
+                            >
+                                <div className="relative flex items-center">
+                                    <RefreshCw size={15} className={isCheckingUpdates ? 'animate-spin' : ''} />
+                                    {hasAvailableUpdate && (
+                                        <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-pulse" />
+                                    )}
+                                </div>
+                                <span className="nav-label flex items-center justify-between flex-1 gap-1.5">
+                                    <span>{isCheckingUpdates ? 'Checking…' : 'Check for Updates'}</span>
+                                    {hasAvailableUpdate && (
+                                        <span className="text-[10px] font-mono font-bold bg-gold-tint text-gold-ink px-1.5 py-0.5 rounded-full border border-gold-edge shrink-0">
+                                            Update
+                                        </span>
+                                    )}
+                                </span>
+                            </button>
+                        )}
                     </div>
                 </div>
 

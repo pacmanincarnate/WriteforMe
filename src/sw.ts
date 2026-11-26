@@ -87,6 +87,13 @@ self.addEventListener('install', () => {
     void self.skipWaiting();
 });
 
+self.addEventListener('message', (event) => {
+    const data = event.data as { type?: string } | null;
+    if (data && data.type === 'SKIP_WAITING') {
+        void self.skipWaiting();
+    }
+});
+
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches

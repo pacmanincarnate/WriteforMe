@@ -50,7 +50,9 @@ Help.
 
 | File | Job |
 | --- | --- |
-| `desktop/main.cjs` | Electron main process: starts `server.js` on 127.0.0.1:3000 with the data folder in `%APPDATA%`, opens the app window, menu, IPC |
+| `desktop/main.cjs` | Electron main process: starts `server.js` on 127.0.0.1:3000 with the data folder in `%APPDATA%`, opens the app window, menu, IPC, and desktop self-update handoff |
+| `desktop/preload-main.cjs` | Minimal sandboxed bridge (`window.ellipsisDesktopUpdater`) exposing update checks, download progress, skip-version, and release notes to the main app window |
+| `desktop/lib/updater.cjs` | GitHub release check, NSIS/portable `.exe` asset selection, SHA-256 verification, and Windows portable swap script generator |
 | `desktop/lib/backends.cjs` | The list of backends, their release assets per GPU variant, ports and launch arguments |
 | `desktop/lib/install.cjs` | Latest-release lookup, download, checksum, unpack into `<backends>/<id>.new`, swap in only when the program is found |
 | `desktop/lib/download.cjs` | Resumable HTTPS download (`.part` file plus Range), redirects, SHA-256 |
@@ -101,6 +103,13 @@ starting from the desktop's launch spec.
 `ELLIPSISPROSE_RELEASE_API=<url>` points release lookups at another server, which is how the
 install flow was also driven through the real Electron window in testing.
 
+## Desktop self-updates
+
+- On launch (and via **Help → Check for Updates…** or **Check for Updates** in the sidebar), the desktop shell queries `pacmanincarnate/WriteforMe` for the latest GitHub release and compares versions.
+- When an update is available, the in-app **Update Available** dialog displays the GitHub release **What's Changed** changelog and offers **Download & Update**.
+- **Installed (NSIS) builds** download `EllipsisProse-Setup-<version>.exe` into `%APPDATA%\EllipsisProse\updates`, verify its SHA-256 checksum (via GitHub asset digest or `SHA256SUMS.txt`), stop managed backend processes, launch the installer, and quit so the upgrade can proceed.
+- **Portable builds** download `EllipsisProse-<version>-portable.exe`, verify its SHA-256 checksum, and (when the portable folder is writable) run a small Windows helper script that waits for the app to exit, swaps in the new `.exe`, and relaunches it.
+
 ## Not done yet
 
 - Not yet run on a real Windows PC with real backend downloads. The CI Windows job runs the tests
@@ -108,5 +117,4 @@ install flow was also driven through the real Electron window in testing.
 - audio.cpp's CUDA asset names were inferred from its README (only the CPU zips were visible when
   this was written). If they differ, Install shows the asset names it found and the regex in
   `desktop/lib/backends.cjs` needs a one-line fix.
-- No auto-update for EllipsisProse itself yet (electron-updater could use the same releases).
 - Krea 2 model downloads for ComfyUI are manual; the exact Hugging Face files are not pinned here.

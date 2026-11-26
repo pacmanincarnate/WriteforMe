@@ -2,6 +2,7 @@ import React from 'react';
 import * as ReactDOMClient from 'react-dom/client';
 // Explicit imports for names this file used to pick up from window globals (Phase 7).
 import { applyThemeToDom, hydrateAllStoresFromStorage, usePipelineStore, useSettingsStore, useUiStore } from '@/stores';
+import { STORAGE_KEYS } from '@/config';
 import { PROMPT_LOG_CAP } from '@/pipeline';
 import type { CallAiFn, PipelineRuntimeContext } from '@/pipeline';
 import { applyWorldUpdates } from '@/domain/continuity';
@@ -42,7 +43,7 @@ import {
 } from '@/services/storage';
 import { EmbeddingService, VectorStore } from '@/services/rag';
 
-import { findCastIndexForChar, useActiveStory, useAutopilotControl, useAutopilotLoop, useArchetypeOptions, useAudioFollowState, useGenerationStatus, useNarrativeLensesToggle, useRelationshipMatrix, useSettingsDisclosures, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useActiveStory, useAppUpdates, useAutopilotControl, useAutopilotLoop, useArchetypeOptions, useAudioFollowState, useGenerationStatus, useNarrativeLensesToggle, useRelationshipMatrix, useSettingsDisclosures, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -86,7 +87,8 @@ import {
     StudioHeader,
     GesmPropositionModal,
     GesmBeliefModal,
-    IconPickerModal
+    IconPickerModal,
+    UpdateModal
 } from '@/components';
 import {
     CastView,
@@ -167,6 +169,24 @@ import {
             const toast = useUiStore(s => s.toast);
             const showToast = useUiStore(s => s.showToast);
             const dismissToast = useUiStore(s => s.dismissToast);
+
+            // Automatic launch update check + Web hard-reload / Desktop download & install modal
+            const {
+                updateInfo,
+                isModalOpen: isUpdateModalOpen,
+                openModal: openUpdateModal,
+                closeModal: closeUpdateModal,
+                isChecking: isCheckingUpdates,
+                isApplying: isApplyingUpdate,
+                desktopState: desktopUpdaterState,
+                error: updateError,
+                hasAvailableUpdate,
+                checkForUpdates,
+                confirmUpdate,
+                cancelDownload: cancelUpdateDownload,
+                skipCurrentUpdate,
+                openReleaseNotes
+            } = useAppUpdates({ showToast });
 
             const setSelectedAct = useUiStore(s => s.setSelectedAct);
             const selectedSequence = useUiStore(s => s.selectedSequence);
@@ -485,7 +505,7 @@ import {
 
             useEffect(() => {
                 applyThemeToDom(theme);
-                localStorage.setItem("ellipsisprose_theme", theme);
+                localStorage.setItem(STORAGE_KEYS.theme, theme);
             }, [theme]);
 
             const toggleTheme = useSettingsStore(s => s.toggleTheme);
@@ -1170,7 +1190,7 @@ import {
                 discardImportedLore();
                 if (loreInputRef.current) loreInputRef.current.value = '';
                 try {
-                    localStorage.removeItem("ellipsisprose_draft_lore_files");
+                    localStorage.removeItem(STORAGE_KEYS.draftLoreFiles);
                 } catch {
                     // Storage unavailable; nothing to remove.
                 }
@@ -1770,6 +1790,11 @@ import {
                         handleExportAudioDramaTxt={handleExportAudioDramaTxt}
                         handleImport={handleImport}
                         fileInputRef={fileInputRef}
+                        hasAvailableUpdate={hasAvailableUpdate}
+                        availableUpdateVersion={updateInfo?.latestVersion ?? null}
+                        isCheckingUpdates={isCheckingUpdates}
+                        onCheckForUpdates={() => { void checkForUpdates({ manual: true }); }}
+                        onOpenUpdateModal={openUpdateModal}
                     />
 
                     {/* MAIN CONTENT WORKSPACE */}
@@ -2682,6 +2707,19 @@ import {
                         setIsIconPickerOpen={setIsIconPickerOpen}
                         newModeIcon={newModeIcon}
                         setNewModeIcon={setNewModeIcon}
+                    />
+                    <UpdateModal
+                        isOpen={isUpdateModalOpen}
+                        updateInfo={updateInfo}
+                        desktopState={desktopUpdaterState}
+                        isApplying={isApplyingUpdate}
+                        error={updateError}
+                        isBusyGenerating={loading || continuousAutopilot}
+                        onConfirm={() => { void confirmUpdate(); }}
+                        onCancelDownload={() => { void cancelUpdateDownload(); }}
+                        onSkip={() => { void skipCurrentUpdate(); }}
+                        onClose={closeUpdateModal}
+                        onOpenReleaseNotes={openReleaseNotes}
                     />
                 </div>
             );

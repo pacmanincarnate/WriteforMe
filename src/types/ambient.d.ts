@@ -10,12 +10,68 @@ declare module '@breezystack/lamejs' {
     export default lamejs;
 }
 
+interface DesktopUpdaterProgressAmbient {
+    phase: 'downloading' | 'verifying' | 'installing';
+    file?: string;
+    received: number;
+    total: number | null;
+    percent: number | null;
+}
+
+interface DesktopUpdaterStateAmbient {
+    status:
+        | 'idle'
+        | 'checking'
+        | 'up-to-date'
+        | 'available'
+        | 'downloading'
+        | 'verifying'
+        | 'installing'
+        | 'downloaded-manual'
+        | 'error';
+    manual: boolean;
+    currentVersion: string;
+    latestVersion: string | null;
+    releaseName: string | null;
+    changelog: string;
+    releaseUrl: string | null;
+    publishedAt: string | null;
+    installMode: 'nsis' | 'portable' | 'dev';
+    asset: {
+        name: string;
+        size: number | null;
+        downloadUrl: string;
+        sha256: string | null;
+    } | null;
+    progress: DesktopUpdaterProgressAmbient | null;
+    error: string | null;
+    filePath: string | null;
+    skippedVersion: string;
+    isSkipped: boolean;
+    checkedAt: string | null;
+}
+
+interface DesktopUpdaterBridgeAmbient {
+    isDesktop: true;
+    getState: () => Promise<{ ok: boolean; value?: DesktopUpdaterStateAmbient; error?: string }>;
+    checkForUpdates: (opts?: {
+        manual?: boolean;
+    }) => Promise<{ ok: boolean; value?: DesktopUpdaterStateAmbient; error?: string }>;
+    downloadAndInstall: () => Promise<{ ok: boolean; value?: unknown; error?: string }>;
+    cancelDownload: () => Promise<{ ok: boolean; value?: unknown; error?: string }>;
+    skipVersion: (version: string) => Promise<{ ok: boolean; value?: unknown; error?: string }>;
+    openReleaseNotes: (url?: string) => Promise<{ ok: boolean; value?: unknown; error?: string }>;
+    onStateChange: (cb: (state: DesktopUpdaterStateAmbient) => void) => () => void;
+}
+
 interface Window {
     React?: unknown;
     ReactDOM?: unknown;
     marked?: unknown;
     DOMPurify?: unknown;
     deferredPWAInstallPrompt?: Event | null;
+    ellipsisDesktopUpdater?: DesktopUpdaterBridgeAmbient;
 }
 
 declare const __APP_VERSION__: string;
+declare const __APP_BUILD_ID__: string;
