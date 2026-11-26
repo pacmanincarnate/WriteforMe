@@ -1,0 +1,72 @@
+{
+  "name": "ellipsisprose-desktop",
+  "productName": "EllipsisProse",
+  "version": "0.0.0-dev",
+  "description": "EllipsisProse desktop app with one-click local backends",
+  "main": "main.cjs",
+  "private": true,
+  "license": "SEE LICENSE IN ../LICENSE",
+  "author": "pacmanincarnate",
+  "scripts": {
+    "test": "node --test \"test/*.test.cjs\"",
+    "stage": "node scripts/stage.mjs",
+    "start": "electron .",
+    "dist": "node scripts/build.mjs",
+    "dist:dir": "node scripts/build.mjs --dir"
+  },
+  "dependencies": {
+    "7zip-bin": "5.2.0"
+  },
+  "devDependencies": {
+    "electron": "45.3.0",
+    "electron-builder": "26.18.0"
+  },
+  "build": {
+    "appId": "com.ellipsisprose.desktop",
+    "productName": "EllipsisProse",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "lib/**",
+      "ui/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/7zip-bin/**"
+    ],
+    "extraResources": [
+      {
+        "from": "app-files",
+        "to": "app-files"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "files": [
+        "!node_modules/7zip-bin/linux/**",
+        "!node_modules/7zip-bin/mac/**"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "EllipsisProse",
+      "artifactName": "EllipsisProse-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "EllipsisProse-${version}-portable.${ext}"
+    },
+    "publish": null
+  }
+}

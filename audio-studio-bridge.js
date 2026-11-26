@@ -23,8 +23,22 @@ const net = require('net');
 // Configuration & CLI Argument Parsing
 // ---------------------------------------------------------------------------
 const ROOT_DIR = __dirname;
-const CACHE_DIR = path.join(ROOT_DIR, 'cache', 'voices');
-const AUDIOCPP_CONFIGS_DIR = path.join(ROOT_DIR, 'audiocpp');
+// The desktop app (desktop/main.cjs) runs this bridge from a read-only install folder, so it
+// points the voice cache and the wave presets at the user's data folder with these variables.
+const CACHE_DIR = process.env.ELLIPSISPROSE_BRIDGE_CACHE_DIR
+    ? path.resolve(process.env.ELLIPSISPROSE_BRIDGE_CACHE_DIR)
+    : path.join(ROOT_DIR, 'cache', 'voices');
+const AUDIOCPP_CONFIGS_DIR = process.env.ELLIPSISPROSE_AUDIOCPP_CONFIG_DIR
+    ? path.resolve(process.env.ELLIPSISPROSE_AUDIOCPP_CONFIG_DIR)
+    : path.join(ROOT_DIR, 'audiocpp');
+const LEGACY_AUDIOCPP_HOME = 'D:\\AI_Projects\\Audiocpp\\audio.cpp';
+
+/** Working folder for the daemon: an explicit override, the original dev checkout, or the binary's folder. */
+function resolveDaemonCwd(binPath) {
+    if (process.env.ELLIPSISPROSE_AUDIOCPP_CWD) return process.env.ELLIPSISPROSE_AUDIOCPP_CWD;
+    if (fs.existsSync(LEGACY_AUDIOCPP_HOME)) return LEGACY_AUDIOCPP_HOME;
+    return path.dirname(binPath);
+}
 
 const settings = {
     port: Number(process.env.AUDIO_STUDIO_BRIDGE_PORT || 5020),
@@ -396,12 +410,12 @@ async function activateWave(waveNumber) {
     state.cudaWarmupFirstLogged = false;
     pushLog(`Spawning Audio.cpp Wave ${wave} daemon (${WAVE_MODEL_IDS[wave]}) using ${bin}...`);
     const args = ['--config', configFile];
-    const modelSpecsDir = 'D:\\AI_Projects\\Audiocpp\\audio.cpp\\model_specs';
+    const modelSpecsDir = path.join(LEGACY_AUDIOCPP_HOME, 'model_specs');
     if (fs.existsSync(modelSpecsDir)) {
         args.push('--model-spec-override', modelSpecsDir);
     }
     const proc = spawn(bin, args, {
-        cwd: 'D:\\AI_Projects\\Audiocpp\\audio.cpp',
+        cwd: resolveDaemonCwd(bin),
         windowsHide: true,
         stdio: ['ignore', 'pipe', 'pipe']
     });
@@ -482,7 +496,7 @@ function isWaveConfigModelAvailable(waveNum, binPath, daemonAlive) {
         // If we have a local binary path, verify at least one declared model file exists when resolvable
         const baseDirs = [
             binPath ? path.resolve(path.dirname(binPath), '..', '..') : '',
-            'D:\\AI_Projects\\Audiocpp\\audio.cpp',
+            LEGACY_AUDIOCPP_HOME,
             ROOT_DIR
         ].filter(Boolean);
         let anyPathChecked = false;

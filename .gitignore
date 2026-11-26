@@ -17,3 +17,6 @@ coverage/
 audiocpp/models/
 *.gguf
 
+desktop/node_modules/
+desktop/app-files/
+desktop/release/

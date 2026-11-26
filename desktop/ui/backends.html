@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+    <title>EllipsisProse Backends</title>
+    <link rel="stylesheet" href="backends.css">
+</head>
+<body>
+    <header>
+        <h1>Local backends</h1>
+        <p class="lede">
+            EllipsisProse works with cloud providers out of the box. To run everything on this PC,
+            install any of these. Each one downloads from its own project's official release, and
+            you can add or remove them later from <strong>File, Backends</strong>.
+        </p>
+        <div class="folder">
+            <span>Backends and models go in</span>
+            <code id="backends-dir">…</code>
+            <button id="change-dir" class="link">Change</button>
+            <button id="open-dir" class="link">Open</button>
+        </div>
+    </header>
+
+    <main id="backends"></main>
+
+    <section class="card" id="audio-models">
+        <h2>Voice models for audio.cpp</h2>
+        <p class="muted">Audio drama needs at least Breeze 2. Each pack downloads from Hugging Face and has its own license.</p>
+        <div id="packs"></div>
+    </section>
+
+    <footer>
+        <button id="done" class="primary">Done</button>
+    </footer>
+
+    <template id="backend-tpl">
+        <section class="card backend">
+            <div class="row head">
+                <div>
+                    <h2 class="name"></h2>
+                    <p class="role muted"></p>
+                </div>
+                <span class="badge status"></span>
+            </div>
+            <p class="meta muted">
+                <span class="size"></span> ·
+                <a href="#" class="license"></a> ·
+                <a href="#" class="homepage">Project page</a>
+            </p>
+            <div class="row actions">
+                <select class="variant"></select>
+                <button class="install primary">Install</button>
+                <button class="start">Start</button>
+                <button class="stop">Stop</button>
+                <button class="uninstall link danger">Remove</button>
+                <label class="auto"><input type="checkbox" class="autostart"> Start with EllipsisProse</label>
+            </div>
+            <div class="progress" hidden><div class="bar"><i></i></div><span class="ptext"></span><button class="cancel link">Cancel</button></div>
+            <div class="extra"></div>
+            <details class="logbox"><summary>Log</summary><pre class="log"></pre></details>
+        </section>
+    </template>
+
+    <script src="backends.js"></script>
+</body>
+</html>

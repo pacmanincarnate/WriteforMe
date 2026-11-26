@@ -900,7 +900,8 @@ const server = http.createServer((req, res) => {
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => {
+// HOST lets the desktop app keep the vault on loopback; the default stays as before.
+server.listen(PORT, process.env.HOST || '0.0.0.0', () => {
     console.log(`EllipsisProse Local Server running at http://localhost:${PORT}/ and http://127.0.0.1:${PORT}/`);
     console.log(`Serving static app from: ${STATIC_DIR}`);
     if (!fs.existsSync(path.join(STATIC_DIR, 'index.html'))) {
