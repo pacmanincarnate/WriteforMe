@@ -10,6 +10,7 @@ export const DEFAULT_LLM_MODELS = {
     nanogpt: 'gpt-4o',
     codex: 'gpt-5.6-luna',
     claude: 'sonnet',
+    anthropic: 'claude-opus-5-5',
     koboldcpp: 'koboldcpp'
 } as const;
 

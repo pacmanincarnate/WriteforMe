@@ -208,6 +208,7 @@ export interface PipelineRuntimeContext {
         apiKey?: string;
         openRouterKey?: string;
         nanoGptKey?: string;
+        anthropicKey?: string;
         koboldUrl?: string;
         codexUrl?: string;
         claudeUrl?: string;

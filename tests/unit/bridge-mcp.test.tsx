@@ -84,12 +84,14 @@ function makeState(overrides: Partial<BridgeState> = {}): BridgeState {
         geminiModel: 'gemini-x',
         openRouterModel: 'or-x',
         nanoGptModel: 'nano-x',
+        anthropicModel: 'claude-opus-5-5',
         koboldModel: 'kobold-x',
         codexModel: 'codex-x',
         claudeModel: 'claude-x',
         apiKey: 'key',
         openRouterKey: '',
         nanoGptKey: '',
+        anthropicKey: '',
         koboldUrl: 'http://kobold',
         codexUrl: 'http://codex',
         claudeUrl: 'http://claude',
@@ -110,7 +112,7 @@ function makeActions(overrides: Partial<BridgeActions> = {}): BridgeActions {
     const names = [
         'setApiProvider', 'setDevProvider', 'setDevModel', 'setReviewProvider', 'setReviewModel',
         'setProseProvider', 'setProseModel', 'setGeminiModel', 'setOpenRouterModel', 'setNanoGptModel',
-        'setKoboldModel', 'setCodexModel', 'setClaudeModel', 'setApiKey', 'setOpenRouterKey', 'setNanoGptKey',
+        'setAnthropicModel', 'setAnthropicKey', 'setKoboldModel', 'setCodexModel', 'setClaudeModel', 'setApiKey', 'setOpenRouterKey', 'setNanoGptKey',
         'setKoboldUrl', 'setCodexUrl', 'setClaudeUrl', 'setInputTitle', 'setInputConcept', 'setInputAuthorNote',
         'setInputWritingMode', 'setActiveStoryId', 'setStory', 'setView', 'clearImportedLore',
         'showToast', 'toggleContinuousAutopilot'
@@ -260,7 +262,7 @@ describe('bridge dispatcher: validation and errors', () => {
         const { dispatch, actions } = setup();
         await expect(dispatch('setModelConfig', {})).rejects.toThrow("Missing 'provider' in setModelConfig.");
         await expect(dispatch('setModelConfig', { provider: 'acme' })).rejects.toThrow(
-            "Invalid provider 'acme'. Must be one of: gemini, openrouter, nanogpt, koboldcpp, codex, claude"
+            "Invalid provider 'acme'. Must be one of: gemini, openrouter, nanogpt, anthropic, koboldcpp, codex, claude"
         );
         expect(actions.setApiProvider).not.toHaveBeenCalled();
     });

@@ -1455,6 +1455,7 @@ ${dynamicBannedList.map((p) => `- ${p}`).join('\n')}
         if (targetProvider === 'gemini') effectiveApiKey = creds.apiKey || '';
         else if (targetProvider === 'openrouter') effectiveApiKey = creds.openRouterKey || '';
         else if (targetProvider === 'nanogpt') effectiveApiKey = creds.nanoGptKey || '';
+        else if (targetProvider === 'anthropic') effectiveApiKey = creds.anthropicKey || '';
         else if (targetProvider === 'koboldcpp') {
             effectiveBaseUrl = creds.koboldUrl || DEFAULT_SERVICE_URLS.koboldcpp;
         } else if (targetProvider === 'codex') {

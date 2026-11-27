@@ -275,6 +275,41 @@ export const DEFAULT_OPENROUTER_IMAGE_MODELS: readonly ImageStylePreset[] = [
     }
 ];
 
+/**
+ * The Claude models offered before (or without) a live Models API lookup. With a key in
+ * Settings the list is topped up from `GET /v1/models`, so newer models appear on their own.
+ */
+export const ANTHROPIC_DEFAULT_MODELS: readonly ModelDescriptor[] = [
+    {
+        id: 'claude-fable-5-2',
+        name: 'Claude Fable 5.2',
+        description: 'Most capable model, for the hardest prose and planning work',
+        contextLength: 1000000,
+        capabilities: { vision: true, json: true, reasoning: true }
+    },
+    {
+        id: 'claude-opus-5-5',
+        name: 'Claude Opus 5.5',
+        description: 'Strong all-round writer and planner',
+        contextLength: 1000000,
+        capabilities: { vision: true, json: true, reasoning: true }
+    },
+    {
+        id: 'claude-sonnet-5-5',
+        name: 'Claude Sonnet 5.5',
+        description: 'Fast and capable, a good fit for reviews and audits',
+        contextLength: 1000000,
+        capabilities: { vision: true, json: true, reasoning: true }
+    },
+    {
+        id: 'claude-haiku-5-5',
+        name: 'Claude Haiku 5.5',
+        description: 'Fastest and cheapest, a good fit for outlines and beats',
+        contextLength: 1000000,
+        capabilities: { vision: true, json: true, reasoning: true }
+    }
+];
+
 export const NANO_GPT_DEFAULT_MODELS: readonly ModelDescriptor[] = [
     {
         id: 'gpt-4o',

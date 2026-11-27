@@ -127,9 +127,11 @@ not in a file in this repository.
 To run it on GitHub, add a repository secret named `ANTHROPIC_API_KEY`, then start the
 "Live model test" workflow by hand from the Actions tab (`.github/workflows/live-llm.yml`).
 
-What this does not test: the app's own provider code (Gemini, OpenRouter, NanoGPT, Codex,
-Kobold). The app has no Anthropic provider, so the live test answers at the same seam the fake
-LLM uses. Checking a provider end to end still means trying it by hand with that provider's key.
+What this does not test: the app's own provider code (Gemini, OpenRouter, NanoGPT, Anthropic,
+Codex, Kobold). The live test answers at the same seam the fake LLM uses, so it bypasses the
+app's Anthropic provider too (`src/services/llm/anthropic.ts`, covered with a stubbed API in
+`tests/unit/anthropic-provider.test.ts`). Checking a provider end to end still means trying it by
+hand with that provider's key.
 
 To test the live plumbing itself without a key or any cost, `LIVE_LLM_SCRIPTED=1 npm run test:live`
 runs the same scenarios against the scripted model.

@@ -320,6 +320,8 @@ import {
                 openRouterMaxTokens, setOpenRouterMaxTokens,
                 nanoGptKey, setNanoGptKey,
                 nanoGptModel, setNanoGptModel,
+                anthropicKey, setAnthropicKey,
+                anthropicModel, setAnthropicModel,
                 koboldUrl, setKoboldUrl,
                 koboldModel, setKoboldModel,
                 codexUrl, setCodexUrl,
@@ -1138,6 +1140,7 @@ import {
                     apiKey,
                     openRouterKey,
                     nanoGptKey,
+                    anthropicKey,
                     koboldUrl,
                     codexUrl,
                     claudeUrl,
@@ -1684,12 +1687,14 @@ import {
                     geminiModel,
                     openRouterModel,
                     nanoGptModel,
+                    anthropicModel,
                     koboldModel,
                     codexModel,
                     claudeModel,
                     apiKey,
                     openRouterKey,
                     nanoGptKey,
+                    anthropicKey,
                     koboldUrl,
                     codexUrl,
                     claudeUrl,
@@ -1714,12 +1719,14 @@ import {
                     setGeminiModel,
                     setOpenRouterModel,
                     setNanoGptModel,
+                    setAnthropicModel,
                     setKoboldModel,
                     setCodexModel,
                     setClaudeModel,
                     setApiKey,
                     setOpenRouterKey,
                     setNanoGptKey,
+                    setAnthropicKey,
                     setKoboldUrl,
                     setCodexUrl,
                     setClaudeUrl,
@@ -2442,6 +2449,10 @@ import {
                                 setNanoGptKey={setNanoGptKey}
                                 nanoGptModel={nanoGptModel}
                                 setNanoGptModel={setNanoGptModel}
+                                anthropicKey={anthropicKey}
+                                setAnthropicKey={setAnthropicKey}
+                                anthropicModel={anthropicModel}
+                                setAnthropicModel={setAnthropicModel}
                                 koboldUrl={koboldUrl}
                                 setKoboldUrl={setKoboldUrl}
                                 koboldModel={koboldModel}

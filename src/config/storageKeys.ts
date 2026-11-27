@@ -11,6 +11,8 @@ export const STORAGE_PREFIXES = {
 
 export const STORAGE_KEYS = {
     activeStoryId: 'ellipsisprose_active_story_id',
+    anthropicKey: 'ellipsisprose_anthropic_key',
+    anthropicModel: 'ellipsisprose_anthropic_model',
     apiProvider: 'ellipsisprose_api_provider',
     apiTimeout: 'ellipsisprose_api_timeout',
     apiTimeoutMigratedV2: 'ellipsisprose_api_timeout_migrated_v2',

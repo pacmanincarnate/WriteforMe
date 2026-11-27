@@ -23,7 +23,15 @@ export const BRIDGE_VERSION = APP_VERSION;
 export const DEFAULT_MCP_BRIDGE_URL = DEFAULT_SERVICE_URLS.mcpBridge;
 export const MCP_BRIDGE_MAX_RETRIES = 3;
 
-export const BRIDGE_PROVIDERS = ['gemini', 'openrouter', 'nanogpt', 'koboldcpp', 'codex', 'claude'] as const;
+export const BRIDGE_PROVIDERS = [
+    'gemini',
+    'openrouter',
+    'nanogpt',
+    'anthropic',
+    'koboldcpp',
+    'codex',
+    'claude'
+] as const;
 export type BridgeProvider = (typeof BRIDGE_PROVIDERS)[number];
 
 /** Sub-actions accepted by `triggerPipelineStep`. Keep in sync with the enum in `mcp-server/index.mjs`. */
@@ -112,12 +120,14 @@ export interface BridgeState {
     geminiModel: string;
     openRouterModel: string;
     nanoGptModel: string;
+    anthropicModel: string;
     koboldModel: string;
     codexModel: string;
     claudeModel: string;
     apiKey: string;
     openRouterKey: string;
     nanoGptKey: string;
+    anthropicKey: string;
     koboldUrl: string;
     codexUrl: string;
     claudeUrl: string;
@@ -161,12 +171,14 @@ export interface BridgeActions {
     setGeminiModel: Setter;
     setOpenRouterModel: Setter;
     setNanoGptModel: Setter;
+    setAnthropicModel: Setter;
     setKoboldModel: Setter;
     setCodexModel: Setter;
     setClaudeModel: Setter;
     setApiKey: Setter;
     setOpenRouterKey: Setter;
     setNanoGptKey: Setter;
+    setAnthropicKey: Setter;
     setKoboldUrl: Setter;
     setCodexUrl: Setter;
     setClaudeUrl: Setter;
@@ -264,12 +276,14 @@ export function createBridgeDispatcher(deps: BridgeDeps): BridgeDispatch {
                     geminiModel: s.geminiModel,
                     openRouterModel: s.openRouterModel,
                     nanoGptModel: s.nanoGptModel,
+                    anthropicModel: s.anthropicModel,
                     koboldModel: s.koboldModel,
                     codexModel: s.codexModel,
                     claudeModel: s.claudeModel,
                     hasGeminiKey: Boolean(s.apiKey),
                     hasOpenRouterKey: Boolean(s.openRouterKey),
                     hasNanoGptKey: Boolean(s.nanoGptKey),
+                    hasAnthropicKey: Boolean(s.anthropicKey),
                     koboldUrl: s.koboldUrl,
                     codexUrl: s.codexUrl,
                     claudeUrl: s.claudeUrl
@@ -332,6 +346,10 @@ export function createBridgeDispatcher(deps: BridgeDeps): BridgeDispatch {
                         a.setNanoGptModel(model);
                         safeLocalStorageSet(STORAGE_KEYS.nanoGptModel, model);
                     }
+                    if (provider === 'anthropic') {
+                        a.setAnthropicModel(model);
+                        safeLocalStorageSet(STORAGE_KEYS.anthropicModel, model);
+                    }
                     if (provider === 'koboldcpp') {
                         a.setKoboldModel(model);
                         safeLocalStorageSet(STORAGE_KEYS.koboldModel, model);
@@ -359,6 +377,10 @@ export function createBridgeDispatcher(deps: BridgeDeps): BridgeDispatch {
                     if (provider === 'nanogpt') {
                         a.setNanoGptKey(newApiKey);
                         safeLocalStorageSet(STORAGE_KEYS.nanoGptKey, newApiKey);
+                    }
+                    if (provider === 'anthropic') {
+                        a.setAnthropicKey(newApiKey);
+                        safeLocalStorageSet(STORAGE_KEYS.anthropicKey, newApiKey);
                     }
                 }
 

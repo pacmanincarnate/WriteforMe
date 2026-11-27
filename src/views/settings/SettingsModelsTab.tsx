@@ -28,13 +28,16 @@ const PROVIDER_TABS = [
     { id: 'gemini', label: 'Gemini' },
     { id: 'openrouter', label: 'OpenRouter' },
     { id: 'nanogpt', label: 'nano-GPT' },
+    { id: 'anthropic', label: 'Anthropic' },
     { id: 'koboldcpp', label: 'KoboldCPP' },
     { id: 'codex', label: 'Codex Bridge' },
     { id: 'claude', label: 'Claude Code' }
 ] as const;
 
-/** Claude Code has no embedding endpoint, so it is not offered for RAG. */
-const EMBEDDING_PROVIDER_TABS = PROVIDER_TABS.filter((p) => p.id !== 'claude');
+/** Anthropic and Claude Code have no embedding endpoint, so they are not offered for RAG. */
+const EMBEDDING_PROVIDER_TABS = PROVIDER_TABS.filter(
+    (p) => p.id !== 'claude' && p.id !== 'anthropic'
+);
 
 const OVERRIDE_PROVIDER_TABS = [
     { id: '', label: 'Inherit (Primary)' },
@@ -61,6 +64,10 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
     setNanoGptKey,
     nanoGptModel,
     setNanoGptModel,
+    anthropicKey,
+    setAnthropicKey,
+    anthropicModel,
+    setAnthropicModel,
     koboldUrl,
     setKoboldUrl,
     koboldModel,
@@ -250,7 +257,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                     <label className="block text-xs font-bold text-ink-500 uppercase tracking-wider mb-1.5 font-mono">
                         Active Provider
                     </label>
-                    <div className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                    <div className="grid grid-cols-2 sm:grid-cols-7 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                         {PROVIDER_TABS.map((p) => (
                             <button
                                 key={p.id}
@@ -269,6 +276,10 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                     }
                                     // Another provider's model id means nothing to the Claude CLI.
                                     if (p.id === 'claude' && devProvider !== 'claude') setDevModel(claudeModel);
+                                    // Nor to the Anthropic API, which only serves Claude models.
+                                    if (p.id === 'anthropic' && devProvider !== 'anthropic') {
+                                        setDevModel(anthropicModel);
+                                    }
                                 }}
                                 className={`py-2 px-2 min-h-[38px] flex items-center justify-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                     devProvider === p.id
@@ -411,6 +422,38 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                     nano-gpt.com
                                 </a>
                                 .
+                            </p>
+                        </div>
+                    )}
+
+                    {devProvider === 'anthropic' && (
+                        <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold uppercase tracking-wider text-ink-700 font-mono">
+                                    Anthropic API Key
+                                </span>
+                                <span className="text-xs px-2.5 py-0.5 rounded-full bg-sage-tint border border-sage-edge text-sage-800 font-mono font-semibold">
+                                    Active Provider
+                                </span>
+                            </div>
+                            <input
+                                type="password"
+                                value={anthropicKey}
+                                onChange={(e) => setAnthropicKey(e.target.value)}
+                                className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
+                                placeholder="sk-ant-..."
+                            />
+                            <p className="text-[11px] text-ink-500">
+                                Get your key from the{' '}
+                                <a
+                                    href={CLOUD_API_URLS.anthropicKeysPage}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-gold-ink hover:underline font-medium"
+                                >
+                                    Anthropic Console
+                                </a>
+                                . Calls go straight from this browser to Anthropic and are billed to that key.
                             </p>
                         </div>
                     )}
@@ -595,6 +638,20 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                     />
                                 </div>
                             )}
+                            {devProvider !== 'anthropic' && (
+                                <div className="p-3 bg-inset border border-edge-strong rounded-xl space-y-1.5">
+                                    <span className="text-xs font-bold uppercase tracking-wider text-ink-700 font-mono block">
+                                        Anthropic API Key
+                                    </span>
+                                    <input
+                                        type="password"
+                                        value={anthropicKey}
+                                        onChange={(e) => setAnthropicKey(e.target.value)}
+                                        className="w-full bg-surface border border-edge-strong rounded-lg px-3 py-1.5 text-xs text-ink-800 focus:border-gold outline-none font-mono"
+                                        placeholder="sk-ant-..."
+                                    />
+                                </div>
+                            )}
                             {devProvider !== 'koboldcpp' && (
                                 <div className="p-3 bg-inset border border-edge-strong rounded-xl space-y-1.5">
                                     <span className="text-xs font-bold uppercase tracking-wider text-ink-700 font-mono block">
@@ -673,6 +730,8 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                       ? openRouterModel
                                       : devProvider === 'nanogpt'
                                         ? nanoGptModel
+                                        : devProvider === 'anthropic'
+                                          ? anthropicModel
                                         : devProvider === 'koboldcpp'
                                           ? koboldModel
                                           : '')
@@ -682,6 +741,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 if (devProvider === 'gemini') setGeminiModel(id);
                                 else if (devProvider === 'openrouter') setOpenRouterModel(id);
                                 else if (devProvider === 'nanogpt') setNanoGptModel(id);
+                                else if (devProvider === 'anthropic') setAnthropicModel(id);
                                 else if (devProvider === 'koboldcpp') setKoboldModel(id);
                             }}
                             savedModels={savedModels}
@@ -798,7 +858,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 <label className="block text-xs font-bold text-ink-500 uppercase tracking-wider mb-1.5 font-mono">
                                     Provider
                                 </label>
-                                <div className="grid grid-cols-2 sm:grid-cols-7 gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                                <div className="grid grid-cols-2 sm:grid-cols-8 gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                                     {OVERRIDE_PROVIDER_TABS.map((p) => (
                                         <button
                                             key={p.id}
@@ -813,7 +873,10 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                                         'koboldcpp';
                                                     setReviewModel(km);
                                                 }
-                                                if (p.id === 'claude' && reviewProvider !== 'claude') {
+                                                if (
+                                                    (p.id === 'claude' || p.id === 'anthropic') &&
+                                                    reviewProvider !== p.id
+                                                ) {
                                                     setReviewModel('');
                                                 }
                                             }}
@@ -941,7 +1004,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 <label className="block text-xs font-bold text-ink-500 uppercase tracking-wider mb-1.5 font-mono">
                                     Provider
                                 </label>
-                                <div className="grid grid-cols-2 sm:grid-cols-7 gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                                <div className="grid grid-cols-2 sm:grid-cols-8 gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                                     {OVERRIDE_PROVIDER_TABS.map((p) => (
                                         <button
                                             key={p.id}
@@ -956,7 +1019,10 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                                         'koboldcpp';
                                                     setProseModel(km);
                                                 }
-                                                if (p.id === 'claude' && proseProvider !== 'claude') {
+                                                if (
+                                                    (p.id === 'claude' || p.id === 'anthropic') &&
+                                                    proseProvider !== p.id
+                                                ) {
                                                     setProseModel('');
                                                 }
                                             }}

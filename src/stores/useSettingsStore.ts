@@ -68,6 +68,8 @@ export interface SettingsState {
     openRouterMaxTokens: number;
     nanoGptKey: string;
     nanoGptModel: string;
+    anthropicKey: string;
+    anthropicModel: string;
     koboldUrl: string;
     koboldModel: string;
     koboldLoadedModel: string;
@@ -179,7 +181,9 @@ export function readInitialSettingsState(): SettingsState {
     const apiProvider = readStorageString(STORAGE_KEYS.apiProvider, 'gemini');
     const embeddingProvider =
         readStorageString(STORAGE_KEYS.embeddingProvider) ||
-        (isCliBridgeProvider(apiProvider) ? 'gemini' : apiProvider);
+        (isCliBridgeProvider(apiProvider) || apiProvider === 'anthropic'
+                ? 'gemini'
+                : apiProvider);
     const geminiModel = readStorageString(STORAGE_KEYS.geminiModel, DEFAULT_LLM_MODELS.gemini);
     const koboldModel = readStorageString(STORAGE_KEYS.koboldModel, DEFAULT_LLM_MODELS.koboldcpp);
 
@@ -256,6 +260,11 @@ export function readInitialSettingsState(): SettingsState {
         ),
         nanoGptKey: readStorageString(STORAGE_KEYS.nanoGptKey, ''),
         nanoGptModel: readStorageString(STORAGE_KEYS.nanoGptModel, DEFAULT_LLM_MODELS.nanogpt),
+        anthropicKey: readStorageString(STORAGE_KEYS.anthropicKey, ''),
+        anthropicModel: readStorageString(
+            STORAGE_KEYS.anthropicModel,
+            DEFAULT_LLM_MODELS.anthropic
+        ),
         koboldUrl: readStorageString(STORAGE_KEYS.koboldUrl, DEFAULT_SERVICE_URLS.koboldcpp),
         koboldModel,
         koboldLoadedModel: koboldModel || DEFAULT_LLM_MODELS.koboldcpp,
@@ -473,6 +482,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
             geminiModel: s.geminiModel,
             openRouterModel: s.openRouterModel,
             nanoGptModel: s.nanoGptModel,
+            anthropicModel: s.anthropicModel,
             codexModel: s.codexModel,
             claudeModel: s.claudeModel,
             koboldModel: s.koboldModel,

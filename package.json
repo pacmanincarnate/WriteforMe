@@ -46,6 +46,7 @@
     "sharp": "^0.35.0"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.14.0",
     "@breezystack/lamejs": "^1.2.7",
     "dompurify": "^3.2.4",
     "jszip": "^3.10.1",
@@ -58,7 +59,6 @@
     "zustand": "^5.1.0"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "^1.14.0",
     "@eslint/js": "^10.0.1",
     "@types/dompurify": "^3.0.5",
     "@types/react": "^18.3.31",
