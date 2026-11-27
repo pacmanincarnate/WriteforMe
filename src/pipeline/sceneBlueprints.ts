@@ -38,6 +38,7 @@ import {
     parseActNumber,
     parseValueShiftInput
 } from '@/domain/story';
+import { formatSeriesSceneDirectives, isHiddenThisBook } from '@/domain/series';
 import { PROMPTS } from '@/prompts';
 import { storyStore } from '@/services/storage';
 import type { CastMember, LoreItem, SceneBlueprint, Story } from '@/types';
@@ -636,7 +637,11 @@ export async function generateScenes(
         const seqSecretLines = Array.isArray(storyToUse.secret_vault)
             ? asArray<Record<string, unknown>>(storyToUse.secret_vault).map(
                   (s) =>
-                      `- Secret [prop_${asString(s.id)}_truth]: "${asString(s.title)}" (Status: ${asString(s.status) || 'dormant'}) -> Target Reveal: Sequence ${asRecord(s.reveal_anchor).sequence_number || s.reveal_target_sequence || 7}`
+                      `- Secret [prop_${asString(s.id)}_truth]: "${asString(s.title)}" (Status: ${asString(s.status) || 'dormant'}) -> ${
+                          isHiddenThisBook(s as Parameters<typeof isHiddenThisBook>[0], storyToUse)
+                              ? `HELD for Book ${asString(s.reveal_book)}: never reveal or confirm in this book`
+                              : `Target Reveal: Sequence ${asRecord(s.reveal_anchor).sequence_number || s.reveal_target_sequence || 7}`
+                      }`
               )
             : [];
         const combinedEpistemicLines = [...seqSecretLines, ...epPropLines].join('\n');
@@ -675,7 +680,7 @@ ${availableStylesXml}
 
 ${sceneLoreBlocks ? `${sceneLoreBlocks}\n\n` : ''}${castRosterBlock}
 
-${epistemicPromptBlock}
+${epistemicPromptBlock}${formatSeriesSceneDirectives(liveStoryForScenes, liveSeqNum, 'planner', liveSeqs.length || 8)}
 
 <story_bible_context>
 Synthesized Authorial Persona: ${asString(liveStoryForScenes.synthesized_authorial_persona)}

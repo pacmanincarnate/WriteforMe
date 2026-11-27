@@ -34,6 +34,12 @@ import {
     FALLBACK_GROUNDED_PLACES
 } from '@/domain/slop';
 import {
+    applySeriesSceneReport,
+    describeViolation,
+    formatSeriesContinuityAddendum,
+    type SeriesSceneReport
+} from '@/domain/series';
+import {
     actForSequence,
     buildGenreToneBlocks,
     buildRelationshipFrictionBlock,
@@ -47,7 +53,8 @@ import type {
     CastMember,
     EntityNameViolation,
     LoreItem,
-    SceneBlueprint
+    SceneBlueprint,
+    Story
 } from '@/types';
 import { decodeXmlEntities, extractTag } from '@/utils';
 import {
@@ -685,7 +692,7 @@ Output Schema:
 }
 CRITICAL MANDATE: For EVERY character listed in <cast_list> who participated in or was present during this scene, you MUST output their updated "character_state_updates" capturing their real-time emotional state, unresolved tension, physical condition, and location at the conclusion of the scene.
 </output_format_description>
-
+${formatSeriesContinuityAddendum(storyState as Partial<Story>)}
 <current_lore_topics>
 ${currentLoreList}
 </current_lore_topics>
@@ -709,6 +716,9 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
             new_characters?: Array<CastMember & Record<string, unknown>>;
             lore_updates?: Array<{ topic?: string; detail?: string }>;
             epistemic_transitions?: Array<Record<string, unknown>>;
+            open_thread_updates?: SeriesSceneReport['open_thread_updates'];
+            new_thread_candidates?: SeriesSceneReport['new_thread_candidates'];
+            secret_events?: SeriesSceneReport['secret_events'];
         }
         let updates: ArchivistUpdatesPayload | null = null;
 
@@ -822,7 +832,16 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                 scene
             );
             if (mergedStory) {
-                resultStory = mergedStory;
+                const seriesResult = applySeriesSceneReport(
+                    mergedStory as Partial<Story>,
+                    effectiveUpdates,
+                    asString(scene.number) || `${seqIdx + 1}.${sceneIdx + 1}`
+                );
+                seriesResult.openedThreads.forEach((t) =>
+                    ctx.showToast(`Series thread opened: ${t.title}`, 'info')
+                );
+                seriesResult.newViolations.forEach((v) => ctx.showToast(describeViolation(v), 'warning'));
+                resultStory = { ...mergedStory, ...seriesResult.patch } as PipelineStory;
             }
             const rawSynopsis = sanitizeScenePlotDelta(asString(effectiveUpdates.scene_synopsis));
             const effectiveSynopsis =

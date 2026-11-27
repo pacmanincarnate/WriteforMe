@@ -30,6 +30,11 @@ export interface SetupViewProps {
     setInputBookType: (bookType: string) => void;
     inputCustomWords: number;
     setInputCustomWords: (words: number) => void;
+    /** True when the story is planned as Book 1 of a series. Optional so older callers still fit. */
+    inputSeriesOpener?: boolean;
+    setInputSeriesOpener?: (opener: boolean) => void;
+    inputSeriesTitle?: string;
+    setInputSeriesTitle?: (title: string) => void;
     inputWritingMode: string;
     setInputWritingMode: (mode: string) => void;
     archetypeOptions: ArchetypeOption[];
@@ -65,6 +70,10 @@ export function SetupView({
     setInputBookType,
     inputCustomWords,
     setInputCustomWords,
+    inputSeriesOpener = false,
+    setInputSeriesOpener,
+    inputSeriesTitle = '',
+    setInputSeriesTitle,
     inputWritingMode,
     setInputWritingMode,
     archetypeOptions,
@@ -269,6 +278,36 @@ export function SetupView({
                     )}
                 </div>
             </div>
+
+            {/* Series option: Book 1 plans threads and secrets that outlast the book */}
+            {setInputSeriesOpener && (
+                <div className="mb-4 text-left">
+                    <label className="flex items-start gap-2.5 text-xs text-ink-700 cursor-pointer select-none">
+                        <input
+                            type="checkbox"
+                            className="mt-0.5 accent-gold"
+                            checked={inputSeriesOpener}
+                            onChange={(e) => setInputSeriesOpener(e.target.checked)}
+                        />
+                        <span>
+                            <span className="font-semibold">This is Book 1 of a series</span>
+                            <span className="block text-ink-500 mt-0.5">
+                                The book still tells a complete story, and it also plants threads
+                                and secrets for later books.
+                            </span>
+                        </span>
+                    </label>
+                    {inputSeriesOpener && (
+                        <input
+                            type="text"
+                            className="w-full mt-2.5 bg-surface border border-edge-strong rounded-xl p-3 text-sm text-ink-900 focus:border-gold outline-none shadow-2xs placeholder:text-ink-400"
+                            placeholder="Series title (optional)"
+                            value={inputSeriesTitle}
+                            onChange={(e) => setInputSeriesTitle?.(e.target.value)}
+                        />
+                    )}
+                </div>
+            )}
 
             <textarea
                 className="w-full bg-surface border border-edge-strong rounded-xl p-4 h-36 mb-4 focus:ring-2 focus:ring-gold/40 focus:border-gold outline-none text-ink-900 shadow-2xs placeholder:text-ink-400 text-sm leading-relaxed"

@@ -127,4 +127,21 @@ describe('useSetupDraft', () => {
         expect(localStorage.getItem(KEYS.bookType)).toBeNull();
         expect(localStorage.getItem(KEYS.customWords)).toBeNull();
     });
+
+    it('keeps the series option off by default, stores it, and clears it on reset', () => {
+        const h = mount();
+        expect(h()).toMatchObject({ inputSeriesOpener: false, inputSeriesTitle: '' });
+        expect(localStorage.getItem(KEYS.seriesOpener)).toBeNull();
+        act(() => {
+            h().setInputSeriesOpener(true);
+            h().setInputSeriesTitle('The Harbour Books');
+        });
+        expect(localStorage.getItem(KEYS.seriesOpener)).toBe('1');
+        expect(localStorage.getItem(KEYS.seriesTitle)).toBe('The Harbour Books');
+        expect(mount()()).toMatchObject({ inputSeriesOpener: true, inputSeriesTitle: 'The Harbour Books' });
+        act(() => h().resetSetupDraftFields());
+        expect(h()).toMatchObject({ inputSeriesOpener: false, inputSeriesTitle: '' });
+        expect(localStorage.getItem(KEYS.seriesOpener)).toBeNull();
+        expect(localStorage.getItem(KEYS.seriesTitle)).toBeNull();
+    });
 });

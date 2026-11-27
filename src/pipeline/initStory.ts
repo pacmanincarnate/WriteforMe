@@ -34,6 +34,19 @@ import {
     parseStructuredStyle,
     parseStructuredTone
 } from '@/domain/story';
+import {
+    createSeriesOpener,
+    findSequelLead,
+    formatReturningInterviewBlock,
+    formatSeriesConceptRules,
+    formatSeriesContext,
+    isSeriesStory,
+    keepSeriesVaultEntries,
+    mergeCarriedCharacterStates,
+    mergeCarriedRelationships,
+    mergeReturningCast,
+    validateSequelLead
+} from '@/domain/series';
 import { PROMPTS } from '@/prompts';
 import { logStore, storyStore } from '@/services/storage';
 import { isLocalProvider, type CastMember, type LoreItem, type Story } from '@/types';
@@ -47,6 +60,7 @@ import {
 } from '@/utils';
 import {
     asArray,
+    asNumber,
     asRecord,
     asString,
     extractErrorMessage,
@@ -57,6 +71,20 @@ import { repairBannedEntitiesWithAI } from './continuityPipeline';
 import { buildStoryArcGeneratorPrompt, buildStoryArcReviewerPrompt } from './arcAndActs';
 import { runAgentWithEscalation } from './escalation';
 import { distillLore, ingestLore, ingestLoreBatch } from './lorePipeline';
+import { applySeriesAfterArc, runSeriesArchitect } from './series';
+
+/** True for Book 2 onward of a series: a story seeded from a finished book. */
+function isSequelStory(story: PipelineStory | null | undefined): boolean {
+    return isSeriesStory(story) && asNumber(asRecord(story?.series).book_number, 1) > 1;
+}
+
+/** Reads the lead's name out of raw Tier 0.1 output without running the full cast parse. */
+function peekConceptLeadName(conceptOutput: string): string {
+    const briefs = extractTagList(extractTag(conceptOutput, 'character_briefs') || conceptOutput, 'brief');
+    const lead =
+        briefs.find((b) => /MAIN_CHARACTER/i.test(extractTag(b, 'corner_role'))) || briefs[0] || '';
+    return decodeXmlEntities(extractTag(lead, 'name') || '').trim();
+}
 
 export interface CreateStoryFromSetupOptions {
     navigateToOverview?: boolean;
@@ -81,6 +109,36 @@ interface RelationshipEntry {
     history: Array<{ chapter: string; change: string }>;
 }
 
+/** Saves a freshly built story document and makes it the active story. */
+export async function activateCreatedStory(
+    ctx: PipelineRuntimeContext,
+    newStoryId: string,
+    createdStory: PipelineStory
+): Promise<void> {
+    await storyStore.saveStory(newStoryId, createdStory);
+    await logStore.saveLogs(newStoryId, []);
+
+    const skipRef = ctx.getSkipNextIdbHydrationIdRef?.();
+    if (skipRef) skipRef.current = newStoryId;
+    const initMountRef = ctx.getIsInitialMountRef?.();
+    if (initMountRef) initMountRef.current = false;
+
+    ctx.setSelectedAct?.(null);
+    ctx.setSelectedSequence?.(null);
+    ctx.setSelectedScene?.(null);
+    ctx.setPromptLog?.([]);
+    const logHydratedRef = ctx.getIsLogHydratedRef?.();
+    if (logHydratedRef) logHydratedRef.current = true;
+    ctx.setWorldPrimer(null);
+
+    const snapshotsMap = ctx.getStorySnapshotsByIdMap?.();
+    if (snapshotsMap) snapshotsMap[newStoryId] = createdStory;
+    ctx.setStory(createdStory);
+    const hydratedRef = ctx.getHasHydratedStoryRef?.();
+    if (hydratedRef) hydratedRef.current = true;
+    ctx.setActiveStoryId?.(newStoryId);
+}
+
 /** Creates and persists a new Story document from the current Setup Wizard draft. */
 export async function createStoryEntityFromSetup(
     ctx: PipelineRuntimeContext,
@@ -96,6 +154,8 @@ export async function createStoryEntityFromSetup(
     const capturedBookType = setupDraft.inputBookType || 'popular';
     const capturedCustomWords = setupDraft.inputCustomWords;
     const capturedLoreText = setupDraft.importedLoreText || '';
+    const capturedSeriesOpener = Boolean(setupDraft.inputSeriesOpener);
+    const capturedSeriesTitle = (setupDraft.inputSeriesTitle || '').trim();
 
     const newStoryId = `story_${Date.now()}`;
     const bookTypesMap = LENGTH_CONTROL.BOOK_TYPES as Record<
@@ -150,7 +210,10 @@ export async function createStoryEntityFromSetup(
                 max: baselineSeqRanges.max,
                 justification: baselineSeqRanges.justification
             }
-        }
+        },
+        ...(capturedSeriesOpener
+            ? { series: createSeriesOpener(capturedSeriesTitle, capturedTitle), open_threads: [] }
+            : {})
     };
 
     const pendingSetupLore = ctx.getPendingSetupLoreMap?.();
@@ -176,28 +239,7 @@ export async function createStoryEntityFromSetup(
         // Ignore cleanup errors for untouched default placeholder
     }
 
-    await storyStore.saveStory(newStoryId, createdStory);
-    await logStore.saveLogs(newStoryId, []);
-
-    const skipRef = ctx.getSkipNextIdbHydrationIdRef?.();
-    if (skipRef) skipRef.current = newStoryId;
-    const initMountRef = ctx.getIsInitialMountRef?.();
-    if (initMountRef) initMountRef.current = false;
-
-    ctx.setSelectedAct?.(null);
-    ctx.setSelectedSequence?.(null);
-    ctx.setSelectedScene?.(null);
-    ctx.setPromptLog?.([]);
-    const logHydratedRef = ctx.getIsLogHydratedRef?.();
-    if (logHydratedRef) logHydratedRef.current = true;
-    ctx.setWorldPrimer(null);
-
-    const snapshotsMap = ctx.getStorySnapshotsByIdMap?.();
-    if (snapshotsMap) snapshotsMap[newStoryId] = createdStory;
-    ctx.setStory(createdStory);
-    const hydratedRef = ctx.getHasHydratedStoryRef?.();
-    if (hydratedRef) hydratedRef.current = true;
-    ctx.setActiveStoryId?.(newStoryId);
+    await activateCreatedStory(ctx, newStoryId, createdStory);
 
     ctx.clearSetupDraft?.();
 
@@ -259,6 +301,8 @@ export async function initStory(
                       .join('\n\n')
                 : '');
         delete pendingSetupLore[newStoryId];
+        // A sequel's lore was carried over already organised; it is not distilled again.
+        if (isSequelStory(baselineStory)) loreTextToUse = '';
         snapshotsMap[newStoryId] = baselineStory;
         if (!isAutopilot || !ctx.isAutopilotProtectedView?.()) ctx.setView?.('dashboard');
     } else if (
@@ -360,7 +404,8 @@ export async function initStory(
     const replaceFn = ctx.applyCascadingNameReplacements || domainApplyCascadingNameReplacements;
 
     try {
-        let finalPrompt = `<concept>${conceptToUse}</concept>`;
+        // Both series blocks are empty strings for a standalone story.
+        let finalPrompt = `${formatSeriesContext(baselineStory)}${formatSeriesConceptRules(baselineStory)}<concept>${conceptToUse}</concept>`;
         const primer =
             loreTextToUse && loreTextToUse.trim().length > 0
                 ? await distillLore(ctx, loreTextToUse, { storyId: newStoryId })
@@ -396,6 +441,8 @@ export async function initStory(
             }
         } else if (loreTextToUse && loreTextToUse.trim().length > 0) {
             finalPrompt += `\n\n<author_lore_notes>${loreTextToUse}</author_lore_notes>`;
+        } else if (isSequelStory(baselineStory) && asString(baselineStory.world_primer).trim()) {
+            finalPrompt += `\n\n<world_primer>${asString(baselineStory.world_primer)}</world_primer>`;
         }
 
         finalPrompt += `\n\n<output_format_description>
@@ -512,13 +559,39 @@ BEGIN DEVELOPING CONCEPTUAL FOUNDATION`;
             startedAt: Date.now()
         });
         ctx.setLoadingStep('Conceptual Development (Tier 0.1)...');
-        const conceptOutput = await ctx.callAI(
+        let conceptOutput = await ctx.callAI(
             finalPrompt,
             PROMPTS.conceptualDevelopment,
             false,
             'Conceptual Development (0.1)',
             'dev'
         );
+        const seriesReturningCast = isSequelStory(baselineStory)
+            ? asArray<Record<string, unknown> & { name: string }>(asRecord(baselineStory.series).returning_cast)
+            : [];
+        if (seriesReturningCast.length > 0) {
+            // A sequel's lead may change, but must be a character the series already knows.
+            const leadName = peekConceptLeadName(conceptOutput);
+            const leadKnown = seriesReturningCast.some(
+                (r) => r.name.trim().toLowerCase() === leadName.trim().toLowerCase()
+            );
+            if (leadName && !leadKnown) {
+                ctx.logPipelineValidation(
+                    'Series Lead Gate (Tier 0.1)',
+                    false,
+                    `The new lead "${leadName}" is not a returning character. Regenerating once.`,
+                    null,
+                    { tierName: 'Conceptual Development', type: 'structural_gate', actionTaken: 'Retrying Tier 0.1' }
+                );
+                conceptOutput = await ctx.callAI(
+                    `${finalPrompt}\n\n=== REVISION REQUESTED ===\nC1 (MAIN_CHARACTER) was "${leadName}", who is not in <returning_cast>. The lead of this book MUST be one of: ${seriesReturningCast.map((r) => r.name).join(', ')}. Use the exact name. New characters may fill other corners.`,
+                    PROMPTS.conceptualDevelopment,
+                    false,
+                    'Conceptual Development (0.1) - Series Lead Retry',
+                    'dev'
+                );
+            }
+        }
 
         const genre = extractTag(conceptOutput, 'genre_classification');
         const styleDesc = extractTag(conceptOutput, 'writing_style_description');
@@ -810,6 +883,20 @@ BEGIN DEVELOPING CONCEPTUAL FOUNDATION`;
             }
         );
 
+        if (seriesReturningCast.length > 0) {
+            startingCast = mergeReturningCast(startingCast, seriesReturningCast);
+            if (!validateSequelLead(startingCast, seriesReturningCast)) {
+                ctx.logPipelineValidation(
+                    'Series Lead Gate (Tier 0.1)',
+                    false,
+                    `The lead "${findSequelLead(startingCast)?.name || 'unknown'}" is new to the series. Sequels should be led by a returning character; review the cast.`,
+                    null,
+                    { tierName: 'Conceptual Development', type: 'structural_gate', actionTaken: 'Proceeding with the generated cast' }
+                );
+                ctx.showToast('Series: the new book is led by a character the series has not met before.', 'warning');
+            }
+        }
+
         const idToName: Record<string, string> = {};
         startingCast.forEach((c) => {
             if (c.id) idToName[c.id] = c.name;
@@ -1040,6 +1127,25 @@ BEGIN DEVELOPING CONCEPTUAL FOUNDATION`;
             ...uploadedLoreChunks
         ];
 
+        // A sequel starts from where the last book left its returning characters.
+        const seriesCarryover = isSequelStory(baselineStory)
+            ? asRecord(asRecord(baselineStory.series).carryover)
+            : null;
+        const startingCharacterStates = seriesCarryover
+            ? mergeCarriedCharacterStates(
+                  initialCharacterStates,
+                  seriesCarryover.character_states as Record<string, Record<string, unknown>> | undefined
+              )
+            : initialCharacterStates;
+        const startingRelationships = seriesCarryover
+            ? mergeCarriedRelationships(
+                  relationships as unknown as Record<string, Record<string, unknown>>,
+                  seriesCarryover.relationships as Record<string, Record<string, unknown>> | undefined,
+                  startingCast.map((c) => c.name)
+              )
+            : relationships;
+        const carriedSeriesLore = seriesCarryover ? asArray<Record<string, unknown>>(baselineStory.lore) : [];
+
         const activeStoryId = newStoryId;
         let initialStoryState =
             (await ctx.updateStoryById(activeStoryId, (prev) => ({
@@ -1054,16 +1160,19 @@ BEGIN DEVELOPING CONCEPTUAL FOUNDATION`;
                 book_type: prev.book_type || resolvedBookType,
                 target_word_count: prev.target_word_count || resolvedTargetWords,
                 status_quo: auditedStatusQuo || '',
-                narrator_vocal_cadence: narratorCadence,
+                narrator_vocal_cadence:
+                    seriesCarryover && asString(prev.narrator_vocal_cadence).trim()
+                        ? prev.narrator_vocal_cadence
+                        : narratorCadence,
                 narrator_voice_seed: prev.narrator_voice_seed || 718281,
                 synthesized_authorial_persona: authorialPersona,
                 genre_pacing_and_dialogue_rules: genreRules,
                 strict_anti_patterns: strictAntiPatterns,
-                character_states: initialCharacterStates,
+                character_states: startingCharacterStates,
                 style: tier01Style,
                 cast: startingCast,
-                lore: tier01Lore,
-                relationships,
+                lore: seriesCarryover ? [...tier01Lore, ...carriedSeriesLore] : tier01Lore,
+                relationships: startingRelationships,
                 generation_ranges: prev.generation_ranges || {
                     scenes_per_sequence: {
                         min: baselineSeqRanges.min,
@@ -1127,7 +1236,7 @@ ${char.why_it_makes_sense ? `<why_it_makes_sense>${asString(char.why_it_makes_se
 </character_briefs>
 ${buildGenreToneBlocks({ genre_raw: genre, tone_raw: toneAtmosphere })}
 
-<instruction>Conduct the dramatized character interview for ${char.name}. Ground the character in the established world rules, factions, culture, and lore provided in <world_primer> and <relevant_lore>. Prioritize established lore names, factions, and settings over inventing new ones. Using their unique voice, write out their full responses to every interview question in present tense prose format.</instruction>
+${formatReturningInterviewBlock(char, asNumber(asRecord(baselineStory.series).book_number, 1))}<instruction>Conduct the dramatized character interview for ${char.name}. Ground the character in the established world rules, factions, culture, and lore provided in <world_primer> and <relevant_lore>. Prioritize established lore names, factions, and settings over inventing new ones. Using their unique voice, write out their full responses to every interview question in present tense prose format.</instruction>
 
 <output_format_description>
 FORMATTING DIRECTIVE: Return your response strictly as XML tags. Do not use YAML or markdown blocks.
@@ -1212,7 +1321,9 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                 decodeXmlEntities(extractTag(interviewOutput, 'vocal_cadence') || ''),
                 [char.name]
             );
-            if (isValidQwenVoiceProfile(extractedTier02Cadence)) {
+            if (char.returning_from_book && asString(char.vocal_cadence).trim()) {
+                // Returning characters keep the voice the series already gave them.
+            } else if (isValidQwenVoiceProfile(extractedTier02Cadence)) {
                 char.vocal_cadence = extractedTier02Cadence;
             } else if (!isValidQwenVoiceProfile(asString(char.vocal_cadence))) {
                 char.vocal_cadence = synthesizeQwenVoiceDesignProfile(
@@ -1297,6 +1408,11 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
                 cast: startingCast
             }))) || initialStoryState;
 
+        // SERIES ARCHITECT (series only): plans this book's place in the series before the arc.
+        if (isSeriesStory(initialStoryState)) {
+            initialStoryState = await runSeriesArchitect(ctx, activeStoryId, initialStoryState);
+        }
+
         // TIER 1.1: STORY ARC PLANNER
         ctx.setActivePipelineWork?.({
             mode: 'novel',
@@ -1372,8 +1488,17 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
             initialStoryState =
                 (await ctx.updateStoryById(activeStoryId, (prev) => ({
                     ...prev,
-                    ...arcPatch
+                    ...arcPatch,
+                    ...(isSeriesStory(prev) && arcPatch.secret_vault
+                        ? { secret_vault: keepSeriesVaultEntries(prev.secret_vault, arcPatch.secret_vault) }
+                        : {})
                 }))) || { ...initialStoryState, ...arcPatch };
+            if (isSeriesStory(initialStoryState)) {
+                // The arc step rewrites threads and the vault; put the series layer back on top.
+                initialStoryState =
+                    (await ctx.updateStoryById(activeStoryId, (prev) => applySeriesAfterArc(prev))) ||
+                    applySeriesAfterArc(initialStoryState);
+            }
             storyArcGenerated = true;
         } catch (arcErr) {
             console.warn(
@@ -1397,7 +1522,7 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
         const processedStatusQuo = isActiveStoryForRag
             ? await ingestLore(ctx, statusQuoItem)
             : statusQuoItem;
-        const finalLore = [processedStatusQuo || statusQuoItem, ...uploadedLoreChunks];
+        const finalLore = [processedStatusQuo || statusQuoItem, ...uploadedLoreChunks, ...carriedSeriesLore];
         const embService = ctx.getEmbeddingService();
         if (isActiveStoryForRag && embService?.isConfigured()) {
             safeLocalStorageSet(

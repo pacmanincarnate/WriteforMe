@@ -757,7 +757,9 @@ export function DashboardEpistemicPanel({
                                                 </span>
                                             )}
                                             <span className="text-[10px] font-mono text-ink-500">
-                                                Reveal: Act {revAct}, Seq {revSeq}
+                                                {typeof sec.reveal_book === 'number' && revSeq >= 99
+                                                    ? `Held for Book ${sec.reveal_book}`
+                                                    : `Reveal: Act ${revAct}, Seq ${revSeq}`}
                                             </span>
                                             <EditButton
                                                 title={`Secret "${secretTitle}" Truth`}

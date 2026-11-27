@@ -174,6 +174,9 @@ export interface PipelineRuntimeContext {
         inputBookType?: string;
         inputCustomWords?: string | number;
         importedLoreText?: string;
+        /** True when the new story is Book 1 of a series. */
+        inputSeriesOpener?: boolean;
+        inputSeriesTitle?: string;
     };
     clearSetupDraft?: () => void;
     getPendingSetupLoreMap?: () => Record<string, string>;

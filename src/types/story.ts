@@ -115,6 +115,7 @@ export interface SecretEntry {
         act_number?: number;
         sequence_number?: number;
         scene_number?: number;
+        scene_hint?: string;
     };
     cover_story?: {
         character_masks?: Record<string, Record<string, string>>;
@@ -189,5 +190,9 @@ export interface Story {
     epistemic_graph?: Record<string, unknown> | null;
     length_control?: Record<string, unknown>;
     timestamp?: number;
+    /** Present only on books that belong to a series. */
+    series?: import('./series').SeriesInfo;
+    /** Series threads carried across books. Per-book A/B/C threads stay in `threads`. */
+    open_threads?: import('./series').OpenThread[];
     [key: string]: unknown;
 }

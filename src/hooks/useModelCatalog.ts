@@ -1002,11 +1002,8 @@ export function useModelCatalog({
             devProvider,
             fetchGeminiImageModels,
             fetchGeminiModels,
-<<<<<<< HEAD
             fetchOpenRouterImageModels,
-=======
             refreshAnthropicModels,
->>>>>>> 85bb2c6 (Merge pull request #19 from vantaloomin/claude/project-thread-i06giv)
             refreshClaudeModels,
             refreshCodexModels,
             refreshNanoGptModels,

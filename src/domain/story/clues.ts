@@ -3,7 +3,8 @@
  * Secret Vault normalization, per-scene behavioral clue directives, and secret reveal triggers.
  */
 
-import type { SecretEntry, Story } from '@/types';
+import type { SecretEntry, SeriesSecretFields, Story } from '@/types';
+import { fairPlayLedgerForVaultSecret, isRevealDueThisBook } from '@/domain/series/secrets';
 
 export interface ClueScheduleItem {
     sequence_number: number;
@@ -66,6 +67,16 @@ function splitStringList(val: unknown): string[] {
             .filter(Boolean);
     }
     return [];
+}
+
+/** Series fields survive normalization; a secret without them stays a plain book-level secret. */
+function pickSeriesSecretFields(s: Record<string, unknown>): SeriesSecretFields {
+    const out: SeriesSecretFields = {};
+    if (s.scope === 'series' || s.scope === 'book') out.scope = s.scope;
+    if (Number.isFinite(Number(s.reveal_book)) && Number(s.reveal_book) > 0) out.reveal_book = Number(s.reveal_book);
+    if (typeof s.parent_secret_id === 'string' && s.parent_secret_id) out.parent_secret_id = s.parent_secret_id;
+    if (Number.isFinite(Number(s.layer)) && Number(s.layer) > 0) out.layer = Number(s.layer);
+    return out;
 }
 
 /**
@@ -168,6 +179,7 @@ export function normalizeSecretVault(
             }
 
             return {
+                ...pickSeriesSecretFields(s),
                 id,
                 title,
                 category,
@@ -322,6 +334,11 @@ export function getActiveClueDirectivesForScene(
     return directives;
 }
 
+/** Tells the reveal scene which clues from earlier books it has to pay off. */
+function withFairPlayLedger(trigger: string, ledger: string): string {
+    return ledger ? `${trigger}. The reveal must pay off these clues already on the page: ${ledger}` : trigger;
+}
+
 /** Checks whether the current scene is the scheduled reveal point for any secret. */
 export function getSecretRevealDirectiveForScene(
     story: Partial<Story> | null | undefined,
@@ -338,6 +355,8 @@ export function getSecretRevealDirectiveForScene(
     const resolvedTotalScenes = totalScenesInSeq > 0 ? totalScenesInSeq : seqScenes.length;
 
     for (const sec of story.secret_vault) {
+        // A series secret held for a later book is never revealed here.
+        if (!isRevealDueThisBook(sec, story.series?.book_number)) continue;
         const secRec = sec as Partial<NormalizedSecretEntry> & Record<string, unknown>;
         if (isSecretRevealScene(secRec, seqNum, sceneNum, sceneObj, resolvedTotalScenes)) {
             const anchor = (sec.reveal_anchor || {}) as Record<string, unknown>;
@@ -346,8 +365,10 @@ export function getSecretRevealDirectiveForScene(
                 title: sec.title,
                 truth: sec.truth,
                 category: sec.category,
-                trigger_condition:
-                    String(anchor.trigger_condition || anchor.scene_hint || 'Direct confrontation or discovery')
+                trigger_condition: withFairPlayLedger(
+                    String(anchor.trigger_condition || anchor.scene_hint || 'Direct confrontation or discovery'),
+                    fairPlayLedgerForVaultSecret(story, sec)
+                )
             };
         }
     }

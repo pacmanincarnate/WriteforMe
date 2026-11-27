@@ -45,6 +45,8 @@ export const STORAGE_KEYS = {
     draftConcept: 'ellipsisprose_draft_concept',
     draftCustomWords: 'ellipsisprose_draft_custom_words',
     draftLoreFiles: 'ellipsisprose_draft_lore_files',
+    draftSeriesOpener: 'ellipsisprose_draft_series_opener',
+    draftSeriesTitle: 'ellipsisprose_draft_series_title',
     draftTitle: 'ellipsisprose_draft_title',
     draftWritingMode: 'ellipsisprose_draft_writing_mode',
     editorialAutopilot: 'ellipsisprose_editorial_autopilot',

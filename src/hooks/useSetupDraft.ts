@@ -1,7 +1,7 @@
 /**
  * @module hooks/useSetupDraft
  * The unsaved Setup form (title, concept, author note, writing mode, book type, custom word
- * target). Each field is restored from localStorage on load and written back as it changes, so a
+ * target, and the series option). Each field is restored from localStorage on load and written back as it changes, so a
  * half-typed concept survives a reload. Extracted from the legacy shell in Phase 7.
  */
 
@@ -16,7 +16,9 @@ export const SETUP_DRAFT_STORAGE_KEYS = {
     authorNote: STORAGE_KEYS.draftAuthorNote,
     writingMode: STORAGE_KEYS.draftWritingMode,
     bookType: STORAGE_KEYS.draftBookType,
-    customWords: STORAGE_KEYS.draftCustomWords
+    customWords: STORAGE_KEYS.draftCustomWords,
+    seriesOpener: STORAGE_KEYS.draftSeriesOpener,
+    seriesTitle: STORAGE_KEYS.draftSeriesTitle
 } as const;
 
 export type SetupWritingMode = 'novel' | 'audio_drama';
@@ -38,6 +40,11 @@ export interface UseSetupDraftResult {
     setInputBookType: Dispatch<SetStateAction<string>>;
     inputCustomWords: number;
     setInputCustomWords: Dispatch<SetStateAction<number>>;
+    /** True when the new story is planned as Book 1 of a series. */
+    inputSeriesOpener: boolean;
+    setInputSeriesOpener: Dispatch<SetStateAction<boolean>>;
+    inputSeriesTitle: string;
+    setInputSeriesTitle: Dispatch<SetStateAction<string>>;
     /** Puts every field back to its default and removes the stored draft. */
     resetSetupDraftFields: () => void;
 }
@@ -80,6 +87,12 @@ export function useSetupDraft(): UseSetupDraftResult {
         readDraftString(SETUP_DRAFT_STORAGE_KEYS.bookType, DEFAULT_SETUP_BOOK_TYPE)
     );
     const [inputCustomWords, setInputCustomWords] = useState(readDraftCustomWords);
+    const [inputSeriesOpener, setInputSeriesOpener] = useState(
+        () => readDraftString(SETUP_DRAFT_STORAGE_KEYS.seriesOpener) === '1'
+    );
+    const [inputSeriesTitle, setInputSeriesTitle] = useState(() =>
+        readDraftString(SETUP_DRAFT_STORAGE_KEYS.seriesTitle)
+    );
 
     useEffect(() => {
         persistDraftText(SETUP_DRAFT_STORAGE_KEYS.title, inputTitle);
@@ -99,6 +112,12 @@ export function useSetupDraft(): UseSetupDraftResult {
     useEffect(() => {
         safeLocalStorageSet(SETUP_DRAFT_STORAGE_KEYS.customWords, inputCustomWords);
     }, [inputCustomWords]);
+    useEffect(() => {
+        persistDraftText(SETUP_DRAFT_STORAGE_KEYS.seriesOpener, inputSeriesOpener ? '1' : '');
+    }, [inputSeriesOpener]);
+    useEffect(() => {
+        persistDraftText(SETUP_DRAFT_STORAGE_KEYS.seriesTitle, inputSeriesTitle);
+    }, [inputSeriesTitle]);
 
     const resetSetupDraftFields = useCallback(() => {
         setInputTitle('');
@@ -107,6 +126,8 @@ export function useSetupDraft(): UseSetupDraftResult {
         setInputWritingMode('novel');
         setInputBookType(DEFAULT_SETUP_BOOK_TYPE);
         setInputCustomWords(DEFAULT_SETUP_CUSTOM_WORDS);
+        setInputSeriesOpener(false);
+        setInputSeriesTitle('');
         try {
             for (const key of Object.values(SETUP_DRAFT_STORAGE_KEYS)) localStorage.removeItem(key);
         } catch {
@@ -127,6 +148,10 @@ export function useSetupDraft(): UseSetupDraftResult {
         setInputBookType,
         inputCustomWords,
         setInputCustomWords,
+        inputSeriesOpener,
+        setInputSeriesOpener,
+        inputSeriesTitle,
+        setInputSeriesTitle,
         resetSetupDraftFields
     };
 }
