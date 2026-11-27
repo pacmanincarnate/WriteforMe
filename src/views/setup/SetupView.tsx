@@ -16,7 +16,7 @@ import {
     Zap,
     type LoreFileItem
 } from '@/components';
-import { generateRandomArchetypes, type ArchetypeOption } from '@/config';
+import { generateRandomArchetypes, VIEW_LABELS, type ArchetypeOption } from '@/config';
 import { LENGTH_CONTROL } from '@/domain/story';
 
 export interface SetupViewProps {
@@ -106,13 +106,9 @@ export function SetupView({
             <div className="w-16 h-16 rounded-2xl bg-gold-tint border border-gold-edge text-gold-ink flex items-center justify-center mx-auto mb-6 shadow-sm">
                 <Sparkles size={28} />
             </div>
-            <h1 className="text-3xl font-bold font-serif text-ink-900 mb-2 tracking-tight">
-                New Story Setup
+            <h1 className="text-3xl font-bold font-serif text-ink-900 mb-8 tracking-tight">
+                {VIEW_LABELS.setup}
             </h1>
-            <p className="text-ink-500 text-sm mb-8">
-                Enter a title and concept. The AI Architect will build your world bible and
-                narrative structure.
-            </p>
 
             <input
                 className="w-full bg-surface border border-edge-strong rounded-xl p-4 mb-4 focus:ring-2 focus:ring-gold/40 focus:border-gold outline-none font-bold text-ink-900 shadow-2xs placeholder:text-ink-400 font-serif text-lg"

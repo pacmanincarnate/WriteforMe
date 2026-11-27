@@ -7,7 +7,6 @@
 import React from 'react';
 import { LiveCreationIsland, type LiveCreationIslandProps } from '@/components/common';
 import { BookOpen, ChevronRight, Loader2, Menu, Moon, Sun, Zap } from '@/components/icons';
-import { VIEW_LABELS } from '@/config';
 import type { Story } from '@/types';
 
 export interface StudioHeaderProps {
@@ -99,14 +98,6 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                         >
                             {story.title || 'Untitled Novel'}
                         </span>
-                        {view !== 'writer' && (
-                            <>
-                                <ChevronRight size={12} className="text-ink-300 shrink-0" />
-                                <span className="font-mono text-xs text-gold-ink bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 font-semibold whitespace-nowrap">
-                                    {VIEW_LABELS[view] || view.replace('_', ' ')}
-                                </span>
-                            </>
-                        )}
                     </div>
 
                     <LiveCreationIsland

@@ -80,7 +80,7 @@ describe('Phase 5D: Extracted core Studio views', () => {
             />
         );
 
-        expect(container.textContent).toContain('New Story Setup');
+        expect(container.textContent).toContain('New Story');
         const selects = container.querySelectorAll('select');
         act(() => {
             (selects[0] as HTMLSelectElement).value = 'random';

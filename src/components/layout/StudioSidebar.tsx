@@ -170,7 +170,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                                     </span>
                                 )}
                             </h2>
-                            <p className="text-xs text-ink-500 font-medium">AI Story Architect &amp; Studio</p>
                         </div>
                     </div>
                     <button
@@ -196,9 +195,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                 <div className="sidebar-nav flex-1 overflow-y-auto p-3 space-y-4">
                     {/* SPACE 1: STUDIO WORKSPACE */}
                     <div className="space-y-0.5">
-                        <div className="sidebar-section-label px-2 pb-1 text-xs font-bold text-ink-400 uppercase tracking-wider font-mono">
-                            Workspace
-                        </div>
                         <button
                             onClick={() => {
                                 setView('library');
@@ -220,9 +216,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
 
                     {/* SPACES 2, 3, 4: EDITORIAL CREATIVE SPACES */}
                     <div className="space-y-0.5">
-                        <div className="sidebar-section-label px-2 pb-1 text-xs font-bold text-ink-400 uppercase tracking-wider font-mono">
-                            Creative Spaces
-                        </div>
                         <button
                             onClick={() => setView('dashboard')}
                             className={`nav-btn ${
@@ -358,12 +351,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                     {/* SECTION 4: STORY HIERARCHY TREE */}
                     {hasTree && (
                         <div className="sidebar-tree space-y-1 pt-2 border-t border-edge">
-                            <div className="sidebar-section-label px-2 pb-1 text-xs font-bold text-gold-ink uppercase tracking-wider font-mono flex items-center justify-between">
-                                <span>Manuscript Tree</span>
-                                <span className="text-xs text-ink-400 font-mono font-medium">
-                                    {displayActs.length} Acts
-                                </span>
-                            </div>
 
                             {displayActs.map((act, actIdx) => {
                                 const actNum = parseActNumber(
@@ -564,9 +551,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
 
                     {/* SYSTEM & SETTINGS */}
                     <div className="space-y-0.5 pt-2 border-t border-edge">
-                        <div className="sidebar-section-label px-2 pb-1 text-xs font-bold text-ink-400 uppercase tracking-wider font-mono">
-                            System
-                        </div>
                         <button
                             onClick={() => setView('settings')}
                             className={`nav-btn ${view === 'settings' ? 'active' : ''}`}

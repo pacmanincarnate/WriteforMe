@@ -1,10 +1,11 @@
 /**
  * @module views/settings/SettingsView
- * Main Studio & LLM Settings view (`view === 'settings'`) with 6-tab navigation:
+ * Main Settings view (`view === 'settings'`) with 6-tab navigation:
  * Model Options, Pipeline Settings, Prompts, Audio Drama, Appearance, and Danger.
  */
 
 import React from 'react';
+import { VIEW_LABELS } from '@/config';
 import { AlertTriangle, Cpu, FileText, Radio, Settings, Sparkles, Workflow } from '@/components';
 import { SettingsAppearanceTab, SettingsDangerTab } from './SettingsAppearanceDangerTabs';
 import { SettingsAudioDramaTab } from './SettingsAudioDramaTab';
@@ -28,7 +29,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 </div>
                 <div>
                     <h2 className="text-2xl font-bold font-serif text-ink-900 tracking-tight">
-                        Studio &amp; LLM Settings
+                        {VIEW_LABELS.settings}
                     </h2>
                 </div>
             </div>

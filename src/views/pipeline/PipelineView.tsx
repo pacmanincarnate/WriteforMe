@@ -5,6 +5,7 @@
  */
 
 import React from 'react';
+import { VIEW_LABELS } from '@/config';
 import { GitBranch, Headphones, Sparkles, Workflow } from '@/components';
 import {
     calculateStoryStats,
@@ -131,21 +132,8 @@ export const PipelineView: React.FC<PipelineViewProps> = ({
                 <div className="space-y-1 min-w-0">
                     <h2 className="text-2xl sm:text-3xl font-serif font-bold text-ink-900 flex items-center gap-2.5">
                         <Workflow className="text-gold-ink shrink-0" />
-                        <span>
-                            {pipelineDisplayMode === 'audio'
-                                ? 'Live Progress · Audio Production Studio'
-                                : pipelineDisplayMode === 'graph'
-                                  ? 'Narrative Generation Visual Pipeline'
-                                  : 'Live Progress · Novel Control Center'}
-                        </span>
+                        <span>{VIEW_LABELS.pipeline}</span>
                     </h2>
-                    {pipelineDisplayMode !== 'audio' && (
-                        <p className="text-xs text-ink-500">
-                            {pipelineDisplayMode === 'graph'
-                                ? 'Interactive 22-step cascading multi-agent workflow architecture & real-time log inspector.'
-                                : 'Real-time novel creation control center — watch progress across every phase without losing your place.'}
-                        </p>
-                    )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">

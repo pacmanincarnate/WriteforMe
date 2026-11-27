@@ -328,10 +328,8 @@ export function DashboardView({
                     {/* Core Story Blueprint Card */}
                     <div className="bg-surface p-6 sm:p-8 rounded-2xl border border-edge shadow-sm space-y-6">
                         <div>
-                            <div className="text-xs font-bold text-gold-ink uppercase tracking-wider font-mono mb-1.5">
-                                Novel Title
-                            </div>
                             <input
+                                aria-label="Story title"
                                 className="w-full bg-transparent border-b border-transparent hover:border-edge-strong focus:border-gold outline-none font-bold text-2xl sm:text-3xl font-serif text-ink-900 transition-colors pb-1"
                                 value={story.title || ''}
                                 onChange={(e) =>
