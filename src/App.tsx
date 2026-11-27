@@ -83,6 +83,7 @@ import {
     InterventionModal,
     CritiqueModal,
     LogDetailModal,
+    BackToTop,
     ToastNotification,
     StudioSidebar,
     StudioHeader,
@@ -1832,6 +1833,7 @@ import {
                         />
 
                         <main className={`flex-1 overflow-y-auto overflow-x-hidden ${view === 'reader' ? 'p-0 overflow-hidden' : 'p-4 md:p-8'}`}>
+                            <BackToTop />
                             {view === 'reader' && (
                                 <ReaderView
                                     story={story}
