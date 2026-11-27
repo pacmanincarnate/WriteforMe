@@ -22,6 +22,37 @@ export interface GeminiImageModelInfo {
     description: string;
 }
 
+export interface OpenRouterImageModelPricing {
+    prompt?: string | number | null;
+    completion?: string | number | null;
+    image?: string | number | null;
+    image_output?: string | number | null;
+    image_token?: string | number | null;
+    request?: string | number | null;
+}
+
+export interface OpenRouterRawImageModelEntry {
+    id?: string;
+    name?: string;
+    description?: string;
+    architecture?: {
+        modality?: string;
+        input_modalities?: string[];
+        output_modalities?: string[];
+    };
+    pricing?: OpenRouterImageModelPricing | null;
+}
+
+export interface OpenRouterImageModelInfo {
+    id: string;
+    name: string;
+    description: string;
+    modality: string;
+    costLabel: string;
+    costDetail: string;
+    isFree: boolean;
+}
+
 export interface GeminiCatalogResult {
     models: string[];
     imageModels: GeminiImageModelInfo[];
@@ -105,6 +136,186 @@ export async function fetchGeminiImageModelsCatalog(
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = (await response.json()) as { models?: GeminiRawModelEntry[] };
     return extractGeminiImageModels(data.models || []);
+}
+
+function parsePricingCost(value: string | number | null | undefined): number | null {
+    if (value === null || value === undefined || value === '') return null;
+    const n = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(n) ? n : null;
+}
+
+function formatUsd(amount: number): string {
+    if (amount >= 1) {
+        const fixed = amount.toFixed(2);
+        return `$${fixed.endsWith('.00') ? fixed.slice(0, -3) : fixed}`;
+    }
+    if (amount >= 0.01) {
+        return `$${amount.toFixed(2)}`;
+    }
+    return `$${Number(amount.toPrecision(3)).toString()}`;
+}
+
+/** Formats OpenRouter image model pricing into concise dropdown labels and detailed breakdowns. */
+export function formatOpenRouterImagePricing(
+    pricing?: OpenRouterImageModelPricing | null
+): { costLabel: string; costDetail: string; isFree: boolean } {
+    if (!pricing) {
+        return { costLabel: 'Pricing N/A', costDetail: 'Pricing unavailable', isFree: false };
+    }
+
+    const prompt = parsePricingCost(pricing.prompt);
+    const completion = parsePricingCost(pricing.completion);
+    const image = parsePricingCost(pricing.image);
+    const imageOutput = parsePricingCost(pricing.image_output);
+    const imageToken = parsePricingCost(pricing.image_token);
+    const request = parsePricingCost(pricing.request);
+
+    const presentFields = [prompt, completion, image, imageOutput, imageToken, request].filter(
+        (v): v is number => v !== null
+    );
+
+    if (presentFields.some((v) => v < 0)) {
+        return { costLabel: 'Dynamic', costDetail: 'Dynamic router pricing', isFree: false };
+    }
+
+    if (presentFields.length > 0 && presentFields.every((v) => v === 0)) {
+        return { costLabel: 'Free', costDetail: 'Free', isFree: true };
+    }
+
+    if (imageOutput !== null && imageOutput > 0) {
+        const perM = imageOutput * 1_000_000;
+        const costLabel =
+            request !== null && request > 0
+                ? `${formatUsd(perM)}/1M img tok + ${formatUsd(request)}/req`
+                : `${formatUsd(perM)}/1M img tok`;
+        const parts = [`Image output: ${formatUsd(perM)}/1M tokens`];
+        if (prompt !== null && prompt > 0) {
+            parts.push(`Prompt: ${formatUsd(prompt * 1_000_000)}/1M tokens`);
+        }
+        if (image !== null && image > 0) {
+            parts.push(`Input image: ${formatUsd(image)}/img`);
+        }
+        if (request !== null && request > 0) {
+            parts.push(`Request: ${formatUsd(request)}/req`);
+        }
+        return { costLabel, costDetail: parts.join(' · '), isFree: false };
+    }
+
+    if (request !== null && request > 0) {
+        return {
+            costLabel: `${formatUsd(request)}/img`,
+            costDetail: `Per request: ${formatUsd(request)}`,
+            isFree: false
+        };
+    }
+
+    if (image !== null && image > 0) {
+        return {
+            costLabel: `${formatUsd(image)}/img`,
+            costDetail: `Per image: ${formatUsd(image)}`,
+            isFree: false
+        };
+    }
+
+    if ((prompt !== null && prompt > 0) || (completion !== null && completion > 0)) {
+        const labelParts: string[] = [];
+        const detailParts: string[] = [];
+        if (prompt !== null && prompt > 0) {
+            const p = formatUsd(prompt * 1_000_000);
+            labelParts.push(`${p}/1M in`);
+            detailParts.push(`Prompt: ${p}/1M tokens`);
+        }
+        if (completion !== null && completion > 0) {
+            const c = formatUsd(completion * 1_000_000);
+            labelParts.push(`${c}/1M out`);
+            detailParts.push(`Completion: ${c}/1M tokens`);
+        }
+        return {
+            costLabel: labelParts.join(' · '),
+            costDetail: detailParts.join(' · '),
+            isFree: false
+        };
+    }
+
+    return { costLabel: 'Pricing N/A', costDetail: 'Pricing unavailable', isFree: false };
+}
+
+/** Filters raw OpenRouter catalog entries down to real text-to-image models with formatted pricing. */
+export function extractOpenRouterImageModels(
+    rawModels: ReadonlyArray<OpenRouterRawImageModelEntry>
+): OpenRouterImageModelInfo[] {
+    return (rawModels || [])
+        .filter((m) => {
+            const id = (m.id || '').trim();
+            if (!id || id.toLowerCase().startsWith('openrouter/')) return false;
+
+            const pricing = m.pricing;
+            if (pricing) {
+                const p = parsePricingCost(pricing.prompt);
+                const c = parsePricingCost(pricing.completion);
+                const io = parsePricingCost(pricing.image_output);
+                if ((p !== null && p < 0) || (c !== null && c < 0) || (io !== null && io < 0)) {
+                    return false;
+                }
+            }
+
+            const modality = (m.architecture?.modality || '').toLowerCase();
+            const [modalityIn = '', modalityOut = ''] = modality.split('->');
+            const inputModalities = m.architecture?.input_modalities;
+            const outputModalities = m.architecture?.output_modalities;
+
+            const acceptsText = Array.isArray(inputModalities)
+                ? inputModalities.some((mod) => String(mod).toLowerCase() === 'text')
+                : modalityIn.includes('text');
+            const outputsImage = Array.isArray(outputModalities)
+                ? outputModalities.some((mod) => String(mod).toLowerCase() === 'image')
+                : modalityOut.includes('image');
+
+            return acceptsText && outputsImage;
+        })
+        .map((m) => {
+            const id = (m.id || '').trim();
+            const name = (m.name || id).trim();
+            const modality = (m.architecture?.modality || 'text->image').trim();
+            const { costLabel, costDetail, isFree } = formatOpenRouterImagePricing(m.pricing);
+            return {
+                id,
+                name,
+                description: (m.description || '').trim(),
+                modality,
+                costLabel,
+                costDetail,
+                isFree
+            };
+        });
+}
+
+/** Fetches live OpenRouter models supporting image output and filters to text-to-image models. */
+export async function fetchOpenRouterImageModelsCatalog(
+    apiKey = ''
+): Promise<OpenRouterImageModelInfo[]> {
+    const headers: Record<string, string> = { Accept: 'application/json' };
+    const trimmedKey = (apiKey || '').trim();
+    if (trimmedKey) {
+        headers['Authorization'] = `Bearer ${trimmedKey}`;
+    }
+    const response = await fetchWithTimeout(
+        `${CLOUD_API_URLS.openRouterModels}?output_modalities=image`,
+        { method: 'GET', headers },
+        15000
+    );
+    if (!response.ok) {
+        throw new Error(`OpenRouter HTTP ${response.status}`);
+    }
+    const data = (await response.json()) as
+        | OpenRouterRawImageModelEntry[]
+        | { data?: OpenRouterRawImageModelEntry[] };
+    const rawList = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.data)
+          ? data.data
+          : [];
+    return extractOpenRouterImageModels(rawList);
 }
 
 interface CliBridgeProbe extends CodexCatalogResult {

@@ -178,6 +178,8 @@ function assetSha256(asset) {
     return m ? m[1].toLowerCase() : null;
 }
 
+const KOBOLD_DEFAULT_CONTEXT = 65536;
+
 /**
  * Command line for a backend that the desktop app launches itself.
  * `layout` comes from findInstallLayout() after install; `options` are user choices.
@@ -186,18 +188,46 @@ function launchSpec(backend, variant, layout, options = {}) {
     const extra = splitArgs(options.extraArgs || '');
     if (backend.id === 'koboldcpp') {
         const args = ['--port', String(backend.port), '--host', '127.0.0.1'];
-        if (options.modelPath) args.push('--model', options.modelPath, '--skiplauncher');
+        if (options.configPath) {
+            args.push('--config', options.configPath, '--skiplauncher');
+        } else if (options.modelPath) {
+            args.push('--model', options.modelPath, '--skiplauncher');
+            // Sensible defaults for direct .gguf launches unless overridden in extraArgs.
+            if (!extra.some((a) => /^(?:--contextsize|--ctx-size|-c)(?:=|$)/i.test(a))) {
+                args.push('--contextsize', String(KOBOLD_DEFAULT_CONTEXT));
+            }
+            if (!extra.some((a) => /^--quantkv(?:=|$)/i.test(a))) {
+                args.push('--quantkv', '1');
+            }
+            if (!extra.some((a) => /^--(?:no)?flashattention$/i.test(a))) {
+                args.push('--flashattention');
+            }
+            if (!extra.some((a) => /^--(?:no)?jinja(?:[_-]?tools)?$/i.test(a))) {
+                args.push('--jinja');
+            }
+            if (!extra.some((a) => /^(?:--gpulayers|-ngl)(?:=|$)/i.test(a))) {
+                args.push('--gpulayers', '-1');
+            }
+        }
+        const hasTarget = Boolean(options.configPath || options.modelPath);
+        const hasAdminFlag = extra.some((a) => /^--(?:admin|admindir|routermode)$/i.test(a));
+        if (hasTarget && options.adminDir && !hasAdminFlag) {
+            args.push('--admin', '--admindir', options.adminDir);
+        }
         return { command: layout.exe, args: [...args, ...(variant.args || []), ...extra], cwd: path.dirname(layout.exe) };
     }
     if (backend.id === 'comfyui') {
-        const args = [
-            '-s', path.join(layout.root, 'ComfyUI', 'main.py'),
-            '--windows-standalone-build',
+        const mainPy = layout.mainPy || path.join(layout.root, 'ComfyUI', 'main.py');
+        const args = ['-s', mainPy];
+        if (layout.isPortable !== false) args.push('--windows-standalone-build');
+        const hasAutoLaunchFlag = extra.some((a) => /^--(?:auto-launch|disable-auto-launch)$/i.test(a));
+        if (!hasAutoLaunchFlag) args.push('--disable-auto-launch');
+        args.push(
             '--listen', '127.0.0.1',
             '--port', String(backend.port),
             // The app calls ComfyUI from the page at http://127.0.0.1:3000, which needs CORS.
             '--enable-cors-header'
-        ];
+        );
         return { command: layout.python, args: [...args, ...(variant.args || []), ...extra], cwd: layout.root };
     }
     throw new Error(`${backend.id} is not launched directly`);
@@ -216,6 +246,7 @@ module.exports = {
     PORTS,
     BACKENDS,
     AUDIO_MODEL_PACKS,
+    KOBOLD_DEFAULT_CONTEXT,
     getBackend,
     getVariant,
     selectAssets,

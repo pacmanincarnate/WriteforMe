@@ -217,6 +217,171 @@ describe('Web update checker', () => {
         expect(res.update?.environment).toBe('singlefile');
         expect(res.update?.downloadUrl).toContain('EllipsisProse-portable.html');
     });
+
+    it('returns up-to-date when version.json matches even if a waiting SW exists, and activates it quietly', async () => {
+        const postMessage = vi.fn();
+        const update = vi.fn(async () => {});
+        const originalSwDescriptor = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
+
+        Object.defineProperty(navigator, 'serviceWorker', {
+            configurable: true,
+            value: {
+                controller: { state: 'activated' },
+                getRegistration: vi.fn(async () => ({
+                    update,
+                    waiting: { postMessage }
+                }))
+            }
+        });
+
+        const mockFetch = vi.fn(async (input: RequestInfo | URL) => {
+            const url = String(input);
+            if (url.startsWith('./version.json')) {
+                return jsonResponse({ version: '2.2.0', buildId: 'd2c90fb' });
+            }
+            return new Response('Should not hit GitHub', { status: 500 });
+        }) as unknown as typeof fetch;
+
+        try {
+            const res = await checkForWebUpdate({
+                currentVersion: '2.2.0',
+                currentBuildId: 'd2c90fb',
+                environment: 'web',
+                fetchImpl: mockFetch
+            });
+
+            expect(res.status).toBe('up-to-date');
+            expect(res.update).toBeNull();
+            expect(update).toHaveBeenCalledTimes(1);
+            expect(postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+            expect(mockFetch).toHaveBeenCalledTimes(1);
+        } finally {
+            if (originalSwDescriptor) {
+                Object.defineProperty(navigator, 'serviceWorker', originalSwDescriptor);
+            } else {
+                Reflect.deleteProperty(navigator, 'serviceWorker');
+            }
+        }
+    });
+
+    it('treats matching short and full/uppercase commit SHAs as identical', async () => {
+        const mockFetch = vi.fn(async (input: RequestInfo | URL) => {
+            if (String(input).startsWith('./version.json')) {
+                return jsonResponse({ version: '2.2.0', buildId: 'D2C90FB2F353' });
+            }
+            return new Response('Not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        const res = await checkForWebUpdate({
+            currentVersion: '2.2.0',
+            currentBuildId: 'd2c90fb',
+            environment: 'web',
+            fetchImpl: mockFetch
+        });
+
+        expect(res.status).toBe('up-to-date');
+        expect(res.update).toBeNull();
+    });
+
+    it('returns up-to-date when running version is newer than version.json even with a waiting SW', async () => {
+        const postMessage = vi.fn();
+        const originalSwDescriptor = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
+
+        Object.defineProperty(navigator, 'serviceWorker', {
+            configurable: true,
+            value: {
+                controller: { state: 'activated' },
+                getRegistration: vi.fn(async () => ({
+                    update: vi.fn(async () => {}),
+                    waiting: { postMessage }
+                }))
+            }
+        });
+
+        const mockFetch = vi.fn(async (input: RequestInfo | URL) => {
+            if (String(input).startsWith('./version.json')) {
+                return jsonResponse({ version: '2.1.0', buildId: 'oldsha1' });
+            }
+            return new Response('Not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        try {
+            const res = await checkForWebUpdate({
+                currentVersion: '2.2.0',
+                currentBuildId: 'd2c90fb',
+                environment: 'web',
+                fetchImpl: mockFetch
+            });
+
+            expect(res.status).toBe('up-to-date');
+            expect(res.update).toBeNull();
+            expect(postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
+        } finally {
+            if (originalSwDescriptor) {
+                Object.defineProperty(navigator, 'serviceWorker', originalSwDescriptor);
+            } else {
+                Reflect.deleteProperty(navigator, 'serviceWorker');
+            }
+        }
+    });
+
+    it('falls back to waiting SW when version.json is missing only if a controller is already active', async () => {
+        const originalSwDescriptor = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
+        const mockFetch = vi.fn(async (input: RequestInfo | URL) => {
+            if (String(input).startsWith('./version.json')) {
+                return new Response('Not found', { status: 404 });
+            }
+            return new Response('Not found', { status: 404 });
+        }) as unknown as typeof fetch;
+
+        try {
+            Object.defineProperty(navigator, 'serviceWorker', {
+                configurable: true,
+                value: {
+                    controller: null,
+                    getRegistration: vi.fn(async () => ({
+                        update: vi.fn(async () => {}),
+                        waiting: { postMessage: vi.fn() }
+                    }))
+                }
+            });
+
+            const firstInstall = await checkForWebUpdate({
+                currentVersion: '2.2.0',
+                currentBuildId: 'd2c90fb',
+                environment: 'web',
+                fetchImpl: mockFetch
+            });
+            expect(firstInstall.status).toBe('up-to-date');
+
+            Object.defineProperty(navigator, 'serviceWorker', {
+                configurable: true,
+                value: {
+                    controller: { state: 'activated' },
+                    getRegistration: vi.fn(async () => ({
+                        update: vi.fn(async () => {}),
+                        waiting: { postMessage: vi.fn() }
+                    }))
+                }
+            });
+
+            const fallbackAvailable = await checkForWebUpdate({
+                currentVersion: '2.2.0',
+                currentBuildId: 'd2c90fb',
+                environment: 'web',
+                fetchImpl: mockFetch
+            });
+            expect(fallbackAvailable.status).toBe('available');
+            expect(fallbackAvailable.update?.latestBuildId).toBe('sw-pending');
+            expect(fallbackAvailable.update?.isSameVersionHotfix).toBe(true);
+        } finally {
+            if (originalSwDescriptor) {
+                Object.defineProperty(navigator, 'serviceWorker', originalSwDescriptor);
+            } else {
+                Reflect.deleteProperty(navigator, 'serviceWorker');
+            }
+        }
+    });
 });
 
 describe('performHardReloadUpdate', () => {

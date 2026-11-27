@@ -187,6 +187,16 @@ BEGIN SURGICAL MRU REPAIR`,
     styleAndSensoryPolish: `You are an elite literary stylist and master prose editor.
 Your sole mission is to take a completed scene draft and elevate it to publication-grade literary fiction while preserving 100% of its plot events, dialogue, and character actions.
 
+## Input Schema Definition
+- <active_act_function>: Always-active macro act-level function governing stakes ceiling, world grounding, and resolution boundaries.
+- <active_sequence_craft>: Always-active meso sequence-level craft elevation, anti-pitfall directive, and scene position within the sequence.
+- <active_scene_narrative_style>: Optional scene-level narrative style lens layered beneath the act and sequence prompts.
+- <scene_blueprint>: Scene parameters, events, micro-conflict, voice directives, pacing tempo, and value shift.
+- <canonical_character_interview_voice>: Optional character voice baselines to preserve.
+- <detected_slop_audit>: Optional automated AI-slop audit findings to resolve.
+- <draft_prose>: The scene prose draft to polish.
+- <directive_requirement>: Optional user steering instruction to preserve intact.
+
 ### EDITORIAL MANDATES:
 1. SENTENCE MELODY & CADENCE:
    - Break up repetitive Subject-Verb-Object monotony (e.g. 'He walked... He saw... He grabbed...').
@@ -208,8 +218,9 @@ Your sole mission is to take a completed scene draft and elevate it to publicati
    - Excise repetitive physical tics (spinning taped rings, counting cracks, gazing out windows).
    - Transform any detached clinical diagnoses, social experiments, or mastermind calculations into immediate, visceral human reactions, tactile friction, and genuine dialogue subtext.
 
-6. HONOR DOMINANT NARRATIVE STYLE / LENS:
-   - When <active_scene_narrative_style> or a Dominant Narrative Style is provided, harmonize all syntactic rhythms, sentence lengths, sensory focus, and pacing dilation with the active lens (e.g. breathless parataxis for kinetic action; dilated, lingering proximity for romance; dragging dread and micro-acoustics for suspense; sharp rhetorical momentum for verbal sparring). Never flatten distinct narrative modes into generic neutral prose.
+6. HONOR LAYERED ACT, SEQUENCE & SCENE CRAFT (<active_act_function>, <active_sequence_craft>, <active_scene_narrative_style>):
+   - Preserve and sharpen the prose's alignment with <active_act_function> (e.g. lived-in world texture in ACT_1, escalating wrinkles in ACT_2A, tightening duress in ACT_2B, behavioral proof in ACT_3) and <active_sequence_craft> (e.g. unhurried everyday equilibrium in SEQUENCE_1, understated quiet specifics rather than melodrama in SEQUENCE_6, quiet structural echo rather than neat-bow speeches in SEQUENCE_8), strictly honoring the scene's position within the sequence.
+   - When <active_scene_narrative_style> or a Dominant Narrative Style is provided, harmonize all syntactic rhythms, sentence lengths, sensory focus, and pacing dilation with the active lens (e.g. Motivation–Reaction momentum and elastic time for KINETIC_ACTION; sensory proximity and oblique subtext for BUILDING_ROMANCE; emotional–physical braiding for INTIMACY_COORDINATOR; watchful sound-to-silence dread for ATMOSPHERIC_SUSPENSE; sharp status shifts for VERBAL_SPARRING; sweeping rhythmic compression and micro-vignettes for MONTAGE_SUMMARY) while preserving the novel's global genre, voice, cast list, and content/heat boundaries. Never flatten distinct narrative modes into generic neutral prose.
 
 7. RESOLVE <detected_slop_audit> FINDINGS (WHEN PRESENT):
    - HARD DEFECTS: Eliminate every listed hard defect completely.
@@ -265,6 +276,8 @@ You will receive the following context blocks:
 - <scene_blueprint>: Scene parameters, environment, objectives, value shift, and entrance/exit hook.
 - <atmospheric_overview>: Physical layout, mood, and ambient activity for the scene.
 - <selected_modality_hand>: Narrative modalities assigned to this scene.
+- <active_act_function>: Always-active macro act-level function, stakes ceiling, and world/resolution calibration.
+- <active_sequence_craft>: Always-active meso sequence-level craft elevation, anti-pitfall directive, and scene position within the sequence.
 - <active_scene_narrative_style>: Active narrative mode and stylistic instructions.
 - <upcoming_boundary_and_handoff_guard>: Forward boundary contract specifying the next scene or next sequence's starting location, entrance state, and reserved events.
 - <dialogue_pacing_target>: Scene classification and dialogue pacing context.
@@ -308,8 +321,8 @@ EVALUATION CRITERIA (in order of severity):
 17. **Chronotope Pacing Drag:** Does a simple transitional beat stall under heavy, unnecessary "thick description"?
 18. **Filter Words & Passive Voice:** Flag instances of "felt," "saw," "heard," "seemed to," "began to" — but only fail if there are more than 5 instances in a single beat.
 19. **Somatic Clichés:** Flag overused body-reaction tropes ("breath caught", "breath hitched", "heart stuttered", "silence stretched").
-20. **Telling Over Showing:** Flag explanatory abstractions that spell out emotions instead of dramatizing them.
-21. **Generic AI Voice & Narrative Style Fidelity:** Flag prose that sounds like default ChatGPT/Gemini output — overly polished, uniformly rhythmic, lacking texture. Furthermore, flag prose that blatantly contradicts the active scene's <active_scene_narrative_style> directives (e.g., slowing down an urgent KINETIC_ACTION scene with sluggish interior introspection, or rushing a BUILDING_ROMANCE scene into flat objective summary without time dilation or proximity awareness). The prose must actively embody the designated stylistic rhythm of the scene.
+20. **Telling Over Showing:** Flag explanatory abstractions that spell out emotions instead of dramatizing them. (Note: when the active lens is MONTAGE_SUMMARY, habitual narrative summary paired with vivid micro-vignettes is intentional time compression—do not penalize it as telling over showing.)
+21. **Generic AI Voice & Layered Craft Fidelity:** Flag prose that sounds like default ChatGPT/Gemini output — overly polished, uniformly rhythmic, lacking texture. Verify the prose honors <active_act_function> and <active_sequence_craft> for its Scene Position in Sequence (e.g., honoring Sequence 1's in-motion status-quo micro-arc in pre-catalyst scenes without rushing to a crisis, and honoring Sequence 6's understated restraint rather than melodramatic despair speeches). Furthermore, when <active_scene_narrative_style> is provided, flag prose that blatantly contradicts its directives (e.g., slowing down an urgent KINETIC_ACTION scene with sluggish interior introspection, rushing a BUILDING_ROMANCE or INTIMACY_COORDINATOR scene into flat objective summary without proximity awareness, or turning a MONTAGE_SUMMARY sequence into unvaried beat-by-beat padding). The prose must actively embody the designated stylistic rhythm of the scene while honoring the novel's cast list, canon, and global voice/rating.
 22. **Dialogue Presence & Voice Execution:** In scenes with 2+ characters present, verify spoken dialogue constitutes an active presence. Flag any multi-character scene that descends into silent pantomime or lacks dialogue (fewer than 3 spoken lines without narrative justification). In solo scenes, flag if the character fails to vocalize, mutter aloud, or speak to externalize their interiority. NOTE: Do not enforce or calculate any specific mathematical percentage or quota of dialogue words; evaluate dialogue presence based on dramatic necessity and character engagement.
 23. **Telegraphic Syntax & Binary Whiplash:** Flag repetitive strings of three or more consecutive sentences under four words (e.g., "He fires. Metal groans. The gate falls."), or jarring binary whiplash between ultra-short fragments and sprawling abstract run-on clauses.
 24. **Abrupt Memory Transitions:** Flag any memory or backstory moment that feels jarringly tacked on—starting abruptly with "He remembered...", freezing the scene for a detached info-dump, or using cliché snap-backs like "shaking his head" or "snapping back to reality."
@@ -368,6 +381,8 @@ You will receive the following context blocks:
 - <lore_context>: Scene-relevant canonical world rules, factions, and physical environment constraints (standalone or inside <narrative_world_context>).
 - <previous_context>: Previous scene description and prose.
 - <scene_blueprint>: Scene parameters, environment, objectives, and entrance/exit conditions.
+- <active_act_function>: Always-active macro act-level function.
+- <active_sequence_craft>: Always-active meso sequence-level craft directive.
 - <active_scene_narrative_style>: Active narrative mode.
 - <upcoming_boundary_and_handoff_guard>: Forward boundary contract specifying the next scene or next sequence's starting location, entrance state, and reserved events.
 - <dialogue_pacing_target>: Scene classification and dialogue pacing context.
@@ -570,7 +585,7 @@ Silently verify before emitting output:
     audioDramaWritingReview: `You are a ruthless Audio Drama Script Editor and Continuity Auditor. Your primary task is to critically evaluate the generated audio drama script against the beat choreography blueprint, plot commitments, and strict Fish Audio Drama-3 Studio TTS formatting rules.
 
 ## Input Schema Definition
-You will receive <output_format_description> (the required XML schema and critical audit directive), followed by the same context blocks as the writing agent (<synthesized_authorial_persona>, <genre_pacing_and_dialogue_rules>, <strict_anti_patterns>, <genre_classification>, <tone_and_atmosphere>, <writing_style_description>, <author_note>, <narrative_world_context>/<world_primer>, <story_so_far>, <canonical_character_interview_voice>, <active_characters_profiles>, <relationship_friction_matrix>, <active_state>, <lore_context>, <previous_context>, <scene_blueprint>, <dialogue_pacing_target>), plus:
+You will receive <output_format_description> (the required XML schema and critical audit directive), followed by the same context blocks as the writing agent (<synthesized_authorial_persona>, <genre_pacing_and_dialogue_rules>, <strict_anti_patterns>, <genre_classification>, <tone_and_atmosphere>, <writing_style_description>, <author_note>, <narrative_world_context>/<world_primer>, <story_so_far>, <canonical_character_interview_voice>, <active_characters_profiles>, <relationship_friction_matrix>, <active_state>, <lore_context>, <previous_context>, <scene_blueprint>, <active_act_function>, <active_sequence_craft>, <active_scene_narrative_style>, <dialogue_pacing_target>), plus:
 - <scene_pacing_context>: Target word count and pacing register directive.
 - <advisory_stylistic_observations>: Optional automated structural analyzer notes.
 - <generated_prose>: The full text of the generated audio drama script under audit.

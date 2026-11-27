@@ -22,6 +22,36 @@
         </div>
     </header>
 
+    <section class="card" id="vram-card">
+        <div class="row head">
+            <div>
+                <h2>VRAM &amp; model juggling</h2>
+                <p class="muted" id="vram-summary">Checking GPU memory…</p>
+            </div>
+            <span class="badge" id="vram-resident">Idle</span>
+        </div>
+        <div class="row vram-controls">
+            <label><span>Policy:</span>
+                <select id="vram-mode">
+                    <option value="auto">Auto — Offload inactive models &gt; 2 GB</option>
+                    <option value="strict">Strict — Always keep one model in VRAM</option>
+                    <option value="manual">Manual — Keep models loaded until freed</option>
+                </select>
+            </label>
+            <label><span>Idle unload:</span>
+                <select id="vram-idle">
+                    <option value="10">After 10 minutes idle</option>
+                    <option value="5">After 5 minutes idle</option>
+                    <option value="15">After 15 minutes idle</option>
+                    <option value="30">After 30 minutes idle</option>
+                    <option value="0">Never</option>
+                </select>
+            </label>
+            <button id="free-vram">Free VRAM now</button>
+        </div>
+        <p class="muted vram-note">Local models stay ready while waiting on cloud LLMs, and swap cleanly when switching between text, audio, and images.</p>
+    </section>
+
     <main id="backends"></main>
 
     <section class="card" id="audio-models">
@@ -51,12 +81,19 @@
             <div class="row actions">
                 <select class="variant"></select>
                 <button class="install primary">Install</button>
+                <button class="use-existing">Use existing…</button>
                 <button class="start">Start</button>
                 <button class="stop">Stop</button>
                 <button class="uninstall link danger">Remove</button>
-                <label class="auto"><input type="checkbox" class="autostart"> Start with EllipsisProse</label>
+                <label class="auto"><input type="checkbox" class="autostart"> <span class="auto-label">Start with EllipsisProse</span></label>
             </div>
-            <div class="progress" hidden><div class="bar"><i></i></div><span class="ptext"></span><button class="cancel link">Cancel</button></div>
+            <div class="custom-path muted" hidden>
+                <span class="custom-path-label">Using existing install:</span>
+                <code class="custom-path-val"></code>
+                <button class="change-existing link">Change</button>
+                <button class="unlink link danger">Unlink</button>
+            </div>
+            <div class="progress" hidden><div class="bar"><i></i></div><span class="ptext"></span><button class="pause link">Pause</button><button class="cancel link">Cancel</button></div>
             <div class="extra"></div>
             <details class="logbox"><summary>Log</summary><pre class="log"></pre></details>
         </section>

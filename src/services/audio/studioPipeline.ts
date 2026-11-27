@@ -69,6 +69,7 @@ import {
 } from '@/domain/audio';
 import { fetchWithTimeout } from '@/services/http';
 import { studioCacheStore } from '@/services/storage';
+import { withLocalGpuLease } from '@/services/vram';
 import {
     activateAudioCppWave,
     buildWave2ActivateBody,
@@ -356,96 +357,6 @@ export async function runStudioRenderJob({
     const ensureDramaWaveActive = (): Promise<boolean> =>
         activateAudioCppWave(bridgeUrl, 2, signal, 60000, effectiveSettings);
 
-    const { anchorsMap, calibratedFromCache } = await enqueueAudioCppTask(() =>
-        resolveSpeakersMasterMap(
-            uniqueSpeakers,
-            story,
-            effectiveSettings,
-            bridgeUrl,
-            signal,
-            ensureBreezeWaveActive
-        )
-    );
-
-    logAudioStageComplete(
-        'voice_alignment',
-        `[Completed] Wave 1: Calibrated Master Voices for ${uniqueSpeakers.length} Cast Members (${
-            calibratedFromCache ? 'cached' : 'synthesized'
-        })`,
-        {
-            alignedCastCount: anchorsMap.size,
-            uniqueSpeakers,
-            calibratedFromCache
-        }
-    );
-
-    if (onProgress) {
-        onProgress({
-            wave: 2,
-            step: 'chunk_synthesis',
-            done: 30,
-            total: 100,
-            message: 'Synthesizing multi-character segments...'
-        });
-    }
-
-    logAudioStageStart(
-        'chunk_synthesis',
-        `[Running] Wave 2: Drama-3 Multi-Character Scene Segments (${allChunks.length} Segments)`,
-        { totalChunks: allChunks.length, bridgeUrl, audioCppUrl }
-    );
-
-    let isDrama3Available = false;
-    let activeDramaModelId: string | null = null;
-    await enqueueAudioCppTask(async () => {
-        await ensureDramaWaveActive();
-        try {
-            const reqInit: RequestInit = { method: 'GET', ...(signal ? { signal } : {}) };
-            const modelsRes = await fetchWithTimeout(`${bridgeUrl}/v1/models`, reqInit, 4000)
-                .catch(() => fetchWithTimeout(`${audioCppUrl}/v1/models`, reqInit, 4000))
-                .catch(() => null);
-            if (modelsRes && modelsRes.ok) {
-                const modelsJson = (await modelsRes.json().catch(() => null)) as {
-                    data?: Array<{ id?: string; family?: string }>;
-                } | null;
-                const modelList = Array.isArray(modelsJson?.data)
-                    ? modelsJson.data
-                    : Array.isArray(modelsJson)
-                      ? (modelsJson as Array<{ id?: string; family?: string }>)
-                      : [];
-                const targetDramaId = String(effectiveSettings.dramaModelId || 'drama-3');
-
-                const matchedDrama =
-                    modelList.find((m) => m?.id && m.id === targetDramaId) ||
-                    modelList.find((m) => m?.id === 'drama-3') ||
-                    modelList.find((m) => m?.id === 'fish-drama3') ||
-                    modelList.find((m) => m?.family === 'fish_drama3') ||
-                    modelList.find(
-                        (m) => typeof m?.id === 'string' && m.id.toLowerCase().includes('drama')
-                    );
-
-                if (matchedDrama && matchedDrama.id) {
-                    isDrama3Available = true;
-                    activeDramaModelId = matchedDrama.id;
-                    console.log(
-                        `[Hybrid Studio] Drama-3 dialogue model verified in backend registry: "${activeDramaModelId}"`
-                    );
-                } else {
-                    console.warn(
-                        `[Hybrid Studio] Drama-3 model not found in backend registry (target: "${targetDramaId}"). Available models:`,
-                        modelList.map((m) => m?.id)
-                    );
-                }
-            } else {
-                console.warn(
-                    `[Hybrid Studio] Could not probe backend model registry at ${bridgeUrl} or ${audioCppUrl}`
-                );
-            }
-        } catch (probeErr) {
-            console.warn('[Hybrid Studio] Model registry probe exception:', probeErr);
-        }
-    });
-
     const bypassCache = Boolean(
         effectiveSettings.bypassCache || effectiveSettings.forceRerender
     );
@@ -455,7 +366,100 @@ export async function runStudioRenderJob({
         transcript: unknown;
     }> = [];
 
-    for (let i = 0; i < allChunks.length; i++) {
+    await withLocalGpuLease('audio', { bridgeUrl }, async () => {
+        const { anchorsMap, calibratedFromCache } = await enqueueAudioCppTask(
+            () =>
+                resolveSpeakersMasterMap(
+                    uniqueSpeakers,
+                    story,
+                    effectiveSettings,
+                    bridgeUrl,
+                    signal,
+                    ensureBreezeWaveActive
+                ),
+            bridgeUrl
+        );
+
+        logAudioStageComplete(
+            'voice_alignment',
+            `[Completed] Wave 1: Calibrated Master Voices for ${uniqueSpeakers.length} Cast Members (${
+                calibratedFromCache ? 'cached' : 'synthesized'
+            })`,
+            {
+                alignedCastCount: anchorsMap.size,
+                uniqueSpeakers,
+                calibratedFromCache
+            }
+        );
+
+        if (onProgress) {
+            onProgress({
+                wave: 2,
+                step: 'chunk_synthesis',
+                done: 30,
+                total: 100,
+                message: 'Synthesizing multi-character segments...'
+            });
+        }
+
+        logAudioStageStart(
+            'chunk_synthesis',
+            `[Running] Wave 2: Drama-3 Multi-Character Scene Segments (${allChunks.length} Segments)`,
+            { totalChunks: allChunks.length, bridgeUrl, audioCppUrl }
+        );
+
+        let isDrama3Available = false;
+        let activeDramaModelId: string | null = null;
+        await enqueueAudioCppTask(async () => {
+            await ensureDramaWaveActive();
+            try {
+                const reqInit: RequestInit = { method: 'GET', ...(signal ? { signal } : {}) };
+                const modelsRes = await fetchWithTimeout(`${bridgeUrl}/v1/models`, reqInit, 4000)
+                    .catch(() => fetchWithTimeout(`${audioCppUrl}/v1/models`, reqInit, 4000))
+                    .catch(() => null);
+                if (modelsRes && modelsRes.ok) {
+                    const modelsJson = (await modelsRes.json().catch(() => null)) as {
+                        data?: Array<{ id?: string; family?: string }>;
+                    } | null;
+                    const modelList = Array.isArray(modelsJson?.data)
+                        ? modelsJson.data
+                        : Array.isArray(modelsJson)
+                          ? (modelsJson as Array<{ id?: string; family?: string }>)
+                          : [];
+                    const targetDramaId = String(effectiveSettings.dramaModelId || 'drama-3');
+
+                    const matchedDrama =
+                        modelList.find((m) => m?.id && m.id === targetDramaId) ||
+                        modelList.find((m) => m?.id === 'drama-3') ||
+                        modelList.find((m) => m?.id === 'fish-drama3') ||
+                        modelList.find((m) => m?.family === 'fish_drama3') ||
+                        modelList.find(
+                            (m) => typeof m?.id === 'string' && m.id.toLowerCase().includes('drama')
+                        );
+
+                    if (matchedDrama && matchedDrama.id) {
+                        isDrama3Available = true;
+                        activeDramaModelId = matchedDrama.id;
+                        console.log(
+                            `[Hybrid Studio] Drama-3 dialogue model verified in backend registry: "${activeDramaModelId}"`
+                        );
+                    } else {
+                        console.warn(
+                            `[Hybrid Studio] Drama-3 model not found in backend registry (target: "${targetDramaId}"). Available models:`,
+                            modelList.map((m) => m?.id)
+                        );
+                    }
+                } else {
+                    console.warn(
+                        `[Hybrid Studio] Could not probe backend model registry at ${bridgeUrl} or ${audioCppUrl}`
+                    );
+                }
+            } catch (probeErr) {
+                console.warn('[Hybrid Studio] Model registry probe exception:', probeErr);
+            }
+        }, bridgeUrl);
+
+        for (let i = 0; i < allChunks.length; i++) {
         if (signal?.aborted) throw new Error('Aborted');
         const ch = allChunks[i];
         const pct = 30 + Math.round((i / allChunks.length) * 40);
@@ -927,6 +931,7 @@ export async function runStudioRenderJob({
 
         synthesizedBlobs.push({ chunk: ch, blob: synthBlob, transcript: null });
     }
+    });
 
     logAudioStageComplete(
         'chunk_synthesis',

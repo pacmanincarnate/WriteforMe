@@ -5,6 +5,7 @@
 
 import { DEFAULT_COMFY_CONFIG, DEFAULT_SERVICE_URLS } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
+import { withLocalGpuLease } from '@/services/vram';
 
 export interface ComfyDimensions {
     width: number;
@@ -165,9 +166,26 @@ type ComfyObjectInfoResponse = Record<
     { input?: { required?: Record<string, [unknown]> } } | undefined
 >;
 
+export interface ComfyDiscoveryOptions {
+    startIfNeeded?: boolean;
+}
+
+/** Returns true when `url` points to a local ComfyUI instance on port 8188. */
+export function isLocalComfyUrl(url: string): boolean {
+    try {
+        const parsed = new URL(url);
+        const host = parsed.hostname.toLowerCase();
+        const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+        return (host === '127.0.0.1' || host === 'localhost') && port === '8188';
+    } catch {
+        return false;
+    }
+}
+
 /** Probes ComfyUI `system_stats` and Krea 2 loader node options, sorting Krea/Qwen entries first. */
 export async function fetchComfyInfoCatalog(
-    comfyUrl: string = DEFAULT_SERVICE_URLS.comfyui
+    comfyUrl: string = DEFAULT_SERVICE_URLS.comfyui,
+    discoveryOptions: ComfyDiscoveryOptions = {}
 ): Promise<ComfyDiscoveryResult> {
     const baseUrl = (String(comfyUrl || '').trim() || DEFAULT_SERVICE_URLS.comfyui).replace(
         /\/+$/,
@@ -182,6 +200,14 @@ export async function fetchComfyInfoCatalog(
         scheduler: []
     };
     try {
+        if (
+            discoveryOptions.startIfNeeded &&
+            isLocalComfyUrl(baseUrl) &&
+            typeof window !== 'undefined' &&
+            window.ellipsisDesktopBackends?.ensureComfyRunning
+        ) {
+            await window.ellipsisDesktopBackends.ensureComfyRunning().catch(() => {});
+        }
         const paths = [
             'system_stats',
             'object_info/UNETLoader',
@@ -313,15 +339,16 @@ export async function generateComfyImage(
     let pollTimer: ReturnType<typeof setTimeout> | undefined;
     let timedOut = false;
     const timeoutError = (): Error => new Error(`ComfyUI generation timed out after ${timeoutSec} s`);
-    const deadline = new Promise<never>((_resolve, reject) => {
-        deadlineTimer = setTimeout(() => {
-            timedOut = true;
-            controller.abort();
-            reject(timeoutError());
-        }, timeoutSec * 1000);
-    });
 
     const generate = async (): Promise<string> => {
+        if (
+            isLocalComfyUrl(baseUrl) &&
+            typeof window !== 'undefined' &&
+            !window.ellipsisDesktopBackends?.acquireGpuLease &&
+            window.ellipsisDesktopBackends?.ensureComfyRunning
+        ) {
+            await window.ellipsisDesktopBackends.ensureComfyRunning().catch(() => {});
+        }
         let response: Response;
         try {
             response = await fetchWithTimeout(
@@ -427,7 +454,26 @@ export async function generateComfyImage(
     };
 
     try {
-        return await Promise.race([generate(), deadline]);
+        return await withLocalGpuLease(
+            'image',
+            {
+                comfyUrl: baseUrl,
+                unet,
+                clip,
+                vae,
+                lora: options.lora
+            },
+            () => {
+                const deadline = new Promise<never>((_resolve, reject) => {
+                    deadlineTimer = setTimeout(() => {
+                        timedOut = true;
+                        controller.abort();
+                        reject(timeoutError());
+                    }, timeoutSec * 1000);
+                });
+                return Promise.race([generate(), deadline]);
+            }
+        );
     } catch (error) {
         if (timedOut) throw timeoutError();
         throw error;

@@ -3,6 +3,8 @@
  * Builds the shared story-craft system prompt foundation for Writing Agent modes.
  */
 
+import { NARRATIVE_MODE_SHARED_GUARDRAILS } from '@/config';
+
 export interface WritingSystemPromptOptions {
     isAudioDrama?: boolean;
 }
@@ -18,18 +20,22 @@ export function buildWritingSystemPrompt(
         ? `You are an elite Audio Dramaturg and Master Scriptwriter embodying the authentic, distinct authorial voice defined in <synthesized_authorial_persona> and governed by <genre_pacing_and_dialogue_rules>. Your mission is to write an immersive, character-driven, full-cast audio drama script formatted strictly for Fish Audio Drama-3 multi-voice synthesis that fully dramatizes the current scene based on the provided <scene_blueprint>.`
         : `You are an elite narrative prose stylist embodying the authentic, distinct authorial voice defined in <synthesized_authorial_persona> and governed by <genre_pacing_and_dialogue_rules>. Your mission is to write immersive, visceral, publication-grade narrative fiction that fully dramatizes the current scene based on the provided <scene_blueprint>.`;
 
+    const macroMesoCraftDirective = isAudioDrama
+        ? `- **Layered Act Function & Sequence Craft Architecture (<active_act_function>, <active_sequence_craft>)**:
+  Every scene sits inside an always-active three-layer craft stack: Macro Act Function (<active_act_function>) → Meso Sequence Craft (<active_sequence_craft>) → Micro Scene Lens (<active_scene_narrative_style>, when enabled).
+  * Obey <active_act_function> to calibrate the macro stakes ceiling, lived-in world grounding vs. thread convergence, and how much resolution is permitted in this portion of the novel.
+  * Obey <active_sequence_craft> to counter predictable AI pacing traps and elevate sequence-specific craft—applying ONLY the craft beats matching THIS scene's <scene_blueprint> and Scene Position in Sequence (never rushing ahead to stage a later scene's catalyst, midpoint turn, threshold break, or closing echo).`
+        : `- **Layered Act Function & Sequence Craft Architecture (<active_act_function>, <active_sequence_craft>)**:
+  Every scene sits inside an always-active three-layer craft stack: Macro Act Function (<active_act_function>) → Meso Sequence Craft (<active_sequence_craft>) → Micro Scene Lens (<active_scene_narrative_style>, when enabled).
+  * Obey <active_act_function> to calibrate the macro stakes ceiling, lived-in world expansion vs. thread convergence, and how much resolution is allowed in this portion of the novel.
+  * Obey <active_sequence_craft> to counter predictable AI pacing traps and elevate sequence-specific craft—applying ONLY the craft beats matching THIS scene's <scene_blueprint> and Scene Position in Sequence (never rushing ahead to prematurely stage a sequence's later catalyst, midpoint turn, threshold break, or closing echo).`;
+
     const lensDirective = isAudioDrama
-        ? `- **Dominant Narrative Style & Scene Lens Fidelity (<active_scene_narrative_style>)**:
-  When <active_scene_narrative_style> is provided, channel its emotional temperature, interpersonal intimacy, tension, and thematic focus primarily through sustained spoken character exchanges, layered Drama-3 vocal cues, and unified single-chunk Narrator staging.`
-        : `- **Dominant Narrative Style & Scene Lens Fidelity (PRIMARY STYLISTIC DIRECTIVE)**:
-  The scene's assigned narrative style (<active_scene_narrative_style>) is your PRIMARY stylistic mandate for this specific scene. It directly shapes your sentence length, rhythm, interiority depth, dialogue frequency, and sensory hierarchy. You MUST execute the scene through this designated lens:
-  * Kinetic/Urgent styles (e.g. KINETIC_ACTION) require paratactic syntax, high physical momentum, tactile friction, kinesthesia, and minimal interiority.
-  * Romantic/Intimate styles (e.g. BUILDING_ROMANCE, CATHARTIC_INTIMACY) require radical time dilation, hyper-awareness of proximity, breath, touch, micro-gestures, and subtextual hesitation.
-  * Suspense/Uncertainty styles (e.g. ATMOSPHERIC_SUSPENSE, UNCERTAINTY) require hypotactic sentence delays, micro-acoustics, negative space, and physiological vigilance.
-  * Dialogue-driven styles (e.g. VERBAL_SPARRING, ORGANIC_EXPOSITION) require sharp back-and-forth verbal collisions and active physical prop punctuation.
-  * Mystery/World-Building styles (e.g. PROCEDURAL_MYSTERY, WORLD_BUILDING) require sharp physical anomalies, tactile clues, and grounded deductive friction.
-  * Reflective/Dilemma styles (e.g. REFLECTION, MORAL_DILEMMA) require repetitive physical grounding, concrete symbolic anchors, and embodied emotional aftermath.
-  Do NOT smooth all scenes into a uniform cadence. The narrative style is what gives each individual scene its unique pulse and texture within the overarching novel.`;
+        ? `- **Dominant Narrative Style & Scene Lens Guardrails (<active_scene_narrative_style>)**:
+  When <active_scene_narrative_style> is provided, channel its emotional temperature, interpersonal intimacy, tension, and thematic focus primarily through sustained spoken character exchanges, layered Drama-3 vocal cues, and unified single-chunk Narrator staging, while strictly obeying these shared guardrails:
+  ${NARRATIVE_MODE_SHARED_GUARDRAILS}`
+        : `- **Dominant Narrative Style & Scene Lens Guardrails (<active_scene_narrative_style>)**:
+  When <active_scene_narrative_style> is provided, execute the scene through its designated lens without smoothing distinct scenes into a uniform house style. ${NARRATIVE_MODE_SHARED_GUARDRAILS}`;
 
     const sensoryRule = isAudioDrama
         ? `- **Audible Sensory & Vocal Subtext Grounding**: Channel emotional tension from <main_character_heart>, <other_character_heart>, and <relationship_friction_matrix> directly into Drama-3 vocal physics & hidden subtext [...] cues, listener context cues, mid-line emotional pivots, causal sounds/pauses, and paired XML word-level emphasis, while consolidating essential physical movement, posture, and environmental staging into unified single-chunk Narrator turns between sustained multi-turn character exchanges.`
@@ -98,6 +104,8 @@ You will receive the following structured context blocks:
 - <scene_blueprint>: Scene parameters, environment, objectives, value shift, and entrance/exit hook.
 - <atmospheric_overview>: 2-3 paragraph physical layout, mood, ambient activity, and physical details to draw from.
 - <selected_modality_hand>: 3 to 5 narrative modalities selected specifically for this scene's structural movement.
+- <active_act_function>: Always-active macro act-level function governing stakes ceiling, world grounding vs. thread convergence, and allowed resolution.
+- <active_sequence_craft>: Always-active meso sequence-level craft elevation and anti-pitfall directives calibrated to this sequence and scene position.
 - <active_scene_narrative_style>: Governing scene-level narrative style instructions and tonal focus.${dialogueSchemaLine}
 - <upcoming_boundary_and_handoff_guard>: Mandatory forward boundary contract specifying the next scene or next sequence's starting location, entrance state, and reserved events.
 - <current_scene_prior_draft_context>: Prior draft text and editorial critique for the current scene (present during rewrites, steering directives, or second passes).
@@ -107,6 +115,7 @@ You will receive the following structured context blocks:
 ## 2. SCENE BLUEPRINT DRAMATIZATION & NARRATIVE MOMENTUM
 - **Canonical World & Lore Grounding (<narrative_world_context>)**: Ground all physical spaces, faction allegiances, and world rules directly in <narrative_world_context>. Never contradict established world bible facts or introduce lore that conflicts with the canonical world setting.
 - **Holistic Blueprint Dramatization**: Ground the scene in its physical setting, drive relentlessly toward the focal character's dramatic goal, execute the vital Value Shift (beginning state -> turning point -> ending state), and conclude in an evocative exit hook.
+${macroMesoCraftDirective}
 ${lensDirective}
 - **World-Building Reservoir Approach (<atmospheric_overview>)**: Treat the Atmospheric Overview strictly as an organic world-building reservoir. You are explicitly forbidden from artificially listing these details or obsessively repeating isolated sensory anchors. Characters must organically move through the space, interacting with the environment only when it naturally intersects with their dialogue, internal processing, or physical agency.
 - **Structural Modality Hand (<selected_modality_hand>)**: Weave the assigned modalities dynamically to sculpt the scene's dramatic rhythm without rigid beat checklists.

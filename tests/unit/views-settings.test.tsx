@@ -171,6 +171,8 @@ describe('Phase 5G: SettingsView across all 5 tabs', () => {
                     setImageApiKey={vi.fn()}
                     geminiImageModelsList={[]}
                     fetchGeminiImageModels={vi.fn()}
+                    openRouterImageModelsList={[]}
+                    fetchOpenRouterImageModels={vi.fn()}
                     isFetchingImageModels={false}
                     comfyUrl="http://127.0.0.1:8188"
                     setComfyUrl={vi.fn()}
@@ -380,5 +382,276 @@ describe('Phase 5G: SettingsView across all 5 tabs', () => {
             findButton('Erase All App Data').click();
         });
         expect(handleDeleteStory).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders live OpenRouter image models with cost labels, cost breakdown, and Fetch Models button', () => {
+        const fetchOpenRouterImageModels = vi.fn();
+        const setImageModel = vi.fn();
+        const sampleStory: SettingsStory = {
+            id: 'story_settings_or',
+            title: 'Glass Harbor',
+            cast: []
+        };
+
+        const OpenRouterImageHarness: React.FC = () => {
+            const [tab, setTab] = useState<string>('models');
+            const [showRouting, setShowRouting] = useState<boolean>(false);
+            const [slopConfig, setSlopConfig] = useState(DEFAULT_SLOP_CONFIG);
+            const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+            const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({});
+            const [story, setStory] = useState<SettingsStory>(sampleStory);
+            const comfyRefreshId = useRef<number>(0);
+
+            return (
+                <SettingsView
+                    view="settings"
+                    settingsTab={tab}
+                    setSettingsTab={setTab}
+                    devProvider="openrouter"
+                    setDevProvider={vi.fn()}
+                    setApiProvider={vi.fn()}
+                    devModel="deepseek/deepseek-flash-latest"
+                    setDevModel={vi.fn()}
+                    apiKey=""
+                    setApiKey={vi.fn()}
+                    geminiModel="gemini-2.5-pro"
+                    setGeminiModel={vi.fn()}
+                    openRouterKey=""
+                    setOpenRouterKey={vi.fn()}
+                    openRouterModel="openai/gpt-4o"
+                    setOpenRouterModel={vi.fn()}
+                    openRouterMaxTokens={65536}
+                    setOpenRouterMaxTokens={vi.fn()}
+                    nanoGptKey=""
+                    setNanoGptKey={vi.fn()}
+                    nanoGptModel=""
+                    setNanoGptModel={vi.fn()}
+                    koboldUrl="http://localhost:5001"
+                    setKoboldUrl={vi.fn()}
+                    koboldModel=""
+                    setKoboldModel={vi.fn()}
+                    koboldStatus="idle"
+                    koboldError={null}
+                    koboldLoadedModel=""
+                    codexUrl="http://localhost:5010"
+                    setCodexUrl={vi.fn()}
+                    codexModel=""
+                    setCodexModel={vi.fn()}
+                    codexModelsList={[]}
+                    codexStatus={{ online: false }}
+                    codexEmbeddingStatus={null}
+                    refreshCodexModels={vi.fn()}
+                    claudeUrl="http://localhost:5011"
+                    setClaudeUrl={vi.fn()}
+                    claudeModel="sonnet"
+                    setClaudeModel={vi.fn()}
+                    claudeModelsList={[]}
+                    claudeStatus={{ online: false }}
+                    refreshClaudeModels={vi.fn()}
+                    showOtherApiKeys={false}
+                    setShowOtherApiKeys={vi.fn()}
+                    savedModels={[]}
+                    saveModel={vi.fn()}
+                    deleteModel={vi.fn()}
+                    modelSearchQuery=""
+                    setModelSearchQuery={vi.fn()}
+                    isSearchingModels={false}
+                    searchResults={[]}
+                    isModelDropdownOpen={false}
+                    setIsModelDropdownOpen={vi.fn()}
+                    showAdvancedModelRouting={showRouting}
+                    setShowAdvancedModelRouting={setShowRouting}
+                    getEffectiveModelConfig={() => ({ provider: 'openrouter', model: 'openai/gpt-4o' })}
+                    reviewProvider=""
+                    setReviewProvider={vi.fn()}
+                    reviewModel=""
+                    setReviewModel={vi.fn()}
+                    reviewModelSearchQuery=""
+                    setReviewModelSearchQuery={vi.fn()}
+                    isSearchingReviewModels={false}
+                    reviewSearchResults={[]}
+                    isReviewModelDropdownOpen={false}
+                    setIsReviewModelDropdownOpen={vi.fn()}
+                    proseProvider=""
+                    setProseProvider={vi.fn()}
+                    proseModel=""
+                    setProseModel={vi.fn()}
+                    proseModelSearchQuery=""
+                    setProseModelSearchQuery={vi.fn()}
+                    isSearchingProseModels={false}
+                    proseSearchResults={[]}
+                    isProseModelDropdownOpen={false}
+                    setIsProseModelDropdownOpen={vi.fn()}
+                    handleCatalogRefresh={vi.fn()}
+                    embeddingProvider="openrouter"
+                    setEmbeddingProvider={vi.fn()}
+                    apiTimeout={120}
+                    setApiTimeout={vi.fn()}
+                    imageProvider="openrouter"
+                    setImageProvider={vi.fn()}
+                    imageModel="black-forest-labs/flux.2-pro"
+                    setImageModel={setImageModel}
+                    imageApiKey=""
+                    setImageApiKey={vi.fn()}
+                    geminiImageModelsList={[]}
+                    fetchGeminiImageModels={vi.fn()}
+                    openRouterImageModelsList={[
+                        {
+                            id: 'recraft/recraft-v4.1-flash-v2:free',
+                            name: 'Recraft: Recraft V4.1 Flash V2 (free)',
+                            description: 'Free model',
+                            modality: 'text->image',
+                            costLabel: 'Free',
+                            costDetail: 'Free',
+                            isFree: true
+                        },
+                        {
+                            id: 'black-forest-labs/flux.2-pro',
+                            name: 'Black Forest Labs: FLUX.2 Pro',
+                            description: 'Pro model',
+                            modality: 'text+image->image',
+                            costLabel: '$7.32/1M img tok',
+                            costDetail: 'Image output: $7.32/1M tokens',
+                            isFree: false
+                        }
+                    ]}
+                    fetchOpenRouterImageModels={fetchOpenRouterImageModels}
+                    isFetchingImageModels={false}
+                    comfyUrl="http://127.0.0.1:8188"
+                    setComfyUrl={vi.fn()}
+                    comfyRefreshId={comfyRefreshId}
+                    comfyStatus={{ online: false, version: '', device: '', error: '' }}
+                    comfyOptions={{ unet: [], clip: [], vae: [], lora: [], sampler: [], scheduler: [] }}
+                    refreshComfyInfo={vi.fn()}
+                    comfyUnet=""
+                    setComfyUnet={vi.fn()}
+                    comfyClip=""
+                    setComfyClip={vi.fn()}
+                    comfyVae=""
+                    setComfyVae={vi.fn()}
+                    comfyLora=""
+                    setComfyLora={vi.fn()}
+                    comfySampler=""
+                    setComfySampler={vi.fn()}
+                    comfyScheduler=""
+                    setComfyScheduler={vi.fn()}
+                    comfyLoraStrength={1}
+                    setComfyLoraStrength={vi.fn()}
+                    comfySteps={20}
+                    setComfySteps={vi.fn()}
+                    comfyCfg={1}
+                    setComfyCfg={vi.fn()}
+                    comfyTimeoutSec={120}
+                    setComfyTimeoutSec={vi.fn()}
+                    enableMcpBridge={false}
+                    setEnableMcpBridge={vi.fn()}
+                    isMcpConnected={false}
+                    setMcpRetryTrigger={vi.fn()}
+                    enableReview={true}
+                    setEnableReview={vi.fn()}
+                    enableStylePolish={true}
+                    setEnableStylePolish={vi.fn()}
+                    enableAudioDramaDirectionPass={true}
+                    setEnableAudioDramaDirectionPass={vi.fn()}
+                    enableEditorialHarnessAutopilot={false}
+                    setEnableEditorialHarnessAutopilot={vi.fn()}
+                    thinkingBudgetStoryArc={4096}
+                    setThinkingBudgetStoryArc={vi.fn()}
+                    thinkingBudgetAct={4096}
+                    setThinkingBudgetAct={vi.fn()}
+                    setEnableThinkingAct={vi.fn()}
+                    thinkingBudgetScene={4096}
+                    setThinkingBudgetScene={vi.fn()}
+                    setEnableThinkingScene={vi.fn()}
+                    thinkingBudgetWriting={4096}
+                    setThinkingBudgetWriting={vi.fn()}
+                    setEnableThinkingWriting={vi.fn()}
+                    enableNarrativeLenses={true}
+                    setEnableNarrativeLenses={vi.fn()}
+                    customModes={{}}
+                    editingModeId={null}
+                    newModeId=""
+                    setNewModeId={vi.fn()}
+                    newModeContext=""
+                    setNewModeContext={vi.fn()}
+                    newModeIcon="tag"
+                    newModePrompt=""
+                    setNewModePrompt={vi.fn()}
+                    setIsIconPickerOpen={vi.fn()}
+                    handleStartEditCustomMode={vi.fn()}
+                    handleDeleteCustomMode={vi.fn()}
+                    handleSaveCustomMode={vi.fn()}
+                    handleCancelEditCustomMode={vi.fn()}
+                    slopConfig={slopConfig}
+                    setSlopConfig={setSlopConfig}
+                    bannedPhrases={[]}
+                    slopSearchQuery=""
+                    setSlopSearchQuery={vi.fn()}
+                    expandedSlopGroups={expandedGroups}
+                    setExpandedSlopGroups={setExpandedGroups}
+                    expandedSlopCategories={expandedCats}
+                    setExpandedSlopCategories={setExpandedCats}
+                    newBannedPhraseInput=""
+                    setNewBannedPhraseInput={vi.fn()}
+                    newCategoryItemInputs={{}}
+                    setNewCategoryItemInputs={vi.fn()}
+                    handleSetSlopCategorySeverity={vi.fn()}
+                    handleAddBannedPhrase={vi.fn()}
+                    handleAddSlopCategoryItem={vi.fn()}
+                    handleRemoveSlopCategoryItem={vi.fn()}
+                    handleImportSlopJson={vi.fn()}
+                    handleExportSlopJson={vi.fn()}
+                    handleResetSlopConfig={vi.fn()}
+                    requestConfirm={vi.fn()}
+                    story={story}
+                    setStory={setStory}
+                    audioDramaSettings={{ ...DEFAULT_AUDIO_DRAMA_SETTINGS, backend: 'hybrid', pipelineTier: 3 } as AudioDramaSettings}
+                    updateAudioDramaSetting={vi.fn()}
+                    ttsActiveDevice="wasm"
+                    isAuditioningVoice={false}
+                    isAnyAudioPlaying={false}
+                    stopAllAudioPlayback={vi.fn()}
+                    testAuditionCharacterVoice={vi.fn()}
+                    handleResetAllVoiceAndAudioCaches={vi.fn()}
+                    handleEditNarratorSeed={vi.fn()}
+                    handleRerollNarratorSeed={vi.fn()}
+                    handleEditNarratorVoiceProfile={vi.fn()}
+                    handleEditNarratorReferenceText={vi.fn()}
+                    handleResetNarratorReferenceText={vi.fn()}
+                    handleEditCharacterSeed={vi.fn()}
+                    handleRerollCharacterSeed={vi.fn()}
+                    handleEditCharacterVoiceProfile={vi.fn()}
+                    handleEditCharacterReferenceText={vi.fn()}
+                    handleResetCharacterReferenceText={vi.fn()}
+                    theme="light"
+                    setTheme={vi.fn()}
+                    customImageStyles={[]}
+                    setCustomImageStyles={vi.fn()}
+                    newStyleName=""
+                    setNewStyleName={vi.fn()}
+                    newStyleDesc=""
+                    setNewStyleDesc={vi.fn()}
+                    availableSceneAudioMap={{}}
+                    loading={false}
+                    handleExport={vi.fn()}
+                    handleResetStoryStage={vi.fn()}
+                    handleDeleteStory={vi.fn()}
+                    showToast={vi.fn()}
+                />
+            );
+        };
+
+        renderIntoRoot(<OpenRouterImageHarness />);
+
+        const optionTexts = Array.from(container.querySelectorAll('option')).map((o) => o.textContent);
+        expect(optionTexts).toContain('Recraft: Recraft V4.1 Flash V2 (free) — Free');
+        expect(optionTexts).toContain('Black Forest Labs: FLUX.2 Pro — $7.32/1M img tok');
+        expect(container.textContent).toContain('Image output: $7.32/1M tokens');
+        expect(container.textContent).toContain('text+image → image');
+
+        act(() => {
+            findButton('Fetch Models').click();
+        });
+        expect(fetchOpenRouterImageModels).toHaveBeenCalledWith(true);
     });
 });

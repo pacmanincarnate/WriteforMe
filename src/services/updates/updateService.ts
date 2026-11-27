@@ -250,6 +250,17 @@ function isHexSha(val: string | undefined): val is string {
     return Boolean(val && /^[0-9a-f]{7,40}$/i.test(val.trim()));
 }
 
+function areSameBuildId(a: string | undefined, b: string | undefined): boolean {
+    const na = String(a || '').trim().toLowerCase();
+    const nb = String(b || '').trim().toLowerCase();
+    if (!na || !nb) return false;
+    if (na === nb) return true;
+    if (isHexSha(na) && isHexSha(nb)) {
+        return na.startsWith(nb) || nb.startsWith(na);
+    }
+    return false;
+}
+
 /**
  * Fallback changelog builder using GitHub compare or recent commits on `main` when a deployed
  * build differs without a matching release note body.
@@ -261,7 +272,11 @@ export async function fetchRecentCommitsChangelog(
     fetchImpl: typeof fetch = fetch
 ): Promise<string> {
     try {
-        if (isHexSha(currentCommit) && isHexSha(remoteCommit) && currentCommit !== remoteCommit) {
+        if (
+            isHexSha(currentCommit) &&
+            isHexSha(remoteCommit) &&
+            !areSameBuildId(currentCommit, remoteCommit)
+        ) {
             const cmpRes = await fetchWithAbort(
                 `${CLOUD_API_URLS.githubApiRepos}/${repo}/compare/${encodeURIComponent(currentCommit)}...${encodeURIComponent(remoteCommit)}`,
                 { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' },
@@ -323,25 +338,33 @@ export async function fetchRecentCommitsChangelog(
 
 async function checkServiceWorkerForUpdate(): Promise<{
     hasWaitingWorker: boolean;
+    waitingWorker: ServiceWorker | null;
 }> {
-    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
-        return { hasWaitingWorker: false };
+    if (
+        typeof navigator === 'undefined' ||
+        !('serviceWorker' in navigator) ||
+        typeof navigator.serviceWorker.getRegistration !== 'function'
+    ) {
+        return { hasWaitingWorker: false, waitingWorker: null };
     }
     try {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        let hasWaitingWorker = false;
-        for (const reg of registrations) {
-            if (reg.waiting) hasWaitingWorker = true;
-            try {
-                await reg.update();
-                if (reg.waiting) hasWaitingWorker = true;
-            } catch {
-                // Non-fatal (e.g. offline or dev server)
-            }
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (!reg) {
+            return { hasWaitingWorker: false, waitingWorker: null };
         }
-        return { hasWaitingWorker };
+        try {
+            await reg.update();
+        } catch {
+            // Non-fatal (e.g. offline or dev server)
+        }
+        const waitingWorker = reg.waiting || null;
+        const hasWaitingWorker = Boolean(navigator.serviceWorker.controller && waitingWorker);
+        return {
+            hasWaitingWorker,
+            waitingWorker: hasWaitingWorker ? waitingWorker : null
+        };
     } catch {
-        return { hasWaitingWorker: false };
+        return { hasWaitingWorker: false, waitingWorker: null };
     }
 }
 
@@ -404,19 +427,34 @@ export async function checkForWebUpdate(
         fetchRemoteVersionManifest(fetchImpl)
     ]);
 
+    const versionComparison = remoteManifest
+        ? compareSemver(remoteManifest.version, currentVersion)
+        : null;
     const versionNewer = Boolean(
-        remoteManifest && isNewerSemver(remoteManifest.version, currentVersion)
+        remoteManifest && versionComparison !== null && versionComparison > 0
     );
     const buildChanged = Boolean(
         remoteManifest &&
             remoteManifest.buildId &&
             currentBuildId &&
-            remoteManifest.buildId !== currentBuildId &&
-            compareSemver(remoteManifest.version, currentVersion) >= 0
+            !areSameBuildId(remoteManifest.buildId, currentBuildId) &&
+            versionComparison !== null &&
+            versionComparison >= 0
     );
-    const actionable = versionNewer || buildChanged || swState.hasWaitingWorker;
+    // ./version.json is fetched with cache:'no-store' and excluded from SW precaching, so when
+    // available it is the authoritative source of truth. Only fall back to a waiting SW when
+    // ./version.json could not be fetched.
+    const swUpdateFallback = !remoteManifest && swState.hasWaitingWorker;
+    const actionable = versionNewer || buildChanged || swUpdateFallback;
 
     if (!actionable) {
+        if (remoteManifest && swState.waitingWorker) {
+            try {
+                swState.waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+            } catch {
+                // Ignore postMessage errors
+            }
+        }
         if (manual && !remoteManifest && typeof navigator !== 'undefined' && navigator.onLine === false) {
             return {
                 status: 'offline',
@@ -428,8 +466,16 @@ export async function checkForWebUpdate(
     }
 
     const latestVersion = remoteManifest?.version || currentVersion;
-    const latestBuildId = remoteManifest?.buildId || (swState.hasWaitingWorker ? 'sw-pending' : '');
-    const isSameVersionHotfix = !versionNewer && (buildChanged || swState.hasWaitingWorker);
+    const latestBuildId = remoteManifest?.buildId || (swUpdateFallback ? 'sw-pending' : '');
+    if (
+        compareSemver(latestVersion, currentVersion) <= 0 &&
+        latestBuildId &&
+        currentBuildId &&
+        areSameBuildId(latestBuildId, currentBuildId)
+    ) {
+        return { status: 'up-to-date', update: null };
+    }
+    const isSameVersionHotfix = !versionNewer && (buildChanged || swUpdateFallback);
 
     const release = await fetchLatestGitHubRelease(repo, fetchImpl);
     let changelog = '';

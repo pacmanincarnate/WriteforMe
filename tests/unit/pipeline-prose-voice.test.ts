@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     applySurgicalProsePatch,
+    buildProseContext,
     handleCascadeSceneToProse,
     runAudioDramaVoiceDirectorPass,
     writeSceneProse,
@@ -8,6 +9,7 @@ import {
     type PipelineRuntimeContext,
     type PipelineStory
 } from '@/pipeline';
+import { NARRATIVE_MODES } from '@/config';
 import { DEFAULT_SLOP_CONFIG } from '@/domain/slop';
 import { storyStore } from '@/services/storage';
 
@@ -287,5 +289,146 @@ describe('pipeline prose, voice director, and surgical patch orchestrators (Phas
                 'Hannah Mercer'
             ].emotional_state
         ).toBe('Resolute');
+    });
+
+    it('buildProseContext layers <active_act_function> and <active_sequence_craft> above scene lenses regardless of enableNarrativeLenses and gates Sequence 1 Scene 1.1 context', () => {
+        const activeLens =
+            Object.values(NARRATIVE_MODES).find((mode) => mode.id !== 'BASELINE_NEUTRAL') ??
+            Object.values(NARRATIVE_MODES)[0];
+
+        const seq1Scenes = [
+            {
+                number: '1.1',
+                title: 'Morning Ledger',
+                pov_character: 'Elena Vance',
+                setting: 'Harbor Customs Desk',
+                scene_events: 'Elena reconciles ordinary manifests before dawn.',
+                exit_hook: 'A courier knocks on the frosted glass.',
+                narrative_style: activeLens.id
+            },
+            {
+                number: '1.2',
+                title: 'The Burned Manifest',
+                pov_character: 'Elena Vance',
+                setting: 'Pier Four Warehouse',
+                scene_events: 'Inciting disruption exposes a smuggled ledger.',
+                exit_hook: 'Footsteps echo outside.',
+                narrative_style: activeLens.id
+            }
+        ];
+        const seq3Scenes = [
+            {
+                number: '3.1',
+                title: 'First Crossing',
+                pov_character: 'Elena Vance',
+                setting: 'Customs Mole',
+                scene_events: 'Elena tests an unfamiliar smuggling route.',
+                exit_hook: 'A lantern signals across the breakwater.',
+                narrative_style: activeLens.id
+            }
+        ];
+
+        const act1Data = {
+            number: 1,
+            title: 'Act I: Ordinary World',
+            description: 'Establish status quo and inciting disruption'
+        };
+        const act2Data = {
+            number: 2,
+            title: 'Act II-A: New World Tests',
+            description: 'Explore the new world with rising commitment'
+        };
+        const seq1Data = {
+            number: 1,
+            parent_act: 1,
+            title: 'Status Quo & Inciting Incident',
+            summary: 'Routine breaks when a burned manifest surfaces.',
+            tension_arc: 'Calm routine to sudden disruption',
+            scenes: seq1Scenes
+        };
+        const seq2Data = {
+            number: 2,
+            parent_act: 1,
+            title: 'Predicament & Debate',
+            summary: 'Debating whether to burn or investigate the ledger.',
+            tension_arc: 'Internal reluctance',
+            scenes: []
+        };
+        const seq3Data = {
+            number: 3,
+            parent_act: 2,
+            title: 'First Threshold & New Rules',
+            summary: 'Elena enters the illicit harbor network.',
+            tension_arc: 'Rising curiosity and early missteps',
+            scenes: seq3Scenes
+        };
+
+        const story: PipelineStory = {
+            id: 'story_prose_ctx_layers',
+            title: 'The Salt Ledger',
+            genre: 'Mystery',
+            acts: [act1Data, act2Data],
+            sequences: [seq1Data, seq2Data, seq3Data],
+            scenes: {
+                '0': seq1Scenes,
+                '1': [],
+                '2': seq3Scenes
+            }
+        };
+
+        const seq3Layered = buildProseContext({
+            storyToUse: story,
+            seq: 2,
+            s: 0,
+            sequenceData: seq3Data,
+            actData: act2Data,
+            scene: seq3Scenes[0],
+            enableNarrativeLenses: true,
+            activeModeId: activeLens.id,
+            narrativeModeObj: activeLens as unknown as Record<string, unknown>
+        });
+
+        const actIdx = seq3Layered.indexOf('<active_act_function');
+        const seqIdx = seq3Layered.indexOf('<active_sequence_craft');
+        const lensIdx = seq3Layered.indexOf('<active_scene_narrative_style');
+        expect(actIdx).toBeGreaterThan(-1);
+        expect(seqIdx).toBeGreaterThan(actIdx);
+        expect(lensIdx).toBeGreaterThan(seqIdx);
+        expect(seq3Layered).toContain('ACT_2A');
+        expect(seq3Layered).toContain('SEQUENCE_3');
+
+        const seq3NoLens = buildProseContext({
+            storyToUse: story,
+            seq: 2,
+            s: 0,
+            sequenceData: seq3Data,
+            actData: act2Data,
+            scene: seq3Scenes[0],
+            enableNarrativeLenses: false,
+            activeModeId: activeLens.id,
+            narrativeModeObj: activeLens as unknown as Record<string, unknown>
+        });
+        expect(seq3NoLens).toContain('<active_act_function');
+        expect(seq3NoLens).toContain('<active_sequence_craft');
+        expect(seq3NoLens).not.toContain('<active_scene_narrative_style');
+
+        const seq1PreCatalyst = buildProseContext({
+            storyToUse: story,
+            seq: 0,
+            s: 0,
+            sequenceData: seq1Data,
+            actData: act1Data,
+            scene: seq1Scenes[0],
+            enableNarrativeLenses: true,
+            activeModeId: activeLens.id,
+            narrativeModeObj: activeLens as unknown as Record<string, unknown>
+        });
+        expect(seq1PreCatalyst).toContain('<active_act_function');
+        expect(seq1PreCatalyst).toContain('ACT_1');
+        expect(seq1PreCatalyst).toContain('SEQUENCE_1');
+        expect(seq1PreCatalyst).toContain('Early Sequence 1 Status-Quo Gate');
+        expect(seq1PreCatalyst).toContain('Status-Quo Micro-Arc Phase');
+        expect(seq1PreCatalyst).not.toContain('Establish status quo and inciting disruption');
+        expect(seq1PreCatalyst).not.toContain('Routine breaks when a burned manifest surfaces.');
     });
 });

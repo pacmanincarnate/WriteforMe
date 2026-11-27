@@ -3,7 +3,12 @@
  * 4-tier cache-friendly XML context compiler for the Writing Agent prose & audio drama prompt.
  */
 
-import { formatModalityHand } from '@/config';
+import {
+    formatActiveActAndSequenceXml,
+    formatModalityHand,
+    resolveNarrativeActForSequence,
+    resolveNarrativeSequenceForIndex
+} from '@/config';
 import {
     getVoiceDescriptionForCharacter,
     type AudioStoryLike,
@@ -12,6 +17,8 @@ import {
 import {
     buildUpcomingBoundaryGuardInfo,
     compileActiveState,
+    getSequenceScenesList,
+    isPreCatalystSequenceOneScene,
     type ContinuityStoryState
 } from '@/domain/continuity';
 import {
@@ -98,6 +105,7 @@ export interface ProseContextStoryInput
 export interface ProseContextNarrativeMode {
     id?: string;
     name?: string;
+    category?: string;
     context?: string;
     prompt?: string;
     [key: string]: unknown;
@@ -418,11 +426,32 @@ ${formatModalityHand(modalityHand)}
     const genreRulesBlock = `<genre_pacing_and_dialogue_rules>\n${genreRules}\n</genre_pacing_and_dialogue_rules>`;
     const strictAntiPatternsBlock = `<strict_anti_patterns>\n${antiPatterns}\n</strict_anti_patterns>`;
 
+    const allSequences = Array.isArray(storyToUse.sequences)
+        ? (storyToUse.sequences as Array<Record<string, unknown>>)
+        : [];
+    const seqScenesForPos = getSequenceScenesList(storyToUse as Record<string, unknown>, seq);
+    const activeActDef = resolveNarrativeActForSequence(seq, allSequences, seqObj);
+    const activeSeqDef = resolveNarrativeSequenceForIndex(seq, allSequences, seqObj);
+    const activeActAndSequenceBlock = `
+${formatActiveActAndSequenceXml(
+    activeActDef,
+    activeSeqDef,
+    seqScenesForPos.length > 0 ? { sceneIndex: s, totalScenes: seqScenesForPos.length } : undefined
+)}
+`;
+    const gateSeq1 = isPreCatalystSequenceOneScene({
+        storyToUse: storyToUse as Record<string, unknown>,
+        seq,
+        s,
+        effectiveScenes: seqScenesForPos,
+        effectiveSeqData: seqObj
+    });
+
     const activeLensBlock =
         enableNarrativeLenses && narrativeModeObj
             ? `
 <active_scene_narrative_style>
-- Style Identifier: ${activeModeId}
+- Style Identifier: ${activeModeId}${narrativeModeObj.category ? `\n- Category: ${narrativeModeObj.category}` : ''}
 - Style Overview: ${narrativeModeObj.context || 'Dynamic stylistic lens'}
 - Stylistic Cadence & Pacing Directives:
 ${injectionPrompt || narrativeModeObj.prompt || 'Balance pacing and interiority.'}
@@ -629,13 +658,17 @@ Objective: ${scene.objective || scene.goal || ''}
 ${scene.scene_events ? `Scene Events & Plot Points (MUST be dramatized):\n${scene.scene_events}\n` : ''}${scene.micro_conflict_and_tactic ? `Micro-Conflict & Tactic: ${scene.micro_conflict_and_tactic}\n` : ''}${!scene.atmospheric_overview && scene.sensory_palette ? `Sensory Palette: ${scene.sensory_palette}\n` : ''}${scene.character_voice_directives ? `Character Voice Directives: ${scene.character_voice_directives}\n` : ''}${scene.scene_pacing_tempo ? `Scene Pacing Tempo: ${scene.scene_pacing_tempo}\n` : ''}Entrance Conditions: ${scene.entrance_conditions || scene.entrance_condition || 'Continuity baseline from prior scene'}
 Exit Conditions: ${scene.exit_conditions || scene.exit_condition || 'Resolved scene state leading into exit hook'}
 Exit Hook: ${scene.exit_hook || 'Lead naturally into next scene'}
-${scene.surface_activity ? `Surface Activity (Grounded Physical Action): ${scene.surface_activity}\n` : ''}${scene.main_character_heart ? `POV / Main Character's Heart (Quiet Yearning/Defense): ${scene.main_character_heart}\n` : ''}${scene.other_character_heart ? `Counterpart Character's Heart (What they offer/protect): ${scene.other_character_heart}\n` : ''}${scene.the_hinge_moment ? `The Hinge Moment (Turning Point): ${scene.the_hinge_moment}\n` : ''}${threadStorylines.length > 0 ? `Active Thread Storylines:\n${threadStorylines.map((ts) => `- Thread ${ts.thread_id}: ${ts.scene_storyline}`).join('\n')}\n` : activeThreadIds.length > 0 ? `Active Threads: ${activeThreadIds.join(', ')}\n` : ''}${scene.thread_weaving_notes ? `Thread Weaving Guidance:\n${scene.thread_weaving_notes}\n` : ''}${scene.setting || scene.environment ? `Setting/Environment: ${scene.setting || scene.environment}\n` : ''}${actInfo ? `Act Context: Act ${actInfo.number}: ${actInfo.title} (Mandate: ${sanitizedActMandate})\n` : ''}Sequence Context: Sequence ${seqObj.number || 1}: ${seqObj.title || ''} (Objective: ${seqObj.sequence_objective || seqObj.description || ''})${seqObj.sequence_objective && seqObj.description && seqObj.description !== seqObj.sequence_objective ? `\nSequence Description & Mandates: ${seqObj.description}` : ''}
+${scene.surface_activity ? `Surface Activity (Grounded Physical Action): ${scene.surface_activity}\n` : ''}${scene.main_character_heart ? `POV / Main Character's Heart (Quiet Yearning/Defense): ${scene.main_character_heart}\n` : ''}${scene.other_character_heart ? `Counterpart Character's Heart (What they offer/protect): ${scene.other_character_heart}\n` : ''}${scene.the_hinge_moment ? `The Hinge Moment (Turning Point): ${scene.the_hinge_moment}\n` : ''}${threadStorylines.length > 0 ? `Active Thread Storylines:\n${threadStorylines.map((ts) => `- Thread ${ts.thread_id}: ${ts.scene_storyline}`).join('\n')}\n` : activeThreadIds.length > 0 ? `Active Threads: ${activeThreadIds.join(', ')}\n` : ''}${scene.thread_weaving_notes ? `Thread Weaving Guidance:\n${scene.thread_weaving_notes}\n` : ''}${scene.setting || scene.environment ? `Setting/Environment: ${scene.setting || scene.environment}\n` : ''}${
+    gateSeq1
+        ? `${actInfo ? `Act Context: Act ${actInfo.number}: ${actInfo.title} (Early Sequence 1 Status-Quo Gate: Establish normal world equilibrium and lived-in setting reality; reserve inciting disruption for its scheduled later scene)\n` : ''}Sequence Context: Sequence 1: ${seqObj.title || activeSeqDef.title} (Status-Quo Micro-Arc Phase)`
+        : `${actInfo ? `Act Context: Act ${actInfo.number}: ${actInfo.title} (Mandate: ${sanitizedActMandate})\n` : ''}Sequence Context: Sequence ${seqObj.number || 1}: ${seqObj.title || ''} (Objective: ${seqObj.sequence_objective || seqObj.description || ''})${seqObj.sequence_objective && seqObj.description && seqObj.description !== seqObj.sequence_objective ? `\nSequence Description & Mandates: ${seqObj.description}` : ''}`
+}
 ${plotCommitments && ((Array.isArray(plotCommitments) && plotCommitments.length > 0) || typeof plotCommitments === 'string') ? `Plot Commitments (MUST appear in prose):\n${Array.isArray(plotCommitments) ? plotCommitments.map((pc) => (typeof pc === 'object' ? `- ${pc.description}: "${pc.exact_terms}" → Consequence: ${pc.consequence}` : `- ${pc}`)).join('\n') : plotCommitments}\n` : ''}</scene_blueprint>
 ${bridgeMandateBlock}${clueDirectivesBlock}
 ${revealDirectiveBlock}
 ${atmosphericOverviewBlock}
 ${modalityHandBlock}
-${activeLensBlock}
+${activeActAndSequenceBlock}${activeLensBlock}
 ${upcomingBoundaryBlock}
 ${dialogueTargetBlock}
 ${

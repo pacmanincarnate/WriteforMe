@@ -31,6 +31,7 @@ import {
     type ProviderModelSettings,
     type ThinkingBudgetSettings
 } from '@/services/llm';
+import { beginCloudActivity } from '@/services/vram';
 import { CLI_BRIDGE_DEFAULT_URLS, isCliBridgeProvider, isLocalProvider, type CliBridgeProviderId } from '@/types';
 
 export const PROMPT_LOG_CAP = LOG_AND_PROMPT_LIMITS.promptLogCap;
@@ -407,8 +408,10 @@ export async function dispatchAI(
     };
 
     const sleepFn = callbacks.sleepFn ?? defaultSleep;
+    const endCloudActivity = targetProvider !== 'koboldcpp' ? beginCloudActivity() : null;
 
-    while (attempt < maxRetries) {
+    try {
+        while (attempt < maxRetries) {
         try {
             let response: unknown;
             if (targetProvider === 'gemini') {
@@ -760,4 +763,7 @@ export async function dispatchAI(
     }
 
     throw new Error(`[AI Call - "${logName}"] Exceeded retry loop unexpectedly.`);
+    } finally {
+        endCloudActivity?.();
+    }
 }

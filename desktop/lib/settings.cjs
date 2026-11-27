@@ -9,9 +9,12 @@ const DEFAULTS = Object.freeze({
     backendsDir: '',
     setupDone: false,
     autostart: { koboldcpp: true, comfyui: true, audiocpp: true },
-    koboldcpp: { modelPath: '', extraArgs: '' },
+    koboldcpp: { modelPath: '', configPath: '', extraArgs: '' },
     comfyui: { extraArgs: '' },
-    updates: { autoCheck: true, skippedVersion: '' }
+    audiocpp: { variant: '' },
+    customPaths: { koboldcpp: '', comfyui: '', audiocpp: '' },
+    updates: { autoCheck: true, skippedVersion: '' },
+    vram: { mode: 'auto', idleUnloadMinutes: 10, evictThresholdMb: 2048 }
 });
 
 function merge(base, over) {

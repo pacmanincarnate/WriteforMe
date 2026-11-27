@@ -29,6 +29,7 @@ import {
     fetchGeminiCatalog,
     fetchGeminiImageModelsCatalog,
     fetchNanoGPTModels,
+    fetchOpenRouterImageModelsCatalog,
     fetchOpenRouterModels,
     filterModelsClientSide,
     getDefaultModelForProvider as resolveDefaultModelForProvider,
@@ -41,6 +42,7 @@ import {
     type GeminiImageModelInfo,
     type KoboldStatusResult,
     type OpenRouterCatalogModel,
+    type OpenRouterImageModelInfo,
     type ParsedModelMetadata,
     type ProviderModelSettings
 } from '@/services/llm';
@@ -188,6 +190,8 @@ export interface UseModelCatalogParams {
     imageApiKey: string;
     geminiImageModelsList: GeminiImageModelInfo[];
     setGeminiImageModelsList: Dispatch<SetStateAction<GeminiImageModelInfo[]>>;
+    openRouterImageModelsList: OpenRouterImageModelInfo[];
+    setOpenRouterImageModelsList: Dispatch<SetStateAction<OpenRouterImageModelInfo[]>>;
     setIsFetchingImageModels: Dispatch<SetStateAction<boolean>>;
     comfyUrl: string;
     setComfyStatus: Dispatch<SetStateAction<ComfyStatusInfo>>;
@@ -317,12 +321,13 @@ export interface UseModelCatalogResult {
     deleteModel: (modelToDelete: string) => void;
     fetchGeminiModels: () => Promise<void>;
     fetchGeminiImageModels: (showFeedback?: boolean) => Promise<GeminiImageModelInfo[]>;
+    fetchOpenRouterImageModels: (showFeedback?: boolean) => Promise<OpenRouterImageModelInfo[]>;
     refreshOpenRouterModels: (force?: boolean) => Promise<void>;
     refreshNanoGptModels: (force?: boolean) => Promise<void>;
     checkKoboldStatus: () => Promise<void>;
     refreshCodexModels: () => Promise<void>;
     refreshClaudeModels: () => Promise<void>;
-    refreshComfyInfo: () => Promise<void>;
+    refreshComfyInfo: (opts?: { startIfNeeded?: boolean }) => Promise<void>;
     handleCatalogRefresh: (targetProvider?: string | null) => Promise<void>;
     callAI: (
         prompt: string,
@@ -346,6 +351,8 @@ export function useModelCatalog({
     imageApiKey,
     geminiImageModelsList,
     setGeminiImageModelsList,
+    openRouterImageModelsList,
+    setOpenRouterImageModelsList,
     setIsFetchingImageModels,
     comfyUrl,
     setComfyStatus,
@@ -785,6 +792,40 @@ export function useModelCatalog({
         [apiKey, imageApiKey, setGeminiImageModelsList, setIsFetchingImageModels, stableShowToast]
     );
 
+    const fetchOpenRouterImageModels = useCallback(
+        async (showFeedback = false): Promise<OpenRouterImageModelInfo[]> => {
+            const keyToUse = (imageApiKey || openRouterKey || '').trim();
+            setIsFetchingImageModels(true);
+            try {
+                const imgModels = await fetchOpenRouterImageModelsCatalog(keyToUse);
+                if (imgModels.length > 0) {
+                    setOpenRouterImageModelsList(imgModels);
+                    safeSessionStorageSet(STORAGE_KEYS.openRouterImageModelsCache, imgModels);
+                    if (showFeedback) {
+                        stableShowToast(
+                            `Loaded ${imgModels.length} OpenRouter image models!`,
+                            'success'
+                        );
+                    }
+                    return imgModels;
+                }
+                if (showFeedback) {
+                    stableShowToast('No OpenRouter text-to-image models found.', 'info');
+                }
+            } catch (err) {
+                console.error('Error fetching OpenRouter image models:', err);
+                const msg = err instanceof Error ? err.message : String(err);
+                if (showFeedback) {
+                    stableShowToast(`Failed to fetch OpenRouter image models: ${msg}`, 'error');
+                }
+            } finally {
+                setIsFetchingImageModels(false);
+            }
+            return [];
+        },
+        [imageApiKey, openRouterKey, setIsFetchingImageModels, setOpenRouterImageModelsList, stableShowToast]
+    );
+
     const refreshOpenRouterModels = useCallback(async (): Promise<void> => {
         try {
             const models = await fetchOpenRouterModels(openRouterKey);
@@ -863,7 +904,7 @@ export function useModelCatalog({
         setClaudeStatus(result.status);
     }, [claudeUrl]);
 
-    const refreshComfyInfo = useCallback(async (): Promise<void> => {
+    const refreshComfyInfo = useCallback(async (opts?: { startIfNeeded?: boolean }): Promise<void> => {
         const refreshId = ++comfyRefreshId.current;
         setComfyStatus({
             online: false,
@@ -872,7 +913,7 @@ export function useModelCatalog({
             error: 'Checking ComfyUI...'
         });
         setComfyOptions({ unet: [], clip: [], vae: [], lora: [], sampler: [], scheduler: [] });
-        const result = await fetchComfyInfoCatalog(comfyUrl);
+        const result = await fetchComfyInfoCatalog(comfyUrl, opts);
         if (refreshId !== comfyRefreshId.current) return;
         if (result.status.online) {
             setComfyOptions(result.options);
@@ -899,6 +940,7 @@ export function useModelCatalog({
                 await fetchGeminiImageModels(false);
             } else if (prov === 'openrouter') {
                 await refreshOpenRouterModels();
+                await fetchOpenRouterImageModels(false);
             } else if (prov === 'nanogpt') {
                 await refreshNanoGptModels();
             } else if (prov === 'codex') {
@@ -915,6 +957,7 @@ export function useModelCatalog({
             devProvider,
             fetchGeminiImageModels,
             fetchGeminiModels,
+            fetchOpenRouterImageModels,
             refreshClaudeModels,
             refreshCodexModels,
             refreshNanoGptModels,
@@ -940,6 +983,9 @@ export function useModelCatalog({
                 geminiImageModelsList.length === 0
             ) {
                 void fetchGeminiImageModels(false);
+            }
+            if (imageProvider === 'openrouter' && openRouterImageModelsList.length === 0) {
+                void fetchOpenRouterImageModels(false);
             }
             if (activeProviders.has('openrouter') && openRouterModelsList.length === 0) {
                 void refreshOpenRouterModels();
@@ -981,11 +1027,13 @@ export function useModelCatalog({
         comfyUrl,
         geminiModelsList.length,
         geminiImageModelsList.length,
+        openRouterImageModelsList.length,
         openRouterModelsList.length,
         nanoGptModelsList.length,
         comfyRefreshId,
         fetchGeminiModels,
         fetchGeminiImageModels,
+        fetchOpenRouterImageModels,
         refreshOpenRouterModels,
         refreshNanoGptModels,
         checkKoboldStatus,
@@ -1265,6 +1313,7 @@ export function useModelCatalog({
         deleteModel,
         fetchGeminiModels,
         fetchGeminiImageModels,
+        fetchOpenRouterImageModels,
         refreshOpenRouterModels,
         refreshNanoGptModels,
         checkKoboldStatus,

@@ -19,8 +19,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import {
+    buildEnvWithModernNode,
+    findModernNodeExecutable,
+    isSupportedNodeVersion
+} from './run-node20.mjs';
 
 const ROOT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const LOG_DIR = path.join(ROOT_DIR, 'scratch', 'check');
@@ -84,7 +89,8 @@ function formatDuration(ms) {
 
 function run(command, { verbose }) {
     return new Promise((resolve) => {
-        const child = spawn(command, { cwd: ROOT_DIR, shell: true, env: { ...process.env, FORCE_COLOR: '0' } });
+        const baseEnv = buildEnvWithModernNode(process.execPath, process.env);
+        const child = spawn(command, { cwd: ROOT_DIR, shell: true, env: { ...baseEnv, FORCE_COLOR: '0' } });
         let output = '';
         const collect = (chunk) => {
             output += chunk;
@@ -161,6 +167,28 @@ function printStepList() {
 }
 
 async function main() {
+    if (!isSupportedNodeVersion(process.versions.node)) {
+        const modernNode = findModernNodeExecutable();
+        if (modernNode) {
+            const reexec = spawnSync(
+                modernNode,
+                [fileURLToPath(import.meta.url), ...process.argv.slice(2)],
+                {
+                    cwd: ROOT_DIR,
+                    stdio: 'inherit',
+                    env: buildEnvWithModernNode(modernNode)
+                }
+            );
+            return reexec.status ?? 1;
+        }
+        console.error(
+            red(
+                `Node.js >= 20.19.0 is required (current: v${process.versions.node} at ${process.execPath}). Install Node 22 LTS from https://nodejs.org.`
+            )
+        );
+        return 1;
+    }
+
     const opts = parseArgs(process.argv.slice(2));
     if (opts.list) {
         printStepList();

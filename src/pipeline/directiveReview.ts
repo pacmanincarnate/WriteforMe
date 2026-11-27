@@ -4,7 +4,13 @@
  */
 
 import {
+    formatActiveActAndSequenceXml,
+    resolveNarrativeActForSequence,
+    resolveNarrativeSequenceForIndex
+} from '@/config';
+import {
     formatContinuityLedgerForPrompt,
+    getSequenceScenesList,
     type ContinuityStoryState
 } from '@/domain/continuity';
 import {
@@ -137,6 +143,23 @@ export function buildDirectiveReviewContext(
     const rawProseEntry = storyState.prose?.[sId];
     const generatedProse =
         typeof rawProseEntry === 'string' ? rawProseEntry : rawProseEntry?.final || '';
+    const sequencesList = (storyState.sequences || []) as Array<Record<string, unknown>>;
+    const seqScenes = getSequenceScenesList(storyState as Record<string, unknown>, seqIdx);
+    const actDef = resolveNarrativeActForSequence(
+        seqIdx,
+        sequencesList,
+        sequence as Record<string, unknown> | undefined
+    );
+    const seqDef = resolveNarrativeSequenceForIndex(
+        seqIdx,
+        sequencesList,
+        sequence as Record<string, unknown> | undefined
+    );
+    const actAndSeqXml = formatActiveActAndSequenceXml(
+        actDef,
+        seqDef,
+        seqScenes.length > 0 ? { sceneIndex: sceneIdx, totalScenes: seqScenes.length } : undefined
+    );
 
     return `${pillars}${DIRECTIVE_REVIEW_OUTPUT_FORMAT_SCHEMA}
 
@@ -155,6 +178,7 @@ ${JSON.stringify(profiles, null, 2)}
 <scene_blueprint>
 ${JSON.stringify(blueprint, null, 2)}
 </scene_blueprint>
+${actAndSeqXml}
 <generated_prose>
 ${generatedProse}
 </generated_prose>

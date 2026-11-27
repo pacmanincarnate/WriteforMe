@@ -185,24 +185,29 @@ export const DEFAULT_GEMINI_IMAGE_MODELS: readonly ImageStylePreset[] = [
 
 export const DEFAULT_OPENROUTER_IMAGE_MODELS: readonly ImageStylePreset[] = [
     {
-        id: 'stabilityai/stable-diffusion-xl',
-        name: 'Stable Diffusion XL (stabilityai/stable-diffusion-xl)',
-        description: 'Stability AI SDXL 1.0'
+        id: 'black-forest-labs/flux.2-pro',
+        name: 'Black Forest Labs: FLUX.2 Pro',
+        description: 'Black Forest Labs FLUX.2 Pro image generation model'
     },
     {
-        id: 'black-forest-labs/flux-1-schnell',
-        name: 'FLUX.1 Schnell (black-forest-labs/flux-1-schnell)',
-        description: 'Black Forest Labs FLUX.1 Schnell'
+        id: 'black-forest-labs/flux.2-klein-4b',
+        name: 'Black Forest Labs: FLUX.2 Klein 4B',
+        description: 'Black Forest Labs FLUX.2 Klein 4B fast image model'
     },
     {
-        id: 'black-forest-labs/flux-1-dev',
-        name: 'FLUX.1 Dev (black-forest-labs/flux-1-dev)',
-        description: 'Black Forest Labs FLUX.1 Dev'
+        id: 'google/gemini-2.5-flash-image',
+        name: 'Google: Gemini 2.5 Flash Image',
+        description: 'Google Gemini 2.5 Flash multimodal image model'
+    },
+    {
+        id: 'openai/gpt-image-1-mini',
+        name: 'OpenAI: GPT Image 1 Mini',
+        description: 'OpenAI GPT Image 1 Mini model'
     },
     {
         id: 'recraft/recraft-v3',
-        name: 'Recraft V3 (recraft/recraft-v3)',
-        description: 'Recraft Vector and Graphic Design Model'
+        name: 'Recraft: Recraft V3',
+        description: 'Recraft V3 graphic design and illustration model'
     }
 ];
 

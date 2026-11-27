@@ -76,6 +76,7 @@ export const STORAGE_KEYS = {
     nanoGptModel: 'ellipsisprose_nanogpt_model',
     nanoGptModelsCache: 'ellipsisprose_nanogpt_models_cache',
     nanoGptProseModel: 'ellipsisprose_nanogpt_prose_model',
+    openRouterImageModelsCache: 'ellipsisprose_openrouter_image_models_cache',
     openRouterKey: 'ellipsisprose_openrouter_key',
     openRouterMaxTokens: 'ellipsisprose_openrouter_max_tokens',
     openRouterModel: 'ellipsisprose_openrouter_model',

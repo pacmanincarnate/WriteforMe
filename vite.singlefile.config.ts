@@ -11,12 +11,12 @@ const APP_VERSION: string = JSON.parse(fs.readFileSync(path.resolve(__dirname, '
 
 function resolveBuildId(): string {
     const envSha = String(process.env.GITHUB_SHA || '').trim();
-    if (envSha) return envSha.slice(0, 7);
+    if (envSha) return envSha.slice(0, 7).toLowerCase();
     try {
-        const sha = execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
+        const sha = execSync('git rev-parse --short=7 HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
             .toString('utf8')
             .trim();
-        if (sha) return sha;
+        if (sha) return sha.toLowerCase();
     } catch {
         // Git unavailable
     }

@@ -39,6 +39,7 @@ import {
 import { resolveCharacter } from '@/domain/story';
 import { fetchWithTimeout } from '@/services/http';
 import { studioCacheStore } from '@/services/storage';
+import { withCloudActivity } from '@/services/vram';
 import {
     activateAudioCppWave,
     enqueueAudioCppTask,
@@ -534,7 +535,7 @@ export async function synthesizeDrama3SegmentChunk({
             lastErr ||
             new Error('Could not reach Audio.cpp Hybrid Studio for Drama-3 or Breeze 2 synthesis.')
         );
-    });
+    }, bridgeUrl);
 }
 
 /**
@@ -877,7 +878,7 @@ export async function _rawSynthesizeAudioDramaChunk({
                 ).toFixed(1)} KB WAV).`
             );
             return URL.createObjectURL(finalBlob);
-        });
+        }, targetUrl);
     }
 
     // Backend 2: OpenRouter (ElevenLabs v4 with inline tag & voice auto-mapping)
@@ -918,20 +919,22 @@ export async function _rawSynthesizeAudioDramaChunk({
 
         let res: Response;
         try {
-            res = await fetchWithTimeout(
-                CLOUD_API_URLS.openRouterAudioSpeech,
-                {
-                    method: 'POST',
-                    headers: {
-                        Authorization: `Bearer ${effectiveKey}`,
-                        'Content-Type': 'application/json',
-                        'HTTP-Referer': APP_HTTP_HEADERS.referer,
-                        'X-Title': APP_HTTP_HEADERS.audioDramaTitle
+            res = await withCloudActivity(() =>
+                fetchWithTimeout(
+                    CLOUD_API_URLS.openRouterAudioSpeech,
+                    {
+                        method: 'POST',
+                        headers: {
+                            Authorization: `Bearer ${effectiveKey}`,
+                            'Content-Type': 'application/json',
+                            'HTTP-Referer': APP_HTTP_HEADERS.referer,
+                            'X-Title': APP_HTTP_HEADERS.audioDramaTitle
+                        },
+                        body: JSON.stringify(payload),
+                        ...(signal ? { signal } : {})
                     },
-                    body: JSON.stringify(payload),
-                    ...(signal ? { signal } : {})
-                },
-                45000
+                    45000
+                )
             );
         } catch (netErr) {
             if (signal?.aborted || (netErr instanceof Error && netErr.name === 'AbortError')) {
@@ -997,18 +1000,20 @@ export async function _rawSynthesizeAudioDramaChunk({
 
         let res: Response;
         try {
-            res = await fetchWithTimeout(
-                CLOUD_API_URLS.geminiInteractions,
-                {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'x-goog-api-key': effectiveKey
+            res = await withCloudActivity(() =>
+                fetchWithTimeout(
+                    CLOUD_API_URLS.geminiInteractions,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'x-goog-api-key': effectiveKey
+                        },
+                        body: JSON.stringify(payload),
+                        ...(signal ? { signal } : {})
                     },
-                    body: JSON.stringify(payload),
-                    ...(signal ? { signal } : {})
-                },
-                45000
+                    45000
+                )
             );
         } catch (netErr) {
             if (signal?.aborted || (netErr instanceof Error && netErr.name === 'AbortError')) {

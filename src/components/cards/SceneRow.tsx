@@ -16,6 +16,7 @@ import {
     Plus,
     Trash2
 } from '@/components/icons';
+import { groupNarrativeModesForSelect, resolveNarrativeModeId } from '@/config';
 import { parseValueShiftInput } from '@/domain/story';
 import { isSerializationPlaceholder } from '@/utils';
 import { EditButton } from '../common/EditButton';
@@ -351,41 +352,84 @@ export function SceneRow({
                             )}
                         </div>
 
-                        {allNarrativeModes && Object.keys(allNarrativeModes).length > 0 && (
-                            <div
-                                className={`flex items-center gap-1.5 text-xs text-ink-600 ${
-                                    enableNarrativeLenses ? '' : 'opacity-80'
-                                }`}
-                            >
-                                <span className="text-xs font-mono uppercase text-ink-500 font-bold">
-                                    Lens:
-                                </span>
-                                <select
-                                    value={s.dominant_narrative_mode || 'BASELINE_NEUTRAL'}
-                                    onChange={(e) =>
-                                        applyPatch(
-                                            { dominant_narrative_mode: e.target.value },
-                                            `Scene lens set to ${e.target.value}`
-                                        )
-                                    }
-                                    className="bg-surface border border-edge-strong text-ink-800 rounded px-2.5 py-0.5 text-xs font-mono focus:border-gold outline-none cursor-pointer"
+                        {allNarrativeModes && Object.keys(allNarrativeModes).length > 0 && (() => {
+                            const resolvedLens = resolveNarrativeModeId(
+                                s.dominant_narrative_mode || 'BASELINE_NEUTRAL',
+                                allNarrativeModes
+                            );
+                            const activeModeMeta = allNarrativeModes[resolvedLens] as
+                                | { context?: string }
+                                | undefined;
+                            const { grouped, uncategorized, hasCategories } =
+                                groupNarrativeModesForSelect(allNarrativeModes);
+                            const hasMissingCurrent =
+                                Boolean(resolvedLens) &&
+                                !Object.prototype.hasOwnProperty.call(allNarrativeModes, resolvedLens);
+                            return (
+                                <div
+                                    className={`flex items-center gap-1.5 text-xs text-ink-600 ${
+                                        enableNarrativeLenses ? '' : 'opacity-80'
+                                    }`}
                                 >
-                                    {Object.keys(allNarrativeModes).map((modeKey) => (
-                                        <option key={modeKey} value={modeKey}>
-                                            {modeKey.replace(/_/g, ' ')}
-                                        </option>
-                                    ))}
-                                </select>
-                                {!enableNarrativeLenses && (
-                                    <span
-                                        className="text-xs font-mono text-ink-400 italic bg-mist-100 px-1.5 py-0.5 rounded border border-edge"
-                                        title="Narrative lenses are temporarily disabled for generation in Settings / Writer header"
-                                    >
-                                        bypassed
+                                    <span className="text-xs font-mono uppercase text-ink-500 font-bold">
+                                        Lens:
                                     </span>
-                                )}
-                            </div>
-                        )}
+                                    <select
+                                        value={resolvedLens}
+                                        title={activeModeMeta?.context || undefined}
+                                        onChange={(e) =>
+                                            applyPatch(
+                                                { dominant_narrative_mode: e.target.value },
+                                                `Scene lens set to ${e.target.value}`
+                                            )
+                                        }
+                                        className="bg-surface border border-edge-strong text-ink-800 rounded px-2.5 py-0.5 text-xs font-mono focus:border-gold outline-none cursor-pointer"
+                                    >
+                                        {hasMissingCurrent && (
+                                            <option value={resolvedLens}>
+                                                {resolvedLens.replace(/_/g, ' ')}
+                                            </option>
+                                        )}
+                                        {hasCategories ? (
+                                            <>
+                                                {grouped.map((grp) => (
+                                                    <optgroup key={grp.category} label={grp.category}>
+                                                        {grp.keys.map((modeKey) => (
+                                                            <option key={modeKey} value={modeKey}>
+                                                                {modeKey.replace(/_/g, ' ')}
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                ))}
+                                                {uncategorized.length > 0 && (
+                                                    <optgroup label="Custom Modes">
+                                                        {uncategorized.map((modeKey) => (
+                                                            <option key={modeKey} value={modeKey}>
+                                                                {modeKey.replace(/_/g, ' ')}
+                                                            </option>
+                                                        ))}
+                                                    </optgroup>
+                                                )}
+                                            </>
+                                        ) : (
+                                            Object.keys(allNarrativeModes).map((modeKey) => (
+                                                <option key={modeKey} value={modeKey}>
+                                                    {modeKey.replace(/_/g, ' ')}
+                                                </option>
+                                            ))
+                                        )}
+                                    </select>
+                                    {!enableNarrativeLenses && (
+                                        <span
+                                            className="text-xs font-mono text-ink-400 italic bg-mist-100 px-1.5 py-0.5 rounded border border-edge"
+                                            title="Narrative lenses are temporarily disabled for generation in Settings / Writer header"
+                                        >
+                                            bypassed
+                                        </span>
+                                    )}
+                                </div>
+                            );
+                        })()}
 
                         <div className="flex items-start gap-1.5 text-xs text-ink-800 font-medium">
                             <div className="flex-1 min-w-0">

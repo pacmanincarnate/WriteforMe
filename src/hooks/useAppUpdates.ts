@@ -101,11 +101,14 @@ export function useAppUpdates({
                 lastNotifiedKeyRef.current = info.updateKey;
                 setIsModalOpen(true);
             }
-        } else if (next.status === 'up-to-date' && next.manual) {
-            showToastRef.current?.(
-                `EllipsisProse v${next.currentVersion || APP_VERSION} is up to date.`,
-                'info'
-            );
+        } else if (next.status === 'up-to-date') {
+            setUpdateInfo(null);
+            if (next.manual) {
+                showToastRef.current?.(
+                    `EllipsisProse v${next.currentVersion || APP_VERSION} is up to date.`,
+                    'info'
+                );
+            }
         } else if (next.status === 'error' && next.manual && !info) {
             showToastRef.current?.(next.error || 'Could not check for updates.', 'error');
         }
@@ -161,6 +164,9 @@ export function useAppUpdates({
                         setIsModalOpen(true);
                     }
                     return;
+                }
+                if (res.status === 'up-to-date') {
+                    setUpdateInfo(null);
                 }
                 if (manual) {
                     if (res.status === 'offline') {

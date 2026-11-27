@@ -6,6 +6,7 @@
 
 import { DEFAULT_SERVICE_URLS } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
+import { withCloudActivity, withLocalGpuLease } from '@/services/vram';
 import { isCliBridgeProvider } from '@/types';
 import { cleanJson, extractReasoningAndContent } from '@/utils';
 import { getKoboldLoadedModelName } from './koboldRuntime';
@@ -40,6 +41,17 @@ interface KoboldApiResponse {
 }
 
 const getGlobalKoboldLoadedModel = (): string => getKoboldLoadedModelName();
+
+export function isLocalKoboldUrl(url: string): boolean {
+    try {
+        const parsed = new URL(url);
+        const host = parsed.hostname.toLowerCase();
+        const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+        return (host === '127.0.0.1' || host === 'localhost') && port === '5001';
+    } catch {
+        return false;
+    }
+}
 
 export function isCloudModelName(m: unknown): boolean {
     if (!m || typeof m !== 'string') return false;
@@ -347,8 +359,17 @@ export async function callKoboldCPP(
         let response: Response;
         const koboldTimeout =
             typeof opts.timeout === 'number' && opts.timeout > 0 ? opts.timeout : 15 * 60 * 1000;
-        try {
-            response = await fetchWithTimeout(
+        const useLocalGpuLease = !isCliBridgeProvider(opts.provider) && isLocalKoboldUrl(cleanBaseUrl);
+        const executeKoboldFetch = async (): Promise<Response> => {
+            if (
+                useLocalGpuLease &&
+                typeof window !== 'undefined' &&
+                !window.ellipsisDesktopBackends?.acquireGpuLease &&
+                window.ellipsisDesktopBackends?.ensureKoboldRunning
+            ) {
+                await window.ellipsisDesktopBackends.ensureKoboldRunning().catch(() => {});
+            }
+            return fetchWithTimeout(
                 `${cleanBaseUrl}/v1/chat/completions`,
                 {
                     method: 'POST',
@@ -359,6 +380,13 @@ export async function callKoboldCPP(
                 },
                 koboldTimeout
             );
+        };
+        try {
+            response = useLocalGpuLease
+                ? await withLocalGpuLease('llm', { koboldUrl: cleanBaseUrl }, executeKoboldFetch)
+                : isCliBridgeProvider(opts.provider)
+                  ? await withCloudActivity(executeKoboldFetch)
+                  : await executeKoboldFetch();
         } catch (fetchErr) {
             const errName = fetchErr instanceof Error ? fetchErr.name : '';
             const errMessage = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
