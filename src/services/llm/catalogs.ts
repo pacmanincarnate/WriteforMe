@@ -373,7 +373,7 @@ export async function fetchCodexCatalog(codexUrl: string): Promise<CodexCatalogR
 }
 
 export const CLAUDE_BRIDGE_CLI_MISSING =
-    'Bridge is running, but Claude Code was not found. Install it, then restart the bridge.';
+    'Bridge is running, but Claude Code was not found. The bridge window lists where it looked.';
 export const CLAUDE_BRIDGE_SIGNED_OUT =
     'Bridge is running, but Claude Code is not signed in. Run "claude" once in a terminal and sign in.';
 

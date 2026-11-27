@@ -1,11 +1,11 @@
 // @vitest-environment node
-import { chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 interface BridgeSettings {
     port: number;
@@ -13,6 +13,16 @@ interface BridgeSettings {
     timeout: number;
     bind: string;
     'cli-path': string;
+}
+interface CliSystem {
+    platform?: string;
+    env?: Record<string, string | undefined>;
+    home?: string;
+}
+interface CliPlan {
+    command: string;
+    prefix: string[];
+    location: string;
 }
 interface ChatBody {
     model?: unknown;
@@ -35,7 +45,9 @@ interface ClaudeBridgeModule {
         error?: string;
     };
     parseLoginStatus(output: string | null): { loggedIn: boolean; method: string };
-    cliCandidates(cliPath: string, platform?: string, home?: string): string[];
+    cliLocations(cliPath: string, system?: CliSystem): string[];
+    launchPlan(file: string, platform?: string): CliPlan | null;
+    findCli(cliPath: string, system?: CliSystem): CliPlan | null;
     startBridge(settings: BridgeSettings): { server: Server; shutdown(): void };
 }
 
@@ -182,17 +194,100 @@ describe('claude-bridge: request and output handling', () => {
         expect(bridge.parseLoginStatus('Logged in')).toEqual({ loggedIn: true, method: '' });
     });
 
-    it('looks for the CLI on PATH, then the native installer folder, then the npm shim', () => {
-        expect(bridge.cliCandidates('/custom/claude')).toEqual(['/custom/claude']);
-        expect(bridge.cliCandidates('', 'linux', '/home/me')).toEqual([
-            'claude',
-            path.join('/home/me', '.local', 'bin', 'claude')
-        ]);
-        expect(bridge.cliCandidates('', 'win32', 'C:\\Users\\me')).toEqual([
-            'claude',
-            path.join('C:\\Users\\me', '.local', 'bin', 'claude.exe'),
-            'claude.cmd'
-        ]);
+    describe('finding Claude Code', () => {
+        let home = '';
+        const put = (...parts: string[]): string => {
+            const file = path.join(home, ...parts);
+            mkdirSync(path.dirname(file), { recursive: true });
+            writeFileSync(file, '');
+            return file;
+        };
+        const windows = (PATH = ''): CliSystem => ({
+            platform: 'win32',
+            home,
+            env: {
+                PATH,
+                APPDATA: path.join(home, 'AppData', 'Roaming'),
+                LOCALAPPDATA: path.join(home, 'AppData', 'Local')
+            }
+        });
+        const NPM_SHIM = (target: string): string =>
+            `@ECHO off\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n)\r\n"%_prog%"  "%dp0%\\${target}" %*\r\n`;
+
+        beforeEach(() => {
+            home = mkdtempSync(path.join(tmpdir(), 'claude-home-'));
+        });
+        afterEach(() => rmSync(home, { recursive: true, force: true }));
+
+        it('uses a full --cli-path as given and looks a bare command name up on PATH', () => {
+            expect(bridge.cliLocations('/custom/claude')).toEqual(['/custom/claude']);
+            expect(bridge.cliLocations('claude2', windows(path.join(home, 'bin')))).toEqual(
+                ['claude2.exe', 'claude2.cmd', 'claude2.bat'].map((name) => path.join(home, 'bin', name))
+            );
+            expect(bridge.findCli(path.join(home, 'missing', 'claude'))).toBeNull();
+        });
+
+        it('finds nothing on a computer without Claude Code', () => {
+            expect(bridge.findCli('', windows(path.join(home, 'bin')))).toBeNull();
+            expect(bridge.findCli('', { platform: 'linux', home, env: { PATH: path.join(home, 'bin') } })).toBeNull();
+        });
+
+        it('takes the CLI a terminal would run, the program before its shim', () => {
+            const exe = put('bin', 'claude.exe');
+            put('bin', 'claude.cmd');
+            put('.local', 'bin', 'claude.exe');
+            expect(bridge.findCli('', windows(`"${path.join(home, 'empty')}";${path.join(home, 'bin')}`))).toEqual({
+                command: exe,
+                prefix: [],
+                location: exe
+            });
+            const unix = put('unix', 'claude');
+            expect(
+                bridge.findCli('', { platform: 'linux', home, env: { PATH: `/nowhere:${path.join(home, 'unix')}` } })
+            ).toMatchObject({ command: unix });
+        });
+
+        it('finds the native, WinGet and npm installs when PATH does not have them', () => {
+            const npm = path.join(home, 'AppData', 'Roaming', 'npm');
+            const script = put('AppData', 'Roaming', 'npm', 'node_modules', '@anthropic-ai', 'claude-code', 'cli.js');
+            mkdirSync(npm, { recursive: true });
+            writeFileSync(path.join(npm, 'claude.cmd'), NPM_SHIM('node_modules\\@anthropic-ai\\claude-code\\cli.js'));
+            expect(bridge.findCli('', windows())).toEqual({
+                command: process.execPath,
+                prefix: [script],
+                location: path.join(npm, 'claude.cmd')
+            });
+            const winget = put('AppData', 'Local', 'Microsoft', 'WinGet', 'Links', 'claude.exe');
+            expect(bridge.findCli('', windows())).toMatchObject({ command: winget });
+            const native = put('.local', 'bin', 'claude.exe');
+            expect(bridge.findCli('', windows())).toMatchObject({ command: native });
+        });
+
+        it('runs the program behind a batch shim, never the shim itself', () => {
+            const program = put('npm', 'node_modules', '@anthropic-ai', 'claude-code', 'bin', 'claude.exe');
+            const shim = path.join(home, 'npm', 'claude.cmd');
+            writeFileSync(shim, NPM_SHIM('node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe'));
+            expect(bridge.launchPlan(shim, 'win32')).toEqual({ command: program, prefix: [], location: shim });
+            // A shim written some other way still leads to the package beside it.
+            writeFileSync(shim, '@echo off\r\nclaude-real %*\r\n');
+            expect(bridge.launchPlan(shim, 'win32')).toMatchObject({ command: program });
+            const lost = path.join(home, 'elsewhere', 'claude.cmd');
+            mkdirSync(path.dirname(lost));
+            writeFileSync(lost, '@echo off\r\nclaude-real %*\r\n');
+            expect(bridge.launchPlan(lost, 'win32')).toBeNull();
+        });
+
+        it('falls back to the newest copy inside the Claude desktop app', () => {
+            put('AppData', 'Roaming', 'Claude', 'claude-code', '2.9.4', 'claude.exe');
+            const newest = put('AppData', 'Roaming', 'Claude', 'claude-code', '2.10.1', 'claude.exe');
+            expect(bridge.findCli('', windows())).toMatchObject({ command: newest });
+            rmSync(path.join(home, 'AppData', 'Roaming'), { recursive: true });
+            const store = put(
+                'AppData', 'Local', 'Packages', 'Claude_pzs8sxrjxfjjc', 'LocalCache', 'Roaming', 'Claude',
+                'claude-code', '2.10.1', 'claude.exe'
+            );
+            expect(bridge.findCli('', windows())).toMatchObject({ command: store });
+        });
     });
 
     it('lists the family aliases, default first', () => {
@@ -261,6 +356,7 @@ process.stdin.setEncoding('utf8').on('data', (c) => { stdin += c; }).on('end', (
         expect(health).toMatchObject({
             ok: true,
             claude: '9.9.9 (Claude Code)',
+            location: path.join(dir, 'claude'),
             login: { loggedIn: true, method: 'claude.ai' },
             default_model: 'sonnet'
         });
@@ -274,6 +370,24 @@ process.stdin.setEncoding('utf8').on('data', (c) => { stdin += c; }).on('end', (
         const base = await start();
         const health = (await (await fetch(`${base}/health`)).json()) as Record<string, unknown>;
         expect(health.login).toEqual({ loggedIn: false, method: '' });
+    });
+
+    it('finds a CLI installed after the bridge started, without a restart', async () => {
+        dir = mkdtempSync(path.join(tmpdir(), 'fake-claude-'));
+        const cli = path.join(dir, 'claude');
+        running = bridge.startBridge({ port: 0, concurrency: 1, timeout: 30, bind: '127.0.0.1', 'cli-path': cli });
+        const server = running.server;
+        if (!server.listening) await new Promise((resolve) => server.once('listening', resolve));
+        const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+        const health = async (): Promise<Record<string, unknown>> =>
+            (await (await fetch(`${base}/health`)).json()) as Record<string, unknown>;
+        expect(await health()).toMatchObject({ claude: null, location: null, login: { loggedIn: false } });
+        const res = await post(base, { messages: [{ role: 'user', content: 'Write.' }] });
+        expect(res.status).toBe(502);
+        expect(((await res.json()) as { error: { message: string } }).error.message).toMatch(/was not found/);
+        writeFileSync(cli, FAKE_CLI);
+        chmodSync(cli, 0o755);
+        expect(await health()).toMatchObject({ claude: '9.9.9 (Claude Code)', location: cli });
     });
 
     it('runs a completion in an empty folder that is removed afterwards', async () => {
