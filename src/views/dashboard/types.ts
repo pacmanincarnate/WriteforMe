@@ -282,6 +282,8 @@ export interface DashboardViewProps {
     handleExportEpub: () => void | Promise<void>;
     handleDownloadStoryAudio: () => void | Promise<void>;
     handleExportAudioDramaTxt: () => void | Promise<void>;
+    handleExportMarkdown: () => void;
+    handleExportPdf: () => void;
     isExportingStoryAudio: boolean;
     isExportingSequenceAudio: boolean;
     isExportingSceneAudio: boolean;

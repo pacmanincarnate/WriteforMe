@@ -991,10 +991,6 @@ import {
                 }
             }, [loading]);
 
-
-
-            const fileInputRef = useRef<HTMLInputElement>(null);
-
             // RAG & Graph State
             // useRef's initial-value argument is evaluated on EVERY render - useRef(new VectorStore())
             // constructed (and discarded) a fresh instance, including an IndexedDB open, per render.
@@ -1817,12 +1813,6 @@ import {
                         enterReaderMode={enterReaderMode}
                         getSceneProseText={getSceneProseText}
                         getSceneAudioStatus={handOff(getSceneAudioStatus)}
-                        handleExportEpub={handleExportEpub}
-                        handleExportAudioDramaTxt={handleExportAudioDramaTxt}
-                        handleExportMarkdown={handleExportMarkdown}
-                        handleExportPdf={handleExportPdf}
-                        handleImport={handleImport}
-                        fileInputRef={fileInputRef}
                         hasAvailableUpdate={hasAvailableUpdate}
                         availableUpdateVersion={updateInfo?.latestVersion ?? null}
                         isCheckingUpdates={isCheckingUpdates}
@@ -2035,6 +2025,8 @@ import {
                                     handleExportEpub={handleExportEpub}
                                     handleDownloadStoryAudio={handleDownloadStoryAudio}
                                     handleExportAudioDramaTxt={handleExportAudioDramaTxt}
+                                    handleExportMarkdown={handleExportMarkdown}
+                                    handleExportPdf={handleExportPdf}
                                     isExportingStoryAudio={isExportingStoryAudio}
                                     isExportingSequenceAudio={isExportingSequenceAudio}
                                     isExportingSceneAudio={isExportingSceneAudio}

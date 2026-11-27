@@ -7,12 +7,10 @@
 import React from 'react';
 import {
     Activity,
-    Book,
     BookOpen,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
-    FileText,
     Headphones,
     History,
     Layers,
@@ -21,7 +19,6 @@ import {
     RefreshCw,
     Settings,
     Sparkles,
-    Upload,
     Workflow,
     X
 } from '@/components/icons';
@@ -65,13 +62,6 @@ export interface StudioSidebarProps {
     enterReaderMode: (seqIdx?: number, sceneIdx?: number) => void;
     getSceneProseText: (story: Story, seqIdx: number, sceneIdx: number) => string;
     getSceneAudioStatus: (seqIdx: number, sceneIdx: number) => SidebarSceneAudioStatus;
-    handleExportEpub: () => void | Promise<void>;
-    handleExportAudioDramaTxt: () => void | Promise<void>;
-    /** The manuscript as Markdown, and through the print window as a PDF. Each button is hidden when not given. */
-    handleExportMarkdown?: () => void;
-    handleExportPdf?: () => void;
-    handleImport: (e: React.ChangeEvent<HTMLInputElement>) => void | Promise<void>;
-    fileInputRef: React.RefObject<HTMLInputElement>;
     hasAvailableUpdate?: boolean;
     availableUpdateVersion?: string | null;
     isCheckingUpdates?: boolean;
@@ -104,12 +94,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
     enterReaderMode,
     getSceneProseText,
     getSceneAudioStatus,
-    handleExportEpub,
-    handleExportAudioDramaTxt,
-    handleExportMarkdown,
-    handleExportPdf,
-    handleImport,
-    fileInputRef,
     hasAvailableUpdate = false,
     availableUpdateVersion = null,
     isCheckingUpdates = false,
@@ -605,62 +589,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                             </button>
                         )}
                     </div>
-                </div>
-
-                {/* Bottom Quick Storage Controls */}
-                <div className="sidebar-storage p-3 border-t border-edge bg-surface/70 flex gap-1.5 flex-wrap">
-                    <button
-                        onClick={handleExportEpub}
-                        className="flex-1 bg-gold-tint hover:bg-gold-tint border border-gold-edge text-gold-ink hover:text-gold-ink-deep py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                        title={
-                            storyAudioSummary.readyCount > 0
-                                ? `Export EPUB (${storyAudioSummary.readyCount} audio scenes bundled)`
-                                : 'Export Formatted EPUB'
-                        }
-                    >
-                        <Book size={13} /> <span className="nav-label">Export</span>
-                    </button>
-                    {story?.writing_mode === 'audio_drama' && (
-                        <button
-                            onClick={handleExportAudioDramaTxt}
-                            className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                            title="Export Full Audio Drama Script (.txt)"
-                        >
-                            <FileText size={13} /> <span className="nav-label">TXT</span>
-                        </button>
-                    )}
-                    {handleExportMarkdown && (
-                        <button
-                            onClick={handleExportMarkdown}
-                            className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                            title="Export the manuscript as Markdown (.md)"
-                        >
-                            <FileText size={13} /> <span className="nav-label">MD</span>
-                        </button>
-                    )}
-                    {handleExportPdf && (
-                        <button
-                            onClick={handleExportPdf}
-                            className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                            title="Print the manuscript, or save it as a PDF from the print window"
-                        >
-                            <FileText size={13} /> <span className="nav-label">PDF</span>
-                        </button>
-                    )}
-                    <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                        title="Import .json or .epub"
-                    >
-                        <Upload size={13} /> <span className="nav-label">Import</span>
-                    </button>
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleImport}
-                        className="hidden"
-                        accept=".json,.epub"
-                    />
                 </div>
             </div>
         </>

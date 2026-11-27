@@ -56,18 +56,13 @@
                 gap: 0;
             }
 
-            .studio-sidebar.collapsed .sidebar-autopilot,
-            .studio-sidebar.collapsed .sidebar-storage>button {
+            .studio-sidebar.collapsed .sidebar-autopilot {
                 flex: none;
                 width: 2.5rem;
                 height: 2.5rem;
                 padding: 0;
                 gap: 0;
                 margin-inline: auto;
-            }
-
-            .studio-sidebar.collapsed .sidebar-storage {
-                flex-direction: column;
             }
         }
 

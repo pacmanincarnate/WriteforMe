@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import React, { act, useRef, useState } from 'react';
+import React, { act, useState } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import {
     GesmBeliefModal,
@@ -70,17 +70,14 @@ describe('Phase 5H: StudioSidebar, StudioHeader, and remaining modals', () => {
         vi.restoreAllMocks();
     });
 
-    it('renders StudioSidebar navigation, tree drill-down, collapse, and export actions', () => {
+    it('renders StudioSidebar navigation, tree drill-down, and collapse', () => {
         const setView = vi.fn();
         const setSelectedSequence = vi.fn();
         const setSelectedScene = vi.fn();
         const setIsSidebarOpen = vi.fn();
         const setIsSidebarCollapsed = vi.fn();
-        const handleExportEpub = vi.fn();
-        const handleExportAudioDramaTxt = vi.fn();
 
         const SidebarHarness: React.FC = () => {
-            const fileInputRef = useRef<HTMLInputElement>(null);
             return (
                 <StudioSidebar
                     view="dashboard"
@@ -107,10 +104,6 @@ describe('Phase 5H: StudioSidebar, StudioHeader, and remaining modals', () => {
                     enterReaderMode={vi.fn()}
                     getSceneProseText={() => 'prose'}
                     getSceneAudioStatus={() => ({ status: 'ready' })}
-                    handleExportEpub={handleExportEpub}
-                    handleExportAudioDramaTxt={handleExportAudioDramaTxt}
-                    handleImport={vi.fn()}
-                    fileInputRef={fileInputRef}
                 />
             );
         };
@@ -135,16 +128,11 @@ describe('Phase 5H: StudioSidebar, StudioHeader, and remaining modals', () => {
         expect(setSelectedScene).toHaveBeenCalledWith(0);
         expect(setView).toHaveBeenCalledWith('writer');
 
-        // Export EPUB & TXT buttons
-        act(() => {
-            findButton('Export').click();
-        });
-        expect(handleExportEpub).toHaveBeenCalledTimes(1);
-
-        act(() => {
-            findButton('TXT').click();
-        });
-        expect(handleExportAudioDramaTxt).toHaveBeenCalledTimes(1);
+        // The sidebar holds places only: no export or import buttons
+        expect(container.querySelector('input[type="file"]')).toBeNull();
+        expect(
+            Array.from(container.querySelectorAll('button')).some((b) => /export|import/i.test(b.textContent || ''))
+        ).toBe(false);
 
         // Collapse toggle
         const collapseBtn = container.querySelector('button[aria-label="Collapse sidebar"]') as HTMLButtonElement;
