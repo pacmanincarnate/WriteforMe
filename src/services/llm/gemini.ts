@@ -14,6 +14,7 @@ import type {
     LlmCallOptions,
     LlmToolDefinition
 } from './types';
+import { modelStopSignal } from './stop';
 
 interface GeminiApiResponse {
     candidates?: Array<{
@@ -120,7 +121,8 @@ export async function callGemini(
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                signal: modelStopSignal()
             },
             options.timeout
         );

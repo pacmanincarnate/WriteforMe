@@ -17,6 +17,7 @@ import {
     type OpenAICompatibleFullResult,
     type OpenAIToolCall
 } from './types';
+import { ModelStopError, modelStopSignal, throwIfModelStopped } from './stop';
 
 type BetaMessage = Anthropic.Beta.BetaMessage;
 type BetaMessageParam = Anthropic.Beta.BetaMessageParam;
@@ -335,7 +336,11 @@ export async function callAnthropic(
         // only needs the finished message, so the deadline is on silence, not total duration.
         const idleMs = Math.max(opts.timeout || 0, MIN_IDLE_TIMEOUT_MS);
         let message: BetaMessage;
+        throwIfModelStopped();
         const stream = client.beta.messages.stream(request);
+        const stopSignal = modelStopSignal();
+        const onStop = (): void => stream.abort();
+        stopSignal.addEventListener('abort', onStop, { once: true });
         let idleTimer: ReturnType<typeof setTimeout> | undefined;
         const armIdleTimer = (): void => {
             if (idleTimer) clearTimeout(idleTimer);
@@ -346,8 +351,10 @@ export async function callAnthropic(
             stream.on('streamEvent', armIdleTimer);
             message = await stream.finalMessage();
         } catch (error) {
+            if (stopSignal.aborted) throw new ModelStopError();
             throw describeApiError(error);
         } finally {
+            stopSignal.removeEventListener('abort', onStop);
             if (idleTimer) clearTimeout(idleTimer);
         }
 

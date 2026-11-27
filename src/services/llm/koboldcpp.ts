@@ -17,6 +17,7 @@ import {
     type OpenAICompatibleFullResult,
     type OpenAIToolCall
 } from './types';
+import { isModelStop, modelStopSignal, onModelStop } from './stop';
 
 export interface KoboldStatusResult {
     online: boolean;
@@ -376,11 +377,18 @@ export async function callKoboldCPP(
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    signal: modelStopSignal()
                 },
                 koboldTimeout
             );
         };
+        // Dropping the request ends a bridge's process, but a real KoboldCPP keeps generating
+        // until it is told to stop.
+        const forgetStop = onModelStop(() => {
+            if (isCliBridgeProvider(opts.provider)) return;
+            void fetch(`${cleanBaseUrl}/api/extra/abort`, { method: 'POST' }).catch(() => {});
+        });
         try {
             response = useLocalGpuLease
                 ? await withLocalGpuLease('llm', { koboldUrl: cleanBaseUrl }, executeKoboldFetch)
@@ -388,6 +396,8 @@ export async function callKoboldCPP(
                   ? await withCloudActivity(executeKoboldFetch)
                   : await executeKoboldFetch();
         } catch (fetchErr) {
+            forgetStop();
+            if (isModelStop(fetchErr)) throw fetchErr;
             const errName = fetchErr instanceof Error ? fetchErr.name : '';
             const errMessage = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
             if (errName === 'AbortError') {
@@ -409,6 +419,7 @@ export async function callKoboldCPP(
             }
             throw fetchErr;
         }
+        forgetStop();
 
         if (!response.ok) {
             const errText = await response.text();

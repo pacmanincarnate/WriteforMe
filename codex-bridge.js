@@ -329,6 +329,15 @@ const server = http.createServer(async (req, res) => {
             killTree(job.child);
             send(res, 504, { error: { message: `codex exec timed out after ${settings.timeout} s` } });
         }, settings.timeout * 1000);
+        // A browser that gives up (Stop, a closed tab) should not leave a turn running on the user's plan.
+        res.once('close', () => {
+            if (res.writableEnded || job.cancelled) return;
+            job.cancelled = true;
+            clearTimeout(job.timer);
+            const index = waiting.indexOf(job);
+            if (index !== -1) waiting.splice(index, 1);
+            killTree(job.child);
+        });
         waiting.push(job);
         drain();
     } catch (error) {

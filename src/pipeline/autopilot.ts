@@ -7,6 +7,7 @@
  */
 
 import { computePacingRanges, LENGTH_CONTROL, normalizeSequences } from '@/domain/story';
+import { isModelStop } from '@/services/llm';
 import { storyStore } from '@/services/storage';
 import { isLocalProvider, type Sequence } from '@/types';
 import { generateActsAndSequences, generateSequences, generateStoryArc } from './arcAndActs';
@@ -366,6 +367,10 @@ export async function runContinuousAutopilotStep(
                     currentStory = woven as unknown as PipelineStory;
                 }
             } catch (err) {
+                if (isModelStop(err) || isStopped()) {
+                    ctx.setLoading(false);
+                    return false;
+                }
                 const msg = extractErrorMessage(err);
                 console.error('Autopilot scene generation error:', err);
                 ctx.showToast(
@@ -452,6 +457,10 @@ export async function runContinuousAutopilotStep(
                     }
                     currentStory = ctx.getStory() || written;
                 } catch (err) {
+                    if (isModelStop(err) || isStopped()) {
+                        ctx.setLoading(false);
+                        return false;
+                    }
                     console.error('Autopilot scene prose error:', err);
                     ctx.showToast(
                         `Autopilot paused at Sequence ${seqIdx + 1}, Scene ${sceneIdx + 1}: ${extractErrorMessage(err)}`,

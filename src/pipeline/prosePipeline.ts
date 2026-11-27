@@ -63,7 +63,7 @@ import {
     stripNarrativeLensSchemaLine
 } from '@/prompts';
 import { ensureAudioDramaVoicesRegistered } from '@/services/audio';
-import { callAgenticLoop, resolveRole } from '@/services/llm';
+import { callAgenticLoop, isModelStop, resolveRole, throwIfModelStopped } from '@/services/llm';
 import { storyStore } from '@/services/storage';
 import {
     CLI_BRIDGE_DEFAULT_URLS,
@@ -2268,6 +2268,8 @@ ${auditLines}
             finalProseText = normalizeAudioDramaScript(finalProseText);
         }
 
+        // Checks above fail open, so a scene stopped part-way must not be archived as finished.
+        throwIfModelStopped();
         ctx.setLoadingStep('Final Agent: Archiving scene updates (Tier 6.4)...');
         const proseEntry: Record<string, unknown> = {
             final: finalProseText,
@@ -2585,6 +2587,8 @@ ${auditLines}
         ctx.showToast('Full scene prose generated successfully!', 'success');
         return syncedProseStory;
     } catch (e) {
+        // A Stop press is not a failure: leave quietly.
+        if (isModelStop(e)) throw e;
         const msg = extractErrorMessage(e);
         console.error('Scene prose writing failed:', e);
         ctx.showToast(`Scene prose writing failed: ${msg}`, 'error');

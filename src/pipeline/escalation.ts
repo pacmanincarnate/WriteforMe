@@ -54,6 +54,7 @@ import {
     computeSpawnedCharacterVoiceSeed,
     repairBannedEntitiesWithAI
 } from './continuityPipeline';
+import { throwIfModelStopped } from '@/services/llm';
 import { ensureNameBanks } from './nameBank';
 import { triggerLoreExtraction } from './lorePipeline';
 import { applySurgicalEditsWithRetry } from './surgicalPatch';
@@ -112,6 +113,17 @@ interface EscalationHistoryEntry {
  * up to 3 escalation attempts, and optional interactive InterventionModal fallback.
  */
 export async function runAgentWithEscalation<TParsed = Record<string, unknown>>(
+    ctx: PipelineRuntimeContext,
+    params: EscalationParams<TParsed>
+): Promise<EscalationResult<TParsed>> {
+    // Reviews and repairs fail open, so a run stopped part-way must not hand back a draft as done.
+    throwIfModelStopped();
+    const result = await runEscalation<TParsed>(ctx, params);
+    throwIfModelStopped();
+    return result;
+}
+
+async function runEscalation<TParsed = Record<string, unknown>>(
     ctx: PipelineRuntimeContext,
     params: EscalationParams<TParsed>
 ): Promise<EscalationResult<TParsed>> {
