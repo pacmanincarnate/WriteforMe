@@ -14,7 +14,15 @@ export interface ImageStylePreset {
     id: string;
     name: string;
     description: string;
+    category?: string;
 }
+
+export const IMAGE_STYLE_CATEGORIES = [
+    'Painting & Fine Art',
+    'Illustration & Printmaking',
+    'Animation & Retro-Digital',
+    'Photography & Cinema'
+] as const;
 
 export const AVAILABLE_ICONS: readonly IconOption[] = [
     { value: 'tag', label: 'Tag (Generic)' },
@@ -103,67 +111,123 @@ export const AVAILABLE_ICONS: readonly IconOption[] = [
 
 export const DEFAULT_IMAGE_STYLES: readonly ImageStylePreset[] = [
     { id: 'none', name: 'None (No added style)', description: '' },
+
+    // Painting & Fine Art
     {
-        id: 'dark_fantasy',
-        name: 'Dark Fantasy Oil Painting',
+        id: 'fantasy_oil',
+        category: 'Painting & Fine Art',
+        name: 'Fantasy Illustration (Oil Painting)',
         description:
-            'dark fantasy oil painting style, heavy impasto, rich textures, moody chiaroscuro lighting, deep shadows, detailed brushwork'
+            'Executed as a museum-grade high-fantasy oil painting on linen canvas, the image blends meticulous anatomical and environmental realism with bold, expressive alla prima brushstrokes. Rich impasto textures catch the eye along highlights while deep, translucent glazes build luminous depth across weathered fabrics, intricate metalwork, and organic surfaces. Dramatic, chiaroscuro-inspired lighting carves the focal subject out of an atmospheric, mist-laden backdrop, infusing the scene with epic scale and classical painterly gravitas.'
     },
     {
-        id: 'cyberpunk',
-        name: 'Cyberpunk Neon Vector',
+        id: 'dutch_master',
+        category: 'Painting & Fine Art',
+        name: 'Dutch Master',
         description:
-            'cyberpunk vector art style, clean lines, vibrant neon color palette, glowing accents, synthwave aesthetic, high contrast'
+            'Painted in the 17th-century Dutch Golden Age oil tradition, the scene achieves breathtaking realism in its rendering of glistening surfaces, heavy textiles, skin texture, and fine atmospheric dust. Intense, directional chiaroscuro lighting—as if cast from a single unseen side window—illuminates the focal subject with warm, sculptural precision while plunging the surrounding space into rich, velvety umber and charcoal darkness. Grounded in a meticulously balanced, asymmetrical composition with subtle oil craquelure and deep varnish sheen, the image radiates quiet drama and tactile permanence.'
     },
     {
-        id: 'ghibli',
-        name: 'Studio Ghibli Anime',
+        id: 'impressionist_oil',
+        category: 'Painting & Fine Art',
+        name: 'Impressionist Oil Painting',
         description:
-            'classic hand-drawn anime style, soft watercolor backgrounds, clean line art, warm emotional lighting, gentle nostalgic atmosphere'
+            'Painted in the 19th-century French plein-air Impressionist oil tradition, the scene is built from rapid, visible broken brushstrokes and thick impasto dabs that capture fleeting light rather than rigid outlines. Luminous, sunlit palettes of warm ochres, lavender shadows, cerulean blues, and vibrant greens blend optically on the eye, avoiding harsh black pigments in favor of rich chromatic harmony. Shimmering atmospheric haze, dappled reflections, and soft-edged forms evoke the immediacy, movement, and airy warmth of an outdoor moment captured on raw primed canvas.'
+    },
+
+    // Illustration & Printmaking
+    {
+        id: 'comic_book_cover',
+        category: 'Illustration & Printmaking',
+        name: 'Full-Color Comic Book Cover Illustration',
+        description:
+            'Illustrated as a flagship, textless, full-bleed modern comic book cover extending edge-to-edge as clean, unobstructed artwork. Crisp, dynamic India ink linework with varied line weights and intricate cross-hatching defines the forms, anchored by bold, saturated digital coloring and dramatic cel-and-gradient shading. A heroic, slightly exaggerated perspective and punchy rim lighting elevate the visual tension, balancing graphic clarity with the lush, elevated rendering reserved for showcase cover art.'
     },
     {
-        id: 'noir',
-        name: 'Cinematic Noir Photography',
+        id: 'loose_watercolor',
+        category: 'Illustration & Printmaking',
+        name: 'Ephemeral & Loose Watercolor with Inking',
         description:
-            'high-contrast monochrome cinematic photography, film noir style, heavy shadows, wet streets, atmospheric fog, dramatic key lighting'
+            'Created as a delicate, loose watercolor and ink wash illustration on heavy cold-pressed cotton paper, the artwork embraces fluid pigment blooms, soft wet-on-wet bleeds, and intentional areas of untouched white paper. Spontaneous, fine-nibbed fountain pen linework dances over and beneath the translucent washes, sketching in fleeting contours and airy details without rigid boundaries. The palette remains translucent and ephemeral, glowing with diffused, airy light that gives the entire scene a dreamy, half-remembered quality.'
     },
     {
-        id: 'watercolor',
-        name: 'Vintage Watercolor',
+        id: 'pen_and_ink',
+        category: 'Illustration & Printmaking',
+        name: 'Pen and Ink Illustration',
         description:
-            'vintage watercolor illustration, soft pastel washes, delicate ink outlines, textured paper, whimsical and nostalgic feel'
-    },
-    {
-        id: 'concept_art',
-        name: 'Epic Digital Concept Art',
-        description:
-            'epic fantasy digital concept art style, sweeping landscapes, volumetric lighting, highly detailed environment, dramatic scale and atmosphere'
-    },
-    {
-        id: 'charcoal',
-        name: 'Pencil Sketch & Charcoal',
-        description:
-            'detailed pencil sketch and charcoal drawing, cross-hatching, realistic textures, artistic paper grain, high contrast sketch'
-    },
-    {
-        id: 'pop_art',
-        name: 'Retro Comic Book Pop Art',
-        description:
-            'retro 1980s comic book style, bold outlines, halftone dot patterns, saturated primary colors, dynamic action lines'
+            'Drawn as an intricate monochrome pen-and-ink illustration on lightly toothy archival cream paper, the artwork relies entirely on expressive, hand-drawn dip-pen linework without gray washes or color. Dynamic variations in nib pressure create sweeping contour lines, dense cross-hatching, stippling, and energetic gestural scratches that convey volume, texture, and shadow. Stark contrast between deep India ink blacks and raw negative space produces a striking, graphic immediacy reminiscent of classic golden-age editorial and bookplate illustration.'
     },
     {
         id: 'woodcut',
-        name: 'Mythological Woodcut Print',
+        category: 'Illustration & Printmaking',
+        name: 'Detailed Woodcut Print',
         description:
-            'traditional woodblock print style, bold black ink cuts, vintage paper texture, mythological illustration, stylized engravings'
+            'Crafted as a meticulous traditional relief woodcut print pressed in dense black ink onto slightly fibrous, off-white handmade paper, the image is constructed from thousands of deliberate, chiseled gouge marks. Bold, angular contours, rhythmic parallel hatching, and crisp carved textures define every form, leaving raw negative-space cutouts where the woodblock was cleared away. Subtle imperfections in ink saturation, faint woodgrain bleed, and heavy embossed edges lend the composition a tactile, folkloric weight and stark graphic power.'
+    },
+
+    // Animation & Retro-Digital
+    {
+        id: 'ghibli',
+        category: 'Animation & Retro-Digital',
+        name: 'Studio Ghibli',
+        description:
+            'Rendered in the nostalgic style of classic hand-drawn Japanese cel animation, the scene pairs expressive, cleanly inked foreground elements with richly layered, hand-painted gouache backgrounds. Soft, naturalistic color palettes of sunlit greens, cerulean skies, and warm earth tones are textured with subtle paper grain, delicate brushwork, and billowing, painterly clouds. Dappled natural sunlight filters through the environment with gentle atmospheric depth, creating a sense of quiet wonder, lived-in detail, and breezy cinematic movement.'
     },
     {
-        id: 'surrealism',
-        name: 'Surrealist Dreamscape',
+        id: 'gritty_anime_90s',
+        category: 'Animation & Retro-Digital',
+        name: '1990s Gritty Anime',
         description:
-            'surrealist painting style, dreamlike atmosphere, melting geometries, strange lighting, rich symbolic details, vivid colors'
+            'Rendered as a hand-painted 1990s theatrical anime film cel shot on 35mm film, the image pairs sharp, angular ink outlines and stark hard-edged cel shading with densely detailed, hand-painted gouache backgrounds. Atmospheric urban grime, intricate mechanical surfaces, and dramatic nocturnal lighting are bathed in moody teal shadows, glowing neon accents, and nostalgic analog color grading. Subtle film grain, soft lens halation around bright light sources, and dynamic cinematic framing capture the raw, high-stakes tension and tactile analog weight of classic late-century OVA animation.'
+    },
+    {
+        id: 'pixel_art_16bit',
+        category: 'Animation & Retro-Digital',
+        name: '16-Bit Pixel Art',
+        description:
+            'Crafted as high-craft 16-bit retro video game pixel art from the golden era of classic console sprites, the scene is constructed on a crisp, low-resolution pixel grid with zero anti-aliasing blur or smooth vector gradients. Every form is defined by deliberate pixel clusters, readable silhouettes, selective outlines, and meticulous hand-dithered shading patterns that create rich texture within a tight, cohesive 32-color palette. Vibrant, punchy lighting and nostalgic tile-based environmental detail give the composition the unmistakable charm, clarity, and handcrafted precision of vintage arcade and RPG artwork.'
+    },
+
+    // Photography & Cinema
+    {
+        id: 'cinematic_film_still',
+        category: 'Photography & Cinema',
+        name: 'High-End Cinematic Film Still',
+        description:
+            'Captured as a prestige, big-budget theatrical film still shot on large-format 65mm digital cinema cameras with master prime lenses, the image delivers tack-sharp micro-detail and effortless dynamic range. Motivated, sculptural lighting blends rich atmospheric haze, volumetric light shafts, and nuanced color separation—such as warm practical lighting balanced against cool ambient shadow—to create breathtaking dimensional depth. Composed with disciplined widescreen geometry, strong leading lines, and deliberate foreground-to-background layering, every inch of the frame feels meticulously art-directed and emotionally resonant.'
+    },
+    {
+        id: 'indie_film',
+        category: 'Photography & Cinema',
+        name: 'Indie Film Cinematography',
+        description:
+            'Shot as an intimate, contemporary arthouse independent film still on 35mm anamorphic lenses, the frame features a lifted, low-contrast tonal curve with milky blacks and gently rolled-off highlights. Despite the soft contrast, the color grading is boldly curated and vibrant, pairing saturated, unexpected color harmonies against naturalistic, unpolished textures. An ultra-shallow depth of field isolates the focal point against a creamy, softly distorted bokeh background, anchored by an unconventional, artfully balanced off-center composition.'
+    },
+    {
+        id: 'noir',
+        category: 'Photography & Cinema',
+        name: 'Film Noir',
+        description:
+            'Captured as a vintage 1940s black-and-white film noir still shot on 35mm monochrome stock, the image is defined by stark, high-contrast lighting and deep, impenetrable obsidian shadows. Hard directional light slices across the frame—casting sharp geometric pools, Venetian blind shadows, or stark silhouettes—while visible silver-halide film grain and subtle halation soften the brightest specular highlights. Framed with tense, off-kilter angles and claustrophobic depth, the composition exudes atmospheric dread, rain-slicked texture, and cynical mid-century melodrama.'
+    },
+    {
+        id: 'polaroid_snapshot',
+        category: 'Photography & Cinema',
+        name: 'Polaroid Snapshot',
+        description:
+            'Captured as a candid, unposed vintage Polaroid SX-70 instant photograph, the image carries the unmistakable chemical imperfections of integral film, including slightly faded shadows, warm magenta-cyan color shifts, and soft, imperfect focus. A harsh, direct on-camera flash flattens the foreground with bright specular reflections while letting the background fall rapidly into murky, underexposed shadow. The unstudied, slightly tilted snapshot framing and subtle emulsion grain evoke an authentic, fleeting slice of analog memory.'
     }
 ];
+
+export function appendImageStylePrompt(basePrompt: string, styleDescription: string): string {
+    const base = basePrompt.trim();
+    const style = styleDescription.trim();
+    if (!style) return base;
+    if (!base) return style;
+    if (/[.!?]$/.test(base)) return `${base} ${style}`;
+    if (/^[A-Z]/.test(style) && /[.!?]$/.test(style)) return `${base}. ${style}`;
+    return `${base}, ${style}`;
+}
 
 export const DEFAULT_GEMINI_IMAGE_MODELS: readonly ImageStylePreset[] = [
     {

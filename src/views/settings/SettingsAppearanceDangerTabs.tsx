@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { ChevronDown, Download, Moon, Plus, StoryResetDropdown, Sun, Trash2 } from '@/components';
-import { DEFAULT_IMAGE_STYLES } from '@/config';
+import { DEFAULT_IMAGE_STYLES, IMAGE_STYLE_CATEGORIES } from '@/config';
 import type { SettingsAppearanceTabProps, SettingsDangerTabProps } from './types';
 
 export const SettingsAppearanceTab: React.FC<SettingsAppearanceTabProps> = ({
@@ -21,8 +21,13 @@ export const SettingsAppearanceTab: React.FC<SettingsAppearanceTabProps> = ({
     setNewStyleDesc,
     showToast
 }) => {
+    const allImageStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
+    const resolvedStyleId = allImageStyles.some((c) => c.id === story.imageStyle)
+        ? story.imageStyle || 'none'
+        : 'none';
     const selectedStyleDescription =
-        [...DEFAULT_IMAGE_STYLES, ...customImageStyles].find((c) => c.id === story.imageStyle)?.description || '';
+        allImageStyles.find((c) => c.id === resolvedStyleId)?.description || '';
+    const uncategorizedDefaultStyles = DEFAULT_IMAGE_STYLES.filter((s) => !s.category);
 
     return (
         <div className="bg-surface p-6 md:p-8 rounded-2xl border border-edge space-y-6 shadow-sm animate-fade-in">
@@ -72,31 +77,48 @@ export const SettingsAppearanceTab: React.FC<SettingsAppearanceTabProps> = ({
                     <label className="block text-xs font-bold text-ink-700 mb-1 font-mono">Story Art Style</label>
                     <div className="relative">
                         <select
-                            value={story.imageStyle || 'none'}
+                            value={resolvedStyleId}
                             onChange={(e) => {
                                 const val = e.target.value;
                                 setStory((prev) => ({ ...prev, imageStyle: val }));
                             }}
                             className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none appearance-none transition-colors font-semibold cursor-pointer"
                         >
-                            {DEFAULT_IMAGE_STYLES.map((s) => (
+                            {uncategorizedDefaultStyles.map((s) => (
                                 <option key={s.id} value={s.id}>
                                     {s.name}
                                 </option>
                             ))}
-                            {customImageStyles.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                    {s.name} (Custom)
-                                </option>
-                            ))}
+                            {IMAGE_STYLE_CATEGORIES.map((category) => {
+                                const categoryStyles = DEFAULT_IMAGE_STYLES.filter((s) => s.category === category);
+                                if (categoryStyles.length === 0) return null;
+                                return (
+                                    <optgroup key={category} label={category}>
+                                        {categoryStyles.map((s) => (
+                                            <option key={s.id} value={s.id}>
+                                                {s.name}
+                                            </option>
+                                        ))}
+                                    </optgroup>
+                                );
+                            })}
+                            {customImageStyles.length > 0 && (
+                                <optgroup label="Custom Styles">
+                                    {customImageStyles.map((s) => (
+                                        <option key={s.id} value={s.id}>
+                                            {s.name} (Custom)
+                                        </option>
+                                    ))}
+                                </optgroup>
+                            )}
                         </select>
                         <ChevronDown
                             className="absolute right-3 top-2.5 text-ink-400 pointer-events-none"
                             size={14}
                         />
                     </div>
-                    {story.imageStyle && story.imageStyle !== 'none' && (
-                        <p className="text-xs text-ink-500 italic mt-1 font-serif">
+                    {resolvedStyleId !== 'none' && selectedStyleDescription && (
+                        <p className="text-xs text-ink-500 italic mt-2 leading-relaxed font-serif">
                             Style description: {selectedStyleDescription}
                         </p>
                     )}
