@@ -340,23 +340,6 @@ export function DashboardView({
                         </div>
 
                         <div className="pt-2 border-t border-edge-soft space-y-2">
-                            <div className="flex justify-between items-center">
-                                <div className="flex items-center gap-1.5">
-                                    {story.writing_mode === 'audio_drama' ? (
-                                        <Headphones size={13} className="text-gold-ink" />
-                                    ) : (
-                                        <Book size={13} className="text-gold-ink" />
-                                    )}
-                                    <span className="text-xs font-bold text-ink-500 uppercase tracking-wider font-mono">
-                                        Writing Mode
-                                    </span>
-                                </div>
-                                <span
-                                    className={`text-xs font-bold font-mono uppercase px-2.5 py-0.5 rounded-full ${story.writing_mode === 'audio_drama' ? 'bg-gold-tint text-gold-ink border border-gold-edge' : 'bg-mist-100 text-ink-600'}`}
-                                >
-                                    {story.writing_mode === 'audio_drama' ? 'Audio Drama' : 'Novel'}
-                                </span>
-                            </div>
                             <div
                                 className="grid grid-cols-2 p-1 bg-inset rounded-xl border border-edge gap-1"
                                 role="radiogroup"
