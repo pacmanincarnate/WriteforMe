@@ -9,7 +9,11 @@
 import {
     DEFAULT_SERVICE_URLS,
     DEFAULT_TOKEN_LIMITS,
+    formatActiveActAndSequenceXml,
     NARRATIVE_MODES,
+    resolveNarrativeActForSequence,
+    resolveNarrativeModeId,
+    resolveNarrativeSequenceForIndex,
     STRUCTURAL_MODALITIES,
     type NarrativeModeDefinition
 } from '@/config';
@@ -26,6 +30,7 @@ import {
     buildUpcomingBoundaryGuardInfo,
     compileActiveState,
     formatContinuityLedgerForPrompt,
+    getSequenceScenesList,
     runContinuityAuditor,
     type ContinuityStoryState
 } from '@/domain/continuity';
@@ -69,6 +74,7 @@ import {
 } from '@/types';
 import {
     decodeXmlEntities,
+    escapeXml,
     extractTag,
     isSerializationPlaceholder,
     safeEscapeRegex,
@@ -647,7 +653,16 @@ Exit Hook: ${asString(scene.exit_hook)}
                     .map((m) => {
                         const mRec = m as unknown as Record<string, unknown>;
                         const name = asString(mRec.name) || asString(mRec.title) || m.id;
-                        return `  <style id="${m.id}" name="${name}">\n    <context>${m.context || ''}</context>\n  </style>`;
+                        const categoryAttr = mRec.category
+                            ? ` category="${escapeXml(asString(mRec.category))}"`
+                            : '';
+                        const desc = [
+                            asString(m.context),
+                            mRec.boundaryNote ? `Boundary Note: ${asString(mRec.boundaryNote)}` : ''
+                        ]
+                            .filter(Boolean)
+                            .join(' ');
+                        return `  <style id="${escapeXml(m.id)}" name="${escapeXml(name)}"${categoryAttr}>\n    <context>${escapeXml(desc)}</context>\n  </style>`;
                     })
                     .join('\n') +
                 `\n</available_narrative_styles>`;
@@ -656,6 +671,10 @@ Exit Hook: ${asString(scene.exit_hook)}
 
             const prevSceneLens = asString(previousScene?.dominant_narrative_mode) || 'BASELINE_NEUTRAL';
             const upcomingSceneLens = asString(scene?.dominant_narrative_mode) || 'BASELINE_NEUTRAL';
+            const bridgeAllSeqs = asArray<Record<string, unknown>>(storyToUse.sequences);
+            const bridgeActDef = resolveNarrativeActForSequence(seq, bridgeAllSeqs, sequenceData);
+            const bridgeSeqDef = resolveNarrativeSequenceForIndex(seq, bridgeAllSeqs, sequenceData);
+            const bridgeActAndSeqXml = formatActiveActAndSequenceXml(bridgeActDef, bridgeSeqDef);
 
             const bridgePrompt = `
 <story_so_far>
@@ -673,6 +692,8 @@ ${asString(sequenceData.dramatic_question || sequenceData.tactical_question || s
 </sequence_objective>
 
 ${castRosterBlock}
+
+${bridgeActAndSeqXml}
 
 ${availableStylesXml}
 
@@ -836,8 +857,9 @@ ${PROMPTS.bridgeSceneGeneratorAgent}
                         .trim()
                         .toUpperCase()
                         .replace(/[\s-]+/g, '_');
-                    if (allNarrativeModes[cleanMode]) {
-                        matchedModeId = cleanMode;
+                    const resolvedClean = resolveNarrativeModeId(cleanMode, allNarrativeModes);
+                    if (allNarrativeModes[resolvedClean]) {
+                        matchedModeId = resolvedClean;
                     } else {
                         const found = Object.values(allNarrativeModes).find((m) => {
                             const mRec = m as unknown as Record<string, unknown>;
@@ -852,7 +874,7 @@ ${PROMPTS.bridgeSceneGeneratorAgent}
                                 cleanMode.includes(m.id.toUpperCase())
                             );
                         });
-                        if (found) matchedModeId = found.id;
+                        if (found) matchedModeId = resolveNarrativeModeId(found.id, allNarrativeModes);
                     }
                 }
 
@@ -1320,7 +1342,10 @@ ${compressorInputSoFar}
         // STEP 2: Full-Scene Drafting (One Pass)
         ctx.setLoadingStep('Drafting Scene: Writing full scene prose...');
 
-        const activeModeId = asString(scene.dominant_narrative_mode) || 'BASELINE_NEUTRAL';
+        const activeModeId = resolveNarrativeModeId(
+            asString(scene.dominant_narrative_mode) || 'BASELINE_NEUTRAL',
+            allNarrativeModes
+        );
         const narrativeModeObj =
             allNarrativeModes[activeModeId] || allNarrativeModes.BASELINE_NEUTRAL;
         const injectionPrompt = enableNarrativeLenses ? narrativeModeObj?.prompt || '' : '';
@@ -1818,13 +1843,38 @@ ${rawInterview}
 
                 const modeRec = narrativeModeObj as unknown as Record<string, unknown>;
                 const modeName = asString(modeRec?.name);
+                const modeCategory = asString(modeRec?.category);
                 const vsObj = asOptionalRecord(scene.value_shift);
+                const polishSequences = asArray<Record<string, unknown>>(storyToUse.sequences);
+                const polishSeqScenes = getSequenceScenesList(
+                    storyToUse as Record<string, unknown>,
+                    seq
+                );
+                const polishActDef = resolveNarrativeActForSequence(
+                    seq,
+                    polishSequences,
+                    sequenceData
+                );
+                const polishSeqDef = resolveNarrativeSequenceForIndex(
+                    seq,
+                    polishSequences,
+                    sequenceData
+                );
+                const polishActAndSeqXml = formatActiveActAndSequenceXml(
+                    polishActDef,
+                    polishSeqDef,
+                    polishSeqScenes.length > 0
+                        ? { sceneIndex: s, totalScenes: polishSeqScenes.length }
+                        : undefined
+                );
 
                 const polishPrompt = `
+${polishActAndSeqXml}
+
 ${
     enableNarrativeLenses && narrativeModeObj
         ? `<active_scene_narrative_style>
-- Style Identifier: ${activeModeId}
+- Style Identifier: ${activeModeId}${modeCategory ? `\n- Category: ${modeCategory}` : ''}
 - Style Overview: ${narrativeModeObj.context || 'Dynamic stylistic lens'}
 - Stylistic Cadence & Pacing Directives:
 ${injectionPrompt || narrativeModeObj.prompt || 'Balance pacing and interiority.'}

@@ -14,7 +14,7 @@ const http = require('http');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 const { downloadFile } = require('../lib/download.cjs');
-const { installBackend, findInstallLayout, readInstalled, sevenZipPath } = require('../lib/install.cjs');
+const { installBackend, findInstallLayout, findInstallLayoutFromPath, readInstalled, sevenZipPath } = require('../lib/install.cjs');
 const { Controller } = require('../lib/controller.cjs');
 const { Supervisor } = require('../lib/supervisor.cjs');
 const { DesktopSettings } = require('../lib/settings.cjs');
@@ -178,4 +178,258 @@ test('a package without the expected program leaves the old install alone', asyn
     await assert.rejects(installBackend({ backendsDir, backendId: 'audiocpp', variantId: 'cpu', fetchRelease }), /expected program files/);
     assert.ok(findInstallLayout('audiocpp', path.join(backendsDir, 'audiocpp')), 'old install still there');
     srv.server.close();
+});
+
+test('controller.list() is structured-cloneable during active, paused, and errored jobs and supports pause/resume', async () => {
+    const work = tmp();
+    const totalBytes = 128 * 1024;
+    const payload = crypto.randomBytes(totalBytes);
+    const server = http.createServer((req, res) => {
+        if (req.url !== '/k.exe') { res.writeHead(404); return res.end(); }
+        const m = /bytes=(\d+)-/.exec(req.headers.range || '');
+        const start = m ? Number(m[1]) : 0;
+        const body = payload.subarray(start);
+        res.writeHead(m ? 206 : 200, { 'Content-Length': body.length, 'Accept-Ranges': 'bytes' });
+        if (!m) {
+            // Stream slowly so pause() can interrupt mid-download
+            res.write(body.subarray(0, 32 * 1024));
+            const t = setTimeout(() => { if (!res.destroyed) res.end(body.subarray(32 * 1024)); }, 800);
+            res.on('close', () => clearTimeout(t));
+            return;
+        }
+        res.end(body);
+    });
+    await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const base = `http://127.0.0.1:${server.address().port}`;
+
+    const userData = path.join(work, 'userdata');
+    const settings = new DesktopSettings(userData);
+    settings.update({ backendsDir: path.join(work, 'backends') });
+    const ctl = new Controller({
+        settings,
+        supervisor: new Supervisor(),
+        appFilesDir: path.resolve(__dirname, '..', '..'),
+        dataDir: path.join(work, 'data'),
+        node: { command: process.execPath, env: {} },
+        fetchRelease: async () => ({
+            tag_name: 'v1.0.0',
+            assets: [{ name: 'koboldcpp.exe', browser_download_url: `${base}/k.exe`, digest: `sha256:${sha(payload)}` }]
+        })
+    });
+
+    let sawDownload = false;
+    let resolveDownload;
+    const downloadedGate = new Promise((r) => { resolveDownload = r; });
+    const installPromise = ctl.install('koboldcpp', 'cuda', () => {
+        const snap = structuredClone(ctl.list());
+        const k = snap.backends.find((b) => b.id === 'koboldcpp');
+        if (k.job && k.job.phase === 'download' && k.job.received > 0 && !sawDownload) {
+            sawDownload = true;
+            resolveDownload();
+        }
+    });
+
+    await downloadedGate;
+    assert.equal(ctl.pause('koboldcpp'), true);
+    const pausedRes = await installPromise;
+    assert.deepEqual(pausedRes, { paused: true });
+
+    const pausedState = structuredClone(ctl.list());
+    const kPaused = pausedState.backends.find((b) => b.id === 'koboldcpp');
+    assert.equal(kPaused.job.phase, 'paused');
+    assert.equal(kPaused.job.paused, true);
+    assert.ok(fs.existsSync(path.join(settings.backendsDir, '_downloads', 'koboldcpp.exe.part')));
+
+    const resumed = await ctl.resume('koboldcpp');
+    assert.ok(resumed.layout.exe.endsWith('koboldcpp.exe'));
+    const afterState = structuredClone(ctl.list());
+    const kDone = afterState.backends.find((b) => b.id === 'koboldcpp');
+    assert.equal(kDone.job, null);
+    assert.equal(kDone.installed.tag, 'v1.0.0');
+
+    // Error state is also structured-cloneable
+    const badCtl = new Controller({
+        settings,
+        supervisor: new Supervisor(),
+        appFilesDir: path.resolve(__dirname, '..', '..'),
+        dataDir: path.join(work, 'data'),
+        node: { command: process.execPath, env: {} },
+        fetchRelease: async () => { throw new Error('network down'); }
+    });
+    await assert.rejects(badCtl.install('comfyui', 'nvidia'), /network down/);
+    const errState = structuredClone(badCtl.list());
+    assert.equal(errState.backends.find((b) => b.id === 'comfyui').job.phase, 'error');
+
+    server.close();
+});
+
+test('existing installs can be linked for all backends and unlinked without deleting user files', () => {
+    const work = tmp();
+    const koboldExe = path.join(work, 'my-kobold', 'koboldcpp_custom.exe');
+    fs.mkdirSync(path.dirname(koboldExe), { recursive: true });
+    fs.writeFileSync(koboldExe, 'exe');
+
+    const comfyDir = path.join(work, 'my-comfy');
+    fs.mkdirSync(path.join(comfyDir, 'venv', 'Scripts'), { recursive: true });
+    fs.mkdirSync(path.join(comfyDir, 'models'), { recursive: true });
+    fs.writeFileSync(path.join(comfyDir, 'main.py'), 'print(1)');
+    fs.writeFileSync(path.join(comfyDir, 'venv', 'Scripts', 'python.exe'), 'py');
+
+    const audioDir = path.join(work, 'my-audio');
+    fs.mkdirSync(audioDir, { recursive: true });
+    fs.writeFileSync(path.join(audioDir, 'audiocpp_server.exe'), 'exe');
+
+    assert.equal(findInstallLayoutFromPath('koboldcpp', koboldExe).exe, koboldExe);
+    const comfyLayout = findInstallLayoutFromPath('comfyui', comfyDir);
+    assert.equal(comfyLayout.isPortable, false);
+    assert.equal(comfyLayout.models, path.join(comfyDir, 'models'));
+    assert.equal(findInstallLayoutFromPath('audiocpp', audioDir).binDir, audioDir);
+
+    const userData = path.join(work, 'userdata');
+    const settings = new DesktopSettings(userData);
+    const ctl = new Controller({
+        settings,
+        supervisor: new Supervisor(),
+        appFilesDir: path.resolve(__dirname, '..', '..'),
+        dataDir: path.join(work, 'data'),
+        node: { command: process.execPath, env: {} }
+    });
+
+    ctl.setCustomInstall('koboldcpp', koboldExe);
+    ctl.setCustomInstall('comfyui', comfyDir);
+    ctl.setCustomInstall('audiocpp', audioDir);
+
+    const listed = ctl.list();
+    assert.equal(listed.backends.find((b) => b.id === 'koboldcpp').installSource, 'custom');
+    assert.equal(listed.comfyModelsDir, path.join(comfyDir, 'models'));
+    assert.ok(ctl.serviceSpec('comfyui').args.includes(path.join(comfyDir, 'main.py')));
+    assert.ok(!ctl.serviceSpec('comfyui').args.includes('--windows-standalone-build'));
+
+    // Uninstalling a linked custom install unlinks it without deleting the user's files.
+    ctl.uninstall('koboldcpp');
+    assert.ok(fs.existsSync(koboldExe), 'external koboldcpp exe was NOT deleted');
+    assert.equal(ctl.list().backends.find((b) => b.id === 'koboldcpp').installed, null);
+});
+
+test('startInstalled skips koboldcpp while ensureKoboldRunning starts it on demand and deduplicates calls', async () => {
+    const work = tmp();
+    const koboldExe = path.join(work, 'kobold', 'koboldcpp.exe');
+    fs.mkdirSync(path.dirname(koboldExe), { recursive: true });
+    fs.writeFileSync(koboldExe, 'exe');
+    const configFile = path.join(work, 'my.kcpps');
+    fs.writeFileSync(configFile, '{}');
+
+    const userData = path.join(work, 'userdata');
+    const settings = new DesktopSettings(userData);
+    settings.update({
+        backendsDir: path.join(work, 'backends'),
+        customPaths: { koboldcpp: koboldExe },
+        koboldcpp: { configPath: configFile }
+    });
+
+    const startCalls = [];
+    const fakeSupervisor = {
+        services: new Map(),
+        status(id) {
+            const s = this.services.get(id);
+            return s ? { status: s.status, log: [] } : { status: 'stopped', log: [] };
+        },
+        async start(id, spec) {
+            startCalls.push({ id, spec });
+            await new Promise((r) => setTimeout(r, 30));
+            const svc = { id, status: 'running', log: [] };
+            this.services.set(id, svc);
+            return svc;
+        },
+        stop(id) { this.services.delete(id); }
+    };
+
+    const ctl = new Controller({
+        settings,
+        supervisor: fakeSupervisor,
+        appFilesDir: path.resolve(__dirname, '..', '..'),
+        dataDir: path.join(work, 'data'),
+        node: { command: process.execPath, env: {} },
+        httpOkFn: async () => false
+    });
+
+    await ctl.startInstalled();
+    assert.equal(startCalls.length, 0, 'koboldcpp is not eagerly started on app launch');
+
+    let startingNotifications = 0;
+    const [r1, r2] = await Promise.all([
+        ctl.ensureKoboldRunning(() => {}, () => { startingNotifications++; }),
+        ctl.ensureKoboldRunning(() => {}, () => { startingNotifications++; })
+    ]);
+    assert.equal(startingNotifications, 1, 'concurrent callers deduplicated');
+    assert.equal(startCalls.length, 1);
+    assert.ok(startCalls[0].spec.args.includes('--config'));
+    assert.ok(startCalls[0].spec.args.includes(configFile));
+    assert.equal(r1.ready, true);
+    assert.equal(r2.ready, true);
+
+    const r3 = await ctl.ensureKoboldRunning();
+    assert.equal(r3.started, false, 'subsequent call sees already running');
+    assert.equal(startCalls.length, 1);
+});
+
+test('startInstalled skips comfyui while ensureComfyRunning starts it silently on demand and deduplicates calls', async () => {
+    const work = tmp();
+    const comfyDir = path.join(work, 'comfy');
+    fs.mkdirSync(path.join(comfyDir, 'python_embeded'), { recursive: true });
+    fs.mkdirSync(path.join(comfyDir, 'ComfyUI'), { recursive: true });
+    fs.writeFileSync(path.join(comfyDir, 'python_embeded', 'python.exe'), 'py');
+    fs.writeFileSync(path.join(comfyDir, 'ComfyUI', 'main.py'), 'print(1)');
+
+    const userData = path.join(work, 'userdata');
+    const settings = new DesktopSettings(userData);
+    settings.update({
+        backendsDir: path.join(work, 'backends'),
+        customPaths: { comfyui: comfyDir }
+    });
+
+    const startCalls = [];
+    const fakeSupervisor = {
+        services: new Map(),
+        status(id) {
+            const s = this.services.get(id);
+            return s ? { status: s.status, log: [] } : { status: 'stopped', log: [] };
+        },
+        async start(id, spec) {
+            startCalls.push({ id, spec });
+            await new Promise((r) => setTimeout(r, 30));
+            const svc = { id, status: 'running', log: [] };
+            this.services.set(id, svc);
+            return svc;
+        },
+        stop(id) { this.services.delete(id); }
+    };
+
+    const ctl = new Controller({
+        settings,
+        supervisor: fakeSupervisor,
+        appFilesDir: path.resolve(__dirname, '..', '..'),
+        dataDir: path.join(work, 'data'),
+        node: { command: process.execPath, env: {} },
+        httpOkFn: async () => false
+    });
+
+    await ctl.startInstalled();
+    assert.equal(startCalls.length, 0, 'comfyui is not eagerly started on app launch');
+
+    let startingNotifications = 0;
+    const [r1, r2] = await Promise.all([
+        ctl.ensureComfyRunning(() => {}, () => { startingNotifications++; }),
+        ctl.ensureComfyRunning(() => {}, () => { startingNotifications++; })
+    ]);
+    assert.equal(startingNotifications, 1, 'concurrent callers deduplicated');
+    assert.equal(startCalls.length, 1);
+    assert.ok(startCalls[0].spec.args.includes('--disable-auto-launch'));
+    assert.equal(startCalls[0].spec.hideWindow, true);
+    assert.equal(r1.ready, true);
+    assert.equal(r2.ready, true);
+
+    const r3 = await ctl.ensureComfyRunning();
+    assert.equal(r3.started, false, 'subsequent call sees already running');
+    assert.equal(startCalls.length, 1);
 });

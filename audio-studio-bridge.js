@@ -49,7 +49,8 @@ const settings = {
     bind: process.env.AUDIO_STUDIO_BRIDGE_BIND || '127.0.0.1',
     swapMode: process.env.AUDIO_STUDIO_SWAP_MODE || 'patternA', // 'patternA' | 'patternB'
     audiocppDir: process.env.ELLIPSISPROSE_AUDIOCPP_DIR || '',
-    audiocppBin: ''
+    audiocppBin: '',
+    idleUnloadSec: Number(process.env.AUDIO_STUDIO_IDLE_UNLOAD_SEC || 0)
 };
 
 for (let i = 2; i < process.argv.length; i += 2) {
@@ -61,6 +62,7 @@ for (let i = 2; i < process.argv.length; i += 2) {
     else if (key === 'swap-mode') settings.swapMode = val;
     else if (key === 'audiocpp-dir') settings.audiocppDir = val;
     else if (key === 'audiocpp-bin') settings.audiocppBin = val;
+    else if (key === 'idle-unload-sec') settings.idleUnloadSec = Number(val) || 0;
 }
 
 // Ensure cache directory exists
@@ -218,11 +220,14 @@ const WAVE_MODEL_IDS = {
 const state = {
     activeWave: null,
     activeModel: null,
+    activeModelBytes: 0,
     activeProc: null,
     procStartTime: null,
     activeStoryPrefix: '',
     activeWave2RequestedSig: null,
     activeOffload: null,
+    inFlightRequests: 0,
+    lastActivityAt: Date.now(),
     cudaWarmupSuppressed: 0,
     cudaWarmupFirstLogged: false,
     cudaGraphReuseSuppressed: 0,
@@ -388,6 +393,7 @@ async function stopActiveDaemon() {
 
     state.activeWave = null;
     state.activeModel = null;
+    state.activeModelBytes = 0;
     state.procStartTime = null;
     state.activeWave2RequestedSig = null;
     state.activeOffload = null;
@@ -598,20 +604,75 @@ function resolveWave2RuntimeConfig(baseCfgPath, overridesNorm, vramStatus) {
     return { configPath: RUNTIME_WAVE2_CONFIG_PATH, offloadSummary };
 }
 
+const WAVE_DEFAULT_BYTES = {
+    1: 5_400_000_000,
+    2: 23_000_000_000,
+    3: 155_000_000
+};
+
+function estimateWaveModelBytes(wave, configFile, binPath) {
+    try {
+        if (configFile && fs.existsSync(configFile)) {
+            const cfg = JSON.parse(fs.readFileSync(configFile, 'utf8'));
+            const models = Array.isArray(cfg?.models) ? cfg.models : [];
+            const baseDirs = [
+                AUDIOCPP_CONFIGS_DIR,
+                binPath ? path.resolve(path.dirname(binPath), '..', '..') : '',
+                LEGACY_AUDIOCPP_HOME,
+                ROOT_DIR
+            ].filter(Boolean);
+            const seenFiles = new Set();
+            let total = 0;
+            for (const m of models) {
+                for (const key of ['path', 'weights', 'codec_weights', 'vad_weights']) {
+                    const p = m?.[key];
+                    if (typeof p !== 'string' || !p.trim()) continue;
+                    let resolved = null;
+                    if (path.isAbsolute(p)) {
+                        if (fs.existsSync(p)) resolved = path.resolve(p);
+                    } else {
+                        for (const bd of baseDirs) {
+                            const cand = path.resolve(bd, p);
+                            if (fs.existsSync(cand)) {
+                                resolved = cand;
+                                break;
+                            }
+                        }
+                    }
+                    if (resolved) {
+                        const norm = resolved.toLowerCase();
+                        if (!seenFiles.has(norm)) {
+                            seenFiles.add(norm);
+                            try { total += fs.statSync(resolved).size; } catch (_) {}
+                        }
+                    }
+                }
+            }
+            if (total > 0) return total;
+        }
+    } catch (_) {}
+    return WAVE_DEFAULT_BYTES[wave] || 0;
+}
+
 async function activateWave(waveNumber, overrides = {}) {
     const wave = Number(waveNumber);
     if (![1, 2, 3].includes(wave)) {
         throw new Error(`Invalid wave number: ${waveNumber}. Expected 1, 2, or 3.`);
     }
 
+    state.lastActivityAt = Date.now();
+
     if (settings.swapMode === 'patternB') {
         // Pattern B: single persistent daemon with LRU swap
         state.activeWave = wave;
         state.activeModel = WAVE_MODEL_IDS[wave];
+        state.activeModelBytes = estimateWaveModelBytes(wave, WAVE_CONFIGS[wave], findAudioCppExecutable());
         return {
             status: 'ok',
             active_wave: wave,
             active_model: state.activeModel,
+            active_model_bytes: state.activeModelBytes,
+            active_model_mb: Math.round(state.activeModelBytes / (1024 * 1024)),
             mode: 'patternB'
         };
     }
@@ -627,6 +688,8 @@ async function activateWave(waveNumber, overrides = {}) {
                 status: 'ok',
                 active_wave: wave,
                 active_model: state.activeModel,
+                active_model_bytes: state.activeModelBytes,
+                active_model_mb: Math.round(state.activeModelBytes / (1024 * 1024)),
                 already_active: true,
                 offload: state.activeOffload
             };
@@ -700,6 +763,7 @@ async function activateWave(waveNumber, overrides = {}) {
     state.activeProc = proc;
     state.activeWave = wave;
     state.activeModel = WAVE_MODEL_IDS[wave];
+    state.activeModelBytes = estimateWaveModelBytes(wave, configFile, bin);
     state.procStartTime = Date.now();
     state.activeWave2RequestedSig = wave === 2 ? wave2Sig : null;
     state.activeOffload = resolvedOffload;
@@ -724,8 +788,50 @@ async function activateWave(waveNumber, overrides = {}) {
         status: 'ok',
         active_wave: wave,
         active_model: state.activeModel,
+        active_model_bytes: state.activeModelBytes,
+        active_model_mb: Math.round(state.activeModelBytes / (1024 * 1024)),
         pid: proc.pid,
         offload: state.activeOffload
+    };
+}
+
+async function deactivateWave({ force = false } = {}) {
+    if (state.inFlightRequests > 0 && !force) {
+        const deadline = Date.now() + 3000;
+        while (state.inFlightRequests > 0 && Date.now() < deadline) {
+            await sleep(100);
+        }
+        if (state.inFlightRequests > 0) {
+            return {
+                busy: true,
+                status: 'busy',
+                in_flight_requests: state.inFlightRequests
+            };
+        }
+    }
+
+    if (settings.swapMode === 'patternB') {
+        try {
+            await postDaemonJson('/v1/tasks/unload_models', {}, 10000);
+        } catch (err) {
+            pushLog(`[Deactivate] Pattern B unload_models notice: ${err.message}`);
+        }
+        state.activeWave = null;
+        state.activeModel = null;
+        state.activeModelBytes = 0;
+        state.activeWave2RequestedSig = null;
+        state.activeOffload = null;
+    } else {
+        await stopActiveDaemon();
+    }
+
+    return {
+        status: 'ok',
+        unloaded: true,
+        active_wave: null,
+        active_model: null,
+        active_model_bytes: 0,
+        gpu_vram: queryGpuVramStatus()
     };
 }
 
@@ -802,6 +908,10 @@ function handleHealth(req, res) {
             available_waves: availableWaves,
             active_wave: state.activeWave,
             active_model: state.activeModel,
+            active_model_bytes: state.activeModelBytes,
+            active_model_mb: Math.round((state.activeModelBytes || 0) / (1024 * 1024)),
+            in_flight_requests: state.inFlightRequests,
+            last_activity_at: state.lastActivityAt,
             offload: state.activeOffload,
             perf: {
                 last: state.perfStats.last,
@@ -817,6 +927,7 @@ function handleHealth(req, res) {
                 logs: '/logs',
                 voices: '/voices/:speakerKey',
                 activate_wave: '/wave/:n/activate',
+                deactivate_wave: '/wave/deactivate',
                 proxy_v1: '/v1/*'
             }
         });
@@ -1055,13 +1166,47 @@ function handleGetVoice(req, res, speakerKey) {
     }
 }
 
+function beginBridgeActivity(req, res) {
+    state.inFlightRequests++;
+    state.lastActivityAt = Date.now();
+    let ended = false;
+    const finish = () => {
+        if (ended) return;
+        ended = true;
+        state.inFlightRequests = Math.max(0, state.inFlightRequests - 1);
+        state.lastActivityAt = Date.now();
+    };
+    res.once('finish', finish);
+    res.once('close', finish);
+    req.once('aborted', finish);
+    req.once('error', finish);
+    return finish;
+}
+
 function handleActivateWave(req, res, waveStr) {
     const waveNumber = parseInt(waveStr, 10);
+    const finish = beginBridgeActivity(req, res);
     readJsonBody(req)
         .then(overrides => activateWave(waveNumber, overrides))
         .then(result => sendJson(res, 200, result))
         .catch(err => {
             pushLog(`activateWave error: ${err.message}`);
+            sendJson(res, 500, { error: err.message });
+        })
+        .finally(finish);
+}
+
+function handleDeactivateWave(req, res) {
+    readJsonBody(req)
+        .then(body => deactivateWave({ force: Boolean(body?.force) }))
+        .then(result => {
+            if (result.busy) {
+                return sendJson(res, 409, result);
+            }
+            return sendJson(res, 200, result);
+        })
+        .catch(err => {
+            pushLog(`deactivateWave error: ${err.message}`);
             sendJson(res, 500, { error: err.message });
         });
 }
@@ -1402,6 +1547,7 @@ function forwardProxyRequest(req, res, targetUrl, headers, bodyBuffer = null, te
 }
 
 function handleProxyV1(req, res, pathname = '') {
+    beginBridgeActivity(req, res);
     const targetUrl = `http://127.0.0.1:${settings.daemonPort}${req.url}`;
     const headers = { ...req.headers };
     delete headers.host;
@@ -1497,6 +1643,11 @@ const server = http.createServer((req, res) => {
         }
     }
 
+    // Route: POST /wave/deactivate (or /unload)
+    if (req.method === 'POST' && (pathname === '/wave/deactivate' || pathname === '/unload')) {
+        return handleDeactivateWave(req, res);
+    }
+
     // Route: POST /wave/:waveNumber/activate
     const waveMatch = pathname.match(/^\/wave\/([123])\/activate$/);
     if (req.method === 'POST' && waveMatch) {
@@ -1512,8 +1663,23 @@ const server = http.createServer((req, res) => {
     sendJson(res, 404, { error: `Not found: ${req.method} ${pathname}` });
 });
 
+let idleUnloadTimer = null;
+if (settings.idleUnloadSec > 0) {
+    idleUnloadTimer = setInterval(() => {
+        if (state.activeWave !== null && state.inFlightRequests === 0) {
+            const idleMs = Date.now() - state.lastActivityAt;
+            if (idleMs >= settings.idleUnloadSec * 1000) {
+                pushLog(`[Idle Unload] No audio activity for ${settings.idleUnloadSec}s; deactivating Wave ${state.activeWave}...`);
+                void deactivateWave().catch(() => {});
+            }
+        }
+    }, 15000);
+    if (typeof idleUnloadTimer.unref === 'function') idleUnloadTimer.unref();
+}
+
 // Clean shutdown handler
 function shutdown() {
+    if (idleUnloadTimer) clearInterval(idleUnloadTimer);
     pushLog('Shutting down Audio Studio Bridge...');
     server.close();
     stopActiveDaemon().finally(() => process.exit(0));

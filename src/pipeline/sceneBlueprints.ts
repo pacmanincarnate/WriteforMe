@@ -5,8 +5,12 @@
  */
 
 import {
+    formatActiveActAndSequenceXml,
     inferNarrativeModeForScene,
     NARRATIVE_MODES,
+    resolveNarrativeActForSequence,
+    resolveNarrativeModeId,
+    resolveNarrativeSequenceForIndex,
     STRUCTURAL_MODALITIES,
     type NarrativeModeDefinition
 } from '@/config';
@@ -34,7 +38,7 @@ import {
 import { PROMPTS } from '@/prompts';
 import { storyStore } from '@/services/storage';
 import type { CastMember, LoreItem, SceneBlueprint, Story } from '@/types';
-import { decodeXmlEntities, extractTag, isSerializationPlaceholder } from '@/utils';
+import { decodeXmlEntities, escapeXml, extractTag, isSerializationPlaceholder } from '@/utils';
 import {
     asArray,
     asOptionalRecord,
@@ -470,8 +474,9 @@ export async function generateScenes(
                     .trim()
                     .toUpperCase()
                     .replace(/[\s-]+/g, '_');
-                if (allNarrativeModes[cleanMode]) {
-                    matchedModeId = cleanMode;
+                const resolvedClean = resolveNarrativeModeId(cleanMode, allNarrativeModes);
+                if (allNarrativeModes[resolvedClean]) {
+                    matchedModeId = resolvedClean;
                 } else {
                     const found = Object.values(allNarrativeModes).find((m) => {
                         const mRec = m as unknown as Record<string, unknown>;
@@ -485,7 +490,7 @@ export async function generateScenes(
                             cleanMode.includes(m.id.toUpperCase())
                         );
                     });
-                    if (found) matchedModeId = found.id;
+                    if (found) matchedModeId = resolveNarrativeModeId(found.id, allNarrativeModes);
                 }
             }
 
@@ -588,7 +593,16 @@ export async function generateScenes(
                 .map((m) => {
                     const mRec = m as unknown as Record<string, unknown>;
                     const name = asString(mRec.name) || asString(mRec.title) || m.id;
-                    return `  <style id="${m.id}" name="${name}">\n    <context>${m.context || ''}</context>\n  </style>`;
+                    const categoryAttr = mRec.category
+                        ? ` category="${escapeXml(asString(mRec.category))}"`
+                        : '';
+                    const desc = [
+                        asString(m.context),
+                        mRec.boundaryNote ? `Boundary Note: ${asString(mRec.boundaryNote)}` : ''
+                    ]
+                        .filter(Boolean)
+                        .join(' ');
+                    return `  <style id="${escapeXml(m.id)}" name="${escapeXml(name)}"${categoryAttr}>\n    <context>${escapeXml(desc)}</context>\n  </style>`;
                 })
                 .join('\n') +
             `\n</available_narrative_styles>`;
@@ -637,6 +651,9 @@ export async function generateScenes(
             const liveSeqs = asArray<Record<string, unknown>>(liveStoryForScenes.sequences);
             const liveSequence = liveSeqs[seqIdx] || currentSequence;
             const liveSeqNum = Number(liveSequence.number || currentSeqNum);
+            const activeActDef = resolveNarrativeActForSequence(seqIdx, liveSeqs, liveSequence);
+            const activeSeqDef = resolveNarrativeSequenceForIndex(seqIdx, liveSeqs, liveSequence);
+            const activeActAndSeqXml = formatActiveActAndSequenceXml(activeActDef, activeSeqDef);
             const sceneContinuityBlock = buildScenePlannerContinuityBlock(
                 liveStoryForScenes as ContinuityStoryState,
                 seqIdx,
@@ -648,6 +665,8 @@ ${liveSequence.starting_state ? `Sequence Starting State / Entry Anchor: ${asStr
 ${sceneTargetBlock}
 
 ${sceneContinuityBlock}
+
+${activeActAndSeqXml}
 
 ${availableStylesXml}
 

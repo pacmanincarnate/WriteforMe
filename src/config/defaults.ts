@@ -25,7 +25,7 @@ export const DEFAULT_EMBEDDING_MODELS = {
 
 export const DEFAULT_IMAGE_MODELS = {
     gemini: 'gemini-3.1-flash-image',
-    openrouter: 'stabilityai/stable-diffusion-xl'
+    openrouter: 'black-forest-labs/flux.2-pro'
 } as const;
 
 export const DEFAULT_TTS_MODELS = {

@@ -46,10 +46,26 @@ describe('story hydration (pure)', () => {
         expect(() => backfillSceneDefaults({})).not.toThrow();
     });
 
-    it('keeps an explicit narrative mode', () => {
-        const story = { scenes: { '0': [{ dominant_narrative_mode: 'REFLECTION', title: 'A chase through the docks' }] } };
+    it('keeps an explicit narrative mode and redirects retired legacy modes', () => {
+        const story = {
+            scenes: {
+                '0': [
+                    { dominant_narrative_mode: 'REFLECTION', title: 'A chase through the docks' },
+                    { dominant_narrative_mode: 'CATHARTIC_INTIMACY', title: 'Together at last' },
+                    { dominant_narrative_mode: 'ORGANIC_EXPOSITION', title: 'Heist plan' },
+                    { dominant_narrative_mode: 'REVELATION', title: 'Mask off' },
+                    { dominant_narrative_mode: 'CUSTOM_NOIR', title: 'Rain on neon' }
+                ]
+            }
+        };
         backfillSceneDefaults(story);
-        expect(story.scenes['0'][0].dominant_narrative_mode).toBe('REFLECTION');
+        expect(story.scenes['0'].map((s) => s.dominant_narrative_mode)).toEqual([
+            'REFLECTION',
+            'INTIMACY_COORDINATOR',
+            'BASELINE_NEUTRAL',
+            'EMOTIONAL_RUPTURE',
+            'CUSTOM_NOIR'
+        ]);
     });
 
     it('hydrates a stored story with defaults, the given id and an epistemic graph', () => {

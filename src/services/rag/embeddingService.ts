@@ -14,8 +14,20 @@ import {
     TIMEOUTS_MS
 } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
+import { withCloudActivity, withLocalGpuLease } from '@/services/vram';
 
 export type EmbeddingProvider = 'gemini' | 'openrouter' | 'nanogpt' | 'koboldcpp' | 'codex' | string;
+
+function isLocalKoboldEmbeddingUrl(url: string): boolean {
+    try {
+        const parsed = new URL(url);
+        const host = parsed.hostname.toLowerCase();
+        const port = parsed.port || (parsed.protocol === 'https:' ? '443' : '80');
+        return (host === '127.0.0.1' || host === 'localhost') && port === String(LOCAL_PORTS.koboldcpp);
+    } catch {
+        return false;
+    }
+}
 
 /** Multi-provider embedding API client with rate-limit backoff retries. */
 export class EmbeddingService {
@@ -47,15 +59,15 @@ export class EmbeddingService {
     async getEmbedding(text: string): Promise<number[] | null> {
         if (!text || !text.trim()) return null;
         if (this.provider === 'gemini') {
-            return this.getGeminiEmbedding(text);
+            return withCloudActivity(() => this.getGeminiEmbedding(text));
         } else if (this.provider === 'nanogpt') {
-            return this.getNanoGPTEmbedding(text);
+            return withCloudActivity(() => this.getNanoGPTEmbedding(text));
         } else if (this.provider === 'koboldcpp') {
             return this.getKoboldCPPEmbedding(text);
         } else if (this.provider === 'codex') {
-            return this.getCodexEmbedding(text);
+            return withCloudActivity(() => this.getCodexEmbedding(text));
         } else {
-            return this.getOpenRouterEmbedding(text);
+            return withCloudActivity(() => this.getOpenRouterEmbedding(text));
         }
     }
 
@@ -208,20 +220,24 @@ export class EmbeddingService {
             this.baseUrl && String(this.baseUrl).trim()
                 ? String(this.baseUrl).trim().replace(/\/+$/, '')
                 : DEFAULT_SERVICE_URLS.koboldcpp;
-        const response = await this.fetchWithBackoff(
-            `${cleanUrl}/v1/embeddings`,
-            {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
+        const doFetch = (): Promise<Response> =>
+            this.fetchWithBackoff(
+                `${cleanUrl}/v1/embeddings`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'default',
+                        input: text
+                    })
                 },
-                body: JSON.stringify({
-                    model: 'default',
-                    input: text
-                })
-            },
-            TIMEOUTS_MS.embedding
-        );
+                TIMEOUTS_MS.embedding
+            );
+        const response = isLocalKoboldEmbeddingUrl(cleanUrl)
+            ? await withLocalGpuLease('llm', { koboldUrl: cleanUrl }, doFetch)
+            : await doFetch();
 
         if (!response.ok) {
             const err = await response.text();

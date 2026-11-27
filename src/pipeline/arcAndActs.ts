@@ -3,7 +3,7 @@
  * Tier 1.1 Story Arc Planner, Tier 2.1/2.2 Act Architect, and Tier 3.1/3.2 8-Sequence Weaver.
  */
 
-import { STORAGE_KEYS } from '@/config';
+import { formatActFunctionGuideXml, STORAGE_KEYS } from '@/config';
 import {
     buildSequencePromptContext,
     type ContinuityStoryState
@@ -533,6 +533,8 @@ ${threads.map((t) => `<thread><thread_id>${asString(t.id)}</thread_id><name>${as
 ${cast.map((c) => `- ${c.name} (${c.role})`).join('\n')}
 </cast_list>
 
+${formatActFunctionGuideXml()}
+
 <output_format_description>
 FORMATTING DIRECTIVE: Return your act structure strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
@@ -664,6 +666,8 @@ ${formatObjectToXml(threads)}
 <cast_list>
 ${cast.map((c) => `- ${c.name} (${c.role})`).join('\n')}
 </cast_list>
+
+${formatActFunctionGuideXml()}
 
 <output_format_description>
 FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.

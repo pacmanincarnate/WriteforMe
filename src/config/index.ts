@@ -1,5 +1,6 @@
 export * from './audioVoices';
 export * from './narrativeModes';
+export * from './narrativeStructurePrompts';
 export * from './archetypes';
 export * from './models';
 export * from './bannedPhrases';

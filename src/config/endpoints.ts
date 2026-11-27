@@ -35,6 +35,7 @@ export const CLOUD_API_URLS = {
     geminiApiKeysPage: 'https://aistudio.google.com/app/apikey',
     openRouterBase: 'https://openrouter.ai/api/v1',
     openRouterChat: 'https://openrouter.ai/api/v1/chat/completions',
+    openRouterImages: 'https://openrouter.ai/api/v1/images',
     openRouterModels: 'https://openrouter.ai/api/v1/models',
     openRouterEmbeddings: 'https://openrouter.ai/api/v1/embeddings',
     openRouterAudioSpeech: 'https://openrouter.ai/api/v1/audio/speech',

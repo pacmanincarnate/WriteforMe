@@ -4,7 +4,11 @@
  * shape, defaults for fields older saves lack, and the choice of which story to open at startup.
  */
 
-import { inferNarrativeModeForScene, LEGACY_STORY_RECORD_ID } from '@/config';
+import {
+    inferNarrativeModeForScene,
+    LEGACY_NARRATIVE_MODE_REDIRECTS,
+    LEGACY_STORY_RECORD_ID
+} from '@/config';
 import { ensureEpistemicGraph, type ContinuityStoryState } from '@/domain/continuity';
 import { computeStoryProgressMetrics } from '@/domain/story';
 import { migrateStoryToSequences } from './migration';
@@ -39,7 +43,13 @@ export function backfillSceneDefaults(story: { scenes?: unknown } | null | undef
             if (scene.valence === undefined) {
                 scene.valence = parseInt(String(scene.end_valence), 10) || 0;
             }
-            if (!scene.dominant_narrative_mode || scene.dominant_narrative_mode === 'BASELINE_NEUTRAL') {
+            if (
+                scene.dominant_narrative_mode &&
+                LEGACY_NARRATIVE_MODE_REDIRECTS[scene.dominant_narrative_mode]
+            ) {
+                scene.dominant_narrative_mode =
+                    LEGACY_NARRATIVE_MODE_REDIRECTS[scene.dominant_narrative_mode];
+            } else if (!scene.dominant_narrative_mode || scene.dominant_narrative_mode === 'BASELINE_NEUTRAL') {
                 const inferred = inferNarrativeModeForScene(scene as Parameters<typeof inferNarrativeModeForScene>[0]);
                 if (inferred && inferred !== 'BASELINE_NEUTRAL') {
                     scene.dominant_narrative_mode = inferred;

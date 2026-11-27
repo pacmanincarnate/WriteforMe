@@ -17,9 +17,17 @@ function client(url) {
     return url.startsWith('http:') ? http : https;
 }
 
+function abortError(signal) {
+    const paused = signal?.reason === 'paused';
+    const err = new Error(paused ? 'Paused' : 'Cancelled');
+    err.code = paused ? 'PAUSED' : 'CANCELLED';
+    return err;
+}
+
 /** GET that follows redirects and resolves with the final response. */
 function request(url, { headers = {}, signal, maxRedirects = 10 } = {}) {
     return new Promise((resolve, reject) => {
+        if (signal?.aborted) return reject(abortError(signal));
         const req = client(url).get(url, { headers: { 'User-Agent': USER_AGENT, ...headers } }, (res) => {
             const status = res.statusCode || 0;
             if (status >= 300 && status < 400 && res.headers.location) {
@@ -32,8 +40,7 @@ function request(url, { headers = {}, signal, maxRedirects = 10 } = {}) {
         });
         req.on('error', reject);
         if (signal) {
-            if (signal.aborted) req.destroy(new Error('Cancelled'));
-            signal.addEventListener('abort', () => req.destroy(new Error('Cancelled')), { once: true });
+            signal.addEventListener('abort', () => req.destroy(abortError(signal)), { once: true });
         }
     });
 }
@@ -96,29 +103,59 @@ async function downloadFile({ url, dest, sha256 = null, onProgress, signal }) {
     const len = Number(res.headers['content-length']);
     const total = Number.isFinite(len) ? len + start : null;
     let received = start;
-    let lastTick = 0;
+    let lastTick = Date.now();
+    let lastBytes = start;
+    let speedBps = 0;
+
+    if (onProgress) onProgress({ received, total, speedBps: 0 });
 
     await new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            res.destroy();
+            return reject(abortError(signal));
+        }
         const out = fs.createWriteStream(part, { flags: start > 0 ? 'a' : 'w' });
+        let settled = false;
+        const fail = (err) => {
+            if (settled) return;
+            settled = true;
+            reject(err);
+        };
+        const onAbort = () => {
+            res.destroy();
+            out.destroy();
+            fail(abortError(signal));
+        };
         res.on('data', (chunk) => {
             received += chunk.length;
             const now = Date.now();
-            if (onProgress && now - lastTick > 250) {
+            const elapsed = now - lastTick;
+            if (onProgress && elapsed >= 250) {
+                const delta = received - lastBytes;
+                const instant = (delta * 1000) / Math.max(elapsed, 1);
+                speedBps = speedBps > 0 ? Math.round(speedBps * 0.6 + instant * 0.4) : Math.round(instant);
                 lastTick = now;
-                onProgress({ received, total });
+                lastBytes = received;
+                onProgress({ received, total, speedBps });
             }
         });
-        res.on('error', reject);
-        out.on('error', reject);
-        out.on('finish', resolve);
+        res.on('error', fail);
+        out.on('error', fail);
+        out.on('finish', () => {
+            if (signal) signal.removeEventListener('abort', onAbort);
+            if (!settled) { settled = true; resolve(); }
+        });
         res.pipe(out);
-        if (signal) signal.addEventListener('abort', () => { res.destroy(); out.destroy(); reject(new Error('Cancelled')); }, { once: true });
+        if (signal) signal.addEventListener('abort', onAbort, { once: true });
     });
-    if (onProgress) onProgress({ received, total });
+    if (onProgress) onProgress({ received, total, speedBps });
 
     if (total !== null && received !== total) {
         throw new Error(`Download of ${path.basename(dest)} stopped at ${received} of ${total} bytes. Try again to resume.`);
     }
+
+    if (signal?.aborted) throw abortError(signal);
+    if (onProgress) onProgress({ received, total, speedBps: 0, verifying: true });
 
     const digest = await sha256File(part);
     if (sha256 && digest !== sha256.toLowerCase()) {

@@ -8,10 +8,13 @@ import {
     checkKoboldCPPStatus,
     clearOpenRouterRoutingState,
     computeOpenRouterSmartRoutingProfile,
+    extractOpenRouterImageModels,
     fetchNanoGPTModels,
+    fetchOpenRouterImageModelsCatalog,
     fetchOpenRouterModels,
     filterModelsClientSide,
     formatOpenAITools,
+    formatOpenRouterImagePricing,
     getOpenRouterModelLimits,
     getOpenRouterSmartRouting,
     getKoboldLoadedModelName,
@@ -457,5 +460,153 @@ describe('services/llm model catalogs', () => {
         const orModels = await fetchOpenRouterModels('or-key');
         expect(orModels).toHaveLength(1);
         expect(orModels[0].maxOutputTokens).toBe(16384);
+    });
+
+    it('formats OpenRouter image pricing across free, token, request, image, dynamic, and missing pricing', () => {
+        expect(formatOpenRouterImagePricing({ prompt: '0', completion: '0' })).toEqual({
+            costLabel: 'Free',
+            costDetail: 'Free',
+            isFree: true
+        });
+        expect(
+            formatOpenRouterImagePricing({
+                prompt: '0.0000005',
+                completion: '0.000003',
+                image_output: '0.00006'
+            })
+        ).toEqual({
+            costLabel: '$60/1M img tok',
+            costDetail: 'Image output: $60/1M tokens · Prompt: $0.50/1M tokens',
+            isFree: false
+        });
+        expect(
+            formatOpenRouterImagePricing({
+                image_output: '0.00000732421875'
+            })
+        ).toEqual({
+            costLabel: '$7.32/1M img tok',
+            costDetail: 'Image output: $7.32/1M tokens',
+            isFree: false
+        });
+        expect(formatOpenRouterImagePricing({ request: '0.04' })).toEqual({
+            costLabel: '$0.04/img',
+            costDetail: 'Per request: $0.04',
+            isFree: false
+        });
+        expect(formatOpenRouterImagePricing({ image: '0.008' })).toEqual({
+            costLabel: '$0.008/img',
+            costDetail: 'Per image: $0.008',
+            isFree: false
+        });
+        expect(formatOpenRouterImagePricing({ prompt: '-1', completion: '-1' })).toEqual({
+            costLabel: 'Dynamic',
+            costDetail: 'Dynamic router pricing',
+            isFree: false
+        });
+        expect(formatOpenRouterImagePricing(null)).toEqual({
+            costLabel: 'Pricing N/A',
+            costDetail: 'Pricing unavailable',
+            isFree: false
+        });
+    });
+
+    it('extracts only real text-to-image models and fetches OpenRouter image catalog with optional auth', async () => {
+        const extracted = extractOpenRouterImageModels([
+            {
+                id: 'recraft/recraft-v4.1-flash-v2:free',
+                name: 'Recraft: Recraft V4.1 Flash V2 (free)',
+                architecture: {
+                    modality: 'text->image',
+                    input_modalities: ['text'],
+                    output_modalities: ['image']
+                },
+                pricing: { prompt: '0', completion: '0' }
+            },
+            {
+                id: 'black-forest-labs/flux.2-pro',
+                name: 'Black Forest Labs: FLUX.2 Pro',
+                architecture: {
+                    modality: 'text+image->image',
+                    input_modalities: ['text', 'image'],
+                    output_modalities: ['image']
+                },
+                pricing: { image_output: '0.00000732421875' }
+            },
+            {
+                id: 'google/gemini-2.5-flash-image',
+                name: 'Google: Gemini 2.5 Flash Image',
+                architecture: {
+                    modality: 'text+image->text+image',
+                    input_modalities: ['text', 'image'],
+                    output_modalities: ['text', 'image']
+                },
+                pricing: { prompt: '0.0000003', image_output: '0.00003' }
+            },
+            {
+                id: 'openrouter/auto',
+                name: 'OpenRouter Auto',
+                architecture: {
+                    modality: 'text+image->text+image',
+                    input_modalities: ['text', 'image'],
+                    output_modalities: ['text', 'image']
+                },
+                pricing: { prompt: '-1', completion: '-1' }
+            },
+            {
+                id: 'some/image-upscaler',
+                name: 'Image Upscaler',
+                architecture: {
+                    modality: 'image->image',
+                    input_modalities: ['image'],
+                    output_modalities: ['image']
+                },
+                pricing: { image_output: '0.00001' }
+            },
+            {
+                id: 'some/text-chat',
+                name: 'Text Chat',
+                architecture: {
+                    modality: 'text->text',
+                    input_modalities: ['text'],
+                    output_modalities: ['text']
+                },
+                pricing: { prompt: '0.000001' }
+            }
+        ]);
+
+        expect(extracted.map((m) => m.id)).toEqual([
+            'recraft/recraft-v4.1-flash-v2:free',
+            'black-forest-labs/flux.2-pro',
+            'google/gemini-2.5-flash-image'
+        ]);
+
+        const calls: Array<{ url: string; headers: HeadersInit | undefined }> = [];
+        globalThis.fetch = vi.fn<typeof fetch>(async (url, init) => {
+            calls.push({ url: String(url), headers: init?.headers });
+            return jsonResponse({
+                data: [
+                    {
+                        id: 'black-forest-labs/flux.2-pro',
+                        name: 'Black Forest Labs: FLUX.2 Pro',
+                        architecture: {
+                            modality: 'text+image->image',
+                            input_modalities: ['text', 'image'],
+                            output_modalities: ['image']
+                        },
+                        pricing: { image_output: '0.00000732421875' }
+                    }
+                ]
+            });
+        });
+
+        const noKeyModels = await fetchOpenRouterImageModelsCatalog('');
+        expect(noKeyModels).toHaveLength(1);
+        expect(calls[0].url).toBe('https://openrouter.ai/api/v1/models?output_modalities=image');
+        expect((calls[0].headers as Record<string, string>).Authorization).toBeUndefined();
+
+        await fetchOpenRouterImageModelsCatalog('or-key-123');
+        expect((calls[1].headers as Record<string, string>).Authorization).toBe(
+            'Bearer or-key-123'
+        );
     });
 });

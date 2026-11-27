@@ -5,6 +5,7 @@
  */
 
 import { Eye, EyeOff, SlidersHorizontal, Trash2 } from '@/components';
+import { groupNarrativeModesForSelect, resolveNarrativeModeId } from '@/config';
 import { locateNeedle } from '@/domain/editing';
 import {
     actForSequence,
@@ -1949,31 +1950,78 @@ export function DirectiveActionCard({
                                         <label className="text-xs text-ink-500 font-bold uppercase font-mono">
                                             Narrative Mode
                                         </label>
-                                        <select
-                                            value={String(
+                                        {(() => {
+                                            const rawVal = String(
                                                 act.details.dominant_narrative_mode ||
                                                     act.details.mode_override ||
                                                     ''
-                                            )}
-                                            onChange={(e) =>
-                                                onUpdateDetail(
-                                                    actIdx,
-                                                    'dominant_narrative_mode',
-                                                    e.target.value
-                                                )
-                                            }
-                                            className="bg-surface text-ink-800 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono"
-                                            disabled={isExecutingDirective}
-                                        >
-                                            <option value="">
-                                                Keep Existing / Neutral Baseline
-                                            </option>
-                                            {Object.keys(allNarrativeModes).map((modeKey) => (
-                                                <option key={modeKey} value={modeKey}>
-                                                    {modeKey}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            );
+                                            const selectVal = rawVal
+                                                ? resolveNarrativeModeId(rawVal, allNarrativeModes)
+                                                : '';
+                                            const { grouped, uncategorized, hasCategories } =
+                                                groupNarrativeModesForSelect(allNarrativeModes);
+                                            return (
+                                                <select
+                                                    value={selectVal}
+                                                    onChange={(e) =>
+                                                        onUpdateDetail(
+                                                            actIdx,
+                                                            'dominant_narrative_mode',
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                    className="bg-surface text-ink-800 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono"
+                                                    disabled={isExecutingDirective}
+                                                >
+                                                    <option value="">
+                                                        Keep Existing / Neutral Baseline
+                                                    </option>
+                                                    {selectVal &&
+                                                        !Object.prototype.hasOwnProperty.call(
+                                                            allNarrativeModes,
+                                                            selectVal
+                                                        ) && <option value={selectVal}>{selectVal}</option>}
+                                                    {hasCategories ? (
+                                                        <>
+                                                            {grouped.map((grp) => (
+                                                                <optgroup
+                                                                    key={grp.category}
+                                                                    label={grp.category}
+                                                                >
+                                                                    {grp.keys.map((modeKey) => (
+                                                                        <option
+                                                                            key={modeKey}
+                                                                            value={modeKey}
+                                                                        >
+                                                                            {modeKey}
+                                                                        </option>
+                                                                    ))}
+                                                                </optgroup>
+                                                            ))}
+                                                            {uncategorized.length > 0 && (
+                                                                <optgroup label="Custom Modes">
+                                                                    {uncategorized.map((modeKey) => (
+                                                                        <option
+                                                                            key={modeKey}
+                                                                            value={modeKey}
+                                                                        >
+                                                                            {modeKey}
+                                                                        </option>
+                                                                    ))}
+                                                                </optgroup>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        Object.keys(allNarrativeModes).map((modeKey) => (
+                                                            <option key={modeKey} value={modeKey}>
+                                                                {modeKey}
+                                                            </option>
+                                                        ))
+                                                    )}
+                                                </select>
+                                            );
+                                        })()}
                                     </div>
                                     <div className="space-y-1 md:col-span-2">
                                         <label className="text-xs text-ink-500 font-bold uppercase font-mono">
@@ -2288,29 +2336,76 @@ export function DirectiveActionCard({
                                         <label className="text-xs text-ink-500 font-bold uppercase font-mono">
                                             Mode Override
                                         </label>
-                                        <select
-                                            value={String(
+                                        {(() => {
+                                            const rawVal = String(
                                                 act.details.mode_override ||
                                                     act.details.dominant_narrative_mode ||
                                                     ''
-                                            )}
-                                            onChange={(e) =>
-                                                onUpdateDetail(
-                                                    actIdx,
-                                                    'mode_override',
-                                                    e.target.value
-                                                )
-                                            }
-                                            className="bg-surface text-ink-800 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono"
-                                            disabled={isExecutingDirective}
-                                        >
-                                            <option value="">None / Keep Existing</option>
-                                            {Object.keys(allNarrativeModes).map((modeKey) => (
-                                                <option key={modeKey} value={modeKey}>
-                                                    {modeKey}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            );
+                                            const selectVal = rawVal
+                                                ? resolveNarrativeModeId(rawVal, allNarrativeModes)
+                                                : '';
+                                            const { grouped, uncategorized, hasCategories } =
+                                                groupNarrativeModesForSelect(allNarrativeModes);
+                                            return (
+                                                <select
+                                                    value={selectVal}
+                                                    onChange={(e) =>
+                                                        onUpdateDetail(
+                                                            actIdx,
+                                                            'mode_override',
+                                                            e.target.value
+                                                        )
+                                                    }
+                                                    className="bg-surface text-ink-800 border border-edge-strong rounded-lg px-2.5 py-1.5 outline-none focus:border-gold text-xs w-full font-mono"
+                                                    disabled={isExecutingDirective}
+                                                >
+                                                    <option value="">None / Keep Existing</option>
+                                                    {selectVal &&
+                                                        !Object.prototype.hasOwnProperty.call(
+                                                            allNarrativeModes,
+                                                            selectVal
+                                                        ) && <option value={selectVal}>{selectVal}</option>}
+                                                    {hasCategories ? (
+                                                        <>
+                                                            {grouped.map((grp) => (
+                                                                <optgroup
+                                                                    key={grp.category}
+                                                                    label={grp.category}
+                                                                >
+                                                                    {grp.keys.map((modeKey) => (
+                                                                        <option
+                                                                            key={modeKey}
+                                                                            value={modeKey}
+                                                                        >
+                                                                            {modeKey}
+                                                                        </option>
+                                                                    ))}
+                                                                </optgroup>
+                                                            ))}
+                                                            {uncategorized.length > 0 && (
+                                                                <optgroup label="Custom Modes">
+                                                                    {uncategorized.map((modeKey) => (
+                                                                        <option
+                                                                            key={modeKey}
+                                                                            value={modeKey}
+                                                                        >
+                                                                            {modeKey}
+                                                                        </option>
+                                                                    ))}
+                                                                </optgroup>
+                                                            )}
+                                                        </>
+                                                    ) : (
+                                                        Object.keys(allNarrativeModes).map((modeKey) => (
+                                                            <option key={modeKey} value={modeKey}>
+                                                                {modeKey}
+                                                            </option>
+                                                        ))
+                                                    )}
+                                                </select>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             )}

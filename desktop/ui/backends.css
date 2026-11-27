@@ -35,12 +35,21 @@ input[type=text] { flex: 1; min-width: 240px; }
 .auto { color: var(--muted); display: flex; gap: 6px; align-items: center; margin-left: auto; }
 .badge { font-size: 12px; border-radius: 999px; padding: 2px 10px; border: 1px solid var(--edge); color: var(--muted); white-space: nowrap; }
 .badge.running, .badge.external { color: var(--ok); border-color: var(--ok); }
+.badge.ondemand { color: var(--gold); border-color: var(--gold); }
 .badge.starting, .badge.unresponsive { color: var(--warn); border-color: var(--warn); }
 .badge.failed { color: var(--bad); border-color: var(--bad); }
-.progress { display: flex; gap: 10px; align-items: center; margin-top: 12px; }
-.bar { flex: 1; height: 8px; background: #2a241f; border-radius: 4px; overflow: hidden; }
+.progress { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+.bar { position: relative; flex: 1; min-width: 140px; height: 8px; background: #2a241f; border-radius: 4px; overflow: hidden; }
 .bar i { display: block; height: 100%; width: 0; background: var(--gold); transition: width .25s; }
-.ptext { font-size: 12px; color: var(--muted); min-width: 220px; }
+.bar.paused i { background: var(--warn); opacity: .75; }
+.bar.indeterminate i { width: 40% !important; animation: indeterminate-slide 1.2s ease-in-out infinite; }
+@keyframes indeterminate-slide {
+    0% { transform: translateX(-110%); }
+    100% { transform: translateX(260%); }
+}
+.custom-path { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; font-size: 12px; }
+.custom-path.missing .custom-path-label { color: var(--bad); }
+.ptext { font-size: 12px; color: var(--muted); min-width: 200px; }
 .error { color: var(--bad); margin: 10px 0 0; }
 .extra { margin-top: 12px; display: grid; gap: 8px; }
 .extra .row > span { color: var(--muted); }
@@ -49,4 +58,8 @@ input[type=text] { flex: 1; min-width: 240px; }
 pre.log { max-height: 220px; overflow: auto; background: #0f0d0b; border-radius: 8px; padding: 10px; font-size: 11px; white-space: pre-wrap; }
 .pack { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--edge); flex-wrap: wrap; }
 .pack:first-of-type { border-top: none; }
+.vram-controls { margin-top: 10px; gap: 12px; }
+.vram-controls label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.vram-controls #free-vram { margin-left: auto; }
+.vram-note { font-size: 12px; margin-top: 8px; }
 footer { position: fixed; bottom: 0; left: 0; right: 0; padding: 12px 28px; background: linear-gradient(transparent, var(--bg) 40%); display: flex; justify-content: flex-end; }

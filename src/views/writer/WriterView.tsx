@@ -30,7 +30,11 @@ import {
     EditButton,
     EditorialSubNav
 } from '@/components';
-import { STRUCTURAL_MODALITIES } from '@/config';
+import {
+    groupNarrativeModesForSelect,
+    resolveNarrativeModeId,
+    STRUCTURAL_MODALITIES
+} from '@/config';
 import { getSceneActiveCast, parseValueShiftInput } from '@/domain/story';
 import { countWords, isSerializationPlaceholder } from '@/utils';
 import { WriterBlueprintPane } from './WriterBlueprintPane';
@@ -892,22 +896,82 @@ export const WriterView: React.FC<WriterViewProps> = ({
                                 {enableNarrativeLenses ? 'Active' : 'Off'}
                             </button>
                         </div>
-                        <select
-                            value={currentScene.dominant_narrative_mode || 'BASELINE_NEUTRAL'}
-                            onChange={(e) => {
-                                updateSceneBlueprint(selectedSequence, selectedScene, {
-                                    dominant_narrative_mode: e.target.value
-                                });
-                                showToast(`Scene lens set to ${e.target.value}`, 'info');
-                            }}
-                            className="w-full bg-transparent text-ink-900 font-semibold text-xs outline-none cursor-pointer pt-0.5 truncate"
-                        >
-                            {Object.keys(allNarrativeModes).map((modeKey) => (
-                                <option key={modeKey} value={modeKey} className="bg-surface text-ink-900">
-                                    {modeKey.replace(/_/g, ' ')}
-                                </option>
-                            ))}
-                        </select>
+                        {(() => {
+                            const resolvedLens = resolveNarrativeModeId(
+                                currentScene.dominant_narrative_mode || 'BASELINE_NEUTRAL',
+                                allNarrativeModes
+                            );
+                            const activeModeMeta = allNarrativeModes[resolvedLens] as
+                                | { context?: string }
+                                | undefined;
+                            const { grouped, uncategorized, hasCategories } =
+                                groupNarrativeModesForSelect(allNarrativeModes);
+                            const hasMissingCurrent =
+                                Boolean(resolvedLens) &&
+                                !Object.prototype.hasOwnProperty.call(allNarrativeModes, resolvedLens);
+                            return (
+                                <select
+                                    value={resolvedLens}
+                                    title={activeModeMeta?.context || undefined}
+                                    onChange={(e) => {
+                                        updateSceneBlueprint(selectedSequence, selectedScene, {
+                                            dominant_narrative_mode: e.target.value
+                                        });
+                                        showToast(`Scene lens set to ${e.target.value}`, 'info');
+                                    }}
+                                    className="w-full bg-transparent text-ink-900 font-semibold text-xs outline-none cursor-pointer pt-0.5 truncate"
+                                >
+                                    {hasMissingCurrent && (
+                                        <option value={resolvedLens} className="bg-surface text-ink-900">
+                                            {resolvedLens.replace(/_/g, ' ')}
+                                        </option>
+                                    )}
+                                    {hasCategories ? (
+                                        <>
+                                            {grouped.map((grp) => (
+                                                <optgroup
+                                                    key={grp.category}
+                                                    label={grp.category}
+                                                    className="bg-surface text-ink-500"
+                                                >
+                                                    {grp.keys.map((modeKey) => (
+                                                        <option
+                                                            key={modeKey}
+                                                            value={modeKey}
+                                                            className="bg-surface text-ink-900"
+                                                        >
+                                                            {modeKey.replace(/_/g, ' ')}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            ))}
+                                            {uncategorized.length > 0 && (
+                                                <optgroup
+                                                    label="Custom Modes"
+                                                    className="bg-surface text-ink-500"
+                                                >
+                                                    {uncategorized.map((modeKey) => (
+                                                        <option
+                                                            key={modeKey}
+                                                            value={modeKey}
+                                                            className="bg-surface text-ink-900"
+                                                        >
+                                                            {modeKey.replace(/_/g, ' ')}
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            )}
+                                        </>
+                                    ) : (
+                                        Object.keys(allNarrativeModes).map((modeKey) => (
+                                            <option key={modeKey} value={modeKey} className="bg-surface text-ink-900">
+                                                {modeKey.replace(/_/g, ' ')}
+                                            </option>
+                                        ))
+                                    )}
+                                </select>
+                            );
+                        })()}
                     </div>
 
                     {/* Cell 4: Transition Jump */}

@@ -103,14 +103,14 @@ export interface EpistemicDeltaEntry {
 }
 
 export const SEQUENCE_DEFAULT_FUNCTIONS: readonly string[] = [
-    'Status Quo & Setup',
-    'Inciting Incident & Lock-In',
-    'First Obstacles & New World',
-    'Escalation & Midpoint Reversal',
-    'Midpoint Fallout & Counter-Tactics',
-    'Tightening Net & Dark Night',
-    'Climax & Decisive Confrontation',
-    'Resolution & New Equilibrium'
+    'Status Quo & Inciting Disruption',
+    'Predicament, Resistance & Lock-In',
+    'First Attempt & Early Friction',
+    'Escalating Tests & Midpoint Shift',
+    'Proactive Push & Counter-Pressure',
+    'Compounding Fallout & Lowest Point',
+    'Regroup, Renewed Resolve & Climax Threshold',
+    'Climax & Resonant Resolution'
 ];
 
 export const SEQUENCE_ACT_MAP: readonly number[] = [1, 1, 2, 2, 2, 2, 3, 3];

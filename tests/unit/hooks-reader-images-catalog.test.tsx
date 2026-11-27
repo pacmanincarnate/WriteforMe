@@ -9,7 +9,11 @@ import {
     type NanoGptCatalogEntry
 } from '@/hooks';
 import * as llmModule from '@/services/llm';
-import type { OpenRouterCatalogModel, GeminiImageModelInfo } from '@/services/llm';
+import type {
+    OpenRouterCatalogModel,
+    GeminiImageModelInfo,
+    OpenRouterImageModelInfo
+} from '@/services/llm';
 import type { ComfyOptionsCatalog, ComfyStatusInfo } from '@/services/images';
 import type { ImageStore } from '@/services/storage';
 
@@ -245,12 +249,14 @@ describe('hooks Phase 6E-1 (useReaderController, useStoryImages, useModelCatalog
         const testStory = { id: 's1' };
         const storyRef = { current: testStory };
         const emptyGeminiImgList: GeminiImageModelInfo[] = [];
+        const emptyOpenRouterImgList: OpenRouterImageModelInfo[] = [];
         const comfyRefreshId = { current: 0 };
         const setCurrentPipelineStep = vi.fn();
         const setPromptLog = vi.fn();
         const showToast = vi.fn();
         const logPipelineDelay = vi.fn();
         const setGeminiImageModelsList = vi.fn();
+        const setOpenRouterImageModelsList = vi.fn();
         const setIsFetchingImageModels = vi.fn();
         const setComfyStatus = vi.fn<(s: ComfyStatusInfo | ((prev: ComfyStatusInfo) => ComfyStatusInfo)) => void>();
         const setComfyOptions = vi.fn<(o: ComfyOptionsCatalog | ((prev: ComfyOptionsCatalog) => ComfyOptionsCatalog)) => void>();
@@ -271,6 +277,8 @@ describe('hooks Phase 6E-1 (useReaderController, useStoryImages, useModelCatalog
                 imageApiKey: '',
                 geminiImageModelsList: emptyGeminiImgList,
                 setGeminiImageModelsList,
+                openRouterImageModelsList: emptyOpenRouterImgList,
+                setOpenRouterImageModelsList,
                 setIsFetchingImageModels,
                 comfyUrl: 'http://127.0.0.1:8188',
                 setComfyStatus,
@@ -290,5 +298,67 @@ describe('hooks Phase 6E-1 (useReaderController, useStoryImages, useModelCatalog
         expect(hook.current.koboldStatus).toBe('connected');
         expect(hook.current.koboldLoadedModel).toBe('llama-3.1-8b-Q4');
         expect(hook.current.getEffectiveModelConfig('dev').provider).toBe('gemini');
+    });
+
+    it('useModelCatalog auto-fetches and caches OpenRouter text-to-image models without an API key', async () => {
+        sessionStorage.clear();
+        const liveOpenRouterImgModels: OpenRouterImageModelInfo[] = [
+            {
+                id: 'black-forest-labs/flux.2-pro',
+                name: 'Black Forest Labs: FLUX.2 Pro',
+                description: 'FLUX.2 Pro',
+                modality: 'text+image->image',
+                costLabel: '$7.32/1M img tok',
+                costDetail: 'Image output: $7.32/1M tokens',
+                isFree: false
+            }
+        ];
+        const fetchCatalogSpy = vi
+            .spyOn(llmModule, 'fetchOpenRouterImageModelsCatalog')
+            .mockResolvedValue(liveOpenRouterImgModels);
+
+        const testStory = { id: 's2' };
+        const storyRef = { current: testStory };
+        const emptyGeminiImgList: GeminiImageModelInfo[] = [];
+        const emptyOpenRouterImgList: OpenRouterImageModelInfo[] = [];
+        const comfyRefreshId = { current: 0 };
+        const setGeminiImageModelsList = vi.fn();
+        const setOpenRouterImageModelsList = vi.fn();
+        const setIsFetchingImageModels = vi.fn();
+
+        const hook = mountHook(() =>
+            useModelCatalog({
+                view: 'settings',
+                story: testStory,
+                storyRef,
+                setCurrentPipelineStep: vi.fn(),
+                setPromptLog: vi.fn(),
+                showToast: vi.fn(),
+                logPipelineDelay: vi.fn(),
+                imageProvider: 'openrouter',
+                imageApiKey: '',
+                geminiImageModelsList: emptyGeminiImgList,
+                setGeminiImageModelsList,
+                openRouterImageModelsList: emptyOpenRouterImgList,
+                setOpenRouterImageModelsList,
+                setIsFetchingImageModels,
+                comfyUrl: 'http://127.0.0.1:8188',
+                setComfyStatus: vi.fn(),
+                setComfyOptions: vi.fn(),
+                setComfyUnet: vi.fn(),
+                setComfyClip: vi.fn(),
+                setComfyVae: vi.fn(),
+                comfyRefreshId
+            })
+        );
+        mountedHooks.push(hook);
+
+        await flushMicrotasks();
+
+        expect(fetchCatalogSpy).toHaveBeenCalledWith('');
+        expect(setOpenRouterImageModelsList).toHaveBeenCalledWith(liveOpenRouterImgModels);
+        expect(sessionStorage.getItem('ellipsisprose_openrouter_image_models_cache')).toContain(
+            'black-forest-labs/flux.2-pro'
+        );
     });
 });

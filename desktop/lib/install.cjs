@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { getBackend, getVariant, selectAssets, assetSha256 } = require('./backends.cjs');
-const { downloadFile, latestRelease } = require('./download.cjs');
+const { downloadFile, latestRelease, sha256File } = require('./download.cjs');
 
 function sevenZipPath() {
     // eslint-disable-next-line global-require
@@ -66,13 +66,89 @@ function findInstallLayout(backendId, dir) {
         const python = findFile(dir, ['python.exe'], 3);
         if (!python || path.basename(path.dirname(python)).toLowerCase() !== 'python_embeded') return null;
         const root = path.dirname(path.dirname(python));
-        if (!fs.existsSync(path.join(root, 'ComfyUI', 'main.py'))) return null;
-        return { python, root, models: path.join(root, 'ComfyUI', 'models') };
+        const mainPy = path.join(root, 'ComfyUI', 'main.py');
+        if (!fs.existsSync(mainPy)) return null;
+        return { python, root, mainPy, models: path.join(root, 'ComfyUI', 'models'), isPortable: true };
     }
     if (backendId === 'audiocpp') {
         const exe = findFile(dir, ['audiocpp_server.exe', 'audiocpp_server'], 4);
         return exe ? { exe, binDir: path.dirname(exe) } : null;
     }
+    return null;
+}
+
+/**
+ * Resolves a user-chosen file or directory into a valid backend layout, or returns null.
+ * Supports KoboldCpp executables/folders, ComfyUI portable or git/venv installs, and audio.cpp.
+ */
+function findInstallLayoutFromPath(backendId, targetPath) {
+    if (!targetPath || !fs.existsSync(targetPath)) return null;
+    let stat;
+    try { stat = fs.statSync(targetPath); } catch (_) { return null; }
+
+    if (backendId === 'koboldcpp') {
+        if (stat.isFile()) return { exe: targetPath };
+        if (stat.isDirectory()) {
+            const direct = findInstallLayout('koboldcpp', targetPath);
+            if (direct) return direct;
+            try {
+                const entries = fs.readdirSync(targetPath, { withFileTypes: true });
+                const hit = entries.find((e) => e.isFile() && /^koboldcpp.*\.exe$/i.test(e.name));
+                if (hit) return { exe: path.join(targetPath, hit.name) };
+            } catch (_) { /* ignore */ }
+        }
+        return null;
+    }
+
+    if (backendId === 'comfyui') {
+        const dirs = [];
+        if (stat.isFile()) {
+            const base = path.basename(targetPath).toLowerCase();
+            if (base === 'main.py') {
+                dirs.push(path.dirname(targetPath), path.dirname(path.dirname(targetPath)));
+            } else if (base === 'python.exe') {
+                dirs.push(path.dirname(path.dirname(targetPath)), path.dirname(path.dirname(path.dirname(targetPath))));
+            }
+        } else if (stat.isDirectory()) {
+            dirs.push(targetPath);
+        }
+
+        for (const dir of dirs) {
+            const portable = findInstallLayout('comfyui', dir);
+            if (portable) return portable;
+
+            const mainCandidates = [path.join(dir, 'main.py'), path.join(dir, 'ComfyUI', 'main.py')];
+            const mainPy = mainCandidates.find((p) => fs.existsSync(p));
+            if (!mainPy) continue;
+
+            const mainDir = path.dirname(mainPy);
+            const pythonCandidates = [
+                path.join(dir, 'venv', 'Scripts', 'python.exe'),
+                path.join(dir, '.venv', 'Scripts', 'python.exe'),
+                path.join(dir, 'python_embeded', 'python.exe'),
+                path.join(mainDir, 'venv', 'Scripts', 'python.exe'),
+                path.join(mainDir, '.venv', 'Scripts', 'python.exe'),
+                path.join(dir, 'venv', 'bin', 'python'),
+                path.join(dir, '.venv', 'bin', 'python')
+            ];
+            const python = pythonCandidates.find((p) => fs.existsSync(p));
+            if (python) {
+                return { python, root: mainDir, mainPy, models: path.join(mainDir, 'models'), isPortable: false };
+            }
+        }
+        return null;
+    }
+
+    if (backendId === 'audiocpp') {
+        if (stat.isFile()) {
+            if (/^audiocpp_server(\.exe)?$/i.test(path.basename(targetPath))) {
+                return { exe: targetPath, binDir: path.dirname(targetPath) };
+            }
+            return null;
+        }
+        if (stat.isDirectory()) return findInstallLayout('audiocpp', targetPath);
+    }
+
     return null;
 }
 
@@ -110,12 +186,26 @@ async function installBackend({ backendsDir, backendId, variantId, onProgress = 
     const files = [];
     for (const a of [asset, ...extras]) {
         const dest = path.join(downloadsDir, a.name);
+        const expectedSha = assetSha256(a);
+        if (fs.existsSync(dest)) {
+            onProgress({ phase: 'verify', file: a.name, received: fs.statSync(dest).size, total: fs.statSync(dest).size, speedBps: 0 });
+            const existingSha = await sha256File(dest);
+            if (!expectedSha || existingSha === expectedSha) {
+                files.push({ name: a.name, size: fs.statSync(dest).size, sha256: existingSha, verified: Boolean(expectedSha), path: dest });
+                continue;
+            }
+            fs.rmSync(dest, { force: true });
+        }
         const res = await downloadFile({
             url: a.browser_download_url,
             dest,
-            sha256: assetSha256(a),
+            sha256: expectedSha,
             signal,
-            onProgress: (p) => onProgress({ phase: 'download', file: a.name, ...p })
+            onProgress: (p) => onProgress(
+                p.verifying
+                    ? { phase: 'verify', file: a.name, received: p.received, total: p.total, speedBps: 0 }
+                    : { phase: 'download', file: a.name, ...p }
+            )
         });
         files.push({ name: a.name, size: res.bytes, sha256: res.sha256, verified: res.verified, path: dest });
     }
@@ -151,4 +241,4 @@ async function installBackend({ backendsDir, backendId, variantId, onProgress = 
     return { layout: findInstallLayout(backend.id, finalDir), record: installed[backend.id] };
 }
 
-module.exports = { installBackend, findInstallLayout, readInstalled, writeInstalled, extract, findFile, sevenZipPath };
+module.exports = { installBackend, findInstallLayout, findInstallLayoutFromPath, readInstalled, writeInstalled, extract, findFile, sevenZipPath };

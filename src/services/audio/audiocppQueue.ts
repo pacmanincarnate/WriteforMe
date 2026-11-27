@@ -6,6 +6,7 @@
 
 import { TIMEOUTS_MS, migrateAudioDramaSettings, type AudioDramaSettings } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
+import { onLocalModalityOffloaded, withLocalGpuLease } from '@/services/vram';
 
 export interface LiveAudioCppWaveState {
     activeWave: number;
@@ -21,6 +22,13 @@ export const liveAudioCppWaveState: LiveAudioCppWaveState = {
     checkedAt: 0
 };
 
+onLocalModalityOffloaded((modality) => {
+    if (modality === 'audio') {
+        liveAudioCppWaveState.activeWave = 0;
+        liveAudioCppWaveState.wave2Sig = null;
+    }
+});
+
 let _audioCppRequestChain: Promise<unknown> = Promise.resolve();
 let _audioCppPendingCount = 0;
 
@@ -28,11 +36,18 @@ export function isAudioCppQueueBusy(): boolean {
     return _audioCppPendingCount > 0;
 }
 
-export function enqueueAudioCppTask<T>(taskFn: () => Promise<T>): Promise<T> {
+export function enqueueAudioCppTask<T>(
+    taskFn: () => Promise<T>,
+    bridgeUrlHint?: string
+): Promise<T> {
     _audioCppPendingCount++;
     const runTask = async (): Promise<T> => {
         try {
-            return await taskFn();
+            return await withLocalGpuLease(
+                'audio',
+                bridgeUrlHint ? { bridgeUrl: bridgeUrlHint } : {},
+                taskFn
+            );
         } finally {
             _audioCppPendingCount = Math.max(0, _audioCppPendingCount - 1);
         }

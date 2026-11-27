@@ -873,13 +873,21 @@ export function compileEpistemicAsymmetryAndIrony(
             narrativeMode.includes('SUSPENSE') ||
             narrativeMode.includes('CONFRONTATION') ||
             narrativeMode.includes('MYSTERY') ||
-            narrativeMode.includes('ACTION')
+            narrativeMode.includes('ACTION') ||
+            narrativeMode.includes('COVER_AND_BLUFF') ||
+            narrativeMode.includes('SOCIAL_INTRIGUE') ||
+            narrativeMode.includes('EMOTIONAL_RUPTURE') ||
+            narrativeMode.includes('VERBAL_SPARRING')
         ) {
             frictionLevel = 'HIGH';
         } else if (
             narrativeMode.includes('ROMANCE') ||
+            narrativeMode.includes('INTIMACY') ||
             narrativeMode.includes('REFLECTION') ||
             narrativeMode.includes('BONDING') ||
+            narrativeMode.includes('RELATIONAL') ||
+            narrativeMode.includes('SLICE_OF_LIFE') ||
+            narrativeMode.includes('MONTAGE') ||
             sceneType === 'REACTIVE'
         ) {
             frictionLevel = 'LOW';

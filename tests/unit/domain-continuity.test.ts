@@ -4,6 +4,7 @@ import {
     buildScenePlannerContinuityBlock,
     buildSequencePromptContext,
     buildUpcomingBoundaryGuardInfo,
+    isPreCatalystSequenceOneScene,
     cascadeInvalidateSourceAgent,
     commitEpistemicSceneDeltas,
     compareSceneCoordinates,
@@ -390,5 +391,135 @@ describe('Continuity Domain: contextBuilders and activeState', () => {
         expect(auditRes.status).toBe('PATCHED');
         expect(auditRes.patchesApplied).toBe(1);
         expect(auditRes.prose).toContain('gripping the cold iron railing');
+    });
+
+    it('includes <sequence_craft_elevation_guide> in sequence context and gates Sequence 1 pre-catalyst upcoming events', () => {
+        const seq1Scenes = [
+            {
+                number: '1.1',
+                title: 'Morning Ledger',
+                pov_character: 'Elena Vance',
+                setting: 'Harbor Customs Desk',
+                scene_events: 'Elena reconciles routine shipping manifests before dawn.',
+                exit_hook: 'A courier knocks on the frosted glass door.'
+            },
+            {
+                number: '1.2',
+                title: 'The Burned Manifest',
+                pov_character: 'Elena Vance',
+                setting: 'Pier Four Warehouse',
+                scene_events: 'The inciting disruption strikes when Elena discovers a smuggled ledger naming her brother.',
+                exit_hook: 'Heavy boots echo outside the warehouse.'
+            }
+        ];
+        const seq2Scenes = [
+            {
+                number: '2.1',
+                title: 'Refusal at the Quay',
+                pov_character: 'Elena Vance',
+                setting: 'Old Breakwater',
+                scene_events: 'Elena debates burning the ledger before dawn.',
+                exit_hook: 'Her brother signals from the trawler.'
+            }
+        ];
+
+        const storyToUse: ContinuityStoryState = {
+            title: 'The Salt Ledger',
+            acts: [
+                {
+                    number: 1,
+                    title: 'Act I: Ordinary Harbor',
+                    description: 'Establish status quo and inciting disruption'
+                }
+            ],
+            sequences: [
+                {
+                    number: 1,
+                    parent_act: 1,
+                    title: 'Status Quo & Inciting Incident',
+                    summary: 'Elena works the customs desk until a burned manifest upends her routine.',
+                    tension_arc: 'Calm routine shattered by sudden discovery',
+                    scenes: seq1Scenes
+                },
+                {
+                    number: 2,
+                    parent_act: 1,
+                    title: 'Predicament & Debate',
+                    summary: 'Elena weighs hiding the ledger against confronting the syndicate.',
+                    tension_arc: 'Mounting reluctance and impossible choice',
+                    scenes: seq2Scenes
+                }
+            ],
+            scenes: {
+                '0': seq1Scenes,
+                '1': seq2Scenes
+            }
+        };
+
+        const seqContext = buildSequencePromptContext(
+            storyToUse,
+            {},
+            storyToUse.acts as Array<Record<string, unknown>>,
+            1,
+            []
+        );
+        expect(seqContext).toContain('<sequence_craft_elevation_guide>');
+        expect(seqContext).toContain('Sequence 1');
+
+        const sequences = storyToUse.sequences ?? [];
+        expect(
+            isPreCatalystSequenceOneScene({
+                storyToUse,
+                seq: 0,
+                s: 0,
+                effectiveScenes: seq1Scenes,
+                effectiveSeqData: sequences[0]
+            })
+        ).toBe(true);
+
+        expect(
+            isPreCatalystSequenceOneScene({
+                storyToUse,
+                seq: 0,
+                s: 1,
+                effectiveScenes: seq1Scenes,
+                effectiveSeqData: sequences[0]
+            })
+        ).toBe(false);
+
+        expect(
+            isPreCatalystSequenceOneScene({
+                storyToUse,
+                seq: 1,
+                s: 0,
+                effectiveScenes: seq2Scenes,
+                effectiveSeqData: sequences[1]
+            })
+        ).toBe(false);
+
+        const gatedGuard = buildUpcomingBoundaryGuardInfo({
+            storyToUse,
+            seq: 0,
+            s: 0,
+            scene: seq1Scenes[0],
+            sequenceData: sequences[0],
+            scenesList: seq1Scenes
+        });
+        expect(gatedGuard.isSequenceBoundary).toBe(false);
+        expect(gatedGuard.xmlBlock).toContain('Pier Four Warehouse');
+        expect(gatedGuard.xmlBlock).toContain('Elena Vance');
+        expect(gatedGuard.xmlBlock).toContain('A courier knocks on the frosted glass door.');
+        expect(gatedGuard.xmlBlock).not.toContain('inciting disruption strikes');
+
+        const catalystGuard = buildUpcomingBoundaryGuardInfo({
+            storyToUse,
+            seq: 0,
+            s: 1,
+            scene: seq1Scenes[1],
+            sequenceData: sequences[0],
+            scenesList: seq1Scenes
+        });
+        expect(catalystGuard.isSequenceBoundary).toBe(true);
+        expect(catalystGuard.xmlBlock).toContain('Elena debates burning the ledger before dawn.');
     });
 });

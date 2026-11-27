@@ -128,6 +128,8 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
     setImageApiKey,
     geminiImageModelsList,
     fetchGeminiImageModels,
+    openRouterImageModelsList,
+    fetchOpenRouterImageModels,
     isFetchingImageModels,
     comfyUrl,
     setComfyUrl,
@@ -191,7 +193,15 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
     const availableGeminiImageModels =
         geminiImageModelsList.length > 0 ? geminiImageModelsList : DEFAULT_GEMINI_IMAGE_MODELS;
     const isKnownGeminiImageModel = availableGeminiImageModels.some((m) => m.id === imageModel);
-    const isKnownOpenRouterImageModel = DEFAULT_OPENROUTER_IMAGE_MODELS.some((m) => m.id === imageModel);
+    const availableOpenRouterImageModels =
+        openRouterImageModelsList.length > 0
+            ? openRouterImageModelsList
+            : DEFAULT_OPENROUTER_IMAGE_MODELS;
+    const isKnownOpenRouterImageModel = availableOpenRouterImageModels.some(
+        (m) => m.id === imageModel
+    );
+    const selectedOpenRouterImageModel =
+        openRouterImageModelsList.find((m) => m.id === imageModel) || null;
 
     const comfySelectFields: Array<{
         id: 'unet' | 'clip' | 'vae' | 'lora' | 'sampler' | 'scheduler';
@@ -1123,7 +1133,10 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                             geminiImageModelsList[0]?.id || DEFAULT_IMAGE_MODELS.gemini;
                                         setImageModel(geminiDefault);
                                     } else if (prov === 'openrouter') {
-                                        setImageModel(DEFAULT_IMAGE_MODELS.openrouter);
+                                        setImageModel(
+                                            openRouterImageModelsList[0]?.id ||
+                                                DEFAULT_IMAGE_MODELS.openrouter
+                                        );
                                     }
                                 }}
                                 className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none appearance-none transition-colors cursor-pointer"
@@ -1143,13 +1156,21 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                         <div>
                             <div className="flex items-center justify-between mb-1">
                                 <label className="block text-xs font-bold text-ink-700 font-mono">Image Model</label>
-                                {imageProvider === 'gemini' && (
+                                {(imageProvider === 'gemini' || imageProvider === 'openrouter') && (
                                     <button
                                         type="button"
-                                        onClick={() => fetchGeminiImageModels(true)}
+                                        onClick={() =>
+                                            imageProvider === 'gemini'
+                                                ? fetchGeminiImageModels(true)
+                                                : fetchOpenRouterImageModels(true)
+                                        }
                                         disabled={isFetchingImageModels}
                                         className="text-xs text-gold-ink hover:text-gold flex items-center gap-1 font-mono cursor-pointer transition-colors min-h-[36px] py-1 px-2.5 rounded-lg hover:bg-gold-tint/50"
-                                        title="Fetch available image models on the fly from Gemini API"
+                                        title={
+                                            imageProvider === 'gemini'
+                                                ? 'Fetch available image models on the fly from Gemini API'
+                                                : 'Fetch live text-to-image models and pricing from OpenRouter'
+                                        }
                                     >
                                         <RefreshCw
                                             size={11}
@@ -1208,9 +1229,11 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                             }}
                                             className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none appearance-none transition-colors cursor-pointer"
                                         >
-                                            {DEFAULT_OPENROUTER_IMAGE_MODELS.map((m) => (
+                                            {availableOpenRouterImageModels.map((m) => (
                                                 <option key={m.id} value={m.id}>
-                                                    {m.name}
+                                                    {'costLabel' in m && m.costLabel
+                                                        ? `${m.name} — ${m.costLabel}`
+                                                        : m.name}
                                                 </option>
                                             ))}
                                             <option value="__custom__">Custom / Other Model ID...</option>
@@ -1220,12 +1243,45 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                             size={14}
                                         />
                                     </div>
+                                    {isFetchingImageModels && openRouterImageModelsList.length === 0 ? (
+                                        <p className="text-[11px] text-ink-500">
+                                            Fetching live OpenRouter text-to-image models &amp; pricing...
+                                        </p>
+                                    ) : selectedOpenRouterImageModel ? (
+                                        <div className="text-[11px] bg-inset/70 border border-edge rounded-lg px-3 py-2 space-y-1">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="font-mono text-ink-600 truncate">
+                                                    {selectedOpenRouterImageModel.id}
+                                                </span>
+                                                <span className="shrink-0 px-1.5 py-0.5 rounded bg-mist-100 border border-edge text-[10px] font-mono text-ink-600">
+                                                    {selectedOpenRouterImageModel.modality.replace(
+                                                        '->',
+                                                        ' → '
+                                                    )}
+                                                </span>
+                                            </div>
+                                            <p
+                                                className={
+                                                    selectedOpenRouterImageModel.isFree
+                                                        ? 'font-medium text-emerald-600 dark:text-emerald-400'
+                                                        : 'text-ink-600'
+                                                }
+                                            >
+                                                {selectedOpenRouterImageModel.costDetail}
+                                            </p>
+                                        </div>
+                                    ) : openRouterImageModelsList.length === 0 ? (
+                                        <p className="text-[11px] text-ink-500">
+                                            Click Fetch Models to load live OpenRouter text-to-image
+                                            models and pricing.
+                                        </p>
+                                    ) : null}
                                     {(!isKnownOpenRouterImageModel || imageModel === '__custom__') && (
                                         <input
                                             type="text"
                                             value={imageModel === '__custom__' ? '' : imageModel}
                                             onChange={(e) => setImageModel(e.target.value)}
-                                            placeholder="e.g. stabilityai/stable-diffusion-xl"
+                                            placeholder={`e.g. ${DEFAULT_IMAGE_MODELS.openrouter}`}
                                             className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
                                         />
                                     )}
@@ -1276,7 +1332,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             </p>
                             <button
                                 type="button"
-                                onClick={refreshComfyInfo}
+                                onClick={() => void refreshComfyInfo({ startIfNeeded: true })}
                                 className="text-xs text-gold-ink hover:text-ink-900 font-medium flex items-center gap-1 transition-colors"
                             >
                                 Refresh

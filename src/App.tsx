@@ -43,7 +43,7 @@ import {
 } from '@/services/storage';
 import { EmbeddingService, VectorStore } from '@/services/rag';
 
-import { findCastIndexForChar, useActiveStory, useAppUpdates, useAutopilotControl, useAutopilotLoop, useArchetypeOptions, useAudioFollowState, useGenerationStatus, useNarrativeLensesToggle, useRelationshipMatrix, useSettingsDisclosures, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useActiveStory, useAppUpdates, useAutopilotControl, useAutopilotLoop, useDesktopBackends, useArchetypeOptions, useAudioFollowState, useGenerationStatus, useNarrativeLensesToggle, useRelationshipMatrix, useSettingsDisclosures, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -187,6 +187,7 @@ import {
                 skipCurrentUpdate,
                 openReleaseNotes
             } = useAppUpdates({ showToast });
+            useDesktopBackends({ showToast });
 
             const setSelectedAct = useUiStore(s => s.setSelectedAct);
             const selectedSequence = useUiStore(s => s.selectedSequence);
@@ -254,6 +255,7 @@ import {
                 imageProvider, setImageProvider,
                 imageModel, setImageModel,
                 geminiImageModelsList, setGeminiImageModelsList,
+                openRouterImageModelsList, setOpenRouterImageModelsList,
                 isFetchingImageModels, setIsFetchingImageModels,
                 imageApiKey, setImageApiKey,
                 comfyUrl, setComfyUrl,
@@ -362,6 +364,7 @@ import {
                 saveModel,
                 deleteModel,
                 fetchGeminiImageModels,
+                fetchOpenRouterImageModels,
                 refreshCodexModels,
                 refreshClaudeModels,
                 refreshComfyInfo,
@@ -379,6 +382,8 @@ import {
                 imageApiKey,
                 geminiImageModelsList,
                 setGeminiImageModelsList,
+                openRouterImageModelsList,
+                setOpenRouterImageModelsList,
                 setIsFetchingImageModels,
                 comfyUrl,
                 setComfyStatus,
@@ -2499,6 +2504,8 @@ import {
                                 setImageApiKey={setImageApiKey}
                                 geminiImageModelsList={geminiImageModelsList}
                                 fetchGeminiImageModels={handOff(fetchGeminiImageModels)}
+                                openRouterImageModelsList={openRouterImageModelsList}
+                                fetchOpenRouterImageModels={fetchOpenRouterImageModels}
                                 isFetchingImageModels={isFetchingImageModels}
                                 comfyUrl={comfyUrl}
                                 setComfyUrl={setComfyUrl}

@@ -17,19 +17,31 @@ import {
     KOKORO_VOICES,
     KOKORO_VOICE_GROUPS,
     LOCAL_PORTS,
+    NARRATIVE_ACTS,
     NARRATIVE_MODES,
+    NARRATIVE_MODE_CATEGORIES,
+    NARRATIVE_MODE_ICONS,
+    NARRATIVE_MODE_SHARED_GUARDRAILS,
+    NARRATIVE_SEQUENCES,
     PIPELINE_STEPS_META,
     PIPELINE_STEP_SPEC,
     STORAGE_KEYS,
     STRUCTURAL_MODALITIES,
     TTS_PIPELINE_TIERS,
     VIEW_LABELS,
+    formatActFunctionGuideXml,
+    formatActiveActAndSequenceXml,
     formatModalityHand,
+    formatSequenceCraftGuideXml,
     generateRandomArchetypes,
     getPipelineStepInfo,
+    groupNarrativeModesForSelect,
     inferNarrativeModeForScene,
     mapLogNameToStepId,
-    migrateAudioDramaSettings
+    migrateAudioDramaSettings,
+    resolveNarrativeActForSequence,
+    resolveNarrativeModeId,
+    resolveNarrativeSequenceForIndex
 } from '@/config';
 
 describe('Config Banks & Audio Settings Migration', () => {
@@ -57,11 +69,78 @@ describe('Config Banks & Audio Settings Migration', () => {
     });
 
     it('infers narrative modes and formats structural modality hands', () => {
-        expect(Object.keys(NARRATIVE_MODES).length).toBeGreaterThanOrEqual(17);
+        const expectedIds = [
+            'BASELINE_NEUTRAL',
+            'MONTAGE_SUMMARY',
+            'QUIET_SLICE_OF_LIFE',
+            'KINETIC_ACTION',
+            'ATMOSPHERIC_SUSPENSE',
+            'GRAND_SCALE',
+            'COVER_AND_BLUFF',
+            'CRAFT_AND_PROCESS',
+            'VERBAL_SPARRING',
+            'SOCIAL_INTRIGUE',
+            'LIGHTHEARTED',
+            'PROCEDURAL_MYSTERY',
+            'WORLD_BUILDING',
+            'ENVIRONMENTAL_IMMERSION',
+            'UNCERTAINTY',
+            'REFLECTION',
+            'MORAL_DILEMMA',
+            'EMOTIONAL_RUPTURE',
+            'ALTERED_STATE',
+            'RELATIONAL',
+            'BUILDING_ROMANCE',
+            'INTIMACY_COORDINATOR'
+        ];
+        expect(Object.keys(NARRATIVE_MODES)).toHaveLength(22);
+        expect(Object.keys(NARRATIVE_MODES)).toEqual(expectedIds);
+        for (const retiredId of ['ORGANIC_EXPOSITION', 'REVELATION', 'CATHARTIC_INTIMACY']) {
+            expect(NARRATIVE_MODES[retiredId]).toBeUndefined();
+        }
+        for (const id of expectedIds) {
+            const def = NARRATIVE_MODES[id];
+            expect(NARRATIVE_MODE_CATEGORIES).toContain(def.category);
+            expect(def.context.trim().length).toBeGreaterThan(20);
+            expect(def.prompt.trim().length).toBeGreaterThan(80);
+            expect(NARRATIVE_MODE_ICONS[id]).toBeTruthy();
+        }
+        for (const boundaryId of [
+            'BUILDING_ROMANCE',
+            'ATMOSPHERIC_SUSPENSE',
+            'VERBAL_SPARRING',
+            'WORLD_BUILDING',
+            'UNCERTAINTY',
+            'INTIMACY_COORDINATOR'
+        ]) {
+            expect(NARRATIVE_MODES[boundaryId].boundaryNote).toBeTruthy();
+        }
+
         expect(Object.keys(STRUCTURAL_MODALITIES)).toHaveLength(11);
         expect(inferNarrativeModeForScene({ goal: 'Interrogate the suspect in verbal sparring' })).toBe('VERBAL_SPARRING');
         expect(inferNarrativeModeForScene({ title: 'Quiet morning' })).toBe('REFLECTION');
         expect(inferNarrativeModeForScene({ title: 'Breakfast at the diner' })).toBe('BASELINE_NEUTRAL');
+        expect(inferNarrativeModeForScene({ scene_events: 'Over the next few weeks, a time skip montage of training.' })).toBe('MONTAGE_SUMMARY');
+        expect(inferNarrativeModeForScene({ scene_events: 'Sharing a meal during a calm breather of domestic normalcy.' })).toBe('QUIET_SLICE_OF_LIFE');
+        expect(inferNarrativeModeForScene({ goal: 'Maintain a fragile cover and bluff past the checkpoint.' })).toBe('COVER_AND_BLUFF');
+        expect(inferNarrativeModeForScene({ scene_events: 'Precise surgical repair of the cracked fuel manifold.' })).toBe('CRAFT_AND_PROCESS');
+        expect(inferNarrativeModeForScene({ scene_events: 'Court politics at the royal gala behind polite etiquette.' })).toBe('SOCIAL_INTRIGUE');
+        expect(inferNarrativeModeForScene({ scene_events: 'A raw confrontation and bitter breakup after betrayal.' })).toBe('EMOTIONAL_RUPTURE');
+        expect(inferNarrativeModeForScene({ scene_events: 'Trapped in a fever dream and panic spiral.' })).toBe('ALTERED_STATE');
+        expect(inferNarrativeModeForScene({ scene_events: 'Their romance deepens into consensual physical intimacy.' })).toBe('INTIMACY_COORDINATOR');
+
+        expect(resolveNarrativeModeId('CATHARTIC_INTIMACY', NARRATIVE_MODES)).toBe('INTIMACY_COORDINATOR');
+        expect(resolveNarrativeModeId('ORGANIC_EXPOSITION', NARRATIVE_MODES)).toBe('BASELINE_NEUTRAL');
+        expect(resolveNarrativeModeId('REVELATION', NARRATIVE_MODES)).toBe('EMOTIONAL_RUPTURE');
+        expect(resolveNarrativeModeId('KINETIC_ACTION', NARRATIVE_MODES)).toBe('KINETIC_ACTION');
+
+        const grouped = groupNarrativeModesForSelect({
+            ...NARRATIVE_MODES,
+            CUSTOM_NOIR: { id: 'CUSTOM_NOIR', context: 'Noir', prompt: 'Rain' }
+        });
+        expect(grouped.hasCategories).toBe(true);
+        expect(grouped.grouped).toHaveLength(6);
+        expect(grouped.uncategorized).toEqual(['CUSTOM_NOIR']);
 
         const hand = formatModalityHand(['SUBTEXTUAL_EVASION', 'CUSTOM_MODE']);
         expect(hand).toContain('[Interpersonal Dynamics: Subtextual Evasion]');
@@ -109,5 +188,90 @@ describe('Config Banks & Audio Settings Migration', () => {
 
         const keyValues = Object.values(STORAGE_KEYS);
         expect(new Set(keyValues).size).toBe(keyValues.length);
+    });
+
+    it('defines 4 Act Functions, 8 Sequence Craft lenses, refined Canon Guardrail #2, and dynamic Act 2A/2B routing', () => {
+        expect(Object.keys(NARRATIVE_ACTS)).toEqual(['ACT_1', 'ACT_2A', 'ACT_2B', 'ACT_3']);
+        expect(Object.keys(NARRATIVE_SEQUENCES)).toEqual([
+            'SEQUENCE_1',
+            'SEQUENCE_2',
+            'SEQUENCE_3',
+            'SEQUENCE_4',
+            'SEQUENCE_5',
+            'SEQUENCE_6',
+            'SEQUENCE_7',
+            'SEQUENCE_8'
+        ]);
+        for (const act of Object.values(NARRATIVE_ACTS)) {
+            expect(act.context.trim().length).toBeGreaterThan(30);
+            expect(act.prompt.trim().length).toBeGreaterThan(100);
+        }
+        for (const seq of Object.values(NARRATIVE_SEQUENCES)) {
+            expect(seq.aiPitfallAddressed.trim().length).toBeGreaterThan(10);
+            expect(seq.keyCraftElevation.trim().length).toBeGreaterThan(10);
+            expect(seq.context.trim().length).toBeGreaterThan(30);
+            expect(seq.prompt.trim().length).toBeGreaterThan(100);
+        }
+        expect(NARRATIVE_MODE_SHARED_GUARDRAILS).toContain('minor, setting-authentic sensory and everyday details');
+
+        const eightSeqs = [1, 1, 2, 2, 2, 2, 3, 3].map((parent_act, i) => ({
+            number: i + 1,
+            parent_act
+        }));
+        expect(eightSeqs.map((_, i) => resolveNarrativeActForSequence(i, eightSeqs).id)).toEqual([
+            'ACT_1',
+            'ACT_1',
+            'ACT_2A',
+            'ACT_2A',
+            'ACT_2B',
+            'ACT_2B',
+            'ACT_3',
+            'ACT_3'
+        ]);
+        expect(eightSeqs.map((_, i) => resolveNarrativeSequenceForIndex(i, eightSeqs).id)).toEqual([
+            'SEQUENCE_1',
+            'SEQUENCE_2',
+            'SEQUENCE_3',
+            'SEQUENCE_4',
+            'SEQUENCE_5',
+            'SEQUENCE_6',
+            'SEQUENCE_7',
+            'SEQUENCE_8'
+        ]);
+
+        const customTenSeqs = [1, 1, 2, 2, 2, 2, 2, 2, 3, 3].map((parent_act, i) => ({
+            number: i + 1,
+            parent_act
+        }));
+        expect(customTenSeqs.map((_, i) => resolveNarrativeActForSequence(i, customTenSeqs).id)).toEqual([
+            'ACT_1',
+            'ACT_1',
+            'ACT_2A',
+            'ACT_2A',
+            'ACT_2A',
+            'ACT_2B',
+            'ACT_2B',
+            'ACT_2B',
+            'ACT_3',
+            'ACT_3'
+        ]);
+        expect(resolveNarrativeSequenceForIndex(4, customTenSeqs).id).toBe('SEQUENCE_4');
+        expect(resolveNarrativeSequenceForIndex(5, customTenSeqs).id).toBe('SEQUENCE_5');
+        expect(resolveNarrativeSequenceForIndex(7, customTenSeqs).id).toBe('SEQUENCE_6');
+
+        const overridden = [{ number: 1, parent_act: 1, narrative_act_id: 'ACT_2B', narrative_sequence_id: 'SEQUENCE_6' }];
+        expect(resolveNarrativeActForSequence(0, overridden).id).toBe('ACT_2B');
+        expect(resolveNarrativeSequenceForIndex(0, overridden).id).toBe('SEQUENCE_6');
+
+        const layeredXml = formatActiveActAndSequenceXml(NARRATIVE_ACTS.ACT_2A, NARRATIVE_SEQUENCES.SEQUENCE_3, {
+            sceneIndex: 1,
+            totalScenes: 5
+        });
+        expect(layeredXml).toContain('<active_act_function>');
+        expect(layeredXml).toContain('ACT_2A');
+        expect(layeredXml).toContain('<active_sequence_craft>');
+        expect(layeredXml).toContain('Scene 2 of 5');
+        expect(formatActFunctionGuideXml()).toContain('<act_function_craft_guide>');
+        expect(formatSequenceCraftGuideXml()).toContain('<sequence_craft_elevation_guide>');
     });
 });

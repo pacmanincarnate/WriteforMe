@@ -8,7 +8,11 @@ import type { SearchableModelEntry } from '@/components';
 import type { AudioDramaSettings } from '@/config';
 import type { StoryResetStageKey } from '@/domain/lifecycle';
 import type { ComfyOptionsCatalog, ComfyStatusInfo } from '@/services/images';
-import type { CodexModelInfo, GeminiImageModelInfo } from '@/services/llm';
+import type {
+    CodexModelInfo,
+    GeminiImageModelInfo,
+    OpenRouterImageModelInfo
+} from '@/services/llm';
 import type { CastMember, SlopConfig, SlopSeverity, Story } from '@/types';
 
 export interface SettingsCustomMode {
@@ -156,13 +160,15 @@ export interface SettingsModelsTabProps {
     setImageApiKey: (key: string) => void;
     geminiImageModelsList: GeminiImageModelInfo[];
     fetchGeminiImageModels: (force?: boolean) => void | Promise<void>;
+    openRouterImageModelsList: OpenRouterImageModelInfo[];
+    fetchOpenRouterImageModels: (force?: boolean) => void | Promise<unknown>;
     isFetchingImageModels: boolean;
     comfyUrl: string;
     setComfyUrl: (url: string) => void;
     comfyRefreshId: React.MutableRefObject<number>;
     comfyStatus: ComfyStatusInfo;
     comfyOptions: ComfyOptionsCatalog;
-    refreshComfyInfo: () => void | Promise<void>;
+    refreshComfyInfo: (opts?: { startIfNeeded?: boolean }) => void | Promise<void>;
     comfyUnet: string;
     setComfyUnet: (unet: string) => void;
     comfyClip: string;

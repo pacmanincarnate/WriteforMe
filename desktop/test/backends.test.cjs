@@ -33,8 +33,13 @@ test('comfyui nvidia does not grab the cu126 package; cpu reuses it with --cpu',
     const cpu = getVariant(b, 'cpu');
     const spec = launchSpec(b, cpu, { python: 'C:\\c\\python_embeded\\python.exe', root: 'C:\\c' }, {});
     assert.ok(spec.args.includes('--cpu'));
+    assert.ok(spec.args.includes('--disable-auto-launch'));
     assert.ok(spec.args.includes('--enable-cors-header'));
     assert.deepEqual(spec.args.slice(spec.args.indexOf('--port'), spec.args.indexOf('--port') + 2), ['--port', '8188']);
+
+    const withAutoLaunch = launchSpec(b, cpu, { python: 'C:\\c\\python_embeded\\python.exe', root: 'C:\\c' }, { extraArgs: '--auto-launch' });
+    assert.ok(!withAutoLaunch.args.includes('--disable-auto-launch'));
+    assert.ok(withAutoLaunch.args.includes('--auto-launch'));
 });
 
 test('audio.cpp cuda prefers CUDA 12, skips the runtime as the main asset, and adds it as an extra', () => {
@@ -68,13 +73,62 @@ test('sha256 digests are read from GitHub asset metadata', () => {
     assert.equal(assetSha256({}), null);
 });
 
-test('koboldcpp launches straight into a chosen model, or into its own launcher without one', () => {
+test('koboldcpp launches straight into a chosen model with sensible defaults, respects overrides, or uses config/launcher as-is', () => {
     const b = getBackend('koboldcpp');
     const v = getVariant(b, 'cuda');
-    const withModel = launchSpec(b, v, { exe: 'C:\\k\\koboldcpp.exe' }, { modelPath: 'D:\\m\\q.gguf', extraArgs: '--contextsize 16384 --tag "two words"' });
-    assert.deepEqual(withModel.args, ['--port', '5001', '--host', '127.0.0.1', '--model', 'D:\\m\\q.gguf', '--skiplauncher', '--contextsize', '16384', '--tag', 'two words']);
+
+    const withModelDefaults = launchSpec(b, v, { exe: 'C:\\k\\koboldcpp.exe' }, { modelPath: 'D:\\m\\q.gguf' });
+    assert.deepEqual(withModelDefaults.args, [
+        '--port', '5001',
+        '--host', '127.0.0.1',
+        '--model', 'D:\\m\\q.gguf',
+        '--skiplauncher',
+        '--contextsize', '65536',
+        '--quantkv', '1',
+        '--flashattention',
+        '--jinja',
+        '--gpulayers', '-1'
+    ]);
+
+    const withOverrides = launchSpec(
+        b,
+        v,
+        { exe: 'C:\\k\\koboldcpp.exe' },
+        { modelPath: 'D:\\m\\q.gguf', extraArgs: '--contextsize 16384 --quantkv 0 --noflashattention --nojinja --gpulayers 40 --tag "two words"' }
+    );
+    assert.deepEqual(withOverrides.args, [
+        '--port', '5001',
+        '--host', '127.0.0.1',
+        '--model', 'D:\\m\\q.gguf',
+        '--skiplauncher',
+        '--contextsize', '16384',
+        '--quantkv', '0',
+        '--noflashattention',
+        '--nojinja',
+        '--gpulayers', '40',
+        '--tag', 'two words'
+    ]);
+
+    const withConfig = launchSpec(b, v, { exe: 'C:\\k\\koboldcpp.exe' }, { modelPath: 'D:\\m\\q.gguf', configPath: 'D:\\cfg\\preset.kcpps' });
+    assert.deepEqual(withConfig.args, ['--port', '5001', '--host', '127.0.0.1', '--config', 'D:\\cfg\\preset.kcpps', '--skiplauncher']);
+
     const without = launchSpec(b, v, { exe: 'C:\\k\\koboldcpp.exe' }, {});
+    assert.deepEqual(without.args, ['--port', '5001', '--host', '127.0.0.1']);
     assert.ok(!without.args.includes('--skiplauncher'));
+
+    const withAdmin = launchSpec(b, v, { exe: 'C:\\k\\koboldcpp.exe' }, { modelPath: 'D:\\m\\q.gguf', adminDir: 'C:\\data\\kobold-admin' });
+    assert.ok(withAdmin.args.includes('--admin'));
+    assert.deepEqual(withAdmin.args.slice(withAdmin.args.indexOf('--admindir'), withAdmin.args.indexOf('--admindir') + 2), ['--admindir', 'C:\\data\\kobold-admin']);
+    assert.ok(!withAdmin.args.includes('--routermode'));
+});
+
+test('comfyui launchSpec omits --windows-standalone-build for non-portable venv installs', () => {
+    const b = getBackend('comfyui');
+    const v = getVariant(b, 'nvidia');
+    const spec = launchSpec(b, v, { python: 'C:\\ComfyUI\\venv\\Scripts\\python.exe', root: 'C:\\ComfyUI', mainPy: 'C:\\ComfyUI\\main.py', isPortable: false }, {});
+    assert.ok(!spec.args.includes('--windows-standalone-build'));
+    assert.equal(spec.args[0], '-s');
+    assert.equal(spec.args[1], 'C:\\ComfyUI\\main.py');
 });
 
 test('splitArgs honours quotes', () => {

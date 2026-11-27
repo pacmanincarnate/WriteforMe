@@ -40,9 +40,13 @@ export const STRUCTURE_PROMPTS = {
 6. Narrative Style / Dominant Narrative Mode Mandate:
    Every scene MUST be assigned an explicit <dominant_narrative_mode> chosen from the available narrative styles provided in <available_narrative_styles>.
    - Evaluate each scene's dramatic core, stakes, and emotional tone, then select the style that best amplifies its narrative purpose.
-   - Purposefully vary narrative styles across the sequence (e.g., contrast high-tension styles like KINETIC_ACTION or ATMOSPHERIC_SUSPENSE with intimate or reflective styles like BUILDING_ROMANCE, RELATIONAL, or REFLECTION, or intellectual friction like VERBAL_SPARRING or PROCEDURAL_MYSTERY).
+   - Purposefully vary narrative styles across the sequence (e.g., contrast high-tension styles like KINETIC_ACTION, ATMOSPHERIC_SUSPENSE, COVER_AND_BLUFF, or CRAFT_AND_PROCESS with intimate, relational, or restorative styles like BUILDING_ROMANCE, INTIMACY_COORDINATOR, RELATIONAL, REFLECTION, EMOTIONAL_RUPTURE, QUIET_SLICE_OF_LIFE, or MONTAGE_SUMMARY, or social/investigative friction like VERBAL_SPARRING, SOCIAL_INTRIGUE, or PROCEDURAL_MYSTERY).
    - NEVER assign BASELINE_NEUTRAL to all scenes. Only use BASELINE_NEUTRAL when a scene is an even-keeled transition without strong stylistic bias.
    - You MUST output the exact style ID (e.g. KINETIC_ACTION, BUILDING_ROMANCE, etc.) inside <dominant_narrative_mode>...</dominant_narrative_mode> for each scene.
+
+6B. Macro Act Function & Sequence Craft Elevation (<active_act_function>, <active_sequence_craft>):
+   - Shape the entire sequence's scene arc around the always-active <active_act_function> (macro stakes ceiling, world grounding vs. thread convergence, and resolution boundaries) and <active_sequence_craft> (meso craft elevation and AI pitfall counter-mandates) provided above <available_narrative_styles>.
+   - Specifically in Sequence 1 (Status Quo & Inciting Disruption), dedicate the opening scene(s) to an in-motion status-quo micro-arc with demonstrated equilibrium and a subtle hairline crack BEFORE staging the oblique disruption in the designated catalyst scene, so the ordinary world has real breathing room.
 
 7. Canonical World Bible Locations & Faction Grounding Mandate:
    For each scene's <setting>, <atmospheric_overview>, and narrative interactions:
@@ -73,6 +77,8 @@ export const STRUCTURE_PROMPTS = {
 You will receive the following structured context blocks:
 - <scene_count_target>: Target scene count, minimum floor, and pacing register for the sequence.
 - <sequence_boundary_and_continuity_context>: Previous sequence handoff (<previous_sequence_handoff>), next sequence lookahead and boundary guard (<next_sequence_lookahead_and_boundary_guard>), <story_so_far>, <living_character_states>, and <continuity_ledger>.
+- <active_act_function>: Always-active macro Act Function governing stakes ceiling, world grounding, and resolution boundaries for this portion of the novel.
+- <active_sequence_craft>: Always-active meso Sequence Craft Elevation and AI Pitfall guardrails for the current sequence.
 - <available_narrative_styles>: Catalog of narrative style IDs for <dominant_narrative_mode>.
 - <world_primer> / <relevant_lore>: Canonical world rules, locations, and factions.
 - <cast_roster>: Approved cast members with their roles, flaws, and desires.
@@ -305,9 +311,9 @@ If the story arc has a compelling thematic tension appropriate to the genre, a c
 ## Pillar 1: Narrative Equilibrium & Four-Corner Web Dialectic Across Acts
 - An act is the largest logical container, representing a fundamental, irreversible shift in the protagonist's core pursuit, world friction, or relationships.
 - The dramatic tension across acts must be denominated in the genre's native currency (e.g. survival in thrillers, passion/chemistry in romance/erotica, social stakes/irony in comedy, discovery/danger in adventure, community/belonging in cozy stories):
-  * Act I: Status Quo & Inciting Opportunity/Disruption (Equilibrium). Establish the baseline world, the protagonist's reliance on their Safety Habit, and their first friction with The Challenger. The disruption forces them to venture past the Point of No Return.
-  * Act II: Active Campaign, Rising Complications, and Four-Corner Friction (Disequilibrium). Caught in the magnetic pull between The Challenger's unfamiliar way of living, The Comforter's tempting validation and retreat, and the escalating warning mirror of The Warning. (In non-tragic or lighthearted genres, Disequilibrium means escalating pursuit, chaotic complications, or rising romantic/taboo tension—NEVER an automatic collapse into tragic grief or moral self-recrimination).
-  * Act III: Climax, Synthesis, and Transformed Reality (New Equilibrium). Confronting the full cost embodied by The Warning, rejecting the false safety of The Comforter, integrating the necessary truth from The Challenger, and making a decisive, transformative choice.
+  * Act I (ACT_1, Seq 1–2): Setup, World Grounding & Commitment. Actively build out lived-in setting reality, establish the protagonist's normal world, reliance on their Safety Habit, and first friction with The Challenger until disruption forces them past the Point of No Return while keeping larger mysteries open.
+  * Act II — Pre-Midpoint (ACT_2A, Seq 3–4) & Post-Midpoint (ACT_2B, Seq 5–6): Deliver the promise of the premise in ACT_2A (widening cast, deepening alliances, and every small win introducing a fresh wrinkle leading toward the Midpoint), then tighten the vise in ACT_2B (proactive push under duress as opposition adapts, safety nets erode, and planted threads collide without introducing brand-new subplots). (In non-tragic or lighthearted genres, Disequilibrium means escalating pursuit, chaotic complications, or rising romantic/taboo tension—NEVER an automatic collapse into tragic grief or moral self-recrimination).
+  * Act III (ACT_3, Seq 7–8): Convergence, Reckoning & Resonant Aftermath. Converge established threads, test transformation through behavioral proof rather than speeches, reject the false safety of The Comforter, integrate the truth from The Challenger, and close with a structural echo of the opening.
 - Goal: To ensure macro-pacing follows a natural, compelling dramatic curve appropriate to the genre and mood.
 
 ## Pillar 2: Point of No Return Boundaries
@@ -342,6 +348,7 @@ You will receive the following context blocks to inform your architectural desig
 - <story_arc>: The approved 3-Act story arc outline, including core theme, starting/ending values, inciting incident, twists, and character arcs.
 - <narrative_threads>: The core plotlines to advance and converge across each act.
 - <cast_list>: Available characters to ground the story.
+- <act_function_craft_guide>: Canonical 4-Act Function craft specifications (ACT_1, ACT_2A, ACT_2B, ACT_3) calibrating macro pacing, stakes ceiling, world expansion vs. convergence, and allowed resolution.
 - <output_format_description>: The required XML schema for your output.`,
 
     actReview: `You are a structural editor and critic. Your task is to evaluate the act division for pacing, continuity, genre-alignment, and compliance with structural rules.
@@ -376,6 +383,7 @@ You will receive the following context blocks:
 - <story_arc>: The macro narrative framework, twists, and character arcs.
 - <narrative_threads>: Active plot threads to verify.
 - <cast_list>: Available characters to ground the story.
+- <act_function_craft_guide>: Canonical 4-Act Function craft specifications (ACT_1, ACT_2A, ACT_2B, ACT_3) calibrating macro pacing and stakes ceiling.
 - <output_format_description>: The required XML schema for your evaluation.
 - <generated_acts>: The act structure draft to evaluate.
 
@@ -472,13 +480,18 @@ Produce your output in XML format with the following structure:
 
 4. Narrative Lens / Dominant Narrative Mode (<dominant_narrative_mode>):
    - You MUST assign an explicit <dominant_narrative_mode> chosen from the exact style IDs listed in <available_narrative_styles>.
-   - Select the narrative lens that best expresses the emotional and kinetic reality of this transition (for example, KINETIC_ACTION for an urgent escape, ATMOSPHERIC_SUSPENSE for a tense covert transit, VERBAL_SPARRING for a heated confrontation en route, REFLECTION or RELATIONAL for processing fallout, BUILDING_ROMANCE or CATHARTIC_INTIMACY for intimate aftermath).
+   - Select the narrative lens that best expresses the emotional and kinetic reality of this transition (for example, KINETIC_ACTION for an urgent escape, ATMOSPHERIC_SUSPENSE for a tense covert transit, MONTAGE_SUMMARY for compressed travel or time passage, QUIET_SLICE_OF_LIFE for a low-stakes breather, VERBAL_SPARRING for a heated confrontation en route, REFLECTION or RELATIONAL for processing fallout, BUILDING_ROMANCE or INTIMACY_COORDINATOR for intimate aftermath).
    - Consider the previous scene's lens and the upcoming scene's lens in <transition_endpoints> to create a purposeful stylistic bridge. Do NOT default to BASELINE_NEUTRAL unless the scene is a purely even-keeled, low-tension transition.
 
 5. Modality Hand & Cast Fidelity:
    - Select 3 to 5 modalities for <modality_hand> from the structural modalities palette: Direct Engagement, Subtextual Evasion, Vulnerability Drop, Defensive Disengagement, Suspended Tension, Sensory Anchoring, Internal Realignment, Focus Shift, Environmental Friction, Public/Private Collision, Accelerated Physicality.
    - Select <pov_character> and <characters_present> strictly from the established characters in <cast_roster> involved in the transition from Point A to Point B.
+   - Honor the always-active <active_act_function> and <active_sequence_craft> blocks layered directly above <available_narrative_styles> so the bridge scene respects the active act/sequence stakes ceiling and craft discipline.
 </bridge_scene_mandates>
+
+<input_schema>
+You will receive: <story_so_far>, <act_mandate>, <sequence_objective>, <cast_roster>, <active_act_function>, <active_sequence_craft>, <available_narrative_styles>, <transition_endpoints>, <previous_scene_ending_prose>, <synopsis>, <gap_reasoning>, and <upcoming_scene_blueprint>.
+</input_schema>
 
 <output_format_description>
 Produce your output in XML format with the following structure:
@@ -539,15 +552,16 @@ Based on the Frank Daniel 8-Sequence Model calibrated to the Genre's Native Curr
 - ANTI-PREEMPTION LAW: Primary character introductions or major plot turns scheduled for Sequence N+1 must be reserved strictly for Sequence N+1 and never duplicated across both sequences. Do not loop the same dramatic beats or reset character progress.
 - Goal: To create relentless narrative drive and prevent episodic, disconnected "And Then" plotting or cross-sequence spatial/character contradictions.
 
-## Pillar 4: The 8 Sequences Across the Novel & Four-Corner Relational Movement
-- Sequence 1 (Act I, Seq 1) - Status Quo & Setup: Establish the ordinary world, core character dynamics, desires, the protagonist's Safety Habit, and the initial disturbance.
-- Sequence 2 (Act I, Seq 2) - Inciting Incident & Lock-In: The disruption or opportunity escalates, initial friction with The Challenger emerges, launching the protagonist across the Point of No Return into the main pursuit.
-- Sequence 3 (Act II, Seq 3) - Expansion: Testing the initial approach in new territory; temptation to lean on The Comforter for familiar reassurance.
-- Sequence 4 (Act II, Seq 4) - Midpoint Escalation: A major turning point or high-intensity encounter where the Challenger's way of living proves magnetic or unavoidable, deepening stakes irreversibly.
-- Sequence 5 (Act II, Seq 5) - Mounting Complications: Navigating the immediate fallout; the Comforter's advice or safe refuge reveals its hidden trap or cost.
-- Sequence 6 (Act II, Seq 6) - The Crucible / Peak Complication: The moment of maximum friction or closest call—an honest mirror from The Warning showing what taking the Safety Habit too far will cost.
-- Sequence 7 (Act III, Seq 7) - Climax & Decisive Confrontation: The definitive encounter where the protagonist synthesizes the truth, breaking free from the Safety Habit.
-- Sequence 8 (Act III, Seq 8) - Resolution & Transformed Equilibrium: The aftermath, emotional resonance, and transformed relational baseline.
+## Pillar 4: The 8 Sequences Across the Novel & Craft Elevation (<sequence_craft_elevation_guide>)
+Follow the 8-Sequence Craft Elevation specifications provided in <sequence_craft_elevation_guide> to counter predictable pacing traps at each stage:
+- Sequence 1 (ACT_1, Seq 1) - Status Quo & Inciting Disruption: Give the ordinary world a micro-arc of normalcy with demonstrated equilibrium (two lived-in pillars) and a subtle hairline crack before an oblique disruption intrudes sideways.
+- Sequence 2 (ACT_1, Seq 2) - Predicament, Resistance & Lock-In: Drive active, intelligent resistance that narrows options until an earned, costly lock-in choice crosses the threshold.
+- Sequence 3 (ACT_2A, Seq 3) - First Attempt & Early Friction: Chain scenes with tight "therefore/but" causal momentum, productive ally friction, and competent failure against deeper new-territory rules.
+- Sequence 4 (ACT_2A, Seq 4) - Escalating Tests & Midpoint Shift: Entangle B-story bonds with external stakes, carve out earned contrast before the turn, and pivot on a Midpoint that retroactively recontextualizes earlier details.
+- Sequence 5 (ACT_2B, Seq 5) - Proactive Push & Counter-Pressure: Pit proactive effort against observant, adaptive opposition, yielding pyrrhic victories that accumulate moral or relational debt.
+- Sequence 6 (ACT_2B, Seq 6) - Compounding Fallout & Lowest Point: Anchor rock bottom in tragic irony (the Act 1 flaw coming due) and understated devastation through quiet concrete specifics rather than despair monologues.
+- Sequence 7 (ACT_3, Seq 7) - Regroup, Renewed Resolve & Climax Threshold: Open with reluctant, costly clarity, assemble the rally strictly from earned resources/bonds, and break the plan at the threshold to force improvisation.
+- Sequence 8 (ACT_3, Seq 8) - Climax & Resonant Resolution: Deliver thematic proof through sacrifice or restraint, honor a textured bittersweet aftermath, and close on a quiet structural echo of Sequence 1.
 - **Dialectical Four-Corner Movement (<four_corner_movement>):** In each sequence, explicitly indicate how the active events test the Main Character's Safety Habit through **New Friction** (with The Challenger), **Easy Retreat/Validation** (with The Comforter), or **The Honest Mirror** (via The Warning). Scale this to whichever characters are active in that sequence.
 - **Act 2 Dynamic Counterpoint Mandate:** At least one sequence in Act 2 (Sequences 3, 4, 5, or 6) must include meaningful external friction or an unexpected challenge to the protagonist's starting assumptions—calibrated to the genre (e.g. an unexpected rival, a close call, an escalating complication, or a surprising truth revealed). This counterpoint must add dimensional nuance and challenge their approach without derailing or shutting down the core premise of the novel.
 
@@ -580,6 +594,7 @@ You will receive the following context blocks to inform your architectural desig
 - <character_relationships>: Existing relationship dynamics and tensions.
 - <continuity_ledger>: Hard facts established in the story.
 - <act_descriptions>: The macro Act structure and mandates your sequences must fulfill.
+- <sequence_craft_elevation_guide>: Canonical 8-Sequence Craft Elevation specifications detailing each sequence's parent act function, AI pitfalls to counter, and key craft elevations.
 - <output_format_description>: The required XML schema for your output.`,
 
     sequenceReview: `You are a structural editor specializing in sequence-level architecture and narrative pacing (Frank Daniel 8-Sequence Model). Evaluate the 8-sequence breakdown for dramatic momentum, narrative clarity, and structural coherence.
@@ -593,9 +608,9 @@ You will receive the following context blocks to inform your architectural desig
 - Check: Are there exactly 8 sequences? Are they correctly distributed across Acts (2 in Act 1, 4 in Act 2, 2 in Act 3)?
 - Goal: To verify the fundamental mathematical scaffolding of the meso-structure.
 
-## Criterion 2: Dramatic Question Quality
-- Check: Does each sequence possess a sharp, distinct \`dramatic_question\` (or \`tactical_question\`) representing a clear immediate objective or pursuit? Flag any vague or redundant questions.
-- Goal: To ensure every sequence is driven by actionable tension, not passive observation.
+## Criterion 2: Dramatic Question & Craft Elevation Quality
+- Check: Does each sequence possess a sharp, distinct \`dramatic_question\` (or \`tactical_question\`) representing a clear immediate objective or pursuit, and does it execute the sequence-specific craft elevations in <sequence_craft_elevation_guide> (avoiding rushed Sequence 1 status quo, passive Sequence 2 whining, episodic Sequence 3 drift, speechified Sequence 4 Midpoints, melodramatic Sequence 6 despair, or neat-bow Sequence 8 speeches)? Flag any vague or redundant questions.
+- Goal: To ensure every sequence is driven by actionable tension and high-leverage literary craft, not passive observation or predictable pacing traps.
 
 ## Criterion 3: Formatting & Depth
 - Check: Does every sequence have a substantial description formatted with the required markdown headings (THEMATIC & STRUCTURAL FUNCTION, DRAMATIC ARC & PACING CURVES, THREAD PROGRESSION & CONVERGENCE, CHARACTER & PSYCHOLOGICAL JOURNEY, and ANTICIPATED ISSUES & CRITICAL CONSTRAINTS)?
@@ -625,6 +640,7 @@ You will receive the following context blocks:
 - <character_relationships>: Existing relationship dynamics and tensions.
 - <continuity_ledger>: Hard facts established in the story.
 - <act_descriptions>: The macro Act structure context.
+- <sequence_craft_elevation_guide>: Canonical 8-Sequence Craft Elevation specifications for verifying sequence craft alignment.
 - <output_format_description>: The required XML schema for your evaluation.
 - <generated_sequences>: The sequence structure draft to evaluate.
 

@@ -636,7 +636,16 @@ ${JSON.stringify(structureOverview, null, 2)}
             .map((m) => {
                 const rec = m as unknown as Record<string, unknown>;
                 const displayName = asString(rec.name) || asString(rec.title) || asString(rec.id);
-                return `  <mode id="${asString(rec.id)}" name="${escapeXml(displayName)}">${escapeXml(asString(rec.context))}</mode>`;
+                const categoryAttr = rec.category
+                    ? ` category="${escapeXml(asString(rec.category))}"`
+                    : '';
+                const desc = [
+                    asString(rec.context),
+                    rec.boundaryNote ? `Boundary Note: ${asString(rec.boundaryNote)}` : ''
+                ]
+                    .filter(Boolean)
+                    .join(' ');
+                return `  <mode id="${escapeXml(asString(rec.id))}" name="${escapeXml(displayName)}"${categoryAttr}>${escapeXml(desc)}</mode>`;
             })
             .join('\n')}\n</available_narrative_modes>`;
         const availableModalitiesXml = `<available_modalities>\n${Object.values(

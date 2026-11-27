@@ -168,14 +168,13 @@ describe('Phase 5A: domain templates/stats, image API, export/import, and RAG re
                     { status: 200, headers: { 'Content-Type': 'application/json' } }
                 );
             }
-            if (url.includes('openrouter.ai')) {
+            if (url === 'https://openrouter.ai/api/v1/images') {
                 return new Response(
                     JSON.stringify({
-                        choices: [
+                        data: [
                             {
-                                message: {
-                                    images: [{ image_url: { url: SAMPLE_TINY_PNG_DATA_URL } }]
-                                }
+                                b64_json: SAMPLE_TINY_PNG_DATA_URL.replace('data:image/png;base64,', ''),
+                                media_type: 'image/png'
                             }
                         ]
                     }),
@@ -208,6 +207,169 @@ describe('Phase 5A: domain templates/stats, image API, export/import, and RAG re
             fallbackOpenRouterKey: 'or-key'
         });
         expect(orResult).toBe(SAMPLE_TINY_PNG_DATA_URL);
+    });
+
+    it('uses OpenRouter /api/v1/images with aspect_ratio, mime sniffing, URL blob conversion, 400 retry, and chat fallback', async () => {
+        const tinyPngB64 = SAMPLE_TINY_PNG_DATA_URL.replace('data:image/png;base64,', '');
+        const requests: Array<{ url: string; body: Record<string, unknown> | null }> = [];
+
+        // 1. Dedicated image model (flux-3-image-klein) -> /api/v1/images with b64_json + media_type
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+                const url = String(input);
+                const body = init?.body ? (JSON.parse(String(init.body)) as Record<string, unknown>) : null;
+                requests.push({ url, body });
+                return new Response(
+                    JSON.stringify({ data: [{ b64_json: tinyPngB64, media_type: 'image/png' }] }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            })
+        );
+        const kleinResult = await generateImage('Stormy cliffside lighthouse', '16:9', {
+            provider: 'openrouter',
+            model: 'black-forest-labs/flux-3-image-klein',
+            apiKey: 'or-key'
+        });
+        expect(kleinResult).toBe(SAMPLE_TINY_PNG_DATA_URL);
+        expect(requests[0]).toEqual({
+            url: 'https://openrouter.ai/api/v1/images',
+            body: {
+                model: 'black-forest-labs/flux-3-image-klein',
+                prompt: 'Stormy cliffside lighthouse',
+                response_format: 'b64_json',
+                aspect_ratio: '16:9'
+            }
+        });
+
+        // 2. Sniffs JPEG MIME type when media_type is omitted
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async () =>
+                new Response(JSON.stringify({ data: [{ b64_json: '/9j/AAAA' }] }), {
+                    status: 200,
+                    headers: { 'Content-Type': 'application/json' }
+                })
+            )
+        );
+        const sniffedResult = await generateImage('Sunset ridge', '3:4', {
+            provider: 'openrouter',
+            model: 'black-forest-labs/flux.2-pro',
+            apiKey: 'or-key'
+        });
+        expect(sniffedResult).toBe('data:image/jpeg;base64,/9j/AAAA');
+
+        // 3. Converts signed URL output to data URL via fetch + FileReader
+        const pngBytes = Uint8Array.from(atob(tinyPngB64), (c) => c.charCodeAt(0));
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async (input: RequestInfo | URL) => {
+                const url = String(input);
+                if (url === 'https://openrouter.ai/api/v1/images') {
+                    return new Response(
+                        JSON.stringify({ data: [{ url: 'https://cdn.openrouter.ai/signed/img.png' }] }),
+                        { status: 200, headers: { 'Content-Type': 'application/json' } }
+                    );
+                }
+                if (url === 'https://cdn.openrouter.ai/signed/img.png') {
+                    const res = new Response(pngBytes, {
+                        status: 200,
+                        headers: { 'Content-Type': 'image/png' }
+                    });
+                    res.blob = async () => new Blob([pngBytes], { type: 'image/png' });
+                    return res;
+                }
+                return new Response('Not found', { status: 404 });
+            })
+        );
+        const urlConvertedResult = await generateImage('Glass harbor', '1:1', {
+            provider: 'openrouter',
+            model: 'bytedance-seed/seedream-5-5',
+            apiKey: 'or-key'
+        });
+        expect(urlConvertedResult).toMatch(/^data:image\/png;base64,/);
+
+        // 4. Retries without aspect_ratio when /api/v1/images returns 400 mentioning aspect_ratio
+        const retryPayloads: Array<Record<string, unknown>> = [];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+                const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+                retryPayloads.push(body);
+                if (retryPayloads.length === 1) {
+                    return new Response(
+                        JSON.stringify({ error: { message: 'Unsupported aspect_ratio for model' } }),
+                        { status: 400, headers: { 'Content-Type': 'application/json' } }
+                    );
+                }
+                return new Response(
+                    JSON.stringify({ data: [{ b64_json: tinyPngB64, media_type: 'image/png' }] }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            })
+        );
+        const retryResult = await generateImage('Panoramic valley', '16:9', {
+            provider: 'openrouter',
+            model: 'tencent/hy-world-2.1-panorama',
+            apiKey: 'or-key'
+        });
+        expect(retryResult).toBe(SAMPLE_TINY_PNG_DATA_URL);
+        expect(retryPayloads).toHaveLength(2);
+        expect(retryPayloads[0].aspect_ratio).toBe('16:9');
+        expect('aspect_ratio' in retryPayloads[1]).toBe(false);
+
+        // 5. Falls back to /chat/completions when /api/v1/images returns 404 mentioning chat/completions
+        const fallbackUrls: string[] = [];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async (input: RequestInfo | URL) => {
+                const url = String(input);
+                fallbackUrls.push(url);
+                if (url === 'https://openrouter.ai/api/v1/images') {
+                    return new Response(
+                        JSON.stringify({ error: { message: 'Use the chat/completions endpoint instead.' } }),
+                        { status: 404, headers: { 'Content-Type': 'application/json' } }
+                    );
+                }
+                return new Response(
+                    JSON.stringify({
+                        choices: [{ message: { images: [{ image_url: { url: SAMPLE_TINY_PNG_DATA_URL } }] } }]
+                    }),
+                    { status: 200, headers: { 'Content-Type': 'application/json' } }
+                );
+            })
+        );
+        const fallbackResult = await generateImage('Clockwork library', '3:4', {
+            provider: 'openrouter',
+            model: 'custom/chat-only-image-model',
+            apiKey: 'or-key'
+        });
+        expect(fallbackResult).toBe(SAMPLE_TINY_PNG_DATA_URL);
+        expect(fallbackUrls).toEqual([
+            'https://openrouter.ai/api/v1/images',
+            'https://openrouter.ai/api/v1/chat/completions'
+        ]);
+
+        // 6. Does NOT retry /chat/completions on unrelated 404 (e.g. invalid model slug)
+        const unrelatedUrls: string[] = [];
+        vi.stubGlobal(
+            'fetch',
+            vi.fn(async (input: RequestInfo | URL) => {
+                unrelatedUrls.push(String(input));
+                return new Response(JSON.stringify({ error: { message: 'No endpoints found for model' } }), {
+                    status: 404,
+                    headers: { 'Content-Type': 'application/json' }
+                });
+            })
+        );
+        await expect(
+            generateImage('Missing model', '1:1', {
+                provider: 'openrouter',
+                model: 'nonexistent/model',
+                apiKey: 'or-key'
+            })
+        ).rejects.toThrow('OpenRouter Image API failed: 404');
+        expect(unrelatedUrls).toEqual(['https://openrouter.ai/api/v1/images']);
     });
 
     it('builds Audio Drama TXT scripts with dramatis personae and fallback prose scan', () => {

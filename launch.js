@@ -16,6 +16,27 @@ const fs = require('fs');
 const path = require('path');
 const { spawn, spawnSync } = require('child_process');
 
+(function ensureModernNode() {
+    if (process.env.ELLIPSISPROSE_REEXEC_NODE === '1') return;
+    const [maj, min] = String(process.versions.node || '0.0').split('.').map(Number);
+    if (maj > 20 || (maj === 20 && min >= 19)) return;
+    const hermesNode =
+        process.platform === 'win32' && process.env.LOCALAPPDATA
+            ? path.join(process.env.LOCALAPPDATA, 'hermes', 'node', 'node.exe')
+            : '';
+    if (!hermesNode || !fs.existsSync(hermesNode)) return;
+    const nodeDir = path.dirname(hermesNode);
+    const env = { ...process.env, ELLIPSISPROSE_REEXEC_NODE: '1' };
+    const pathKey = Object.keys(env).find((k) => k.toLowerCase() === 'path') || 'Path';
+    env[pathKey] = [nodeDir, env[pathKey]].filter(Boolean).join(path.delimiter);
+    const res = spawnSync(hermesNode, [__filename, ...process.argv.slice(2)], {
+        cwd: __dirname,
+        stdio: 'inherit',
+        env
+    });
+    process.exit(res.status ?? 1);
+})();
+
 const ROOT_DIR = __dirname;
 const PORTS = require('./src/config/ports.json');
 

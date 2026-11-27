@@ -22,7 +22,7 @@ import {
     type ComfyStatusInfo,
     type ComfyOptionsCatalog
 } from '@/services/images';
-import type { GeminiImageModelInfo } from '@/services/llm';
+import type { GeminiImageModelInfo, OpenRouterImageModelInfo } from '@/services/llm';
 import { ImageStore } from '@/services/storage';
 import type { CastMember, SceneBlueprint } from '@/types';
 import { safeLocalStorageSet } from '@/utils';
@@ -67,6 +67,8 @@ export interface UseStoryImagesResult {
     setImageModel: Dispatch<SetStateAction<string>>;
     geminiImageModelsList: GeminiImageModelInfo[];
     setGeminiImageModelsList: Dispatch<SetStateAction<GeminiImageModelInfo[]>>;
+    openRouterImageModelsList: OpenRouterImageModelInfo[];
+    setOpenRouterImageModelsList: Dispatch<SetStateAction<OpenRouterImageModelInfo[]>>;
     isFetchingImageModels: boolean;
     setIsFetchingImageModels: Dispatch<SetStateAction<boolean>>;
     imageApiKey: string;
@@ -184,6 +186,16 @@ export function useStoryImages({
         try {
             const cached = sessionStorage.getItem(STORAGE_KEYS.geminiImageModelsCache);
             return cached ? (JSON.parse(cached) as GeminiImageModelInfo[]) : [];
+        } catch {
+            return [];
+        }
+    });
+    const [openRouterImageModelsList, setOpenRouterImageModelsList] = useState<
+        OpenRouterImageModelInfo[]
+    >(() => {
+        try {
+            const cached = sessionStorage.getItem(STORAGE_KEYS.openRouterImageModelsCache);
+            return cached ? (JSON.parse(cached) as OpenRouterImageModelInfo[]) : [];
         } catch {
             return [];
         }
@@ -1114,6 +1126,8 @@ BEGIN GENERATING IMAGE PROMPT`;
         setImageModel,
         geminiImageModelsList,
         setGeminiImageModelsList,
+        openRouterImageModelsList,
+        setOpenRouterImageModelsList,
         isFetchingImageModels,
         setIsFetchingImageModels,
         imageApiKey,

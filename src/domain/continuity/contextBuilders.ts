@@ -4,6 +4,7 @@
  * and Archivist blueprint context formatters.
  */
 
+import { formatSequenceCraftGuideXml } from '@/config';
 import type { CastMember, Story } from '@/types';
 import {
     STOPWORDS,
@@ -120,7 +121,9 @@ ${acts
     })
     .join('\n\n')}
 </act_descriptions>
-${getAuthorNoteXml(sanitizedStory)}`;
+${getAuthorNoteXml(sanitizedStory)}
+
+${formatSequenceCraftGuideXml()}`;
 }
 
 /** Extracts the trailing `wordLimit` words of a prose string or entry object. */
@@ -315,6 +318,69 @@ ${ledgerText || 'No active continuity ledger items yet.'}
     return `<sequence_boundary_and_continuity_context>\n${prevSeqBlock}\n\n${nextSeqBlock}\n\n${activeContinuityBlock}\n</sequence_boundary_and_continuity_context>`;
 }
 
+/**
+ * Detects pre-catalyst scenes inside Sequence 1 so opening scenes stay 100% immersed in their
+ * everyday micro-arc without leaking later Inciting Incident plot beats via lookahead context.
+ */
+export function isPreCatalystSequenceOneScene({
+    storyToUse = {},
+    seq = 0,
+    s = 0,
+    effectiveScenes,
+    effectiveSeqData
+}: {
+    storyToUse?: Partial<Story> & Record<string, unknown>;
+    seq?: number;
+    s?: number;
+    effectiveScenes?: Array<Record<string, unknown>>;
+    effectiveSeqData?: Record<string, unknown> | null;
+} = {}): boolean {
+    const scenes =
+        Array.isArray(effectiveScenes) && effectiveScenes.length > 0
+            ? effectiveScenes
+            : getSequenceScenesList(storyToUse, seq);
+    const seqObj =
+        effectiveSeqData ||
+        ((storyToUse.sequences || [])[seq] as Record<string, unknown> | undefined) || {
+            number: seq + 1
+        };
+    const seqNum = Number(seqObj.number || seq + 1);
+    if (seqNum !== 1 || scenes.length <= 1) return false;
+
+    const catalystReference = `${String(storyToUse.inciting_incident || '')} ${String(seqObj.sequence_climax || '')}`
+        .toLowerCase()
+        .trim();
+    const refTokens = new Set(
+        catalystReference
+            .split(/[^a-z0-9]+/)
+            .filter((t) => t.length >= 4 && !STOPWORDS.has(t))
+    );
+
+    let catalystIdx = -1;
+    for (let idx = 0; idx < scenes.length; idx++) {
+        const sc = scenes[idx] || {};
+        const scText = `${String(sc.title || '')} ${String(sc.goal || sc.objective || '')} ${String(sc.scene_events || '')} ${String(sc.the_hinge_moment || '')}`.toLowerCase();
+        if (/\b(?:inciting incident|inciting disruption|catalyst|point of no return)\b/i.test(scText)) {
+            catalystIdx = idx;
+            break;
+        }
+        if (refTokens.size >= 3) {
+            let hits = 0;
+            for (const tok of refTokens) {
+                if (tokenMatch(scText, tok)) hits++;
+            }
+            if (hits >= Math.min(3, Math.ceil(refTokens.size * 0.4))) {
+                catalystIdx = idx;
+                break;
+            }
+        }
+    }
+
+    if (catalystIdx === 0) return false;
+    if (catalystIdx < 0) catalystIdx = scenes.length - 1;
+    return s < catalystIdx;
+}
+
 /** Builds anti-preemption and terminal handoff guard metadata for the Writing and Auditing Agents. */
 export function buildUpcomingBoundaryGuardInfo({
     storyToUse = {},
@@ -356,6 +422,16 @@ export function buildUpcomingBoundaryGuardInfo({
             scene.exit_hook ||
             scene.exit_conditions ||
             `Lead directly into Scene ${nextNum} ("${nextSceneInSeq.title || 'Next Scene'}").`;
+        const gateSeq1 = isPreCatalystSequenceOneScene({
+            storyToUse,
+            seq,
+            s,
+            effectiveScenes,
+            effectiveSeqData
+        });
+        const upcomingEventsLine = gateSeq1
+            ? `- Sequence 1 Context Gate: [Future scene plot turns are intentionally masked for this early Sequence 1 scene so attention gravity does not rush the opening status quo. Focus 100% on dramatizing THIS scene's own everyday micro-arc, demonstrated equilibrium, and exit hook without foreshadowing or staging later disruptions.]`
+            : `- Reserved Upcoming Events / Premise: ${nextEvents}`;
         const xmlBlock = `<upcoming_boundary_and_handoff_guard>
 [NEXT SCENE WITHIN SEQUENCE ${seqNum} — ANTI-PREEMPTION & HANDOFF TARGET]:
 - Upcoming Scene: ${nextNum} ("${nextSceneInSeq.title || 'Next Scene'}")
@@ -363,13 +439,16 @@ export function buildUpcomingBoundaryGuardInfo({
 - Upcoming POV / Cast: POV ${nextSceneInSeq.pov_character || 'Unspecified'} | Present: ${nextChars}
 - Upcoming Transition Jump: ${nextSceneInSeq.transition_jump || 'Direct continuation'}
 - Upcoming Entrance Conditions: ${nextSceneInSeq.entrance_conditions || 'Standard entrance'}
-- Reserved Upcoming Events / Premise: ${nextEvents}
+${upcomingEventsLine}
 
 MANDATORY PROSE BOUNDARY RULES:
 1. ANTI-PREEMPTION: Do NOT dramatize, resolve, or prematurely trigger events, discoveries, or character introductions reserved for Upcoming Scene ${nextNum}.
 2. TERMINAL HANDOFF ALIGNMENT: Conclude this scene on its planned exit hook (${exitTarget}) so the characters end in a location and situational state compatible with Scene ${nextNum}.
 </upcoming_boundary_and_handoff_guard>`;
-        const auditSummary = `Next Scene ${nextNum} ("${nextSceneInSeq.title || 'Next Scene'}"): Setting="${nextSceneInSeq.setting || ''}", Cast="${nextChars}", Entrance="${nextSceneInSeq.entrance_conditions || ''}", Reserved Events="${String(nextEvents).slice(0, 250)}". Required Exit Hook: "${exitTarget}".`;
+        const auditEventsText = gateSeq1
+            ? '[Masked for Sequence 1 status-quo context gate]'
+            : String(nextEvents).slice(0, 250);
+        const auditSummary = `Next Scene ${nextNum} ("${nextSceneInSeq.title || 'Next Scene'}"): Setting="${nextSceneInSeq.setting || ''}", Cast="${nextChars}", Entrance="${nextSceneInSeq.entrance_conditions || ''}", Reserved Events="${auditEventsText}". Required Exit Hook: "${exitTarget}".`;
         return { xmlBlock, auditSummary, isSequenceBoundary: false };
     }
 
