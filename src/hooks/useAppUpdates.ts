@@ -214,9 +214,12 @@ export function useAppUpdates({
                     const attachWorker = (worker: ServiceWorker | null) => {
                         if (!worker) return;
                         const onStateChange = () => {
+                            // Wait for the takeover to finish. A check made while the worker is only
+                            // "installed" sends a request through the old worker at the moment the
+                            // new one tries to replace it, and Chrome then leaves the new one waiting.
                             if (
                                 !cancelled &&
-                                worker.state === 'installed' &&
+                                worker.state === 'activated' &&
                                 navigator.serviceWorker.controller
                             ) {
                                 void runWebCheck(false);

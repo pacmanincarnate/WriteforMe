@@ -7,6 +7,7 @@ import './styles/reader.css';
 import './styles/components.css';
 import { STORAGE_KEYS } from '@/config';
 import { installDefaultAudioStageLoggers } from '@/services/audio';
+import { ensureWaitingWorkerActivates } from '@/services/updates/swTakeover';
 import './windowApi';
 
 installDefaultAudioStageLoggers();
@@ -47,6 +48,8 @@ if (window.location.protocol === 'http:' || window.location.protocol === 'https:
                 .register('./sw.js', { updateViaCache: 'none' })
                 .then((reg) => {
                     console.log('[PWA] Service Worker registered successfully with scope:', reg.scope);
+                    // The worker always means to take over at once; make sure it is never left waiting.
+                    ensureWaitingWorkerActivates(reg);
                 })
                 .catch((err) => {
                     console.warn('[PWA] Service Worker registration failed:', err);
