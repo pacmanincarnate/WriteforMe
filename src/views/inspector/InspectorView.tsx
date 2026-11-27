@@ -1,9 +1,10 @@
 /**
  * @module views/inspector/InspectorView
- * Story Memory Search (RAG Inspector) view displaying query testing, active World Primer, and match scores.
+ * Memory Search (RAG Inspector) view displaying query testing, active World Primer, and match scores.
  */
 
 import { Book, EditorialSubNav, Loader2, Search, type EditorialSubNavProps } from '@/components';
+import { VIEW_LABELS } from '@/config';
 
 export interface RagTestResultItem {
     score: number;
@@ -54,7 +55,7 @@ export function InspectorView({
                 selectedScene={selectedScene}
             />
             <h2 className="text-2xl sm:text-3xl font-serif font-bold text-ink-900 mb-6 flex items-center gap-2.5">
-                <Search className="text-gold-ink" /> Story Memory Search{' '}
+                <Search className="text-gold-ink" /> {VIEW_LABELS.inspector}{' '}
                 {isInspectorMode ? '(RAG Inspector)' : ''}
             </h2>
 

@@ -5,7 +5,7 @@
  */
 
 import React from 'react';
-import { STORAGE_KEYS } from '@/config';
+import { STORAGE_KEYS, VIEW_LABELS } from '@/config';
 import {
     Activity,
     EditorialSubNav,
@@ -257,13 +257,9 @@ export function RelationshipsView({
             <div className="bg-surface p-6 sm:p-7 rounded-2xl border border-edge shadow-sm flex flex-col sm:flex-row justify-between sm:items-center gap-4">
                 <div>
                     <h2 className="text-2xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
-                        <Heart className="text-rose-500 fill-rose-500/20" size={22} /> Character
-                        Relationships &amp; Dynamics
+                        <Heart className="text-rose-500 fill-rose-500/20" size={22} />{' '}
+                        {VIEW_LABELS.relationships}
                     </h2>
-                    <p className="text-xs text-ink-500 mt-1">
-                        Track and manage how characters feel about one another. Directional arcs
-                        (A ➔ B vs B ➔ A) evolve over scene completions.
-                    </p>
                 </div>
                 {story.cast && story.cast.length >= 2 && (
                     <button

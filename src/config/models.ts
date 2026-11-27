@@ -332,7 +332,7 @@ export const VIEW_LABELS: Record<string, string> = {
     writer: 'Prose Studio',
     directive: 'Request Change',
     editorial: 'Developmental Polish',
-    inspector: 'Story Memory Search',
+    inspector: 'Memory Search',
     pipeline: 'Live Progress',
     logs: "Author's Log",
     settings: 'Settings',

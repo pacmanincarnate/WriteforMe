@@ -18,6 +18,7 @@ import {
     type LoreSceneOption,
     type StudioFormField
 } from '@/components';
+import { VIEW_LABELS } from '@/config';
 
 export interface LoreItemRecord extends LoreEntryItem {
     id?: string;
@@ -194,7 +195,7 @@ export function LoreView({
             >
                 <div>
                     <h2 className="text-2xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
-                        <Globe className="text-gold-ink" size={22} /> World Lore &amp; Story Archive
+                        <Globe className="text-gold-ink" size={22} /> {VIEW_LABELS.lore}
                         {ragStatus === 'indexing' && (
                             <span className="text-xs font-mono bg-gold-tint border border-gold-edge text-gold-ink px-2.5 py-0.5 rounded-full animate-pulse">
                                 Indexing...

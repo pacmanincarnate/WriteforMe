@@ -16,6 +16,7 @@ import {
     Zap,
     type EditorialSubNavProps
 } from '@/components';
+import { VIEW_LABELS } from '@/config';
 import { clearDirectivePlanResults, computeDirectiveStoryStats } from '@/domain/story';
 import { DirectiveActionCard } from './DirectiveActionCard';
 import type { DirectiveViewProps } from './types';
@@ -128,9 +129,6 @@ export function DirectiveView({
                 <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
                     <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-xs font-mono uppercase px-2.5 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-bold">
-                                Editorial Desk • Multi-Scale Architect
-                            </span>
                             {story.title && (
                                 <span className="text-xs font-serif italic text-ink-500">
                                     {story.title}
@@ -138,7 +136,7 @@ export function DirectiveView({
                             )}
                         </div>
                         <h2 className="text-2xl sm:text-3xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
-                            <Wand2 className="text-gold-ink" size={24} /> Request Change
+                            <Wand2 className="text-gold-ink" size={24} /> {VIEW_LABELS.directive}
                         </h2>
                         <p className="text-xs text-ink-500 max-w-3xl leading-relaxed">
                             Ask for any change across drafted prose, scene blueprints, cast arcs, or

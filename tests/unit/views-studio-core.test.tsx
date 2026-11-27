@@ -135,7 +135,7 @@ describe('Phase 5D: Extracted core Studio views', () => {
             />
         );
 
-        expect(container.textContent).toContain('Story Memory Search (RAG Inspector)');
+        expect(container.textContent).toContain('Memory Search (RAG Inspector)');
         expect(container.textContent).toContain('Active World Primer');
         expect(container.textContent).toContain('Score: 91.2%');
         expect(container.textContent).toContain('Topic: Harbor Wards');

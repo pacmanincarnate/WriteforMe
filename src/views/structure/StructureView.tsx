@@ -5,6 +5,7 @@
  */
 
 import type React from 'react';
+import { VIEW_LABELS } from '@/config';
 import {
     ArrowLeft,
     BookOpen,
@@ -250,7 +251,7 @@ export function StructureView({
                 <div className="bg-surface p-6 sm:p-7 rounded-2xl border border-edge shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
                         <h2 className="text-2xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
-                            <Layers className="text-gold-ink" size={22} /> Acts and Sequences
+                            <Layers className="text-gold-ink" size={22} /> {VIEW_LABELS.structure}
                         </h2>
                     </div>
                     <div className="flex flex-wrap items-center gap-2.5">

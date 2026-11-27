@@ -24,6 +24,7 @@ import {
     Zap,
     type EditorialSubNavProps
 } from '@/components';
+import { VIEW_LABELS } from '@/config';
 import {
     compileAestheticConstitution,
     compileNarrativeStateGraph,
@@ -243,9 +244,6 @@ export function EditorialView({
                 <div className="flex flex-col lg:flex-row justify-between lg:items-center gap-4">
                     <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono uppercase px-2.5 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-bold">
-                                {isInspectorMode ? 'Tier 6.0 • Literary CI/CD' : 'Editorial Suite'}
-                            </span>
                             {harness.lastRunAt && (
                                 <span className="text-xs font-mono text-ink-400">
                                     Last run: {new Date(harness.lastRunAt).toLocaleTimeString()}
@@ -253,14 +251,8 @@ export function EditorialView({
                             )}
                         </div>
                         <h2 className="text-2xl sm:text-3xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
-                            <Scale className="text-gold-ink" size={24} /> Developmental Novel Review
-                            &amp; Manuscript Polish
+                            <Scale className="text-gold-ink" size={24} /> {VIEW_LABELS.editorial}
                         </h2>
-                        <p className="text-xs text-ink-500 max-w-3xl leading-relaxed">
-                            Holistic manuscript analysis and developmental review: detects rhythm
-                            fatigue, voice drift, and narrative inconsistencies, then refines prose
-                            with surgical precision.
-                        </p>
                     </div>
 
                     {/* Primary 1-Click Action Buttons */}
