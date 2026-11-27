@@ -62,6 +62,7 @@ import {
     generateScenes as orchestrateGenerateScenes,
     handleRunManualSlopClean as orchestrateHandleRunManualSlopClean,
     rewritePassage as orchestrateRewritePassage,
+    buildWorldFromPitch as orchestrateBuildWorldFromPitch,
     handleCascadeSceneToProse as orchestrateHandleCascadeSceneToProse,
     runAudioDramaVoiceDirectorPass as orchestrateRunAudioDramaVoiceDirectorPass,
     writeSceneProse as orchestrateWriteSceneProse,
@@ -1253,6 +1254,8 @@ import {
 
             const handleRewritePassage = (request: CtxArgs<typeof orchestrateRewritePassage>[0]) => orchestrateRewritePassage(getPipelineCtx(), request);
 
+            const handleBuildWorld = (request: CtxArgs<typeof orchestrateBuildWorldFromPitch>[0]) => orchestrateBuildWorldFromPitch(getPipelineCtx(), request);
+
             const executeDirectivePlan = (planActions: CtxArgs<typeof orchestrateExecuteDirectivePlan>[0]) => orchestrateExecuteDirectivePlan(getPipelineCtx(), planActions);
 
             // ============================================================================
@@ -2113,6 +2116,7 @@ import {
                                     rebuildRagIndex={rebuildRagIndex}
                                     handlePostGenLoreImport={handlePostGenLoreImport}
                                     handleLorebookImport={handleLorebookImport}
+                                    buildWorld={handleBuildWorld}
                                     ingestLore={ingestLore}
                                     handleDeleteLore={handleDeleteLore}
                                     openEditModal={openEditModal}

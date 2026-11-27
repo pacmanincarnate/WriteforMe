@@ -4,3 +4,4 @@ export * from './vectorMath';
 export * from './graphManager';
 export * from './importedFiles';
 export * from './loreBrowsing';
+export * from './worldBuilder';
