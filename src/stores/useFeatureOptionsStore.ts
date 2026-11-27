@@ -12,10 +12,13 @@ import { readStorageJson, writeStorageValue } from './storageHelpers';
 export interface FeatureOptions {
     /** After a scene is written, one extra call reads it for unrevealed secrets told in other words. */
     secretLeakCheck: boolean;
+    /** When a new scene names someone the record holds dead, have those paragraphs checked and put right. */
+    deadCharacterCheck: boolean;
 }
 
 export const DEFAULT_FEATURE_OPTIONS: FeatureOptions = {
-    secretLeakCheck: true
+    secretLeakCheck: true,
+    deadCharacterCheck: true
 };
 
 export function normalizeFeatureOptions(raw: unknown): FeatureOptions {

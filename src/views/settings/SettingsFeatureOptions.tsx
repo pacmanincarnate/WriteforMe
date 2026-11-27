@@ -14,6 +14,11 @@ const TOGGLES: Array<{ key: BooleanOption; title: string; help: string }> = [
         key: 'secretLeakCheck',
         title: 'Secret Leak Check',
         help: 'After a scene is written, one extra call reads it for a secret told before its planned reveal, and rewrites only the passages that give it away. Runs only while the story has unrevealed secrets. Adds a call per scene.'
+    },
+    {
+        key: 'deadCharacterCheck',
+        title: 'Dead Character Check',
+        help: 'After a scene is written, it is read in code for the name of anyone the story holds dead. Only if one is named, and the scene\u2019s plan did not ask for them, one extra call checks the paragraphs that name them and rewrites any sentence that has them alive. A scene that names no one dead costs nothing.'
     }
 ];
 

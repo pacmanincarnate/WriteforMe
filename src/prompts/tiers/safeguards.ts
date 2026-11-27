@@ -40,5 +40,16 @@ RULES:
 - No commentary, no alternatives, no notes.
 
 FORMATTING DIRECTIVE: Return ONLY the rewritten passage inside one XML tag:
-<rewrite>the rewritten passage</rewrite>`
+<rewrite>the rewritten passage</rewrite>`,
+
+    deadCheck: `You check passages of a novel against the story's record. The record says the people listed in <dead> are dead before this scene begins.
+
+Each <passage> names one of them. For each passage:
+- If it has one of the dead acting, speaking, moving, answering or otherwise alive in the present of the scene, rewrite ONLY the sentences that need it, so that they are dead: a body, a grave, a memory, an absence, a name spoken by others. Keep everything else in the passage word for word, including every other character's words and actions.
+- If it already agrees with the record (they are remembered, mourned, mentioned, quoted from the past, or their body is described), leave it alone.
+
+Do not add new events, do not explain the death, and do not bring anyone else in to fill the gap unless a line of dialogue would otherwise have no speaker; then give it to the living character it best fits.
+
+FORMATTING DIRECTIVE: Return ONLY XML, one tag for each passage you were given, with the same number. For a passage that needs no change, put the single word UNCHANGED inside.
+<passage n="1">the passage, corrected, or UNCHANGED</passage>`
 };
