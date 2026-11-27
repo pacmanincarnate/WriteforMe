@@ -8,12 +8,14 @@ import {
     DEFAULT_AUDIO_DRAMA_SETTINGS,
     DEFAULT_BANNED_PHRASES,
     DEFAULT_GEMINI_IMAGE_MODELS,
+    DEFAULT_IMAGE_STYLES,
     DEFAULT_LLM_MODELS,
     DEFAULT_READER_SETTINGS,
     DEFAULT_SAVED_MODELS,
     DEFAULT_SERVICE_URLS,
     ELEVENLABS_VOICES,
     GEMINI_PREBUILT_VOICES,
+    IMAGE_STYLE_CATEGORIES,
     KOKORO_VOICES,
     KOKORO_VOICE_GROUPS,
     LOCAL_PORTS,
@@ -29,6 +31,7 @@ import {
     STRUCTURAL_MODALITIES,
     TTS_PIPELINE_TIERS,
     VIEW_LABELS,
+    appendImageStylePrompt,
     formatActFunctionGuideXml,
     formatActiveActAndSequenceXml,
     formatModalityHand,
@@ -273,5 +276,37 @@ describe('Config Banks & Audio Settings Migration', () => {
         expect(layeredXml).toContain('Scene 2 of 5');
         expect(formatActFunctionGuideXml()).toContain('<act_function_craft_guide>');
         expect(formatSequenceCraftGuideXml()).toContain('<sequence_craft_elevation_guide>');
+    });
+
+    it('provides the 14 curated image style presets across 4 categories and joins prompts cleanly', () => {
+        expect(IMAGE_STYLE_CATEGORIES).toEqual([
+            'Painting & Fine Art',
+            'Illustration & Printmaking',
+            'Animation & Retro-Digital',
+            'Photography & Cinema'
+        ]);
+        expect(DEFAULT_IMAGE_STYLES[0]).toEqual({
+            id: 'none',
+            name: 'None (No added style)',
+            description: ''
+        });
+        const curated = DEFAULT_IMAGE_STYLES.slice(1);
+        expect(curated).toHaveLength(14);
+        expect(new Set(DEFAULT_IMAGE_STYLES.map((s) => s.id)).size).toBe(DEFAULT_IMAGE_STYLES.length);
+        for (const style of curated) {
+            expect(IMAGE_STYLE_CATEGORIES).toContain(style.category);
+            expect(style.description.trim().length).toBeGreaterThan(200);
+        }
+
+        expect(appendImageStylePrompt('A lone knight in the rain.', 'Executed as an oil painting.')).toBe(
+            'A lone knight in the rain. Executed as an oil painting.'
+        );
+        expect(appendImageStylePrompt('A lone knight in the rain', 'Executed as an oil painting.')).toBe(
+            'A lone knight in the rain. Executed as an oil painting.'
+        );
+        expect(appendImageStylePrompt('A lone knight in the rain', 'high contrast, neon colors')).toBe(
+            'A lone knight in the rain, high contrast, neon colors'
+        );
+        expect(appendImageStylePrompt('A lone knight in the rain.', '')).toBe('A lone knight in the rain.');
     });
 });

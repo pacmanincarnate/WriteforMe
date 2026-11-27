@@ -13,6 +13,7 @@ import {
     DEFAULT_IMAGE_STYLES,
     DEFAULT_SERVICE_URLS,
     STORAGE_KEYS,
+    appendImageStylePrompt,
     type ImageStylePreset
 } from '@/config';
 import { formatSceneSummary, getSceneActiveCast, type ActiveCastMember } from '@/domain/story';
@@ -556,9 +557,7 @@ BEGIN GENERATING IMAGE PROMPT`;
             const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
             const styleObj = combinedStyles.find((s) => s.id === selectedStyleId);
             const styleDescription = styleObj ? styleObj.description : '';
-            const finalPrompt =
-                cleanImagePrompt(promptBase) +
-                (styleDescription ? `, ${styleDescription}` : '');
+            const finalPrompt = appendImageStylePrompt(cleanImagePrompt(promptBase), styleDescription);
 
             const dataUrl = await callImageAPI(finalPrompt, '3:4');
             await imageStore.saveImage(`cover_${String(story.id)}`, dataUrl);
@@ -662,9 +661,10 @@ Create a waist-up, three-quarter view portrait prompt with an expression that fi
                     const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
                     const styleObj = combinedStyles.find((s) => s.id === selectedStyleId);
                     const styleDescription = styleObj ? styleObj.description : '';
-                    const finalPrompt =
-                        cleanImagePrompt(promptBase) +
-                        (styleDescription ? `, ${styleDescription}` : '');
+                    const finalPrompt = appendImageStylePrompt(
+                        cleanImagePrompt(promptBase),
+                        styleDescription
+                    );
                     return callImageAPI(finalPrompt, '3:4');
                 },
                 `Portrait generated for ${c?.name || 'character'}.`,
@@ -851,9 +851,10 @@ BEGIN GENERATING IMAGE PROMPT`;
                 const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
                 const styleObj = combinedStyles.find((st) => st.id === selectedStyleId);
                 const styleDescription = styleObj ? styleObj.description : '';
-                const finalPrompt =
-                    cleanImagePrompt(promptBase) +
-                    (styleDescription ? `, ${styleDescription}` : '');
+                const finalPrompt = appendImageStylePrompt(
+                    cleanImagePrompt(promptBase),
+                    styleDescription
+                );
 
                 const dataUrl = await callImageAPI(finalPrompt, '1:1');
                 await imageStore.saveImage(`beat_${String(story?.id)}_${sId}_${b}`, dataUrl);
@@ -1043,9 +1044,10 @@ BEGIN GENERATING IMAGE PROMPT`;
                 const combinedStyles = [...DEFAULT_IMAGE_STYLES, ...customImageStyles];
                 const styleObj = combinedStyles.find((st) => st.id === selectedStyleId);
                 const styleDescription = styleObj ? styleObj.description : '';
-                const finalPrompt =
-                    cleanImagePrompt(promptBase) +
-                    (styleDescription ? `, ${styleDescription}` : '');
+                const finalPrompt = appendImageStylePrompt(
+                    cleanImagePrompt(promptBase),
+                    styleDescription
+                );
 
                 const dataUrl = await callImageAPI(finalPrompt, '16:9');
                 await imageStore.saveImage(`scene_${storyId}_${sId}`, dataUrl);
