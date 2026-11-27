@@ -32,6 +32,7 @@
     "start": "node server.js",
     "serve": "node server.js",
     "launch": "node launch.js",
+    "stop": "node stop.js",
     "audio-bridge": "node audio-studio-bridge.js",
     "codex-bridge": "node codex-bridge.js",
     "claude-bridge": "node claude-bridge.js",
