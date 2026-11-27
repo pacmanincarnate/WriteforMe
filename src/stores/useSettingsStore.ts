@@ -6,8 +6,6 @@
 
 import { create } from 'zustand';
 import {
-    API_TIMEOUT_BOUNDS,
-    DEFAULT_API_TIMEOUT_SEC,
     DEFAULT_AUDIO_DRAMA_SETTINGS,
     DEFAULT_BANNED_PHRASES,
     DEFAULT_COMFY_CONFIG,
@@ -22,6 +20,7 @@ import {
     STORAGE_KEYS,
     TTS_PIPELINE_TIERS,
     migrateAudioDramaSettings,
+    resolveStoredApiTimeout,
     type AudioDramaSettings,
     type ReaderSettings
 } from '@/config';
@@ -46,6 +45,7 @@ import {
     readStorageBool,
     readStorageInt,
     readStorageJson,
+    readStorageNullableString,
     readStorageNumber,
     readStorageString,
     writeStorageValue
@@ -219,6 +219,19 @@ export function readInitialSettingsState(): SettingsState {
         ? migrateAudioDramaSettings(savedAudioDrama)
         : { ...DEFAULT_AUDIO_DRAMA_SETTINGS };
 
+    const rawApiTimeout = readStorageNullableString(STORAGE_KEYS.apiTimeout);
+    const migratedApiTimeoutFlag = readStorageNullableString(STORAGE_KEYS.apiTimeoutMigratedV2);
+    const { value: resolvedApiTimeout, didMigrate: didMigrateApiTimeout } = resolveStoredApiTimeout(
+        rawApiTimeout,
+        migratedApiTimeoutFlag
+    );
+    if (didMigrateApiTimeout) {
+        writeStorageValue(STORAGE_KEYS.apiTimeout, resolvedApiTimeout);
+    }
+    if (didMigrateApiTimeout || (rawApiTimeout !== null && migratedApiTimeoutFlag !== 'true')) {
+        writeStorageValue(STORAGE_KEYS.apiTimeoutMigratedV2, 'true');
+    }
+
     return {
         theme: readStorageString(STORAGE_KEYS.theme, 'light'),
         enableReview: readStorageBool(STORAGE_KEYS.enableReview, true),
@@ -230,12 +243,7 @@ export function readInitialSettingsState(): SettingsState {
         apiProvider,
         embeddingProvider,
         apiKey: readStorageString(STORAGE_KEYS.geminiApiKey, ''),
-        apiTimeout: readStorageInt(
-            STORAGE_KEYS.apiTimeout,
-            DEFAULT_API_TIMEOUT_SEC,
-            API_TIMEOUT_BOUNDS.min,
-            API_TIMEOUT_BOUNDS.max
-        ),
+        apiTimeout: resolvedApiTimeout,
         geminiModel,
         openRouterKey: readStorageString(STORAGE_KEYS.openRouterKey, ''),
         openRouterModel: readStorageString(
@@ -401,6 +409,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
             } else {
                 writeStorageValue(storageKey, String(value));
             }
+        }
+        if (key === 'apiTimeout' || storageKey === STORAGE_KEYS.apiTimeout) {
+            writeStorageValue(STORAGE_KEYS.apiTimeoutMigratedV2, 'true');
         }
     },
 

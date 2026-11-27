@@ -317,7 +317,7 @@ describe('Phase 5B: role config, catalogs, dispatchAI, directive helpers, world 
         expect(logs[0]?.status).toBe('error');
         expect(showToast).toHaveBeenCalledWith(expect.stringMatching(/401|Authorization Failed/i), 'error');
 
-        // 3. AbortError timeout retries once and fails on second timeout
+        // 3. AbortError timeout retries once with escalated timeout and fails on second timeout
         let abortCount = 0;
         vi.stubGlobal(
             'fetch',
@@ -339,8 +339,10 @@ describe('Phase 5B: role config, catalogs, dispatchAI, directive helpers, world 
                 },
                 { setPromptLog, showToast, sleepFn: async () => {} }
             )
-        ).rejects.toThrow(/request timed out after/i);
+        ).rejects.toThrow(/API Request timed out after 70s/i);
         expect(abortCount).toBe(2);
+        expect(logs[0]?.parameters?.timeoutSeconds).toBe(70);
+        expect(logs[0]?.parameters?.timeoutMs).toBe(70000);
     });
 
     it('handles directive planning helpers, round-trip XML serialization, review parsing, and word counting', () => {

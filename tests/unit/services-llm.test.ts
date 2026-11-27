@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NANO_GPT_DEFAULT_MODELS } from '@/config';
+import { NANO_GPT_DEFAULT_MODELS, STORAGE_KEYS } from '@/config';
 import {
     callGemini,
     callKoboldCPP,
@@ -18,6 +18,7 @@ import {
     getOpenRouterModelLimits,
     getOpenRouterSmartRouting,
     getKoboldLoadedModelName,
+    invalidateOpenRouterStickyProvider,
     isCloudModelName,
     setKoboldLoadedModelName,
     parseNanoGPTModelMetadata,
@@ -101,6 +102,13 @@ describe('services/llm callGemini', () => {
         expect(
             (capturedPayloads[1].generationConfig as { thinkingConfig?: unknown }).thinkingConfig
         ).toEqual({ thinkingLevel: 'LOW' });
+
+        await callGemini('gem-key', 'gemini-4-neon', 'prompt', 'system', false, {
+            thinking: { enabled: true, budget: 8192 }
+        });
+        expect(
+            (capturedPayloads[2].generationConfig as { thinkingConfig?: unknown }).thinkingConfig
+        ).toEqual({ thinkingLevel: 'HIGH' });
     });
 
     it('returns full functionCalls structure when tools produce functionCall parts', async () => {
@@ -306,6 +314,186 @@ describe('services/llm OpenRouter smart routing & callOpenRouter', () => {
                 disableSmartRouting: true
             })
         ).rejects.toThrow('Incomplete structured JSON received');
+    });
+
+    it('streams OpenRouter SSE responses with keepalives, reasoning, tool calls, mid-stream errors, and idle reset', async () => {
+        const encoder = new TextEncoder();
+        const sseResponse = (chunks: string[], status = 200): Response => {
+            const stream = new ReadableStream<Uint8Array>({
+                start(controller) {
+                    for (const chunk of chunks) {
+                        controller.enqueue(encoder.encode(chunk));
+                    }
+                    controller.close();
+                }
+            });
+            return new Response(stream, {
+                status,
+                headers: { 'Content-Type': 'text/event-stream; charset=utf-8' }
+            });
+        };
+
+        // 1. Keepalive comments, delta.reasoning + reasoning_details (no double counting), content, usage, onSuccess
+        let telemetry: Record<string, unknown> | null = null;
+        globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue(
+            sseResponse([
+                ': OPENROUTER PROCESSING\n\n',
+                'data: {"model":"google/gemini-4-neon","provider":"Google","choices":[{"delta":{"reasoning":"Plan step 1. ","reasoning_details":[{"text":"Plan step 1. "}]}}]}\n\n',
+                'data: {"choices":[{"delta":{"reasoning_details":[{"text":"Plan step 2."}]}}]}\n\n',
+                'data: {"choices":[{"delta":{"content":"Harbor "}}]}\n\n',
+                'data: {"choices":[{"delta":{"content":"lights."},"finish_reason":"stop"}]}\n\n',
+                'data: {"usage":{"prompt_tokens":120,"completion_tokens":20,"total_tokens":140,"completion_tokens_details":{"reasoning_tokens":12}}}\n\n',
+                'data: [DONE]\n\n'
+            ])
+        );
+
+        const sseText = await callOpenRouter('or-key', 'google/gemini-4-neon', 'Write', 'Sys', false, {
+            disableSmartRouting: true,
+            onSuccess: (m) => {
+                telemetry = m as unknown as Record<string, unknown>;
+            }
+        });
+        expect(sseText).toBe('Harbor lights.');
+        expect(telemetry).toMatchObject({
+            modelUsed: 'google/gemini-4-neon',
+            routedProvider: 'Google',
+            promptTokens: 120,
+            responseTokens: 20,
+            thinkingTokens: 12,
+            reasoningText: 'Plan step 1. Plan step 2.',
+            fullResponse: 'Harbor lights.'
+        });
+
+        // 2. Streaming tool_calls delta reassembly
+        globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue(
+            sseResponse([
+                'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"query_","arguments":"{\\"topic\\":"}}]}}]}\n\n',
+                'data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"story_lore","arguments":"\\"Salt\\"}"}}]},"finish_reason":"tool_calls"}]}\n\n',
+                'data: [DONE]\n\n'
+            ])
+        );
+        const toolRes = (await callOpenRouter('or-key', 'google/gemini-4-neon', 'Hi', 'Sys', false, {
+            disableSmartRouting: true,
+            tools: [{ name: 'query_story_lore', description: 'Lookup', parameters: { type: 'object' } }]
+        })) as { tool_calls: Array<{ id: string; function: { name: string; arguments: string } }> };
+        expect(toolRes.tool_calls).toHaveLength(1);
+        expect(toolRes.tool_calls[0].id).toBe('call_1');
+        expect(toolRes.tool_calls[0].function).toEqual({
+            name: 'query_story_lore',
+            arguments: '{"topic":"Salt"}'
+        });
+
+        // 3. Mid-stream errors (generic & 402 credits)
+        globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue(
+            sseResponse(['data: {"error":{"message":"Upstream overloaded","code":503}}\n\n'])
+        );
+        await expect(
+            callOpenRouter('or-key', 'google/gemini-4-neon', 'Hi', 'Sys', false, {
+                disableSmartRouting: true
+            })
+        ).rejects.toThrow('OpenRouter API returned error: Upstream overloaded');
+
+        globalThis.fetch = vi.fn<typeof fetch>().mockResolvedValue(
+            sseResponse(['data: {"error":{"message":"Out of credits","code":402}}\n\n'])
+        );
+        await expect(
+            callOpenRouter('or-key', 'google/gemini-4-neon', 'Hi', 'Sys', false, {
+                disableSmartRouting: true
+            })
+        ).rejects.toThrow('OpenRouter Insufficient Credits (402)');
+
+        // 4. Activity resets idle timeout across active token deltas
+        vi.useFakeTimers();
+        try {
+            globalThis.fetch = vi.fn<typeof fetch>().mockImplementation(async () => {
+                const stream = new ReadableStream<Uint8Array>({
+                    start(controller) {
+                        setTimeout(() => {
+                            controller.enqueue(
+                                encoder.encode('data: {"choices":[{"delta":{"reasoning":"Thinking... "}}]}\n\n')
+                            );
+                        }, 60);
+                        setTimeout(() => {
+                            controller.enqueue(
+                                encoder.encode('data: {"choices":[{"delta":{"content":"Done."},"finish_reason":"stop"}]}\n\n')
+                            );
+                            controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                            controller.close();
+                        }, 130);
+                    }
+                });
+                return new Response(stream, {
+                    status: 200,
+                    headers: { 'Content-Type': 'text/event-stream' }
+                });
+            });
+
+            const activePromise = callOpenRouter('or-key', 'google/gemini-4-neon', 'Hi', 'Sys', false, {
+                disableSmartRouting: true,
+                timeout: 100
+            });
+            await vi.advanceTimersByTimeAsync(150);
+            await expect(activePromise).resolves.toBe('Done.');
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('detects Gemini 4 limits, ignores empty supported_efforts, and invalidates sticky pins', async () => {
+        const gemini4Limits = getOpenRouterModelLimits('google/gemini-4-neon');
+        expect(gemini4Limits.maxOutputTokens).toBe(65536);
+        expect(gemini4Limits.contextLength).toBe(1048576);
+        expect(gemini4Limits.supportsReasoning).toBe(true);
+        expect(gemini4Limits.reasoningType).toBe('both');
+
+        sessionStorage.setItem(
+            STORAGE_KEYS.openRouterModelsCache,
+            JSON.stringify([
+                {
+                    id: 'google/gemini-4-neon',
+                    contextLength: 1048576,
+                    maxOutputTokens: 65536,
+                    reasoning: { default_enabled: true, supported_efforts: [] }
+                }
+            ])
+        );
+        const cachedLimits = getOpenRouterModelLimits('google/gemini-4-neon');
+        expect(cachedLimits.supportsReasoning).toBe(true);
+        expect(cachedLimits.reasoningType).toBe('both');
+
+        const sentOrders: Array<unknown> = [];
+        globalThis.fetch = vi.fn<typeof fetch>(async (url, init) => {
+            const urlStr = String(url);
+            if (urlStr.includes('/endpoints')) {
+                return jsonResponse({
+                    data: {
+                        endpoints: [
+                            {
+                                tag: 'google-ai-studio',
+                                provider_name: 'Google AI Studio',
+                                status: 0,
+                                pricing: { prompt: '0.000001', completion: '0.000002' }
+                            }
+                        ]
+                    }
+                });
+            }
+            const body = JSON.parse(String(init?.body || '{}')) as { provider?: { order?: unknown } };
+            sentOrders.push(body.provider?.order);
+            return jsonResponse({
+                provider: 'Google AI Studio',
+                choices: [{ finish_reason: 'stop', message: { content: 'ok' } }]
+            });
+        });
+
+        await callOpenRouter('or-key', 'google/gemini-4-neon', '1', 'sys', false, { sessionId: 's-pin' });
+        await callOpenRouter('or-key', 'google/gemini-4-neon', '2', 'sys', false, { sessionId: 's-pin' });
+        invalidateOpenRouterStickyProvider('s-pin');
+        await callOpenRouter('or-key', 'google/gemini-4-neon', '3', 'sys', false, { sessionId: 's-pin' });
+
+        expect(sentOrders[0]).toBeUndefined();
+        expect(sentOrders[1]).toEqual(['google-ai-studio']);
+        expect(sentOrders[2]).toBeUndefined();
     });
 });
 

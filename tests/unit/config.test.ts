@@ -5,6 +5,7 @@ import {
     ARCH_GENRES,
     ARCH_STYLES,
     BANNED_CHARACTER_NAMES,
+    DEFAULT_API_TIMEOUT_SEC,
     DEFAULT_AUDIO_DRAMA_SETTINGS,
     DEFAULT_BANNED_PHRASES,
     DEFAULT_GEMINI_IMAGE_MODELS,
@@ -44,7 +45,8 @@ import {
     migrateAudioDramaSettings,
     resolveNarrativeActForSequence,
     resolveNarrativeModeId,
-    resolveNarrativeSequenceForIndex
+    resolveNarrativeSequenceForIndex,
+    resolveStoredApiTimeout
 } from '@/config';
 
 describe('Config Banks & Audio Settings Migration', () => {
@@ -191,6 +193,15 @@ describe('Config Banks & Audio Settings Migration', () => {
 
         const keyValues = Object.values(STORAGE_KEYS);
         expect(new Set(keyValues).size).toBe(keyValues.length);
+
+        expect(DEFAULT_API_TIMEOUT_SEC).toBe(300);
+        expect(resolveStoredApiTimeout(null, null)).toEqual({ value: 300, didMigrate: false });
+        expect(resolveStoredApiTimeout('120', null)).toEqual({ value: 300, didMigrate: true });
+        expect(resolveStoredApiTimeout('120', 'true')).toEqual({ value: 120, didMigrate: false });
+        expect(resolveStoredApiTimeout('60', null)).toEqual({ value: 60, didMigrate: false });
+        expect(resolveStoredApiTimeout('600', null)).toEqual({ value: 600, didMigrate: false });
+        expect(resolveStoredApiTimeout('invalid', null)).toEqual({ value: 300, didMigrate: false });
+        expect(resolveStoredApiTimeout('2', null)).toEqual({ value: 300, didMigrate: false });
     });
 
     it('defines 4 Act Functions, 8 Sequence Craft lenses, refined Canon Guardrail #2, and dynamic Act 2A/2B routing', () => {

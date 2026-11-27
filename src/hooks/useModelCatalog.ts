@@ -8,8 +8,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import {
-    API_TIMEOUT_BOUNDS,
-    DEFAULT_API_TIMEOUT_SEC,
     DEFAULT_LLM_MODELS,
     DEFAULT_SAVED_MODELS,
     DEFAULT_SERVICE_URLS,
@@ -17,7 +15,8 @@ import {
     DEFAULT_TOKEN_LIMITS,
     NANO_GPT_DEFAULT_MODELS,
     STORAGE_KEYS,
-    UI_DELAYS_MS
+    UI_DELAYS_MS,
+    resolveStoredApiTimeout
 } from '@/config';
 import { dispatchAI, type PromptLogEntry } from '@/pipeline';
 import type { ComfyOptionsCatalog, ComfyStatusInfo } from '@/services/images';
@@ -392,13 +391,16 @@ export function useModelCatalog({
     );
     const [apiKey, setApiKey] = useState(() => localStorage.getItem(STORAGE_KEYS.geminiApiKey) || '');
     const [apiTimeout, setApiTimeout] = useState(() => {
-        const val = localStorage.getItem(STORAGE_KEYS.apiTimeout);
-        const parsed = val !== null ? parseInt(val, 10) : DEFAULT_API_TIMEOUT_SEC;
-        return !isNaN(parsed) &&
-            parsed >= API_TIMEOUT_BOUNDS.min &&
-            parsed <= API_TIMEOUT_BOUNDS.max
-            ? parsed
-            : DEFAULT_API_TIMEOUT_SEC;
+        const raw = localStorage.getItem(STORAGE_KEYS.apiTimeout);
+        const migratedFlag = localStorage.getItem(STORAGE_KEYS.apiTimeoutMigratedV2);
+        const { value, didMigrate } = resolveStoredApiTimeout(raw, migratedFlag);
+        if (didMigrate) {
+            safeLocalStorageSet(STORAGE_KEYS.apiTimeout, value);
+        }
+        if (didMigrate || (raw !== null && migratedFlag !== 'true')) {
+            safeLocalStorageSet(STORAGE_KEYS.apiTimeoutMigratedV2, 'true');
+        }
+        return value;
     });
     const [geminiModel, setGeminiModel] = useState(
         () => localStorage.getItem(STORAGE_KEYS.geminiModel) || DEFAULT_LLM_MODELS.gemini
@@ -590,6 +592,7 @@ export function useModelCatalog({
     }, [apiKey]);
     useEffect(() => {
         safeLocalStorageSet(STORAGE_KEYS.apiTimeout, apiTimeout);
+        safeLocalStorageSet(STORAGE_KEYS.apiTimeoutMigratedV2, 'true');
     }, [apiTimeout]);
     useEffect(() => {
         safeLocalStorageSet(STORAGE_KEYS.geminiModel, geminiModel);
