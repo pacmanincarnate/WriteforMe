@@ -31,7 +31,8 @@ import {
     parseValueShiftInput
 } from '@/domain/story';
 import type { Act, CastMember, Relationship, SceneBlueprint, Sequence, Story } from '@/types';
-import { isSerializationPlaceholder, safeEscapeRegex } from '@/utils';
+import { isSerializationPlaceholder } from '@/utils';
+import { scrubSecretFromText } from '@/domain/continuity/secretScrub';
 
 export interface ProseContextCastMember extends Partial<CastMember>, Record<string, unknown> {
     name?: string;
@@ -184,6 +185,9 @@ export function buildProseContext({
           )
         : [];
 
+    // Cast names are all over the story, so they identify no secret on their own.
+    const castNameWords = (activeCast || []).map((ch) => String(ch?.name || '')).filter(Boolean);
+
     // Sanitize Act Mandate so future twists are not leaked in Act Context
     let sanitizedActMandate = actInfo
         ? String(actInfo.act_mandate || actInfo.description || '')
@@ -191,18 +195,12 @@ export function buildProseContext({
     if (unrevealedSecrets.length > 0 && sanitizedActMandate && actInfo) {
         unrevealedSecrets.forEach((sec) => {
             if (Number(sec.reveal_anchor?.act_number || 3) > Number(actInfo.number || 1)) {
-                if (sec.truth && sec.truth.length > 8) {
-                    sanitizedActMandate = sanitizedActMandate.replace(
-                        new RegExp(safeEscapeRegex(sec.truth), 'gi'),
-                        '[Crucial Turning Point Withheld]'
-                    );
-                }
-                if (sec.title) {
-                    sanitizedActMandate = sanitizedActMandate.replace(
-                        new RegExp(safeEscapeRegex(sec.title), 'gi'),
-                        '[Key Reversal Pending]'
-                    );
-                }
+                sanitizedActMandate = scrubSecretFromText(sanitizedActMandate, sec, {
+                    placeholder: '[Crucial Turning Point Withheld]',
+                    titlePlaceholder: '[Key Reversal Pending]',
+                    ignoreWords: castNameWords,
+                    minTruthLength: 8
+                });
             }
         });
     }
@@ -230,19 +228,15 @@ export function buildProseContext({
                 }
             }
             if (sec.truth && sec.truth.length > 5 && cloned.details) {
-                const truthRegex = new RegExp(safeEscapeRegex(sec.truth), 'gi');
-                if (cloned.details.deep_profile) {
-                    cloned.details.deep_profile = cloned.details.deep_profile.replace(
-                        truthRegex,
-                        '[Private Personal Motivation]'
-                    );
-                }
-                if (cloned.interview_psychology) {
-                    cloned.interview_psychology = cloned.interview_psychology.replace(
-                        truthRegex,
-                        '[Private Personal Motivation]'
-                    );
-                }
+                // The exact truth, and any sentence that tells it in another word order.
+                const scrub = (value: string): string =>
+                    scrubSecretFromText(value, sec, {
+                        placeholder: '[Private Personal Motivation]',
+                        ignoreWords: castNameWords
+                    });
+                if (cloned.details.deep_profile) cloned.details.deep_profile = scrub(cloned.details.deep_profile);
+                if (cloned.interview_psychology) cloned.interview_psychology = scrub(cloned.interview_psychology);
+                if (cloned.deep_profile) cloned.deep_profile = scrub(cloned.deep_profile);
             }
         });
         return cloned;

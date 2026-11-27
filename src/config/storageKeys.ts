@@ -101,6 +101,7 @@ export const STORAGE_KEYS = {
     selectedChapter: 'ellipsisprose_selectedChapter',
     selectedScene: 'ellipsisprose_selectedScene',
     selectedSequence: 'ellipsisprose_selectedSequence',
+    featureOptionsV1: 'ellipsisprose_feature_options_v1',
     promptOverridesV1: 'ellipsisprose_prompt_overrides_v1',
     settingsTab: 'ellipsisprose_settings_tab',
     sidebarCollapsed: 'ellipsisprose_sidebar_collapsed',

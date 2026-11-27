@@ -15,6 +15,7 @@ import { CONCEPT_PROMPTS } from './tiers/concept';
 import { CONTINUITY_PROMPTS } from './tiers/continuity';
 import { EDITORIAL_PROMPTS } from './tiers/editorial';
 import { PROSE_PROMPTS } from './tiers/prose';
+import { SAFEGUARD_PROMPTS } from './tiers/safeguards';
 import { SERIES_PROMPTS } from './tiers/series';
 import { STRUCTURE_PROMPTS } from './tiers/structure';
 
@@ -67,7 +68,8 @@ const GROUPS: Array<[string, PromptTable]> = [
     ['Writing and revision', PROSE_PROMPTS as PromptTable],
     ['Continuity and lore', CONTINUITY_PROMPTS as PromptTable],
     ['Editorial Desk', EDITORIAL_PROMPTS as PromptTable],
-    ['Book series', SERIES_PROMPTS as unknown as PromptTable]
+    ['Book series', SERIES_PROMPTS as unknown as PromptTable],
+    ['Safeguards', SAFEGUARD_PROMPTS as unknown as PromptTable]
 ];
 
 /** Old names in the registry that must follow the prompt they alias. */
@@ -98,6 +100,7 @@ const DESCRIPTIONS: Record<string, [string, string]> = {
     loreDistiller: ['Lore distiller', 'Condenses uploaded lore.'],
     seriesArchitect: ['Series architect', 'Plans the series: question, long arc, per-book roadmap.'],
     contractAuditor: ['Ending contract audit', 'Checks a book closed and kept open what its contract says.'],
+    secretLeakJudge: ['Secret leak judge', 'Reads a finished scene for a secret told before its planned reveal.'],
     bookRecap: ['Book recap', 'Writes the recap the next book starts from.']
 };
 

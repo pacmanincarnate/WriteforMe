@@ -80,10 +80,11 @@ import {
     escapeXml,
     extractTag,
     isSerializationPlaceholder,
-    safeEscapeRegex,
     safeJsonStringify,
     tokenMatch
 } from '@/utils';
+import { checkSceneForSecretLeaks } from './secretLeak';
+import { scrubSecretFromText } from '@/domain/continuity/secretScrub';
 import {
     asArray,
     asNumber,
@@ -453,14 +454,14 @@ export async function writeSceneProse(
                     sec.concealed_from_characters.some((ch) => tokenMatch(currentPov, asString(ch)))
             );
             unrevealedSecrets.forEach((sec) => {
-                const truthStr = asString(sec.truth);
-                if (truthStr.length > 5) {
-                    const rx = new RegExp(safeEscapeRegex(truthStr), 'gi');
-                    previousSceneProseText = (previousSceneProseText || '').replace(
-                        rx,
-                        '[Internal revelation redacted across POV boundary]'
-                    );
-                }
+                previousSceneProseText = scrubSecretFromText(
+                    previousSceneProseText || '',
+                    { truth: asString(sec.truth) },
+                    {
+                        placeholder: '[Internal revelation redacted across POV boundary]',
+                        ignoreWords: asArray<Record<string, unknown>>(storyToUse.cast).map((c) => asString(c.name))
+                    }
+                );
             });
         }
     }
@@ -1903,6 +1904,39 @@ Refine and elevate this scene draft according to your editorial mandates. Preser
                     '[writeSceneProse] Style & sensory polish pass warning, continuing with draft:',
                     polishErr
                 );
+            }
+        }
+
+        // SECRET LEAK CHECK: a second reader looks for an unrevealed secret told in other words.
+        if (finalProseText) {
+            const leakCheck = await checkSceneForSecretLeaks(ctx, {
+                story: storyToUse as PipelineStory,
+                sequenceNumber: Number(sequenceData?.number || seq + 1),
+                prose: finalProseText,
+                isAudioDrama: isAudioDramaStory,
+                label: `Secret Leak Check (Sequence ${seq + 1}, Scene ${s + 1})`
+            });
+            if (leakCheck.leaks.length > 0) {
+                finalProseText = leakCheck.prose;
+                ctx.logPipelineValidation(
+                    `Secret Leak Check (Sequence ${seq + 1}, Scene ${s + 1})`,
+                    leakCheck.fixed,
+                    leakCheck.leaks.map((leak) => `"${leak.quote}"${leak.why ? `: ${leak.why}` : ''}`),
+                    null,
+                    {
+                        tierName: 'Secret Leak Judge',
+                        type: 'secret_leak',
+                        actionTaken: leakCheck.fixed
+                            ? 'Rewrote the passages that gave a secret away.'
+                            : 'Could not rewrite them; the scene is kept as written.'
+                    }
+                );
+                if (!leakCheck.fixed) {
+                    ctx.showToast(
+                        `Sequence ${seq + 1}, Scene ${s + 1} may give away a secret before its reveal. See the pipeline log.`,
+                        'warning'
+                    );
+                }
             }
         }
 
