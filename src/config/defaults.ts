@@ -56,9 +56,34 @@ export const DEFAULT_TOKEN_LIMITS = {
     geminiDefaultMaxTokens: 8192
 } as const;
 
-export const DEFAULT_API_TIMEOUT_SEC = 120;
+export const DEFAULT_API_TIMEOUT_SEC = 300;
+export const LEGACY_DEFAULT_API_TIMEOUT_SEC = 120;
 
 export const API_TIMEOUT_BOUNDS = {
     min: 5,
     max: 1800
 } as const;
+
+/**
+ * Resolves the persisted API timeout, performing a one-time upgrade from the legacy
+ * 120s default to 300s unless the user has already migrated or chosen another value.
+ */
+export function resolveStoredApiTimeout(
+    rawValue: string | null,
+    migratedFlag: string | null
+): { value: number; didMigrate: boolean } {
+    if (rawValue !== null) {
+        const parsed = parseInt(rawValue, 10);
+        if (
+            !isNaN(parsed) &&
+            parsed >= API_TIMEOUT_BOUNDS.min &&
+            parsed <= API_TIMEOUT_BOUNDS.max
+        ) {
+            if (parsed === LEGACY_DEFAULT_API_TIMEOUT_SEC && migratedFlag !== 'true') {
+                return { value: DEFAULT_API_TIMEOUT_SEC, didMigrate: true };
+            }
+            return { value: parsed, didMigrate: false };
+        }
+    }
+    return { value: DEFAULT_API_TIMEOUT_SEC, didMigrate: false };
+}

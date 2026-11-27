@@ -5,6 +5,7 @@
  */
 
 import {
+    API_TIMEOUT_BOUNDS,
     CLOUD_API_URLS,
     DEFAULT_API_TIMEOUT_SEC,
     DEFAULT_SERVICE_URLS,
@@ -22,6 +23,7 @@ import {
     callOpenRouter,
     getEffectiveModelConfig,
     getOpenRouterModelLimits,
+    invalidateOpenRouterStickyProvider,
     resolveAgentMaxTokens,
     resolveRole,
     resolveThinkingConfigForAgent,
@@ -594,8 +596,17 @@ export async function dispatchAI(
             if (isTransient && attempt < maxRetries) {
                 if (isClientTimeout) {
                     timeoutRetries++;
+                    if (targetProvider === 'openrouter' && options.sessionId) {
+                        invalidateOpenRouterStickyProvider(options.sessionId);
+                    }
+                    const prevTimeoutMs = options.timeout || timeoutMs;
+                    const escalatedTimeoutMs = Math.min(
+                        API_TIMEOUT_BOUNDS.max * 1000,
+                        Math.max(Math.round(prevTimeoutMs * 1.5), prevTimeoutMs + 60000)
+                    );
+                    options.timeout = escalatedTimeoutMs;
                     console.warn(
-                        `[AI Call - "${logName}"] Client timeout on attempt ${attempt}. Retrying once at the configured ${Math.round((options.timeout || 0) / 1000)}s timeout...`
+                        `[AI Call - "${logName}"] Client timeout at ${Math.round(prevTimeoutMs / 1000)}s on attempt ${attempt}. Clearing pinned host and retrying with extended ${Math.round(escalatedTimeoutMs / 1000)}s timeout...`
                     );
                 }
 
@@ -658,6 +669,8 @@ export async function dispatchAI(
                             parameters: {
                                 ...(entry.parameters || {}),
                                 maxTokens: options.max_tokens,
+                                timeoutMs: options.timeout,
+                                timeoutSeconds: Math.round((options.timeout || 0) / 1000),
                                 thinking: {
                                     ...(options.thinking ||
                                         (entry.parameters?.thinking as LlmThinkingConfig) ||
@@ -736,6 +749,8 @@ export async function dispatchAI(
                             parameters: {
                                 ...(entry.parameters || {}),
                                 maxTokens: options.max_tokens,
+                                timeoutMs: options.timeout,
+                                timeoutSeconds: Math.round((options.timeout || 0) / 1000),
                                 thinking: {
                                     ...(options.thinking ||
                                         (entry.parameters?.thinking as LlmThinkingConfig) ||

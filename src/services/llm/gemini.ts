@@ -53,14 +53,16 @@ export async function callGemini(
             ...(isJson && !hasTools ? { responseMimeType: 'application/json' } : {})
         };
 
+        const isGemini3OrNewer =
+            modelId.includes('gemini-3') || modelId.includes('gemini-4');
+
         // Apply thinking configuration if enabled, or explicitly disable for hybrid thinking models
         if (options.thinking && options.thinking.enabled && (options.thinking.budget || 0) > 0) {
             const budget = options.thinking.budget || 0;
             // Guarantee generous headroom for both deep reasoning and full structural/prose output (min 32k)
             const outputTokenAllowance = Math.max(requestedTokens, 16384);
             targetMaxTokens = Math.max(requestedTokens, budget + outputTokenAllowance, 32768);
-            const isGemini3 = modelId.includes('gemini-3') || modelId.includes('gemini-3.5');
-            if (isGemini3) {
+            if (isGemini3OrNewer) {
                 generationConfig.thinkingConfig = {
                     thinkingLevel:
                         options.thinking.level ||
@@ -72,15 +74,13 @@ export async function callGemini(
                 };
             }
         } else if (!options.thinking || !options.thinking.enabled || options.thinking.budget === 0) {
-            // Explicitly disable thinking for hybrid/thinking-by-default models (e.g. Gemini 3.8 Flash, 3.7 Flash)
-            const isGemini3 = modelId.includes('gemini-3') || modelId.includes('gemini-3.5');
-            generationConfig.thinkingConfig = isGemini3
+            // Explicitly disable thinking for hybrid/thinking-by-default models (e.g. Gemini 3.8 Flash, 3.7 Flash, 4.x)
+            generationConfig.thinkingConfig = isGemini3OrNewer
                 ? { thinkingLevel: 'MINIMAL' }
                 : { thinkingBudget: 0 };
         } else if (options.thinking && options.thinking.effort) {
-            const isGemini3 = modelId.includes('gemini-3') || modelId.includes('gemini-3.5');
             targetMaxTokens = Math.max(requestedTokens, 32768);
-            generationConfig.thinkingConfig = isGemini3
+            generationConfig.thinkingConfig = isGemini3OrNewer
                 ? {
                       thinkingLevel:
                           options.thinking.level ||

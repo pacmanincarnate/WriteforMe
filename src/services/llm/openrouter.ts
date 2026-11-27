@@ -12,7 +12,7 @@ import {
     DEFAULT_LLM_MODELS,
     STORAGE_KEYS
 } from '@/config';
-import { fetchWithTimeout } from '@/services/http';
+import { fetchWithIdleTimeout, fetchWithTimeout, type FetchIdleTimeoutHandle } from '@/services/http';
 import { cleanJson, extractReasoningAndContent } from '@/utils';
 import {
     formatOpenAITools,
@@ -183,7 +183,8 @@ export function getOpenRouterModelLimits(modelId = ''): OpenRouterModelLimits {
                     if (found.reasoning?.mandatory || mid.includes('deepseek-r1')) {
                         reasoningType = 'always_on';
                     } else if (
-                        found.reasoning?.supported_efforts ||
+                        (Array.isArray(found.reasoning?.supported_efforts) &&
+                            found.reasoning.supported_efforts.length > 0) ||
                         mid.includes('openai/o1') ||
                         mid.includes('openai/o3') ||
                         mid.includes('o1-') ||
@@ -268,6 +269,7 @@ export function getOpenRouterModelLimits(modelId = ''): OpenRouterModelLimits {
     if (
         mid.includes('gemini-2') ||
         mid.includes('gemini-3') ||
+        mid.includes('gemini-4') ||
         mid.includes('gemini-flash') ||
         mid.includes('gemini-pro')
     ) {
@@ -620,6 +622,259 @@ export function clearOpenRouterRoutingState(): void {
     }
 }
 
+/** Clears the sticky upstream provider pin for a single session so retries can route elsewhere. */
+export function invalidateOpenRouterStickyProvider(sessionId = ''): void {
+    const normalized = String(sessionId || '').trim().slice(0, 256);
+    if (normalized) {
+        openRouterStickyProviderMap.delete(normalized);
+    }
+}
+
+interface OpenRouterStreamReasoningDetail {
+    text?: unknown;
+    summary?: unknown;
+}
+
+interface OpenRouterStreamToolCallDelta {
+    index?: number;
+    id?: string;
+    type?: string;
+    function?: {
+        name?: string;
+        arguments?: string;
+    };
+}
+
+interface OpenRouterStreamDelta {
+    content?: unknown;
+    reasoning?: unknown;
+    reasoning_content?: unknown;
+    reasoning_details?: OpenRouterStreamReasoningDetail[];
+    tool_calls?: OpenRouterStreamToolCallDelta[];
+}
+
+interface OpenRouterStreamChunk {
+    model?: string;
+    provider?: string;
+    error?: OpenRouterResponsePayload['error'];
+    usage?: OpenRouterResponsePayload['usage'];
+    choices?: Array<{
+        finish_reason?: string | null;
+        error?: OpenRouterResponsePayload['error'];
+        delta?: OpenRouterStreamDelta;
+        message?: LlmChatMessage;
+    }>;
+}
+
+function throwOpenRouterStreamError(errObj: NonNullable<OpenRouterResponsePayload['error']>): never {
+    const errMsg = errObj.message || JSON.stringify(errObj);
+    const errCode = errObj.code || 500;
+    if (
+        errCode === 402 ||
+        errMsg.toLowerCase().includes('insufficient credits') ||
+        errMsg.toLowerCase().includes('credit')
+    ) {
+        throw new Error(`OpenRouter Insufficient Credits (402): ${errMsg}`);
+    }
+    throw new Error(`OpenRouter API returned error: ${errMsg}`);
+}
+
+/**
+ * Parses an OpenRouter SSE (`text/event-stream`) response into a standard completion payload.
+ * Calls `onActivity()` only on real content, reasoning, or tool-call deltas (ignoring SSE `:`
+ * keepalive comments so queued/hung providers still respect the configured idle timeout).
+ */
+async function parseOpenRouterSseStream(
+    response: Response,
+    onActivity: () => void
+): Promise<OpenRouterResponsePayload> {
+    if (!response.body) {
+        throw new Error('OpenRouter returned an empty response body.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let streamModel: string | undefined;
+    let streamProvider: string | undefined;
+    let finishReason: string | undefined;
+    let streamUsage: OpenRouterResponsePayload['usage'] | undefined;
+    let accumulatedText = '';
+    let accumulatedReasoning = '';
+    const toolCallMap = new Map<number, OpenAIToolCall>();
+    let sawDone = false;
+
+    const processLine = (rawLine: string): void => {
+        const line = rawLine.endsWith('\r') ? rawLine.slice(0, -1) : rawLine;
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith(':')) {
+            return;
+        }
+        if (!trimmed.startsWith('data:')) {
+            return;
+        }
+        const dataPayload = trimmed.slice(5).trim();
+        if (!dataPayload) {
+            return;
+        }
+        if (dataPayload === '[DONE]') {
+            sawDone = true;
+            return;
+        }
+
+        let chunk: OpenRouterStreamChunk;
+        try {
+            chunk = JSON.parse(dataPayload) as OpenRouterStreamChunk;
+        } catch {
+            return;
+        }
+
+        if (chunk.error) {
+            throwOpenRouterStreamError(chunk.error);
+        }
+
+        if (chunk.model) streamModel = chunk.model;
+        if (chunk.provider) streamProvider = chunk.provider;
+        if (chunk.usage) streamUsage = chunk.usage;
+
+        const choice = chunk.choices?.[0];
+        if (!choice) return;
+        if (choice.error) {
+            throwOpenRouterStreamError(choice.error);
+        }
+        if (typeof choice.finish_reason === 'string' && choice.finish_reason) {
+            finishReason = choice.finish_reason;
+        }
+
+        const delta = choice.delta;
+        const msgFallback = choice.message;
+        let hadDeltaActivity = false;
+
+        const contentPiece =
+            typeof delta?.content === 'string'
+                ? delta.content
+                : typeof msgFallback?.content === 'string'
+                  ? msgFallback.content
+                  : '';
+        if (contentPiece.length > 0) {
+            accumulatedText += contentPiece;
+            hadDeltaActivity = true;
+        }
+
+        const directReasoning =
+            typeof delta?.reasoning === 'string' && delta.reasoning.length > 0
+                ? delta.reasoning
+                : typeof delta?.reasoning_content === 'string' && delta.reasoning_content.length > 0
+                  ? delta.reasoning_content
+                  : typeof msgFallback?.reasoning === 'string' && msgFallback.reasoning.length > 0
+                    ? msgFallback.reasoning
+                    : typeof msgFallback?.reasoning_content === 'string' &&
+                        msgFallback.reasoning_content.length > 0
+                      ? msgFallback.reasoning_content
+                      : '';
+
+        if (directReasoning.length > 0) {
+            accumulatedReasoning += directReasoning;
+            hadDeltaActivity = true;
+        } else if (Array.isArray(delta?.reasoning_details)) {
+            let detailsText = '';
+            for (const detail of delta.reasoning_details) {
+                if (!detail || typeof detail !== 'object') continue;
+                if (typeof detail.text === 'string' && detail.text.length > 0) {
+                    detailsText += detail.text;
+                } else if (typeof detail.summary === 'string' && detail.summary.length > 0) {
+                    detailsText += detail.summary;
+                }
+            }
+            if (detailsText.length > 0) {
+                accumulatedReasoning += detailsText;
+                hadDeltaActivity = true;
+            }
+        }
+
+        const deltaToolCalls = delta?.tool_calls || msgFallback?.tool_calls;
+        if (Array.isArray(deltaToolCalls) && deltaToolCalls.length > 0) {
+            for (const tc of deltaToolCalls) {
+                if (!tc) continue;
+                const idx = typeof (tc as OpenRouterStreamToolCallDelta).index === 'number'
+                    ? (tc as OpenRouterStreamToolCallDelta).index!
+                    : 0;
+                const existing = toolCallMap.get(idx) || {
+                    type: 'function',
+                    function: { name: '', arguments: '' }
+                };
+                if (tc.id) existing.id = tc.id;
+                if (tc.type) existing.type = tc.type;
+                if (tc.function) {
+                    existing.function = existing.function || { name: '', arguments: '' };
+                    if (typeof tc.function.name === 'string' && tc.function.name.length > 0) {
+                        existing.function.name = (existing.function.name || '') + tc.function.name;
+                    }
+                    if (typeof tc.function.arguments === 'string' && tc.function.arguments.length > 0) {
+                        existing.function.arguments =
+                            (typeof existing.function.arguments === 'string'
+                                ? existing.function.arguments
+                                : '') + tc.function.arguments;
+                    }
+                }
+                toolCallMap.set(idx, existing);
+            }
+            hadDeltaActivity = true;
+        }
+
+        if (hadDeltaActivity) {
+            onActivity();
+        }
+    };
+
+    try {
+        while (!sawDone) {
+            const { value, done } = await reader.read();
+            if (done) {
+                buffer += decoder.decode();
+                break;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            let newlineIdx = buffer.indexOf('\n');
+            while (newlineIdx !== -1) {
+                const line = buffer.slice(0, newlineIdx);
+                buffer = buffer.slice(newlineIdx + 1);
+                processLine(line);
+                if (sawDone) break;
+                newlineIdx = buffer.indexOf('\n');
+            }
+        }
+        if (!sawDone && buffer.trim().length > 0) {
+            processLine(buffer);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+
+    const toolCalls = Array.from(toolCallMap.entries())
+        .sort(([a], [b]) => a - b)
+        .map(([, tc]) => tc);
+
+    const message: LlmChatMessage = {
+        role: 'assistant',
+        content: accumulatedText,
+        ...(accumulatedReasoning ? { reasoning: accumulatedReasoning } : {}),
+        ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {})
+    };
+
+    return {
+        model: streamModel,
+        provider: streamProvider,
+        choices: [
+            {
+                finish_reason: finishReason,
+                message
+            }
+        ],
+        usage: streamUsage
+    };
+}
+
 export async function callOpenRouter(
     apiKey: string,
     model: string,
@@ -781,6 +1036,7 @@ export async function callOpenRouter(
         const payload: Record<string, unknown> = {
             model: modelId,
             messages,
+            stream: true,
             temperature: options.temperature !== undefined ? options.temperature : defaultTemp,
             transforms: ['middle-out'],
             provider: providerObj,
@@ -880,8 +1136,8 @@ export async function callOpenRouter(
         payload.max_tokens = targetMaxTokens;
         payload.max_completion_tokens = targetMaxTokens;
 
-        const sendChatCompletion = (): Promise<Response> =>
-            fetchWithTimeout(
+        const sendChatCompletion = (): Promise<FetchIdleTimeoutHandle> =>
+            fetchWithIdleTimeout(
                 CLOUD_API_URLS.openRouterChat,
                 {
                     method: 'POST',
@@ -896,149 +1152,184 @@ export async function callOpenRouter(
                 options.timeout
             );
 
-        let response = await sendChatCompletion();
-
-        if (!response.ok) {
-            const parseErrBody = async (): Promise<{
-                errText: string;
-                errObj: NonNullable<OpenRouterResponsePayload['error']>;
-                errMsg: string;
-            }> => {
-                const errText = await response.text();
-                let errJson: OpenRouterResponsePayload | null;
-                try {
-                    errJson = JSON.parse(errText) as OpenRouterResponsePayload;
-                } catch {
-                    errJson = null;
-                }
-                const errObj = errJson?.error || {};
-                const errMsg = errObj.message || errText || `HTTP ${response.status}`;
-                return { errText, errObj, errMsg };
-            };
-
-            let { errObj, errMsg } = await parseErrBody();
-
-            if (
-                response.status === 400 &&
-                (payload.reasoning as Record<string, unknown> | undefined)?.effort === 'none' &&
-                (errMsg.toLowerCase().includes('reasoning is mandatory') ||
-                    errMsg.toLowerCase().includes('cannot be disabled'))
-            ) {
-                console.warn(
-                    `[OpenRouter] Model '${modelId}' requires reasoning; retrying with minimal excluded reasoning...`
-                );
-                payload.reasoning = { effort: 'low', exclude: true };
-                response = await sendChatCompletion();
-                if (!response.ok) {
-                    ({ errObj, errMsg } = await parseErrBody());
-                }
-            }
-
-            if (
-                !response.ok &&
-                response.status === 400 &&
-                appliedExplicitCacheControl &&
-                errMsg.toLowerCase().includes('cache_control')
-            ) {
-                console.warn(
-                    `[OpenRouter] Model '${modelId}' rejected cache_control; retrying with plain string messages...`
-                );
-                appliedExplicitCacheControl = false;
-                payload.messages = baseMessages;
-                response = await sendChatCompletion();
-                if (!response.ok) {
-                    ({ errObj, errMsg } = await parseErrBody());
-                }
-            }
-
-            if (
-                !response.ok &&
-                (response.status === 404 || response.status === 400) &&
-                appliedSmartRouting &&
-                /no allowed providers|no endpoints|max_price|preferred_min_throughput|provider/i.test(
-                    errMsg
-                )
-            ) {
-                console.warn(
-                    `[OpenRouter] Smart routing constraints rejected for '${modelId}' (${errMsg}); retrying with standard fallback routing...`
-                );
-                appliedSmartRouting = false;
-                const cacheKey = String(modelId || '').trim().toLowerCase().split(':')[0];
-                openRouterSmartRoutingCache.delete(cacheKey);
-                try {
-                    if (typeof sessionStorage !== 'undefined') {
-                        sessionStorage.removeItem(`ellipsisprose_or_smart_route_v1:${cacheKey}`);
-                    }
-                } catch {
-                    // Ignore sessionStorage removal failure
-                }
-                if (normalizedSessionId) openRouterStickyProviderMap.delete(normalizedSessionId);
-                payload.provider = { allow_fallbacks: true, data_collection: 'allow' };
-                response = await sendChatCompletion();
-                if (!response.ok) {
-                    ({ errObj, errMsg } = await parseErrBody());
-                }
-            }
-
-            if (!response.ok) {
-                const errCode = errObj.code || response.status;
-                const upstreamRaw = errObj.metadata?.raw;
-                const upstreamMsg = upstreamRaw
-                    ? ` [Upstream: ${
-                          typeof upstreamRaw === 'string'
-                              ? upstreamRaw
-                              : upstreamRaw.message || JSON.stringify(upstreamRaw)
-                      }]`
-                    : '';
-
-                if (response.status === 401) {
-                    throw new Error(
-                        `OpenRouter Authorization Failed (401): Please verify your API Key in Settings. Details: ${errMsg}`
-                    );
-                } else if (
-                    response.status === 402 ||
-                    errCode === 402 ||
-                    errMsg.toLowerCase().includes('insufficient credits') ||
-                    errMsg.toLowerCase().includes('credit')
-                ) {
-                    throw new Error(
-                        `OpenRouter Insufficient Credits (402): Your OpenRouter account is out of credits. Please refill at ${CLOUD_API_URLS.openRouterCreditsPage}. Details: ${errMsg}`
-                    );
-                } else if (response.status === 403) {
-                    throw new Error(
-                        `OpenRouter Access Forbidden (403): Request was blocked by moderation or permissions. Details: ${errMsg}`
-                    );
-                } else if (
-                    response.status === 404 ||
-                    errMsg.toLowerCase().includes('not found') ||
-                    errMsg.toLowerCase().includes('no such model')
-                ) {
-                    throw new Error(
-                        `OpenRouter Model Not Found (404): Model '${modelId}' is not available or has been deprecated. Please select a valid model in Settings.`
-                    );
-                } else if (response.status === 429) {
-                    throw new Error(
-                        `OpenRouter Rate Limit Exceeded (429): ${errMsg}${upstreamMsg}`
-                    );
-                } else if (response.status === 400) {
-                    throw new Error(`OpenRouter Bad Request (400): ${errMsg}${upstreamMsg}`);
-                }
-                throw new Error(`OpenRouter Error (${response.status}): ${errMsg}${upstreamMsg}`);
-            }
-        }
-
-        const responseText = await response.text();
-        if (!responseText || !responseText.trim()) {
-            throw new Error('OpenRouter returned an empty response body.');
-        }
-
+        let reqHandle = await sendChatCompletion();
         let data: OpenRouterResponsePayload;
         try {
-            data = JSON.parse(responseText) as OpenRouterResponsePayload;
-        } catch (e) {
-            throw new Error(`OpenRouter returned invalid JSON: ${responseText.substring(0, 200)}`, {
-                cause: e
-            });
+            let response = reqHandle.response;
+
+            if (!response.ok) {
+                const parseErrBody = async (): Promise<{
+                    errText: string;
+                    errObj: NonNullable<OpenRouterResponsePayload['error']>;
+                    errMsg: string;
+                }> => {
+                    let errText: string;
+                    try {
+                        errText = await response.text();
+                    } catch (err) {
+                        throw reqHandle.mapError(err);
+                    }
+                    let errJson: OpenRouterResponsePayload | null;
+                    try {
+                        errJson = JSON.parse(errText) as OpenRouterResponsePayload;
+                    } catch {
+                        errJson = null;
+                    }
+                    const errObj = errJson?.error || {};
+                    const errMsg = errObj.message || errText || `HTTP ${response.status}`;
+                    return { errText, errObj, errMsg };
+                };
+
+                let { errObj, errMsg } = await parseErrBody();
+
+                if (
+                    response.status === 400 &&
+                    (payload.reasoning as Record<string, unknown> | undefined)?.effort === 'none' &&
+                    (errMsg.toLowerCase().includes('reasoning is mandatory') ||
+                        errMsg.toLowerCase().includes('cannot be disabled'))
+                ) {
+                    console.warn(
+                        `[OpenRouter] Model '${modelId}' requires reasoning; retrying with minimal excluded reasoning...`
+                    );
+                    payload.reasoning = { effort: 'low', exclude: true };
+                    reqHandle.clear();
+                    reqHandle = await sendChatCompletion();
+                    response = reqHandle.response;
+                    if (!response.ok) {
+                        ({ errObj, errMsg } = await parseErrBody());
+                    }
+                }
+
+                if (
+                    !response.ok &&
+                    response.status === 400 &&
+                    appliedExplicitCacheControl &&
+                    errMsg.toLowerCase().includes('cache_control')
+                ) {
+                    console.warn(
+                        `[OpenRouter] Model '${modelId}' rejected cache_control; retrying with plain string messages...`
+                    );
+                    appliedExplicitCacheControl = false;
+                    payload.messages = baseMessages;
+                    reqHandle.clear();
+                    reqHandle = await sendChatCompletion();
+                    response = reqHandle.response;
+                    if (!response.ok) {
+                        ({ errObj, errMsg } = await parseErrBody());
+                    }
+                }
+
+                if (
+                    !response.ok &&
+                    (response.status === 404 || response.status === 400) &&
+                    appliedSmartRouting &&
+                    /no allowed providers|no endpoints|max_price|preferred_min_throughput|provider/i.test(
+                        errMsg
+                    )
+                ) {
+                    console.warn(
+                        `[OpenRouter] Smart routing constraints rejected for '${modelId}' (${errMsg}); retrying with standard fallback routing...`
+                    );
+                    appliedSmartRouting = false;
+                    const cacheKey = String(modelId || '').trim().toLowerCase().split(':')[0];
+                    openRouterSmartRoutingCache.delete(cacheKey);
+                    try {
+                        if (typeof sessionStorage !== 'undefined') {
+                            sessionStorage.removeItem(`ellipsisprose_or_smart_route_v1:${cacheKey}`);
+                        }
+                    } catch {
+                        // Ignore sessionStorage removal failure
+                    }
+                    if (normalizedSessionId) openRouterStickyProviderMap.delete(normalizedSessionId);
+                    payload.provider = { allow_fallbacks: true, data_collection: 'allow' };
+                    reqHandle.clear();
+                    reqHandle = await sendChatCompletion();
+                    response = reqHandle.response;
+                    if (!response.ok) {
+                        ({ errObj, errMsg } = await parseErrBody());
+                    }
+                }
+
+                if (!response.ok) {
+                    const errCode = errObj.code || response.status;
+                    const upstreamRaw = errObj.metadata?.raw;
+                    const upstreamMsg = upstreamRaw
+                        ? ` [Upstream: ${
+                              typeof upstreamRaw === 'string'
+                                  ? upstreamRaw
+                                  : upstreamRaw.message || JSON.stringify(upstreamRaw)
+                          }]`
+                        : '';
+
+                    if (response.status === 401) {
+                        throw new Error(
+                            `OpenRouter Authorization Failed (401): Please verify your API Key in Settings. Details: ${errMsg}`
+                        );
+                    } else if (
+                        response.status === 402 ||
+                        errCode === 402 ||
+                        errMsg.toLowerCase().includes('insufficient credits') ||
+                        errMsg.toLowerCase().includes('credit')
+                    ) {
+                        throw new Error(
+                            `OpenRouter Insufficient Credits (402): Your OpenRouter account is out of credits. Please refill at ${CLOUD_API_URLS.openRouterCreditsPage}. Details: ${errMsg}`
+                        );
+                    } else if (response.status === 403) {
+                        throw new Error(
+                            `OpenRouter Access Forbidden (403): Request was blocked by moderation or permissions. Details: ${errMsg}`
+                        );
+                    } else if (
+                        response.status === 404 ||
+                        errMsg.toLowerCase().includes('not found') ||
+                        errMsg.toLowerCase().includes('no such model')
+                    ) {
+                        throw new Error(
+                            `OpenRouter Model Not Found (404): Model '${modelId}' is not available or has been deprecated. Please select a valid model in Settings.`
+                        );
+                    } else if (response.status === 429) {
+                        throw new Error(
+                            `OpenRouter Rate Limit Exceeded (429): ${errMsg}${upstreamMsg}`
+                        );
+                    } else if (response.status === 400) {
+                        throw new Error(`OpenRouter Bad Request (400): ${errMsg}${upstreamMsg}`);
+                    }
+                    throw new Error(`OpenRouter Error (${response.status}): ${errMsg}${upstreamMsg}`);
+                }
+            }
+
+            const contentType = (response.headers.get('content-type') || '').toLowerCase();
+            const isSse = Boolean(response.body && contentType.includes('text/event-stream'));
+
+            if (isSse) {
+                try {
+                    data = await parseOpenRouterSseStream(response, reqHandle.resetIdle);
+                } catch (err) {
+                    throw reqHandle.mapError(err);
+                }
+            } else {
+                let responseText: string;
+                try {
+                    responseText = await response.text();
+                } catch (err) {
+                    throw reqHandle.mapError(err);
+                }
+                if (!responseText || !responseText.trim()) {
+                    throw new Error('OpenRouter returned an empty response body.');
+                }
+
+                try {
+                    data = JSON.parse(responseText) as OpenRouterResponsePayload;
+                } catch (e) {
+                    throw new Error(
+                        `OpenRouter returned invalid JSON: ${responseText.substring(0, 200)}`,
+                        {
+                            cause: e
+                        }
+                    );
+                }
+            }
+        } finally {
+            reqHandle.clear();
         }
         if (data.error) {
             const errObj = data.error;

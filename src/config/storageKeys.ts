@@ -13,6 +13,7 @@ export const STORAGE_KEYS = {
     activeStoryId: 'ellipsisprose_active_story_id',
     apiProvider: 'ellipsisprose_api_provider',
     apiTimeout: 'ellipsisprose_api_timeout',
+    apiTimeoutMigratedV2: 'ellipsisprose_api_timeout_migrated_v2',
     audioDramaSettings: 'ellipsisprose_audio_drama_settings',
     bannedPhrases: 'ellipsisprose_banned_phrases',
     claudeModel: 'ellipsisprose_claude_model',

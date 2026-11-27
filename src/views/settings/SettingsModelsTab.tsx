@@ -7,7 +7,9 @@
 import React from 'react';
 import { ChevronDown, RefreshCw, RotateCcw, UniversalModelSearch } from '@/components';
 import {
+    API_TIMEOUT_BOUNDS,
     CLOUD_API_URLS,
+    DEFAULT_API_TIMEOUT_SEC,
     DEFAULT_GEMINI_IMAGE_MODELS,
     DEFAULT_IMAGE_MODELS,
     DEFAULT_OPENROUTER_IMAGE_MODELS,
@@ -1085,8 +1087,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                     API Request Timeout
                 </label>
                 <p className="text-xs text-ink-500 mb-2">
-                    The maximum time to wait for a model response before cleanly terminating the request. Prevents
-                    prolonged stalling on hung or slow endpoints.
+                    The maximum time to wait for a model response (or idle gap between streamed tokens/thinking) before cleanly terminating a stalled request.
                 </p>
                 <div className="flex items-center gap-3">
                     <div className="flex-1">
@@ -1094,15 +1095,25 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             type="number"
                             value={apiTimeout}
                             onChange={(e) =>
-                                setApiTimeout(Math.max(5, Math.min(1800, parseInt(e.target.value, 10) || 120)))
+                                setApiTimeout(
+                                    Math.max(
+                                        API_TIMEOUT_BOUNDS.min,
+                                        Math.min(
+                                            API_TIMEOUT_BOUNDS.max,
+                                            parseInt(e.target.value, 10) || DEFAULT_API_TIMEOUT_SEC
+                                        )
+                                    )
+                                )
                             }
                             className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors font-mono"
-                            placeholder="120"
-                            min="5"
-                            max="1800"
+                            placeholder={String(DEFAULT_API_TIMEOUT_SEC)}
+                            min={API_TIMEOUT_BOUNDS.min}
+                            max={API_TIMEOUT_BOUNDS.max}
                         />
                     </div>
-                    <span className="text-xs text-ink-500 font-semibold font-mono">Seconds (Default: 120)</span>
+                    <span className="text-xs text-ink-500 font-semibold font-mono">
+                        Seconds (Default: {DEFAULT_API_TIMEOUT_SEC})
+                    </span>
                 </div>
             </div>
 

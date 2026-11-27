@@ -18,7 +18,7 @@ import {
     extractTextFromPlainText,
     yieldToMain
 } from '@/services/documents';
-import { fetchWithTimeout } from '@/services/http';
+import { fetchWithIdleTimeout, fetchWithTimeout } from '@/services/http';
 
 const originalFetch = globalThis.fetch;
 const originalUserAgentDesc = Object.getOwnPropertyDescriptor(Navigator.prototype, 'userAgent');
@@ -89,6 +89,65 @@ describe('services/http fetchWithTimeout', () => {
         );
         await vi.advanceTimersByTimeAsync(2600);
         await rejectionCheck;
+    });
+
+    it('supports idle timeout reset, total stream ceiling, and external AbortSignal propagation', async () => {
+        vi.useFakeTimers();
+
+        // 1. Silent stream aborts at idleTimeoutMs
+        globalThis.fetch = vi.fn<typeof fetch>((_url, init) => {
+            return new Promise<Response>((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => {
+                    const err = new Error('Aborted');
+                    err.name = 'AbortError';
+                    reject(err);
+                });
+            });
+        });
+        const silentPromise = fetchWithIdleTimeout('https://example.test/idle', {}, 1000, 5000);
+        const silentCheck = expect(silentPromise).rejects.toThrow('Request timed out after 1 seconds');
+        await vi.advanceTimersByTimeAsync(1100);
+        await silentCheck;
+
+        // 2. resetIdle() extends deadline past initial idle window, then total ceiling aborts
+        let capturedSignal: AbortSignal | undefined;
+        globalThis.fetch = vi.fn<typeof fetch>(async (_url, init) => {
+            capturedSignal = init?.signal ?? undefined;
+            return new Response('ok', { status: 200 });
+        });
+        const handle = await fetchWithIdleTimeout('https://example.test/stream', {}, 1000, 2500);
+        await vi.advanceTimersByTimeAsync(700);
+        handle.resetIdle();
+        await vi.advanceTimersByTimeAsync(700);
+        expect(capturedSignal?.aborted).toBe(false);
+        handle.resetIdle();
+        await vi.advanceTimersByTimeAsync(1200);
+        expect(capturedSignal?.aborted).toBe(true);
+        expect((handle.mapError(new DOMException('Aborted', 'AbortError')) as Error).message).toBe(
+            'Request timed out after 2.5 seconds (stream ceiling)'
+        );
+        handle.clear();
+
+        // 3. External AbortSignal propagates directly without timeout wrapping
+        const ext = new AbortController();
+        globalThis.fetch = vi.fn<typeof fetch>((_url, init) => {
+            return new Promise<Response>((_resolve, reject) => {
+                init?.signal?.addEventListener('abort', () => {
+                    const err = new Error('User cancelled');
+                    err.name = 'AbortError';
+                    reject(err);
+                });
+            });
+        });
+        const extPromise = fetchWithIdleTimeout(
+            'https://example.test/ext',
+            { signal: ext.signal },
+            1000,
+            5000
+        );
+        const extCheck = expect(extPromise).rejects.toThrow('User cancelled');
+        ext.abort();
+        await extCheck;
     });
 });
 
