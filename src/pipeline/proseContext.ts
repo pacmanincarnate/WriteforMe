@@ -572,7 +572,7 @@ ${genreRulesBlock}
 
 ${strictAntiPatternsBlock}
 
-${buildGenreToneStyleBlocks(storyToUse.style, { includeTechnicalSpecs: true })}${getAuthorNoteXml({ author_note: storyToUse.author_note })}
+${buildGenreToneStyleBlocks(storyToUse.style, { includeTechnicalSpecs: true })}${getAuthorNoteXml({ author_note: storyToUse.author_note, content_dial: storyToUse.content_dial })}
 
 ${staticWorldPrimerBlock}${canonicalInterviewsBlock}<active_characters_profiles>
 [EMOTIONAL TEMPERATURE: Write these characters as human beings who feel deeply. Their traits are not clinical diagnoses, but the messy result of lived experiences. Allow for genuine emotional warmth and irrational human complexity.]

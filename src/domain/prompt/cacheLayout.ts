@@ -54,6 +54,7 @@ export const PROSE_SECTION_TIERS: Readonly<Record<string, CacheTier>> = {
     genre_pacing_and_dialogue_rules: 'story',
     strict_anti_patterns: 'story',
     world_primer: 'story',
+    content_limits: 'story',
     canonical_character_interview_voice: 'cast',
     active_characters_profiles: 'cast',
     story_so_far: 'scene',
