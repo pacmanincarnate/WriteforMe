@@ -1,7 +1,7 @@
 /**
  * @module services/rag/embeddingService
  * Multi-provider text embedding client with exponential backoff for Gemini, OpenRouter,
- * nano-GPT, KoboldCPP, and Codex Bridge.
+ * nano-GPT, KoboldCPP, Codex Bridge, and the desktop app's built-in llama.cpp model.
  */
 
 import {
@@ -15,8 +15,19 @@ import {
 } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 import { withCloudActivity, withLocalGpuLease } from '@/services/vram';
+import { embedLocally, isLocalEmbeddingAvailable } from './localEmbedding';
 
-export type EmbeddingProvider = 'gemini' | 'openrouter' | 'nanogpt' | 'koboldcpp' | 'codex' | string;
+export type EmbeddingProvider =
+    | 'gemini'
+    | 'openrouter'
+    | 'nanogpt'
+    | 'koboldcpp'
+    | 'codex'
+    | 'llamacpp'
+    | string;
+
+/** A search embeds a query; the index embeds documents. Only the built-in model tells them apart. */
+export type EmbeddingKind = 'query' | 'document';
 
 function isLocalKoboldEmbeddingUrl(url: string): boolean {
     try {
@@ -35,30 +46,39 @@ export class EmbeddingService {
     public provider: EmbeddingProvider;
     public baseUrl: string;
     public codexUrl: string;
+    /** The built-in model's id; part of the index fingerprint, so a new model re-indexes. */
+    public localModel: string;
 
     constructor(
         apiKey = '',
         provider: EmbeddingProvider = 'gemini',
         baseUrl: string = DEFAULT_SERVICE_URLS.koboldcpp,
-        codexUrl: string = DEFAULT_SERVICE_URLS.codexBridge
+        codexUrl: string = DEFAULT_SERVICE_URLS.codexBridge,
+        localModel: string = DEFAULT_EMBEDDING_MODELS.llamacpp
     ) {
         this.apiKey = apiKey;
         this.provider = provider;
         this.baseUrl = baseUrl;
         this.codexUrl = codexUrl;
+        this.localModel = localModel || DEFAULT_EMBEDDING_MODELS.llamacpp;
     }
 
     isConfigured(): boolean {
+        if (this.provider === 'llamacpp') return isLocalEmbeddingAvailable();
         return this.provider === 'koboldcpp' || this.provider === 'codex' || Boolean(this.apiKey);
     }
 
     getProviderLabel(): string {
+        if (this.provider === 'llamacpp') return `llamacpp|${this.localModel}`;
         return `${this.provider}|${(DEFAULT_EMBEDDING_MODELS as Record<string, string>)[this.provider]}`;
     }
 
-    async getEmbedding(text: string): Promise<number[] | null> {
+    async getEmbedding(text: string, kind: EmbeddingKind = 'document'): Promise<number[] | null> {
         if (!text || !text.trim()) return null;
-        if (this.provider === 'gemini') {
+        if (this.provider === 'llamacpp') {
+            // Runs on the processor in the desktop app, so it takes no GPU lease.
+            return embedLocally(this.localModel, text, kind);
+        } else if (this.provider === 'gemini') {
             return withCloudActivity(() => this.getGeminiEmbedding(text));
         } else if (this.provider === 'nanogpt') {
             return withCloudActivity(() => this.getNanoGPTEmbedding(text));

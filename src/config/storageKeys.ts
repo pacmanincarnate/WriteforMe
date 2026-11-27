@@ -54,6 +54,7 @@ export const STORAGE_KEYS = {
     editorialAutopilot: 'ellipsisprose_editorial_autopilot',
     editorialDeepLlm: 'ellipsisprose_editorial_deep_llm',
     embeddingProvider: 'ellipsisprose_embedding_provider',
+    localEmbeddingModel: 'ellipsisprose_local_embedding_model',
     enableAudioDramaDirection: 'ellipsisprose_enable_audio_drama_direction',
     enableMcpBridge: 'ellipsisprose_enable_mcp_bridge',
     enableNarrativeLenses: 'ellipsisprose_enable_narrative_lenses',

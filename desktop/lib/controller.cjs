@@ -13,6 +13,7 @@ const { writeWaveConfigs } = require('./audiocppConfig.cjs');
 const { downloadFile } = require('./download.cjs');
 const { httpOk } = require('./supervisor.cjs');
 const { VramCoordinator } = require('./vramCoordinator.cjs');
+const { LocalEmbedding } = require('./embedding.cjs');
 
 class Controller {
     /**
@@ -42,6 +43,8 @@ class Controller {
             controller: this,
             onEvent: onVramEvent
         });
+        // Lore search embeddings on the processor; see embedding.cjs for why it takes no VRAM lease.
+        this.embedding = new LocalEmbedding({ settings, supervisor });
     }
 
     backendDir(id) {

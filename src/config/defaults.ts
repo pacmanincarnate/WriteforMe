@@ -21,7 +21,9 @@ export const DEFAULT_EMBEDDING_MODELS = {
     openrouter: 'qwen/qwen3-embedding-8b',
     nanogpt: 'text-embedding-3-small',
     koboldcpp: 'default',
-    codex: 'local'
+    codex: 'local',
+    /** The desktop app's built-in model; ids are in desktop/lib/embedding.cjs. */
+    llamacpp: 'embeddinggemma-2'
 } as const;
 
 export const DEFAULT_IMAGE_MODELS = {

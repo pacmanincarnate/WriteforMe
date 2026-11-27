@@ -85,6 +85,25 @@ interface DesktopVramStatusAmbient {
     gpu: { source: string; gpu: string; totalMb: number; usedMb: number; freeMb: number } | null;
 }
 
+interface DesktopEmbeddingModelAmbient {
+    id: string;
+    name: string;
+    bytes: number;
+    memoryMb: number | null;
+    installed: boolean;
+    /** Where a file already on this PC was found; empty for a model the app downloads. */
+    source: string;
+}
+
+interface DesktopEmbeddingStatusAmbient {
+    available: boolean;
+    state: 'off' | 'downloading' | 'starting' | 'ready' | 'failed';
+    message: string;
+    received: number;
+    total: number;
+    models: DesktopEmbeddingModelAmbient[];
+}
+
 interface DesktopBackendsBridgeAmbient {
     isDesktop: true;
     ensureKoboldRunning: () => Promise<{
@@ -123,6 +142,17 @@ interface DesktopBackendsBridgeAmbient {
         error?: string;
     }>;
     openBackendsWindow: () => Promise<{ ok: boolean; error?: string }>;
+    getEmbeddingStatus?: (
+        modelId: string
+    ) => Promise<{ ok: boolean; value?: DesktopEmbeddingStatusAmbient; error?: string }>;
+    ensureEmbedding?: (
+        modelId: string
+    ) => Promise<{ ok: boolean; value?: DesktopEmbeddingStatusAmbient; error?: string }>;
+    embed?: (
+        modelId: string,
+        texts: string[],
+        kind: 'query' | 'document'
+    ) => Promise<{ ok: boolean; value?: number[][]; error?: string }>;
     onEvent: (cb: (event: DesktopBackendEventAmbient) => void) => () => void;
 }
 

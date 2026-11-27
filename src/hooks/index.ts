@@ -38,4 +38,5 @@ export * from './useShellViewState';
 export * from './useContinuousAutopilot';
 export * from './useAppUpdates';
 export * from './useDesktopBackends';
+export * from './useLocalEmbedding';
 export * from './useComfyLauncher';

@@ -425,6 +425,9 @@ function registerIpc() {
         controller.ensureComfyRunning(() => pushState(), () => {}, { explicit: true })
     ));
     ipcMain.handle('backends:openWindow', guard(() => { openBackendsWindow(); }));
+    ipcMain.handle('backends:embeddingStatus', guard((modelId) => controller.embedding.status(modelId)));
+    ipcMain.handle('backends:embeddingEnsure', guard(async (modelId) => { await controller.embedding.ensure(modelId); return controller.embedding.status(modelId); }));
+    ipcMain.handle('backends:embed', guard((modelId, texts, kind) => controller.embedding.embed(modelId, texts, kind)));
     ipcMain.handle('backends:acquireGpuLease', guard((modality, hints) => controller.vram.acquireLease(modality, hints)));
     ipcMain.handle('backends:releaseGpuLease', guard((leaseId) => controller.vram.releaseLease(leaseId)));
     ipcMain.handle('backends:setCloudActivity', guard((activeOrCount) => controller.vram.setCloudActivity(activeOrCount)));

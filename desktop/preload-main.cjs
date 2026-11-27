@@ -30,6 +30,9 @@ contextBridge.exposeInMainWorld('ellipsisDesktopBackends', {
     freeAllVram: () => ipcRenderer.invoke('backends:freeAllVram'),
     getVramStatus: () => ipcRenderer.invoke('backends:getVramStatus'),
     openBackendsWindow: () => ipcRenderer.invoke('backends:openWindow'),
+    getEmbeddingStatus: (modelId) => ipcRenderer.invoke('backends:embeddingStatus', modelId),
+    ensureEmbedding: (modelId) => ipcRenderer.invoke('backends:embeddingEnsure', modelId),
+    embed: (modelId, texts, kind) => ipcRenderer.invoke('backends:embed', modelId, texts, kind),
     onEvent: (cb) => {
         if (typeof cb !== 'function') return () => {};
         const listener = (_event, payload) => cb(payload);
