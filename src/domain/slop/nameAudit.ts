@@ -18,6 +18,7 @@ import {
 } from './registry';
 import { buildEffectiveSlopData, buildStoryGrandfatherSet } from './config';
 import { findBoundaryMatches, isAtSentenceStart } from './scanner';
+import { getNameBanks, inventedWordsOf } from '@/domain/names';
 
 export function extractCandidatePlaceNames(
     text: string,
@@ -109,6 +110,7 @@ export function auditEntityNamesAndPlaces(params?: AuditEntityNamesParams): Enti
         }
     });
 
+    const madeUpBanks = slopConfig.enableNameBank !== false ? getNameBanks() : null;
     const hardCharCats = ['names_stock_full', 'names_feminine', 'names_masculine', 'names_romance_hero', 'names_unisex', 'names_word', 'surnames'];
     const violations: EntityNameViolation[] = [];
     const hardViolations: EntityNameViolation[] = [];
@@ -131,6 +133,13 @@ export function auditEntityNamesAndPlaces(params?: AuditEntityNamesParams): Enti
         }
         if (!hitHard && patById.synth_quantum && patById.synth_quantum.severity === 'hard' && /\b(?:Synth|Quantum)[A-Za-z]*\b/.test(cName)) {
             hitHard = { item: cName, matched: cName, categoryId: 'synth_quantum', categoryTitle: 'Synth- or Quantum- names', severity: 'hard' };
+        }
+        if (!hitHard && madeUpBanks) {
+            // Shapes a model coins (Vaeryn Duskmere) that no list can enumerate. Names the author typed stay.
+            const coined = inventedWordsOf(madeUpBanks, cName).filter((word) => !grandfather.has(word));
+            if (coined.length > 0) {
+                hitHard = { item: coined[0], matched: coined[0], categoryId: 'made_up', categoryTitle: 'Reads as a made-up name', severity: 'hard' };
+            }
         }
         if (hitHard) {
             const vHard: EntityNameViolation = {

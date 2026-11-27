@@ -39,6 +39,7 @@ export function normalizeSlopConfig(
         if (typeof rawConfig.enableUpstreamNameAudit === 'boolean') {
             base.enableUpstreamNameAudit = rawConfig.enableUpstreamNameAudit;
         }
+        if (typeof rawConfig.enableNameBank === 'boolean') base.enableNameBank = rawConfig.enableNameBank;
         if (rawConfig.emDashMode === 'off' || rawConfig.emDashMode === 'density' || rawConfig.emDashMode === 'strict') {
             base.emDashMode = rawConfig.emDashMode;
         }

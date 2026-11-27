@@ -70,6 +70,7 @@ import {
 } from './context';
 import { repairBannedEntitiesWithAI } from './continuityPipeline';
 import { buildStoryArcGeneratorPrompt, buildStoryArcReviewerPrompt } from './arcAndActs';
+import { buildConceptNameBankBlock } from './nameBank';
 import { runAgentWithEscalation } from './escalation';
 import { distillLore, ingestLore, ingestLoreBatch } from './lorePipeline';
 import { applySeriesAfterArc, runSeriesArchitect } from './series';
@@ -449,6 +450,14 @@ export async function initStory(
         } else if (isSequelStory(baselineStory) && asString(baselineStory.world_primer).trim()) {
             finalPrompt += `\n\n<world_primer>${asString(baselineStory.world_primer)}</world_primer>`;
         }
+
+        // Real names for the story's time and place; empty when the name bank is off.
+        const nameBankBlock = await buildConceptNameBankBlock(ctx, {
+            story: baselineStory,
+            setting: `${conceptToUse}\n${authorNoteToUse || ''}`,
+            avoid: asArray<Record<string, unknown>>(baselineStory.cast).map((c) => asString(c.name))
+        });
+        if (nameBankBlock) finalPrompt += `\n\n${nameBankBlock}`;
 
         finalPrompt += `\n\n<output_format_description>
 FORMATTING DIRECTIVE: Return your response strictly as XML tags. Do not use YAML or markdown blocks.

@@ -27,6 +27,7 @@ import {
     type WorldUpdatesPayload
 } from '@/domain/continuity';
 import { computeChangeRatio, SURGICAL_MAX_CHANGE_RATIO } from '@/domain/editing';
+import { createStoryNameRoll } from './nameBank';
 import {
     applyCascadingNameReplacements as domainApplyCascadingNameReplacements,
     auditEntityNamesAndPlaces as domainAuditEntityNamesAndPlaces,
@@ -477,6 +478,20 @@ export async function repairBannedEntitiesWithAI(
     );
     let pending: EntityNameViolation[] = violations.slice();
     const auditFn = getAuditFn(ctx);
+    // Real names for this story's time and place: offered to the model, and used if it fails twice.
+    const nameRoll = violations.some((v) => v.entityType !== 'place')
+        ? await createStoryNameRoll(ctx, {
+              story: ctxStory,
+              setting: `${asString(ctxStory?.concept)}\n${String(storyContext || '')}`,
+              avoid: existingNames
+          }).catch(() => null)
+        : null;
+    const nameBankHint = nameRoll
+        ? `<name_bank>\nReal names people of this time and place carry. Prefer these for characters: ${Array.from(
+              { length: 8 },
+              (_, i) => nameRoll.draw(`repair-${i}`, { pronouns: i % 2 === 0 ? 'she' : 'he' }).full
+          ).join(', ')}\n</name_bank>\n`
+        : '';
     const slopConfig = ctx.getSlopConfig();
 
     const parseReplaceTags = (xmlText: string): Record<string, string> => {
@@ -499,7 +514,7 @@ export async function repairBannedEntitiesWithAI(
 
     for (let attempt = 1; attempt <= 2 && pending.length > 0; attempt++) {
         try {
-            const prompt = `<story_context>\n${String(storyContext || '').slice(0, 1400)}\n</story_context>\n<existing_cast_names>\n${Array.from(usedNamesLower).join(', ') || '(none)'}\n</existing_cast_names>\n<flagged_entities>\n${pending.map((v) => `- [${v.entityType || 'character'} | ${v.severity || 'hard'}] "${v.name}" -> ${v.reason}`).join('\n')}\n</flagged_entities>\n${attempt > 1 ? '<retry_note>Previous replacements were still flagged or collided with existing names. Provide fresh, culturally varied, everyday grounded names.</retry_note>\n' : ''}Output ONLY <replacements><replace old="..." new="..." /></replacements>.`;
+            const prompt = `<story_context>\n${String(storyContext || '').slice(0, 1400)}\n</story_context>\n<existing_cast_names>\n${Array.from(usedNamesLower).join(', ') || '(none)'}\n</existing_cast_names>\n<flagged_entities>\n${pending.map((v) => `- [${v.entityType || 'character'} | ${v.severity || 'hard'}] "${v.name}" -> ${v.reason}`).join('\n')}\n</flagged_entities>\n${nameBankHint}${attempt > 1 ? '<retry_note>Previous replacements were still flagged or collided with existing names. Provide fresh, culturally varied, everyday grounded names.</retry_note>\n' : ''}Output ONLY <replacements><replace old="..." new="..." /></replacements>.`;
             const raw = await ctx.callAI(
                 prompt,
                 PROMPTS.entityNameRepair,
@@ -557,7 +572,13 @@ export async function repairBannedEntitiesWithAI(
                 : ['Alder Street', 'St. Jude Annex', 'Harborview Foundry', 'Eastgate Station'];
         pending.forEach((v) => {
             const pool = v.entityType === 'place' ? fallbackPlaces : fallbackNames;
-            let pick = pool.find((item) => !usedNamesLower.has(item.toLowerCase()));
+            let pick: string | undefined;
+            if (nameRoll && v.entityType !== 'place') {
+                // Drawn from the bank for the story's own time and place, the same shape as the old name.
+                const drawn = nameRoll.replacementFor(v.name, { surname: /^surnames/.test(v.categoryId) });
+                if (drawn && !usedNamesLower.has(drawn.toLowerCase())) pick = drawn;
+            }
+            if (!pick) pick = pool.find((item) => !usedNamesLower.has(item.toLowerCase()));
             if (!pick) {
                 pick =
                     v.entityType === 'place'

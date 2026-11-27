@@ -13,6 +13,7 @@ import {
     type PipelineStory
 } from '@/pipeline';
 import type { StoryMemory } from '@/types';
+import { buildConceptNameBankBlock } from '@/pipeline/nameBank';
 import { DEFAULT_SLOP_CONFIG } from '@/domain/slop';
 import * as validation from '@/domain/validation';
 
@@ -175,6 +176,50 @@ describe('pipeline core orchestrators (Phase 6A)', () => {
 
         expect(res.renameMap['Elena Vance']).toBe('Hannah Mercer');
         expect(res.usedFallback).toBe(false);
+    });
+
+    it('repairBannedEntitiesWithAI offers bank names to the model and draws from the bank when it fails', async () => {
+        const prompts: string[] = [];
+        const callAI = vi.fn(async (prompt: string) => {
+            prompts.push(prompt);
+            return '<replacements><replace old="Elara Voss" new="Lyra Thorne" /></replacements>';
+        });
+        const { ctx } = makeTestContext({ id: 'story_bank', cast: [] }, callAI);
+
+        const res = await repairBannedEntitiesWithAI(ctx, {
+            violations: [
+                { name: 'Elara Voss', categoryId: 'names_stock_full', entityType: 'character', severity: 'hard', reason: 'Stock name' }
+            ],
+            existingNames: ['Thomas Callahan'],
+            storyContext: 'A Victorian London mystery.',
+            story: { id: 'story_bank', concept: 'A Victorian London mystery.' }
+        });
+
+        expect(prompts[0]).toContain('<name_bank>');
+        expect(res.usedFallback).toBe(true);
+        const drawn = res.renameMap['Elara Voss'];
+        expect(drawn.split(' ').length).toBeGreaterThanOrEqual(2);
+        // Not one of the six fixed stand-ins: it came from the Victorian bank.
+        expect(['Hannah Mercer', 'Thomas Callahan', 'Nadia Okafor', 'David Kowalski', 'Miriam Delgado', 'Samuel Lindqvist']).not.toContain(drawn);
+
+        const again = await repairBannedEntitiesWithAI(ctx, {
+            violations: [
+                { name: 'Elara Voss', categoryId: 'names_stock_full', entityType: 'character', severity: 'hard', reason: 'Stock name' }
+            ],
+            existingNames: ['Thomas Callahan'],
+            storyContext: 'A Victorian London mystery.',
+            story: { id: 'story_bank', concept: 'A Victorian London mystery.' }
+        });
+        expect(again.renameMap['Elara Voss']).toBe(drawn);
+    });
+
+    it('buildConceptNameBankBlock follows the Real-Name Bank setting', async () => {
+        const { ctx } = makeTestContext({ id: 'story_block', cast: [] }, vi.fn(async () => ''));
+        const on = await buildConceptNameBankBlock(ctx, { story: { id: 'story_block' }, setting: 'A diner in Ohio' });
+        expect(on).toMatch(/^<name_bank>[\s\S]*- Women: [\s\S]*- Men: [\s\S]*<\/name_bank>$/);
+
+        const offCtx = { ...ctx, getSlopConfig: () => ({ ...DEFAULT_SLOP_CONFIG, enableNameBank: false }) };
+        expect(await buildConceptNameBankBlock(offCtx, { story: { id: 'story_block' }, setting: 'A diner in Ohio' })).toBe('');
     });
 
     it('checkAndExecuteRSI surgically injects missing item and updates graph edges', async () => {

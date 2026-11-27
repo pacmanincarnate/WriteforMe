@@ -54,6 +54,7 @@ import {
     computeSpawnedCharacterVoiceSeed,
     repairBannedEntitiesWithAI
 } from './continuityPipeline';
+import { ensureNameBanks } from './nameBank';
 import { triggerLoreExtraction } from './lorePipeline';
 import { applySurgicalEditsWithRetry } from './surgicalPatch';
 
@@ -145,6 +146,7 @@ export async function runAgentWithEscalation<TParsed = Record<string, unknown>>(
     const spawnedBriefs: EscalationCharacterBrief[] = [];
     const escalationHistory: EscalationHistoryEntry[] = [];
 
+    await ensureNameBanks(ctx);
     const auditFn = ctx.auditEntityNamesAndPlaces || domainAuditEntityNamesAndPlaces;
     const cascadeFn = ctx.applyCascadingNameReplacements || domainApplyCascadingNameReplacements;
 
