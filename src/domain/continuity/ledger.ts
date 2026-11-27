@@ -1,12 +1,12 @@
 /**
  * @module domain/continuity/ledger
  * Scene coordinate parsing/comparison, chronological fact visibility,
- * continuity ledger ingestion, and 3-tier cache-aligned prompt formatting.
+ * and 3-tier cache-aligned continuity ledger prompt formatting.
  */
 
 import type { CastMember, Story } from '@/types';
 import { STOPWORDS, parseNum, tokenMatch } from '@/utils';
-import { actForSequence, isLegacyValenceEntry, resolveCharacter } from '@/domain/story';
+import { actForSequence, isLegacyValenceEntry } from '@/domain/story';
 
 export interface SceneCoordinates {
     act: number;
@@ -314,163 +314,6 @@ export function isFactKnownAt(
     }
 
     return true;
-}
-
-/** Ingests structured hard facts, state changes, and relationship shifts from a scene into the ledger. */
-export function ingestSceneContinuityData(
-    scene: Record<string, unknown> | null | undefined,
-    storyState: ContinuityStoryState = {}
-): Array<Record<string, unknown>> {
-    if (!scene) return storyState.continuity_ledger || [];
-
-    const coords = parseSceneCoordinates(scene.number || scene.id || scene, storyState);
-    const parentSeqNum = scene.parent_sequence ? Number(scene.parent_sequence) : null;
-    const validFromAct =
-        Number(
-            scene.parent_act ||
-                (parentSeqNum
-                    ? (storyState.sequences || []).find((s) => s.number === parentSeqNum)
-                          ?.parent_act || actForSequence(parentSeqNum)
-                    : coords.act)
-        ) || 1;
-    const validFromSeq = Number(scene.parent_sequence || scene.sequence || coords.sequence) || 1;
-    const validFromScn = coords.scene || 1;
-    const sceneRef = scene.number
-        ? `Scene ${scene.number}`
-        : scene.id
-          ? `Scene ${scene.id}`
-          : `Scene ${validFromSeq}.${validFromScn}`;
-
-    const cast = storyState.cast || [];
-    const getCharName = (id: unknown): string => {
-        const c = resolveCharacter(id, cast);
-        return c ? c.name : String(id || '');
-    };
-
-    const existingLedger = (storyState.continuity_ledger || []).filter(
-        (e) => e && !isLegacyValenceEntry(e)
-    );
-    const newEntries: Array<Record<string, unknown>> = [];
-    const appendOrMoveLedgerEntry = (
-        matchFn: (e: Record<string, unknown>) => boolean,
-        entry: Record<string, unknown>
-    ): void => {
-        const existingIdx = existingLedger.findIndex(matchFn);
-        if (existingIdx !== -1) existingLedger.splice(existingIdx, 1);
-        const pendingIdx = newEntries.findIndex(matchFn);
-        if (pendingIdx !== -1) newEntries.splice(pendingIdx, 1);
-        newEntries.push(entry);
-    };
-
-    const hardFacts = (scene.hard_facts_introduced ||
-        scene.continuity_facts ||
-        scene.hard_facts ||
-        scene.facts ||
-        []) as Array<Record<string, unknown>>;
-    hardFacts.forEach((hf) => {
-        const category = String(hf.category || 'Fact');
-        const key = String(hf.key || hf.subject || hf.name || 'Fact').trim();
-        const value = String(hf.detail || hf.value || hf.fact || hf.description || '').trim();
-        if (!key || !value) return;
-
-        const entityId = String(hf.entity_id || hf.character_id || hf.character || '');
-        const tag = String(
-            hf.tracking_tag ||
-                (entityId
-                    ? `entity:${entityId}:${key.toLowerCase().replace(/\s+/g, '_')}`
-                    : `fact:${category.toLowerCase()}:${key.toLowerCase().replace(/\s+/g, '_')}`)
-        );
-        const src = String(hf.source_scene || sceneRef);
-
-        const entry: Record<string, unknown> = {
-            key,
-            value,
-            category,
-            source_scene: src,
-            valid_from_act: hf.valid_from_act || validFromAct,
-            valid_from_sequence: hf.valid_from_sequence || validFromSeq,
-            valid_from_scene: hf.valid_from_scene || validFromScn,
-            entity_id: entityId,
-            tracking_tag: tag,
-            created_at: Date.now(),
-            status: 'active'
-        };
-
-        appendOrMoveLedgerEntry(
-            (e) =>
-                (Boolean(e.tracking_tag) && e.tracking_tag === tag) ||
-                (Boolean(e.key) &&
-                    String(e.key).toLowerCase() === key.toLowerCase() &&
-                    String(e.category || '').toLowerCase() === category.toLowerCase()),
-            entry
-        );
-    });
-
-    const stateChanges = (scene.state_changes ||
-        scene.state_changes_introduced ||
-        []) as Array<Record<string, unknown>>;
-    stateChanges.forEach((sc) => {
-        if (!sc.entity_id || !sc.relation || !sc.target) return;
-        const charName = getCharName(sc.entity_id);
-        const key = `${charName} [${sc.relation}]`;
-        let relVerb = String(sc.relation).toLowerCase();
-        if (relVerb === 'defeats') relVerb = 'defeated';
-        const val = `${charName} ${relVerb} ${sc.target} (established in ${sceneRef}).`;
-        const tag = `entity:${sc.entity_id}`;
-
-        const entry: Record<string, unknown> = {
-            key,
-            value: val,
-            category: 'State Change',
-            source_scene: sceneRef,
-            valid_from_act: validFromAct,
-            valid_from_sequence: validFromSeq,
-            valid_from_scene: validFromScn,
-            entity_id: sc.entity_id,
-            relation: sc.relation,
-            tracking_tag: tag,
-            created_at: Date.now(),
-            status: 'active'
-        };
-        appendOrMoveLedgerEntry((e) => e.key === key && e.tracking_tag === tag, entry);
-    });
-
-    const relShifts = (scene.relationship_shifts || []) as Array<Record<string, unknown>>;
-    relShifts.forEach((rs) => {
-        const fromId = rs.from || rs.source_id;
-        const toId = rs.to || rs.target_id;
-        const dynamic = rs.new_feeling || rs.new_dynamic || rs.dynamic;
-        if (!fromId || !toId || !dynamic) return;
-
-        const fromName = getCharName(fromId);
-        const toName = getCharName(toId);
-        if (!fromName || !toName) return;
-
-        const key = `${fromName} -> ${toName}`;
-        const val = `${fromName}'s attitude toward ${toName} shifted to "${dynamic}" in ${sceneRef}.`;
-        const tag = `rel:${fromId}->${toId}`;
-
-        const entry: Record<string, unknown> = {
-            key,
-            value: val,
-            category: 'Relationship Shift',
-            source_scene: sceneRef,
-            valid_from_act: validFromAct,
-            valid_from_sequence: validFromSeq,
-            valid_from_scene: validFromScn,
-            from_character: fromName,
-            to_character: toName,
-            entity_id: fromId,
-            relation: 'RELATION_SHIFT',
-            new_dynamic: dynamic,
-            tracking_tag: tag,
-            created_at: Date.now(),
-            status: 'active'
-        };
-        appendOrMoveLedgerEntry((e) => e.key === key && e.tracking_tag === tag, entry);
-    });
-
-    return [...existingLedger, ...newEntries];
 }
 
 /** Formats chronologically active continuity facts in prefix-cacheable Tier 3 -> Tier 1 -> Tier 2 order. */
@@ -1101,26 +944,4 @@ export function formatContinuityLedgerForPrompt(
         sections.push(`### Tier 2 (Temporal Recency):\n${tier2Lines.join('\n')}`);
     }
     return sections.join('\n\n');
-}
-
-/** Wraps active continuity ledger entries inside `<unresolved_continuity_mandates>`. */
-export function getContinuityContext(
-    storyState: ContinuityStoryState = {},
-    targetScope: unknown = null
-): string {
-    const ledger = storyState.continuity_ledger || [];
-    if (!Array.isArray(ledger) || ledger.length === 0) return '';
-    const activeEntries = ledger.filter(
-        (e) =>
-            e &&
-            (e.status === 'active' || !e.status) &&
-            !isLegacyValenceEntry(e) &&
-            isFactKnownAt(e, targetScope, storyState)
-    );
-    if (activeEntries.length === 0) return '';
-
-    const formatted = formatContinuityLedgerForPrompt(storyState, targetScope);
-    if (!formatted || formatted === 'No active continuity items.') return '';
-
-    return `<unresolved_continuity_mandates>\nThe following physical traits, inventory items, locations, opinions, and plot agreements are ACTIVE CANON FACTS known at this point in the narrative and MUST NOT be contradicted:\n${formatted}\n</unresolved_continuity_mandates>`;
 }

@@ -77,6 +77,7 @@ export interface CharacterStateUpdateDelta {
 }
 
 export interface WorldUpdatesPayload {
+    scene_synopsis?: string;
     cast_updates?: CastUpdateDelta[];
     new_characters?: NewCharacterDelta[];
     relationship_updates?: RelationshipUpdateDelta[];

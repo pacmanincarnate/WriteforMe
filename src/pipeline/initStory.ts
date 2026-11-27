@@ -24,7 +24,6 @@ import {
 } from '@/domain/slop';
 import {
     buildGenreToneBlocks,
-    buildGenreToneStyleBlocks,
     computePacingRanges,
     extractCharacterBrief,
     extractRelationship,
@@ -55,6 +54,7 @@ import {
     type PipelineStory
 } from './context';
 import { repairBannedEntitiesWithAI } from './continuityPipeline';
+import { buildStoryArcGeneratorPrompt, buildStoryArcReviewerPrompt } from './arcAndActs';
 import { runAgentWithEscalation } from './escalation';
 import { distillLore, ingestLore, ingestLoreBatch } from './lorePipeline';
 
@@ -1320,142 +1320,37 @@ BEGIN DEVELOPING CHARACTER PROFILES`;
             );
             const arcLoreBlocks = formatLoreForPrompt(primer, arcLoreDocs);
 
+            const initStyle = asRecord(initialStoryState.style);
+            const initCastList = startingCast as Array<CastMember & Record<string, unknown>>;
+
             const arcResult = await runAgentWithEscalation(ctx, {
                 tierName: 'Story Arc Agent',
                 isAutopilot,
                 context: initialStoryState,
-                generatorPromptFn: () => `
-<user_concept>
-${conceptToUse}
-</user_concept>
-
-${heartOfTheDilemma ? `<heart_of_the_dilemma>\n${heartOfTheDilemma}\n</heart_of_the_dilemma>\n` : ''}
-
-${arcLoreBlocks ? `${arcLoreBlocks}\n\n` : ''}${pillarsBlock}${buildGenreToneStyleBlocks(asRecord(initialStoryState.style))}
-
-<status_quo>
-${statusQuo}
-</status_quo>
-
-<cast_list>
-${startingCast.map((c) => `- ${c.name} (${c.role}${c.corner_role ? ` [${asString(c.corner_role)}]` : ''}): Safety Habit / Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
-</cast_list>
-
-<output_format_description>
-FORMATTING DIRECTIVE: Return your story arc strictly as XML tags. Do not use YAML or markdown blocks.
-CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
-CRITICAL RULE FOR NARRATIVE THREADS: You MUST include the <narrative_threads> container containing at least 3 <thread> blocks (T1 for A-Story external plot, T2 for B-Story relationship mirror, T3 for C-Story internal transformation). Each <thread> MUST have <thread_id>, <name>, and <description>. Do not omit <narrative_threads> or the <thread> tags.
-CRITICAL RULE FOR CHARACTER ARCS & GENRE APPROPRIATENESS: You MUST generate a distinct <arc> block for EVERY character listed in <cast_list>. Each <arc> MUST contain <char_id>, <lie_believed>, <truth_needed>, <arc_catalyst>, and <arc_description>. All character arcs must be authentically appropriate to the specific genre and scenario. STRICTLY PROHIBITED: Do NOT make characters clinical, robotic, or unrealistically analytical. Characters must NEVER be defined as running experiments on others, testing social hypotheses, treating people as pawns/specimens, diagnosing psychological trauma, or possessing mastermind omniscience. Arcs must be driven by visceral human emotions, relatable fears, and genuine moral stakes.
-
-Output Schema:
-<response>
-  <global_arc>
-    <core_thematic_argument>A debatable philosophical thesis that the story explores — not a moral platitude.</core_thematic_argument>
-    <starting_value_state>The protagonist's starting belief/condition (aligned with the Lie).</starting_value_state>
-    <ending_value_state>The protagonist's ending belief/condition (aligned with the Truth, or tragic rejection of it).</ending_value_state>
-    <inciting_incident>The specific event that disrupts the established status quo and forces the protagonist to act.</inciting_incident>
-    <major_surprises_and_twists>Describe at least 2 major reversals. For each: what the audience expects, what actually happens, and why it's inevitable in hindsight.</major_surprises_and_twists>
-  </global_arc>
-
-  <narrative_threads>
-    <thread>
-      <thread_id>T1</thread_id>
-      <name>Main Plot Thread (A-Story) Name</name>
-      <description>Vivid description of the external conflict, physical stakes, and what drives the plot forward.</description>
-    </thread>
-    <thread>
-      <thread_id>T2</thread_id>
-      <name>Relationship / Thematic Mirror (B-Story) Name</name>
-      <description>Vivid description of the relationship dynamic testing the thematic thesis.</description>
-    </thread>
-    <thread>
-      <thread_id>T3</thread_id>
-      <name>Internal Arc (C-Story) Name</name>
-      <description>The internal psychological battle from the Lie to the Truth.</description>
-    </thread>
-  </narrative_threads>
-
-  <character_arcs>
-${(startingCast.length > 0 ? startingCast : [{ name: 'Character Name', role: 'Protagonist', corner_role: 'MAIN_CHARACTER' } as CastMember & Record<string, unknown>]).map((c) => `    <arc>
-      <char_id>${c.name}</char_id>
-      <corner_role>${asString(c.corner_role) || 'MAIN_CHARACTER'}</corner_role>
-      <lie_believed>Their Safety Habit or outlook (${c.name}'s initial defense or habit)${c.core_flaw ? ` (flaw: ${c.core_flaw})` : ''} - grounded in understandable human experience, NOT clinical diagnosis.</lie_believed>
-      <truth_needed>The specific realization, shift in priorities, or new way of living needed for authentic growth${c.core_desire ? ` (desire: ${c.core_desire})` : ''}.</truth_needed>
-      <arc_catalyst>The specific dramatic event or relationship forcing ${c.name} to confront their comfort zone.</arc_catalyst>
-      <arc_description>Detailed explanation of ${c.name}'s journey from safety habit to transformed realization, driven by messy human choices and genuine stakes.</arc_description>
-      <web_pressure>How ${c.name}'s choices and trajectory specifically pull, challenge, comfort, or mirror the other corners of the dilemma web.</web_pressure>
-    </arc>`).join('\n')}
-  </character_arcs>
-  <secret_vault>
-    <!-- Strictly 1 to 3 foundational mysteries/twists/secrets native to this story -->
-    <secret>
-      <title>Descriptive title of secret or twist</title>
-      <category>plot_mystery | dramatic_irony | character_concealment | red_herring</category>
-      <truth>The absolute hidden fact.</truth>
-      <public_cover_story>The false or baseline narrative that characters and reader believe prior to reveal.</public_cover_story>
-      <known_by>Character Name(s) who know in-universe</known_by>
-      <concealed_from>Character Name(s) who are deceived</concealed_from>
-      <reveal_target_act>3</reveal_target_act>
-      <reveal_target_sequence>7</reveal_target_sequence>
-      <clue_schedule>
-        <!-- Lean clue density: STRICTLY 2 clues prior to reveal -->
-        <clue sequence="2">
-          <behavioral_directive>Concrete physical action or verbal anomaly performed without disclosing the secret.</behavioral_directive>
-          <benign_reason>Plausible everyday circumstance.</benign_reason>
-        </clue>
-        <clue sequence="5">
-          <behavioral_directive>Subtle environmental friction or physical breadcrumb under pressure.</behavioral_directive>
-          <benign_reason>Plausible cover explanation.</benign_reason>
-        </clue>
-      </clue_schedule>
-    </secret>
-  </secret_vault>
-</response>
-</output_format_description>
-
-BEGIN DEVELOPING STORY ARC
-`,
+                generatorPromptFn: () =>
+                    buildStoryArcGeneratorPrompt({
+                        concept: conceptToUse,
+                        heartOfTheDilemma,
+                        arcLoreBlocks,
+                        pillarsBlock,
+                        style: initStyle,
+                        statusQuo,
+                        castList: initCastList,
+                        authorNoteStory: initialStoryState as Partial<Story> & Record<string, unknown>
+                    }),
                 systemPrompt: PROMPTS.storyArc,
                 reviewerSystemPrompt: PROMPTS.arcReview,
-                reviewerPromptFn: (genOutput) => `<user_concept>
-${conceptToUse}
-</user_concept>
-
-${pillarsBlock}${buildGenreToneStyleBlocks(asRecord(initialStoryState.style))}
-
-<status_quo>
-${statusQuo}
-</status_quo>
-
-<active_character_profiles>
-${startingCast.map((c) => `- ${c.name} (${c.role}): Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
-</active_character_profiles>
-
-<output_format_description>
-FORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.
-CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
-
-CRITICAL EVALUATION DIRECTIVES:
-1. Verify presence of: <core_thematic_argument> (debatable thesis), <inciting_incident>, <starting_value_state>, <ending_value_state>, <major_surprises_and_twists>, at least 3 <thread> blocks in <narrative_threads> (T1, T2, T3), and <arc> blocks for cast members.
-2. If these structural foundations are present, logically sound, and aligned with the concept/genre, you MUST set status to PASS. Do NOT fail a structurally complete arc simply for stylistic preferences — put creative suggestions in <critique_analysis>.
-3. Only output <status>FAIL</status> if there is a severe fatal flaw: missing thematic thesis, missing inciting incident, fewer than 3 narrative threads, missing character arcs, or an irreconcilable plot contradiction. If failing, you MUST provide precise, actionable, numbered items inside <deviation_reasons><reason>...</reason></deviation_reasons> detailing exactly how the generator can resolve them in revision.
-
-Output Schema:
-<response>
-  <critique_analysis>Perform a step-by-step critical analysis of each criterion. Cite specific plot points, logic gaps, or elements that feel weak or uninspired.</critique_analysis>
-  <status>PASS</status> <!-- or FAIL -->
-  <deviation_reasons>
-    <reason>Explain the exact issue and how to fix it.</reason>
-  </deviation_reasons>
-</response>
-</output_format_description>
-
-<generated_story_arc>
-${genOutput}
-</generated_story_arc>
-
-BEGIN STORY ARC CRITIQUE REVIEW
-`,
+                reviewerPromptFn: (genOutput) =>
+                    buildStoryArcReviewerPrompt({
+                        concept: conceptToUse,
+                        heartOfTheDilemma,
+                        arcLoreBlocks,
+                        pillarsBlock,
+                        style: initStyle,
+                        statusQuo,
+                        castList: initCastList,
+                        genOutput
+                    }),
                 parserFn: (text) => parseStoryArcXml(text) as unknown as Record<string, unknown>,
                 modelSize: 'dev',
                 spawningContext: 'Story Arc planning'

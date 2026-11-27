@@ -122,6 +122,41 @@ export interface SecretEntry {
     [key: string]: unknown;
 }
 
+export interface StoryMemoryActEntry {
+    actNumber: number;
+    title: string;
+    summary: string;
+    updatedAt: number;
+}
+
+export interface StoryMemorySequenceEntry {
+    seqIdx: number;
+    seqNumber: number;
+    parentAct: number;
+    title: string;
+    summary: string;
+    sceneCount: number;
+    updatedAt: number;
+}
+
+export interface StoryMemorySceneEntry {
+    key: string; // `${seqIdx}-${sceneIdx}`
+    seqIdx: number;
+    sceneIdx: number;
+    sceneNumber: string; // e.g. "1.1"
+    title: string;
+    synopsis: string;
+    updatedAt: number;
+}
+
+export interface StoryMemory {
+    acts: Record<string, StoryMemoryActEntry>;
+    sequences: Record<string, StoryMemorySequenceEntry>;
+    scenes: Record<string, StoryMemorySceneEntry>;
+    lastHandoffDossier?: string;
+    manualBaseText?: string;
+}
+
 export interface Story {
     id: string;
     title: string;
@@ -133,6 +168,7 @@ export interface Story {
     logline?: string;
     world_primer?: string;
     story_so_far?: string;
+    story_memory?: StoryMemory;
     author_note?: string;
     style?: {
         genre?: string;

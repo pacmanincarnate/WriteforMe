@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getLiveStoryForAudio, setLiveStoryProviderForAudio } from '@/domain/audio';
 import { runContinuityAuditor } from '@/domain/continuity';
-import { surgicallyRepairBeatMRUs, surgicallyRepairValueShifts } from '@/domain/validation';
+import { surgicallyRepairValueShifts } from '@/domain/validation';
 import { getKoboldLoadedModelName, setKoboldLoadedModelName } from '@/services/llm';
 
 type Host = { callAI?: unknown; storyRef?: unknown; koboldLoadedModelGlobal?: string };
@@ -37,12 +37,7 @@ describe('domain layer takes its dependencies explicitly', () => {
     it('structural repair does not fall back to window.callAI', async () => {
         const windowCallAI = vi.fn(async () => '');
         host.callAI = windowCallAI;
-        const beats = [{ beat_id: '1' }];
         const scenes = [{ number: '1.1' }];
-        expect(await surgicallyRepairBeatMRUs([{ index: 0, beat: beats[0] }], beats, {}, 'raw')).toEqual({
-            success: false,
-            genOutput: 'raw'
-        });
         expect(await surgicallyRepairValueShifts([{ index: 0, scene: scenes[0] }], scenes, {}, 'raw')).toEqual({
             success: false,
             genOutput: 'raw'

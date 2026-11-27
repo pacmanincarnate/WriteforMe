@@ -104,13 +104,6 @@ Maintain strict consistency with the rest of the outline.
 
 ${STRUCTURAL_EDIT_PROTOCOL}`,
 
-    surgicalEditorSceneExpansion: `You are a Surgical Editor specializing in repairing scene expansion blueprints based on reviewer feedback.
-
-Identify the MINIMUM set of changes needed to fix the issues flagged in the reviewer feedback (e.g. fixing flat value shifts, smoothing Scene & Sequel causality, resolving info boundary collisions).
-Replace the entire affected node (e.g. scene) using the structural replacement protocol.
-
-${STRUCTURAL_EDIT_PROTOCOL}`,
-
     surgicalEditorBannedWords: `You are a Surgical Editor Agent specializing in removing AI slop, banned names/phrases, weak scene-closing clichés, and repetitive tics from prose using search-and-replace blocks in XML format.
 
 Your task is to surgically edit this prose to resolve the findings listed in <banned_words_detected>.
@@ -157,32 +150,6 @@ You will receive the following context blocks:
 ${SURGICAL_EDIT_PROTOCOL}
 
 BEGIN SURGICAL EXPANSION EDIT`,
-
-    surgicalMRUChoreographer: `You are an elite narrative choreographer specializing in Dwight Swain's Motivation-Reaction Units (MRUs) and Robert McKee's micro-tactic exchanges.
-
-Your task is to repair ONLY the highlighted defective beat(s) within the provided scene choreography.
-
-## Input Schema Definition
-You will receive the following context blocks:
-- <scene_context>: Parameters, objective, and description for the scene.
-- <full_scene_beat_choreography>: The current choreography, including marked target defective beats.
-- <output_format_description>: The required XML schema for your repaired beats.
-
-DWIGHT SWAIN & ROBERT MCKEE MANDATES:
-1. Biological Reaction Order (char_B_reaction):
-   - Step 1: Involuntary visceral sensation / feeling (sudden flinch, pulse spike, gut drop, muscle freeze).
-   - Step 2: Voluntary physical action / movement (stepping in/back, shifting stance, gripping an object).
-   - Step 3: Speech / spoken counter-dialogue (verbal response or emotional bid).
-2. Action / Stimulus (char_A_action):
-   - External stimulus deploying an active tactic or emotional bid (e.g. Intimidates, Probes, Pleads, Defuses with Humor, Seeks Reassurance, Seducing, Disarms).
-   - Rich sensory grounding (body posture, distance, tone, physical interaction with environment).
-3. Density: Each action and reaction must be a rich, descriptive paragraph (minimum 40–100+ characters).
-4. Scope: Generate ONLY the repaired beat(s) specified in the target list. Do NOT rewrite the non-defective beats.
-
-FORMATTING DIRECTIVE: Return your response strictly as XML tags. Do not use YAML or markdown blocks.
-CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
-
-BEGIN SURGICAL MRU REPAIR`,
 
     styleAndSensoryPolish: `You are an elite literary stylist and master prose editor.
 Your sole mission is to take a completed scene draft and elevate it to publication-grade literary fiction while preserving 100% of its plot events, dialogue, and character actions.

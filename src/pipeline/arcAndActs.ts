@@ -3,16 +3,17 @@
  * Tier 1.1 Story Arc Planner, Tier 2.1/2.2 Act Architect, and Tier 3.1/3.2 8-Sequence Weaver.
  */
 
-import { formatActFunctionGuideXml, STORAGE_KEYS } from '@/config';
+import { formatActFunctionGuideXml } from '@/config';
 import {
     buildSequencePromptContext,
+    createEmptyStoryMemory,
     type ContinuityStoryState
 } from '@/domain/continuity';
-import { computeLoreFingerprint } from '@/domain/lore';
 import {
     buildGenreToneBlocks,
     buildGenreToneStyleBlocks,
     computePacingRanges,
+    formatLoreForPrompt,
     getAuthorNoteXml,
     normalizeSequences,
     parseActNumber,
@@ -24,7 +25,7 @@ import {
 import { PROMPTS } from '@/prompts';
 import { storyStore } from '@/services/storage';
 import type { CastMember, LoreItem, Story } from '@/types';
-import { extractTag, formatObjectToXml, safeLocalStorageSet } from '@/utils';
+import { extractTag, formatObjectToXml } from '@/utils';
 import {
     asArray,
     asOptionalRecord,
@@ -62,71 +63,50 @@ interface RelationshipMapEntry {
     [key: string]: unknown;
 }
 
-/** TIER 1.1: Story Arc Planner & Reviewer orchestrator. */
-export async function generateStoryArc(
-    ctx: PipelineRuntimeContext,
-    currentStory?: PipelineStory | null,
-    isAutopilot = false
-): Promise<PipelineStory | undefined> {
-    const storyToUse = currentStory || ctx.getStory();
-    if (!asString(storyToUse.concept)) {
-        ctx.showToast('Please initialize or enter a concept first.', 'warning');
-        return undefined;
-    }
+export interface StoryArcPromptParams {
+    concept: string;
+    heartOfTheDilemma?: string;
+    arcLoreBlocks?: string;
+    pillarsBlock?: string;
+    style?: Record<string, unknown>;
+    statusQuo?: string;
+    castList: Array<CastMember & Record<string, unknown>>;
+    authorNoteStory?: Partial<Story> & Record<string, unknown>;
+}
 
-    ctx.setLoading(true);
-    ctx.setActivePipelineWork?.({
-        mode: 'novel',
-        phase: 1,
-        elementType: 'arc',
-        title: 'Story Arc & Thematic Thesis',
-        subStep: 'Story Arc Planner (Tier 1.1)',
-        startedAt: Date.now()
-    });
-    ctx.setLoadingStep('Story Arc Planner (Tier 1.1)...');
-
-    try {
-        const conceptToUse = asString(storyToUse.concept);
-        const statusQuo = asString(storyToUse.status_quo);
-        const castList = asArray<CastMember & Record<string, unknown>>(storyToUse.cast);
-
-        const persona = asString(storyToUse.synthesized_authorial_persona);
-        const genreRules = asString(storyToUse.genre_pacing_and_dialogue_rules);
-        const antiPatterns = asString(storyToUse.strict_anti_patterns);
-        const pillarsBlock = `${persona ? `<synthesized_authorial_persona>\n${persona}\n</synthesized_authorial_persona>\n\n` : ''}${genreRules ? `<genre_pacing_and_dialogue_rules>\n${genreRules}\n</genre_pacing_and_dialogue_rules>\n\n` : ''}${antiPatterns ? `<strict_anti_patterns>\n${antiPatterns}\n</strict_anti_patterns>\n\n` : ''}`;
-
-        const arcLoreDocs = await ctx.retrieveContext(
-            `Story Arc Conflict Themes: ${conceptToUse}`,
-            0.6,
-            null,
-            asArray<LoreItem>(storyToUse.lore)
-        );
-        const { formatLoreForPrompt } = await import('@/domain/story');
-        const arcLoreBlocks = formatLoreForPrompt(
-            asString(storyToUse.world_primer) || null,
-            arcLoreDocs
-        );
-
-        console.log('[generateStoryArc] Running Tier 1.1 Story Arc Planner...');
-        const arcResult = await runAgentWithEscalation(ctx, {
-            tierName: 'Story Arc Agent',
-            isAutopilot,
-            context: storyToUse,
-            generatorPromptFn: () => `
+/** Builds the canonical Tier 1.1 Story Arc Planner prompt shared across initStory and generateStoryArc. */
+export function buildStoryArcGeneratorPrompt({
+    concept,
+    heartOfTheDilemma = '',
+    arcLoreBlocks = '',
+    pillarsBlock = '',
+    style = {},
+    statusQuo = '',
+    castList = [],
+    authorNoteStory
+}: StoryArcPromptParams): string {
+    const safeCast =
+        castList.length > 0
+            ? castList
+            : ([{ name: 'Character Name', role: 'Protagonist', corner_role: 'MAIN_CHARACTER' }] as Array<
+                  CastMember & Record<string, unknown>
+              >);
+    const authorNoteXml = authorNoteStory ? getAuthorNoteXml(authorNoteStory) : '';
+    return `
 <user_concept>
-${conceptToUse}
+${concept}
 </user_concept>
 
-${arcLoreBlocks ? `${arcLoreBlocks}\n\n` : ''}${pillarsBlock}${buildGenreToneStyleBlocks(asRecord(storyToUse.style))}
+${arcLoreBlocks ? `${arcLoreBlocks}\n\n` : ''}${pillarsBlock}${buildGenreToneStyleBlocks(style)}
 
-${storyToUse.heart_of_the_dilemma ? `<heart_of_the_dilemma>\n${asString(storyToUse.heart_of_the_dilemma)}\n</heart_of_the_dilemma>\n\n` : ''}<status_quo>
+${heartOfTheDilemma ? `<heart_of_the_dilemma>\n${heartOfTheDilemma}\n</heart_of_the_dilemma>\n\n` : ''}<status_quo>
 ${statusQuo}
 </status_quo>
 
 <cast_list>
 ${castList.map((c) => `- ${c.name} (${c.role}${c.corner_role ? ` [${asString(c.corner_role)}]` : ''}): Safety Habit / Flaw: ${c.core_flaw || 'None'}, Desire: ${c.core_desire || 'None'}`).join('\n')}
 </cast_list>
-${getAuthorNoteXml(storyToUse as Partial<Story> & Record<string, unknown>)}
+${authorNoteXml}
 
 <output_format_description>
 FORMATTING DIRECTIVE: Return your story arc strictly as XML tags. Do not use YAML or markdown blocks.
@@ -163,7 +143,7 @@ Output Schema:
   </narrative_threads>
 
   <character_arcs>
-${(castList.length > 0 ? castList : [{ name: 'Character Name', role: 'Protagonist', corner_role: 'MAIN_CHARACTER' } as CastMember & Record<string, unknown>]).map((c) => `    <arc>
+${safeCast.map((c) => `    <arc>
       <char_id>${c.name}</char_id>
       <corner_role>${asString(c.corner_role) || 'MAIN_CHARACTER'}</corner_role>
       <lie_believed>Their Safety Habit or outlook (${c.name}'s initial defense or habit)${c.core_flaw ? ` (flaw: ${c.core_flaw})` : ''} - grounded in understandable human experience, NOT clinical diagnosis.</lie_believed>
@@ -201,16 +181,27 @@ ${(castList.length > 0 ? castList : [{ name: 'Character Name', role: 'Protagonis
 </output_format_description>
 
 BEGIN DEVELOPING STORY ARC
-`,
-            systemPrompt: PROMPTS.storyArc,
-            reviewerSystemPrompt: PROMPTS.arcReview,
-            reviewerPromptFn: (genOutput) => `<user_concept>
-${conceptToUse}
+`;
+}
+
+/** Builds the canonical Tier 1.1 Story Arc Reviewer prompt with dilemma and world lore grounding. */
+export function buildStoryArcReviewerPrompt({
+    concept,
+    heartOfTheDilemma = '',
+    arcLoreBlocks = '',
+    pillarsBlock = '',
+    style = {},
+    statusQuo = '',
+    castList = [],
+    genOutput
+}: StoryArcPromptParams & { genOutput: string }): string {
+    return `<user_concept>
+${concept}
 </user_concept>
 
-${pillarsBlock}${buildGenreToneStyleBlocks(asRecord(storyToUse.style))}
+${arcLoreBlocks ? `${arcLoreBlocks}\n\n` : ''}${pillarsBlock}${buildGenreToneStyleBlocks(style)}
 
-<status_quo>
+${heartOfTheDilemma ? `<heart_of_the_dilemma>\n${heartOfTheDilemma}\n</heart_of_the_dilemma>\n\n` : ''}<status_quo>
 ${statusQuo}
 </status_quo>
 
@@ -242,7 +233,84 @@ ${genOutput}
 </generated_story_arc>
 
 BEGIN STORY ARC CRITIQUE REVIEW
-`,
+`;
+}
+
+/** TIER 1.1: Story Arc Planner & Reviewer orchestrator. */
+export async function generateStoryArc(
+    ctx: PipelineRuntimeContext,
+    currentStory?: PipelineStory | null,
+    isAutopilot = false
+): Promise<PipelineStory | undefined> {
+    const storyToUse = currentStory || ctx.getStory();
+    if (!asString(storyToUse.concept)) {
+        ctx.showToast('Please initialize or enter a concept first.', 'warning');
+        return undefined;
+    }
+
+    ctx.setLoading(true);
+    ctx.setActivePipelineWork?.({
+        mode: 'novel',
+        phase: 1,
+        elementType: 'arc',
+        title: 'Story Arc & Thematic Thesis',
+        subStep: 'Story Arc Planner (Tier 1.1)',
+        startedAt: Date.now()
+    });
+    ctx.setLoadingStep('Story Arc Planner (Tier 1.1)...');
+
+    try {
+        const conceptToUse = asString(storyToUse.concept);
+        const statusQuo = asString(storyToUse.status_quo);
+        const heartOfTheDilemma = asString(storyToUse.heart_of_the_dilemma);
+        const castList = asArray<CastMember & Record<string, unknown>>(storyToUse.cast);
+
+        const persona = asString(storyToUse.synthesized_authorial_persona);
+        const genreRules = asString(storyToUse.genre_pacing_and_dialogue_rules);
+        const antiPatterns = asString(storyToUse.strict_anti_patterns);
+        const pillarsBlock = `${persona ? `<synthesized_authorial_persona>\n${persona}\n</synthesized_authorial_persona>\n\n` : ''}${genreRules ? `<genre_pacing_and_dialogue_rules>\n${genreRules}\n</genre_pacing_and_dialogue_rules>\n\n` : ''}${antiPatterns ? `<strict_anti_patterns>\n${antiPatterns}\n</strict_anti_patterns>\n\n` : ''}`;
+
+        const arcLoreDocs = await ctx.retrieveContext(
+            `Story Arc Conflict Themes: ${conceptToUse}`,
+            0.6,
+            null,
+            asArray<LoreItem>(storyToUse.lore)
+        );
+        const arcLoreBlocks = formatLoreForPrompt(
+            asString(storyToUse.world_primer) || null,
+            arcLoreDocs
+        );
+        const storyStyle = asRecord(storyToUse.style);
+
+        console.log('[generateStoryArc] Running Tier 1.1 Story Arc Planner...');
+        const arcResult = await runAgentWithEscalation(ctx, {
+            tierName: 'Story Arc Agent',
+            isAutopilot,
+            context: storyToUse,
+            generatorPromptFn: () =>
+                buildStoryArcGeneratorPrompt({
+                    concept: conceptToUse,
+                    heartOfTheDilemma,
+                    arcLoreBlocks,
+                    pillarsBlock,
+                    style: storyStyle,
+                    statusQuo,
+                    castList,
+                    authorNoteStory: storyToUse as Partial<Story> & Record<string, unknown>
+                }),
+            systemPrompt: PROMPTS.storyArc,
+            reviewerSystemPrompt: PROMPTS.arcReview,
+            reviewerPromptFn: (genOutput) =>
+                buildStoryArcReviewerPrompt({
+                    concept: conceptToUse,
+                    heartOfTheDilemma,
+                    arcLoreBlocks,
+                    pillarsBlock,
+                    style: storyStyle,
+                    statusQuo,
+                    castList,
+                    genOutput
+                }),
             parserFn: (text) => parseStoryArcXml(text) as unknown as Record<string, unknown>,
             modelSize: 'dev',
             spawningContext: 'Story Arc planning'
@@ -1033,7 +1101,11 @@ BEGIN SEQUENCE CRITIQUE REVIEW
                 story_so_far:
                     hasDraftedProseInStory || userEditedStorySoFar
                         ? asString(prev.story_so_far)
-                        : ''
+                        : '',
+                story_memory:
+                    hasDraftedProseInStory || userEditedStorySoFar
+                        ? prev.story_memory || createEmptyStoryMemory()
+                        : createEmptyStoryMemory()
             };
         });
 
@@ -1190,7 +1262,11 @@ BEGIN DEVELOPING STORY SEQUENCES
             story_so_far:
                 prev.story_so_far && prev.story_so_far !== storyToUse.story_so_far
                     ? prev.story_so_far
-                    : ''
+                    : '',
+            story_memory:
+                prev.story_so_far && prev.story_so_far !== storyToUse.story_so_far
+                    ? prev.story_memory || createEmptyStoryMemory()
+                    : createEmptyStoryMemory()
         }));
 
         const nextId = asString(nextStory.id);
@@ -1212,19 +1288,5 @@ BEGIN DEVELOPING STORY SEQUENCES
         throw e;
     } finally {
         if (!isAutopilot) ctx.setLoading(false);
-    }
-}
-
-export function touchStatusQuoFingerprint(
-    ctx: PipelineRuntimeContext,
-    storyId: string,
-    loreList: LoreItem[]
-): void {
-    const emb = ctx.getEmbeddingService();
-    if (emb?.isConfigured()) {
-        safeLocalStorageSet(
-            STORAGE_KEYS.ragFingerprint,
-            computeLoreFingerprint(storyId, loreList, emb.getProviderLabel())
-        );
     }
 }

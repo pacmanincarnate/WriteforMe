@@ -74,6 +74,7 @@ export interface LocalToolContext {
     currentSceneCritique?: string;
     activeCast?: Array<{ name?: string; id?: string; details?: Record<string, unknown> }>;
     sequenceData?: { number?: number | string };
+    sceneNumber?: number;
     forceFullRewrite?: boolean;
     writing_mode?: string;
     slopConfig?: (SlopConfig & { enableSlopAudit?: boolean }) | null;
@@ -869,10 +870,26 @@ export function executeLocalTool(
             }> = [];
             if (story.epistemic_graph && story.epistemic_graph.propositions) {
                 const povChar = currentScene?.pov_character || activeCast[0]?.name || '';
-                const currentCoord =
-                    currentScene && currentScene.number
-                        ? String(currentScene.number).trim()
-                        : '1.1';
+                const rawCoordStr =
+                    currentScene && currentScene.number ? String(currentScene.number).trim() : '';
+                let currentCoord = rawCoordStr && rawCoordStr.includes('.') ? rawCoordStr : '';
+                if (!currentCoord) {
+                    const seqNumFromCtx = Number(
+                        context.sequenceData?.number ||
+                            (currentScene as Record<string, unknown> | undefined)?.sequence_number ||
+                            0
+                    );
+                    const scnNumFromCtx = Number(
+                        (currentScene as Record<string, unknown> | undefined)?.scene_number ||
+                            (rawCoordStr && Number(rawCoordStr) > 0 ? Number(rawCoordStr) : 0) ||
+                            context.sceneNumber ||
+                            0
+                    );
+                    currentCoord =
+                        seqNumFromCtx > 0 || scnNumFromCtx > 0
+                            ? `${seqNumFromCtx || 1}.${scnNumFromCtx || 1}`
+                            : '1.1';
+                }
                 const proj = projectFocalizedSubgraph(story, {
                     povCharId: povChar,
                     sceneCoord: currentCoord

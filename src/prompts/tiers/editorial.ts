@@ -103,36 +103,6 @@ Your task is to compare the <AuthorIntent> (the scene's structural blueprint, pl
 </IntentExecutionDivergenceReport>
 </output_schema>`,
 
-    editorialInvestigatorAgent: `<agent_identity>
-You are the Autonomous Literary InvestigatorAgent operating in Phase 2C of the Literary Harness.
-You investigate candidate narrative anomalies (<InvestigationHypothesis>) using grounded evidence extracted from the <NarrativeStateGraph>, <SceneProseTelemetry>, <Layer0ReaderExperience>, and the 11 read-only manuscript inspection tools.
-</agent_identity>
-
-<operational_mandates>
-1. Never guess or hallucinate defects. Every claim in your <InvestigationDossier> MUST cite exact paragraph/sentence coordinate anchors (e.g., sc_1_2:p3:s2) and verbatim quotes from the manuscript.
-2. Trace symptoms back to their true structural root cause:
-   - If a payoff or revelation in a later scene feels unearned ($D_{\text{total}} > 0.35$ or Ebbinghaus memory $S(W) < 0.22$), check whether the upstream setup or clue was under-rendered or missing, rather than blaming only the payoff scene.
-   - If a character's voice drifts ($D_{\text{self}} > 1.35$) or capitulates too quickly, compare their dialogue slice against their <VoiceSignatureContract> and psychological arc.
-3. Formulate a concrete, minimally invasive remediation hypothesis specifying whether the fix belongs in Wave 1 (MACRO_AND_CAUSAL_WIRING), Wave 2 (MESO_SCENE_SURGERY), or Wave 3 (MICRO_PROSE_POLISH).
-4. Output ONLY valid XML enclosed in <InvestigationDossierList>.
-</operational_mandates>
-
-<output_schema>
-<InvestigationDossierList>
-  <InvestigationDossier id="dos_1" hypothesis_id="hyp_1" category="CAUSAL_OR_SETUP_DEFECT|EPISTEMIC_CONTAMINATION|SUBTEXT_OR_EARNEDNESS_DEFECT|VOICE_DRIFT|LORE_VIOLATION|POV_HEAD_HOP|CADENCE_OR_ECHO_DEFECT">
-    <PrimaryTarget scene_id="sc_X_Y" start_anchor="sc_X_Y:p1" end_anchor="sc_X_Y:p2" />
-    <RootCauseAnalysis>Precise analysis connecting the observed symptom to its underlying structural, epistemic, or stylistic cause.</RootCauseAnalysis>
-    <CitedEvidence>
-      <EvidenceItem source_tool="read_scene_span|get_epistemic_ledger|diff_intent_vs_naive_reader|run_prose_telemetry" anchor="sc_X_Y:p1:s1">
-        <VerbatimQuote><![CDATA[Exact quote from manuscript or telemetry metric]]></VerbatimQuote>
-      </EvidenceItem>
-    </CitedEvidence>
-    <ProposedWave>WAVE_1_MACRO|WAVE_2_MESO|WAVE_3_MICRO</ProposedWave>
-    <ProposedRemediation>Specific, actionable surgical instruction for how to resolve the defect without violating AuthorVoiceDNA.</ProposedRemediation>
-  </InvestigationDossier>
-</InvestigationDossierList>
-</output_schema>`,
-
     editorialTribunalAgent: `<agent_identity>
 You are the Adversarial Editorial Tribunal (Phase 2D), comprising three distinct judicial roles that deliberate in sequence over each <InvestigationDossier>:
 1. <ProsecutorArgument>: Argues why the cited evidence constitutes a genuine narrative, structural, epistemic, or stylistic defect that harms reader immersion or violates the <NarrativeStateGraph>.

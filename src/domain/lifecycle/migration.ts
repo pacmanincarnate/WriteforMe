@@ -3,8 +3,13 @@
  * Legacy chapter-to-8-sequence story migration and schema/voice/blueprint hydration pass.
  */
 
-import type { Act, CastMember, Sequence, Story } from '@/types';
+import type { Act, CastMember, Sequence, Story, StoryMemory } from '@/types';
 import type { AudioStoryLike } from '@/domain/audio';
+import {
+    createEmptyStoryMemory,
+    ensureStoryMemory,
+    sanitizeScenePlotDelta
+} from '@/domain/continuity';
 import {
     SEQUENCE_DEFAULT_FUNCTIONS,
     normalizeIntentionalOverrides,
@@ -77,6 +82,7 @@ export interface MigratedStory extends Partial<Omit<Story, 'scenes' | 'beats' | 
         [key: string]: unknown;
     };
     story_so_far?: string;
+    story_memory?: StoryMemory;
     slop_allowlist?: string[];
     editorial_harness?: {
         customConstitutionOverrides?: unknown;
@@ -410,8 +416,23 @@ export function migrateStoryToSequences<TStory>(storyData: TStory): TStory {
                   '';
         return typeof txt === 'string' && txt.trim().length > 0;
     });
-    if (!hasDraftedProse && story.story_so_far) {
-        story.story_so_far = '';
+    story.story_memory = ensureStoryMemory(story.story_memory);
+    if (!hasDraftedProse) {
+        if (story.story_so_far) {
+            story.story_so_far = '';
+        }
+        story.story_memory = createEmptyStoryMemory();
+    } else if (
+        story.story_so_far &&
+        Object.keys(story.story_memory.acts).length === 0 &&
+        Object.keys(story.story_memory.sequences).length === 0 &&
+        Object.keys(story.story_memory.scenes).length === 0
+    ) {
+        const cleanedLegacy = sanitizeScenePlotDelta(story.story_so_far);
+        if (cleanedLegacy) {
+            story.story_memory.manualBaseText = cleanedLegacy;
+            story.story_so_far = cleanedLegacy;
+        }
     }
 
     if (!Array.isArray(story.slop_allowlist)) {

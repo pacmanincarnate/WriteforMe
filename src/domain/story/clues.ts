@@ -7,6 +7,7 @@ import type { SecretEntry, Story } from '@/types';
 
 export interface ClueScheduleItem {
     sequence_number: number;
+    scene_number?: number;
     behavioral_directive: string;
     benign_reason: string;
     seeded_in_prose: boolean;
@@ -27,6 +28,7 @@ export interface NormalizedSecretEntry extends SecretEntry {
     reveal_anchor: {
         act_number: number;
         sequence_number: number;
+        scene_number?: number;
         scene_hint: string;
         trigger_condition?: string;
     };
@@ -111,13 +113,18 @@ export function normalizeSecretVault(
                 s.reveal_anchor && typeof s.reveal_anchor === 'object'
                     ? (s.reveal_anchor as Record<string, unknown>)
                     : {};
-            const revealAnchor = {
+            const explicitSceneNum = Number(rawAnchor.scene_number || s.reveal_target_scene || 0);
+            const revealAnchor: NormalizedSecretEntry['reveal_anchor'] = {
                 act_number: Number(rawAnchor.act_number || s.reveal_target_act || 3),
                 sequence_number: Number(rawAnchor.sequence_number || s.reveal_target_sequence || 7),
+                ...(explicitSceneNum > 0 ? { scene_number: explicitSceneNum } : {}),
                 scene_hint:
                     (typeof rawAnchor.scene_hint === 'string' && rawAnchor.scene_hint) ||
                     (typeof s.reveal_scene_hint === 'string' && s.reveal_scene_hint) ||
-                    'Climax confrontation'
+                    'Climax confrontation',
+                ...(typeof rawAnchor.trigger_condition === 'string' && rawAnchor.trigger_condition
+                    ? { trigger_condition: rawAnchor.trigger_condition }
+                    : {})
             };
 
             const rawClues = Array.isArray(s.clue_schedule)
@@ -127,8 +134,10 @@ export function normalizeSecretVault(
                   : [];
             const clueSchedule: ClueScheduleItem[] = rawClues.slice(0, 3).map((rawClue, cIdx) => {
                 const clue = (rawClue && typeof rawClue === 'object' ? rawClue : {}) as Record<string, unknown>;
+                const clueSceneNum = Number(clue.scene_number || 0);
                 return {
                     sequence_number: Number(clue.sequence_number || (cIdx === 0 ? 2 : 5)),
+                    ...(clueSceneNum > 0 ? { scene_number: clueSceneNum } : {}),
                     behavioral_directive:
                         (typeof clue.behavioral_directive === 'string' && clue.behavioral_directive) ||
                         (typeof clue.directive === 'string' && clue.directive) ||
@@ -236,13 +245,58 @@ export function normalizeSecretVault(
     return secrets;
 }
 
+const GENERIC_REVEAL_HINTS = new Set([
+    '',
+    'climax confrontation',
+    'climactic turning point'
+]);
+
+/**
+ * Shared predicate determining whether `(seqNum, sceneNum)` is the exact scheduled
+ * reveal point for `sec`. Used by both prompt directive injection and post-scene
+ * `secret_vault` state transition so secrets are never marked `revealed` prematurely.
+ */
+export function isSecretRevealScene(
+    sec: Partial<NormalizedSecretEntry> & Record<string, unknown>,
+    seqNum: number | string = 1,
+    sceneNum: number | string = 1,
+    sceneObj: Record<string, unknown> = {},
+    totalScenesInSeq = 0
+): boolean {
+    if (!sec || sec.status === 'revealed') return false;
+    const anchor = (
+        sec.reveal_anchor && typeof sec.reveal_anchor === 'object' ? sec.reveal_anchor : {}
+    ) as Record<string, unknown>;
+    const targetSeq = Number(anchor.sequence_number || sec.reveal_target_sequence || 7);
+    if (targetSeq !== Number(seqNum)) return false;
+
+    const explicitSceneNum = Number(anchor.scene_number || sec.reveal_target_scene || 0);
+    if (explicitSceneNum > 0) {
+        return Number(sceneNum) === explicitSceneNum;
+    }
+
+    const rawHint = String(anchor.scene_hint || '').trim().toLowerCase();
+    if (/^\d+$/.test(rawHint)) {
+        return Number(sceneNum) === Number(rawHint);
+    }
+    if (rawHint && !GENERIC_REVEAL_HINTS.has(rawHint)) {
+        const titleMatch = String(sceneObj.title || '').toLowerCase().includes(rawHint);
+        const numberMatch = String(sceneObj.number || '').toLowerCase().endsWith('.' + rawHint);
+        if (titleMatch || numberMatch) return true;
+    }
+
+    if (totalScenesInSeq > 0) {
+        return Number(sceneNum) >= totalScenesInSeq;
+    }
+    return Number(sceneNum) >= 2 || Number(seqNum) === 8;
+}
+
 /** Retrieves active, lean behavioral clue directives for a specific sequence/scene. */
 export function getActiveClueDirectivesForScene(
     story: Partial<Story> | null | undefined,
     seqNum: number | string = 1,
-    _sceneNum: number | string = 1
+    sceneNum: number | string = 1
 ): ActiveClueDirective[] {
-    void _sceneNum;
     if (!story || !Array.isArray(story.secret_vault)) return [];
     const directives: ActiveClueDirective[] = [];
 
@@ -250,7 +304,9 @@ export function getActiveClueDirectivesForScene(
         if (sec.status === 'revealed') return;
         const clues = Array.isArray(sec.clue_schedule) ? (sec.clue_schedule as Array<Record<string, unknown>>) : [];
         clues.forEach((clue) => {
-            if (Number(clue.sequence_number) === Number(seqNum) && !clue.seeded_in_prose) {
+            const explicitClueScene = Number(clue.scene_number || 0);
+            const sceneMatches = explicitClueScene > 0 ? explicitClueScene === Number(sceneNum) : true;
+            if (Number(clue.sequence_number) === Number(seqNum) && sceneMatches && !clue.seeded_in_prose) {
                 directives.push({
                     secret_id: sec.id,
                     title: sec.title,
@@ -271,31 +327,28 @@ export function getSecretRevealDirectiveForScene(
     story: Partial<Story> | null | undefined,
     seqNum: number | string = 1,
     sceneNum: number | string = 1,
-    sceneObj: Record<string, unknown> = {}
+    sceneObj: Record<string, unknown> = {},
+    totalScenesInSeq = 0
 ): SecretRevealDirective | null {
     if (!story || !Array.isArray(story.secret_vault)) return null;
 
-    for (const sec of story.secret_vault) {
-        const anchor = (sec.reveal_anchor || {}) as Record<string, unknown>;
-        if (sec.status !== 'revealed' && Number(anchor.sequence_number || 7) === Number(seqNum)) {
-            const targetSceneHint = String(anchor.scene_hint || '').toLowerCase();
-            const isExplicitSceneMatch =
-                Boolean(targetSceneHint) &&
-                (String(sceneObj.title || '').toLowerCase().includes(targetSceneHint) ||
-                    String(sceneObj.number || '').endsWith('.' + targetSceneHint) ||
-                    String(sceneNum) === targetSceneHint);
-            const isDefaultClimaxScene = Number(sceneNum) >= 2;
+    const seqIdxKey = String(Math.max(0, Number(seqNum) - 1));
+    const scenesMap = story.scenes as Record<string, unknown[]> | undefined;
+    const seqScenes = scenesMap && Array.isArray(scenesMap[seqIdxKey]) ? scenesMap[seqIdxKey] : [];
+    const resolvedTotalScenes = totalScenesInSeq > 0 ? totalScenesInSeq : seqScenes.length;
 
-            if (isExplicitSceneMatch || isDefaultClimaxScene || Number(seqNum) === 8) {
-                return {
-                    secret_id: sec.id,
-                    title: sec.title,
-                    truth: sec.truth,
-                    category: sec.category,
-                    trigger_condition:
-                        String(anchor.trigger_condition || anchor.scene_hint || 'Direct confrontation or discovery')
-                };
-            }
+    for (const sec of story.secret_vault) {
+        const secRec = sec as Partial<NormalizedSecretEntry> & Record<string, unknown>;
+        if (isSecretRevealScene(secRec, seqNum, sceneNum, sceneObj, resolvedTotalScenes)) {
+            const anchor = (sec.reveal_anchor || {}) as Record<string, unknown>;
+            return {
+                secret_id: sec.id,
+                title: sec.title,
+                truth: sec.truth,
+                category: sec.category,
+                trigger_condition:
+                    String(anchor.trigger_condition || anchor.scene_hint || 'Direct confrontation or discovery')
+            };
         }
     }
 

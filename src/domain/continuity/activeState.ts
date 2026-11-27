@@ -9,7 +9,11 @@ import { PROMPTS } from '@/prompts';
 import { isSerializationPlaceholder, safeEscapeRegex, tokenMatch } from '@/utils';
 import { isAudioDramaScriptText } from '@/domain/audio';
 import { applySurgicalEditsDetailed } from '@/domain/editing';
-import { formatContinuityLedgerForPrompt, parseSceneCoordinates } from './ledger';
+import {
+    formatContinuityLedgerForPrompt,
+    formatSceneCoord,
+    parseSceneCoordinates
+} from './ledger';
 import type { ContinuityStoryState } from './ledger';
 import { compileEpistemicAsymmetryAndIrony, projectFocalizedSubgraph } from './epistemicGraph';
 import { extractProseTextTail, formatSceneCharactersList } from './contextBuilders';
@@ -547,7 +551,14 @@ export function compileActiveState(
     let epistemicProjectionSnippet = '';
     let epistemicDirectivesSnippet = '';
     try {
-        const sceneCoord = scene && scene.number ? String(scene.number).trim() : '1.1';
+        const rawSceneNumStr = scene && scene.number ? String(scene.number).trim() : '';
+        const sceneCoord =
+            rawSceneNumStr && rawSceneNumStr.includes('.')
+                ? rawSceneNumStr
+                : formatSceneCoord(
+                      scopeOpts.sequence || 1,
+                      scopeOpts.scene || (Number(rawSceneNumStr) > 0 ? Number(rawSceneNumStr) : 1)
+                  );
         const povChar = String(scene.pov_character || charNames[0] || 'Protagonist');
         const partnerChars = charNames.filter((cn) => cn.toLowerCase() !== povChar.toLowerCase());
 

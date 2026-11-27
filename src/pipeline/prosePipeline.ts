@@ -29,6 +29,7 @@ import {
 import {
     buildUpcomingBoundaryGuardInfo,
     compileActiveState,
+    ensureStoryMemory,
     formatContinuityLedgerForPrompt,
     getSequenceScenesList,
     runContinuityAuditor,
@@ -42,6 +43,7 @@ import {
     formatSceneSummary,
     getSceneActiveCast,
     insertTargetWordCount,
+    isSecretRevealScene,
     normalizeSceneBlueprint,
     parseActNumber,
     parseValueShiftInput,
@@ -96,6 +98,7 @@ import { runAgentWithEscalation } from './escalation';
 import { buildProseContext, type ProseContextCastMember } from './proseContext';
 import { generateScenes } from './sceneBlueprints';
 import { applySurgicalEditsWithRetry, applySurgicalProsePatch } from './surgicalPatch';
+import { syncStorySoFarAfterScene } from './storySoFar';
 import { runAudioDramaVoiceDirectorPass } from './voiceDirector';
 
 export interface CascadeSceneOptions {
@@ -296,9 +299,12 @@ export async function handleCascadeSceneToProse(
             }
         };
         ctx.setStory(finalStory);
-        const finalId = asString(finalStory.id);
+        const syncedCascadeStory = await syncStorySoFarAfterScene(ctx, finalStory, sIdx, scIdx, {
+            isAutopilot: true
+        });
+        const finalId = asString(syncedCascadeStory.id);
         if (finalId) {
-            await storyStore.saveStory(finalId, finalStory);
+            await storyStore.saveStory(finalId, syncedCascadeStory);
         }
         ctx.showToast(
             patched.message || 'Scene prose updated to match blueprint changes!',
@@ -467,7 +473,6 @@ export async function writeSceneProse(
             subStep: 'Continuity Bridge Handoff'
         });
         ctx.setLoadingStep('Continuity Bridge: Generating scene handoff dossier...');
-        const preSynopsisSoFar = asString(ctx.getStory().story_so_far || storyToUse.story_so_far);
         const prevWasBridge = Boolean(previousScene?.is_bridge_scene);
         const upcomingCastStr = Array.isArray(scene.characters_present)
             ? asArray(scene.characters_present).join(', ')
@@ -549,7 +554,7 @@ export async function writeSceneProse(
         const continuityPrompt = `
 <act_mandate>
 Act ${parseActNumber(sequenceData.parent_act || 1)}
-${actData ? asString(actData.description) : ''}
+${actData ? asString(actData.act_mandate || actData.description) : ''}
 </act_mandate>
 
 <sequence_objective>
@@ -619,17 +624,14 @@ Exit Hook: ${asString(scene.exit_hook)}
         let synopsisText = '';
         if (synopsisMatch && synopsisMatch[1]) {
             synopsisText = synopsisMatch[1].trim();
-            const updatedWithSynopsis = ctx.setStory((prev) => {
-                const currentSoFar = asString(prev.story_so_far).trim();
-                let nextSoFar = currentSoFar;
-                if (!currentSoFar) {
-                    nextSoFar = synopsisText;
-                } else if (!currentSoFar.includes(synopsisText)) {
-                    nextSoFar = `${currentSoFar}\n\n${synopsisText}`;
+            const updatedWithDossier = ctx.setStory((prev) => ({
+                ...prev,
+                story_memory: {
+                    ...ensureStoryMemory(prev.story_memory),
+                    lastHandoffDossier: synopsisText
                 }
-                return { ...prev, story_so_far: nextSoFar };
-            });
-            storyToUse.story_so_far = updatedWithSynopsis.story_so_far;
+            }));
+            storyToUse.story_memory = updatedWithDossier.story_memory;
         }
 
         const gapDetectedMatch = continuityResultXML.match(
@@ -683,7 +685,7 @@ ${asString(storyToUse.story_so_far) || 'The story is just beginning (no prior sc
 
 <act_mandate>
 Act ${parseActNumber(sequenceData.parent_act || 1)}
-${actData ? asString(actData.description) : ''}
+${actData ? asString(actData.act_mandate || actData.description) : ''}
 </act_mandate>
 
 <sequence_objective>
@@ -1181,74 +1183,6 @@ ${PROMPTS.bridgeSceneGeneratorAgent}
                 storyToUse.scenes = updatedBlueprintStory.scenes;
             }
         }
-
-        let crossedActBoundary = false;
-        if (seq > 0 && s === 0) {
-            const prevSeq = sequencesArr[seq - 1];
-            if (
-                prevSeq &&
-                prevSeq.parent_act &&
-                sequenceData.parent_act &&
-                parseActNumber(prevSeq.parent_act) !== parseActNumber(sequenceData.parent_act)
-            ) {
-                crossedActBoundary = true;
-            }
-        }
-
-        if (crossedActBoundary) {
-            const preCompressorSoFar = asString(ctx.getStory().story_so_far || storyToUse.story_so_far);
-            const compressorInputSoFar = preSynopsisSoFar || preCompressorSoFar;
-            ctx.setLoadingStep('Act Compressor: Summarizing previous act...');
-            const compressorPrompt = `
-${PROMPTS.actCompressorAgent}
-
-<story_so_far>
-${compressorInputSoFar}
-</story_so_far>
-`;
-            const compressorResult = await runAgentWithEscalation(ctx, {
-                tierName: 'Act Compressor Agent',
-                modelSize: 'review',
-                isAutopilot: autoP,
-                context: {},
-                generatorPromptFn: () => compressorPrompt,
-                systemPrompt:
-                    PROMPTS.actCompressorAgent ||
-                    'You are the Act Summary Compressor. Output strictly in the requested XML format.',
-                parserFn: (raw) => {
-                    const rawStr = String(raw || '');
-                    return {
-                        raw: rawStr,
-                        compressed_summary: extractTag(rawStr, 'compressed_summary')
-                    };
-                }
-            });
-            const compressorResultXML = compressorResult?.genOutput || '';
-            const compressedMatch = compressorResultXML.match(
-                /<compressed_summary>([\s\S]*?)<\/compressed_summary>/
-            );
-            if (compressedMatch && compressedMatch[1]) {
-                const compressedText = compressedMatch[1].trim();
-                const prevSceneLabel =
-                    asString(previousScene?.number) ||
-                    (seq > 0 ? `Seq ${seq} Final Scene` : 'Prior Scene');
-                const finalCompressedSoFar =
-                    synopsisText && !compressedText.includes(synopsisText)
-                        ? `${compressedText}\n\n[Immediate Preceding Scene Handoff (${prevSceneLabel}: ${asString(previousScene?.title) || 'Previous Scene'})]:\n${synopsisText}`
-                        : compressedText;
-                const afterCompressorStory = ctx.setStory((prev) => {
-                    const userEditedDuringCompressor =
-                        asString(prev.story_so_far) !== preCompressorSoFar;
-                    return {
-                        ...prev,
-                        story_so_far: userEditedDuringCompressor
-                            ? prev.story_so_far
-                            : finalCompressedSoFar
-                    };
-                });
-                storyToUse.story_so_far = afterCompressorStory.story_so_far;
-            }
-        }
     }
 
     const sId = `${seq}-${s}`;
@@ -1392,7 +1326,9 @@ ${compressorInputSoFar}
 
         const dynamicExclusions = [
             ...activeCast.map((c) => c.name),
-            ...asArray<Record<string, unknown>>(storyToUse.lore).map((l) => l.keyword)
+            ...asArray<Record<string, unknown>>(storyToUse.lore)
+                .map((l) => asString(l.topic || l.keyword))
+                .filter(Boolean)
         ];
         let recentProseCombined = '';
         let scenesFound = 0;
@@ -1537,6 +1473,7 @@ ${dynamicBannedList.map((p) => `- ${p}`).join('\n')}
             currentSceneProseText: forceFullRewrite ? '' : existingProseText,
             currentSceneCritique: forceFullRewrite ? '' : existingCritique,
             sequenceData,
+            sceneNumber: s + 1,
             forceFullRewrite,
             slopConfig,
             bannedPhrases
@@ -2287,14 +2224,14 @@ ${auditLines}
             const nextSecretVault = Array.isArray(prev.secret_vault)
                 ? asArray<Record<string, unknown>>(prev.secret_vault).map((sec) => {
                       const sCopy = { ...sec };
-                      const revealAnchor = asRecord(sCopy.reveal_anchor);
-                      const revSeq = Number(revealAnchor.sequence_number || 0);
-                      const revScene = Number(revealAnchor.scene_number || 1);
                       if (
-                          revSeq === currentSeqNumForVault &&
-                          (revScene === currentSceneNumForVault ||
-                              revScene <= 0 ||
-                              Number(sCopy.reveal_target_sequence) === currentSeqNumForVault)
+                          isSecretRevealScene(
+                              sCopy,
+                              currentSeqNumForVault,
+                              currentSceneNumForVault,
+                              scene,
+                              scenesList.length
+                          )
                       ) {
                           sCopy.status = 'revealed';
                       }
@@ -2540,21 +2477,30 @@ ${auditLines}
                     prev.knowledge_graph || { nodes: [], edges: [] },
                 epistemic_graph: archivedStory.epistemic_graph || prev.epistemic_graph,
                 secret_vault: archivedStory.secret_vault || prev.secret_vault || [],
-                event_log: archivedStory.event_log || prev.event_log || []
+                event_log: archivedStory.event_log || prev.event_log || [],
+                story_memory: archivedStory.story_memory || prev.story_memory,
+                story_so_far:
+                    archivedStory.story_so_far !== undefined
+                        ? archivedStory.story_so_far
+                        : prev.story_so_far
             };
         });
 
-        const mergedId = asString(finalMergedProseStory.id);
+        const syncedProseStory = await syncStorySoFarAfterScene(ctx, finalMergedProseStory, seq, s, {
+            isAutopilot: autoP
+        });
+
+        const mergedId = asString(syncedProseStory.id);
         if (mergedId) {
             try {
-                await storyStore.saveStory(mergedId, finalMergedProseStory);
+                await storyStore.saveStory(mergedId, syncedProseStory);
             } catch (saveErr) {
                 console.warn('Failed saving written prose to store:', saveErr);
             }
         }
 
         ctx.showToast('Full scene prose generated successfully!', 'success');
-        return finalMergedProseStory;
+        return syncedProseStory;
     } catch (e) {
         const msg = extractErrorMessage(e);
         console.error('Scene prose writing failed:', e);

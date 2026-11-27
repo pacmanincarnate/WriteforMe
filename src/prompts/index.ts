@@ -28,20 +28,36 @@ export const PROMPTS = {
     get audioDramaWritingAgent(): string {
         return `${buildWritingSystemPrompt({ isAudioDrama: true })}\n\n${PROMPTS.audioDramaWritingModifier}`;
     },
-    // Backwards-compatibility aliases preserving exact 60-key legacy registry
+    // Backwards-compatibility aliases preserving legacy registry keys
+    storySoFarAgent: '',
     writing: '',
     characterDeveloper: '',
     storyArcPlanner: '',
     actDivisionPlanner: '',
     sequencePlanner: '',
-    sceneRosterPlanner: ''
+    sceneRosterPlanner: '',
+    sceneRosterAgent: '',
+    sceneRosterReview: '',
+    sceneExpanderAgent: '',
+    sceneExpanderReview: '',
+    surgicalEditorSceneExpansion: '',
+    surgicalMRUChoreographer: '',
+    editorialInvestigatorAgent: ''
 };
 
+PROMPTS.storySoFarAgent = PROMPTS.sequenceCompressorAgent;
 PROMPTS.writing = PROMPTS.writingAgent;
 PROMPTS.characterDeveloper = PROMPTS.characterDevelopment;
 PROMPTS.storyArcPlanner = PROMPTS.storyArc;
 PROMPTS.actDivisionPlanner = PROMPTS.actAgent;
 PROMPTS.sequencePlanner = PROMPTS.sequenceAgent;
 PROMPTS.sceneRosterPlanner = PROMPTS.scenePlannerAgent;
+PROMPTS.sceneRosterAgent = PROMPTS.scenePlannerAgent;
+PROMPTS.sceneRosterReview = PROMPTS.sequenceReview;
+PROMPTS.sceneExpanderAgent = PROMPTS.scenePlannerAgent;
+PROMPTS.sceneExpanderReview = PROMPTS.sequenceReview;
+PROMPTS.surgicalEditorSceneExpansion = PROMPTS.surgicalEditorStructural;
+PROMPTS.surgicalMRUChoreographer = PROMPTS.surgicalEditorStructural;
+PROMPTS.editorialInvestigatorAgent = PROMPTS.editorialTribunalAgent;
 
 export type PromptKey = keyof typeof PROMPTS;

@@ -6,8 +6,11 @@
 
 import type { Act, CastMember, LoreItem, Relationship, SecretEntry, Sequence } from '@/types';
 import { computePacingRanges } from '@/domain/story';
-import { ensureEpistemicGraph } from '@/domain/continuity';
-import type { ContinuityStoryState } from '@/domain/continuity';
+import {
+    createEmptyStoryMemory,
+    ensureEpistemicGraph,
+    type ContinuityStoryState
+} from '@/domain/continuity';
 
 export type StoryResetStageKey = 'tts' | 'prose' | 'scenes' | 'sequences' | 'acts';
 
@@ -607,6 +610,7 @@ export function buildRolledBackStoryState<TStory extends RollbackStoryState>(
         beats: {},
         prose: {},
         story_so_far: '',
+        story_memory: createEmptyStoryMemory(),
         editorial_harness: null,
         continuity_ledger: [],
         event_log: [],

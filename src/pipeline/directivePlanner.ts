@@ -23,6 +23,7 @@ import {
 import { PROMPTS } from '@/prompts';
 import { countWords, decodeXmlEntities, escapeXml, extractTag, extractTagList } from '@/utils';
 import { runArchivistForScene } from './continuityPipeline';
+import { syncStorySoFarAfterScene } from './storySoFar';
 import {
     asArray,
     asOptionalRecord,
@@ -115,11 +116,14 @@ export async function verifyAndArchiveDirectiveScene(
 
     if (!review.issues.some((issue) => issue.severity === 'CRITICAL')) {
         const archived = await runArchivistForScene(ctx, workingStory, seqIdx, sceneIdx);
+        const synced = await syncStorySoFarAfterScene(ctx, archived, seqIdx, sceneIdx, {
+            isAutopilot: true
+        });
         logMessage(
-            `[Archive] Scene ${label}: ${archived !== workingStory ? 'updated continuity' : 'no updates returned'}`,
-            archived !== workingStory ? 'success' : 'pending'
+            `[Archive] Scene ${label}: ${synced !== workingStory ? 'updated continuity' : 'no updates returned'}`,
+            synced !== workingStory ? 'success' : 'pending'
         );
-        workingStory = archived;
+        workingStory = synced;
     }
 
     return { story: workingStory, review };

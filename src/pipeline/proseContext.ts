@@ -247,9 +247,6 @@ export function buildProseContext({
         return cloned;
     });
 
-    const clueDirectivesBlock = '';
-    const revealDirectiveBlock = '';
-
     // Build context-aware dialogue pacing target
     const rawPresent: unknown[] = [
         ...(Array.isArray(scene.characters_present)
@@ -664,8 +661,7 @@ ${scene.surface_activity ? `Surface Activity (Grounded Physical Action): ${scene
         : `${actInfo ? `Act Context: Act ${actInfo.number}: ${actInfo.title} (Mandate: ${sanitizedActMandate})\n` : ''}Sequence Context: Sequence ${seqObj.number || 1}: ${seqObj.title || ''} (Objective: ${seqObj.sequence_objective || seqObj.description || ''})${seqObj.sequence_objective && seqObj.description && seqObj.description !== seqObj.sequence_objective ? `\nSequence Description & Mandates: ${seqObj.description}` : ''}`
 }
 ${plotCommitments && ((Array.isArray(plotCommitments) && plotCommitments.length > 0) || typeof plotCommitments === 'string') ? `Plot Commitments (MUST appear in prose):\n${Array.isArray(plotCommitments) ? plotCommitments.map((pc) => (typeof pc === 'object' ? `- ${pc.description}: "${pc.exact_terms}" → Consequence: ${pc.consequence}` : `- ${pc}`)).join('\n') : plotCommitments}\n` : ''}</scene_blueprint>
-${bridgeMandateBlock}${clueDirectivesBlock}
-${revealDirectiveBlock}
+${bridgeMandateBlock}
 ${atmosphericOverviewBlock}
 ${modalityHandBlock}
 ${activeActAndSequenceBlock}${activeLensBlock}
