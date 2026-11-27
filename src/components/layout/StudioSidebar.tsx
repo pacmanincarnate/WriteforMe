@@ -67,6 +67,9 @@ export interface StudioSidebarProps {
     getSceneAudioStatus: (seqIdx: number, sceneIdx: number) => SidebarSceneAudioStatus;
     handleExportEpub: () => void | Promise<void>;
     handleExportAudioDramaTxt: () => void | Promise<void>;
+    /** The manuscript as Markdown, and through the print window as a PDF. Each button is hidden when not given. */
+    handleExportMarkdown?: () => void;
+    handleExportPdf?: () => void;
     handleImport: (e: React.ChangeEvent<HTMLInputElement>) => void | Promise<void>;
     fileInputRef: React.RefObject<HTMLInputElement>;
     hasAvailableUpdate?: boolean;
@@ -103,6 +106,8 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
     getSceneAudioStatus,
     handleExportEpub,
     handleExportAudioDramaTxt,
+    handleExportMarkdown,
+    handleExportPdf,
     handleImport,
     fileInputRef,
     hasAvailableUpdate = false,
@@ -622,6 +627,24 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                             title="Export Full Audio Drama Script (.txt)"
                         >
                             <FileText size={13} /> <span className="nav-label">TXT</span>
+                        </button>
+                    )}
+                    {handleExportMarkdown && (
+                        <button
+                            onClick={handleExportMarkdown}
+                            className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
+                            title="Export the manuscript as Markdown (.md)"
+                        >
+                            <FileText size={13} /> <span className="nav-label">MD</span>
+                        </button>
+                    )}
+                    {handleExportPdf && (
+                        <button
+                            onClick={handleExportPdf}
+                            className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
+                            title="Print the manuscript, or save it as a PDF from the print window"
+                        >
+                            <FileText size={13} /> <span className="nav-label">PDF</span>
                         </button>
                     )}
                     <button

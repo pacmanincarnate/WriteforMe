@@ -48,6 +48,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^1.14.0",
     "@breezystack/lamejs": "^1.2.7",
+    "@fontsource/opendyslexic": "^5.3.0",
     "dompurify": "^3.2.4",
     "jszip": "^3.10.1",
     "lucide-react": "^1.79.0",

@@ -1418,7 +1418,7 @@ import {
             publishAppGlobal('handleResetStoryStage', handleResetStoryStage);
 
             // Export (JSON, audio-drama script, EPUB) and file import (Phase 6E-3).
-            const { handleExport, handleExportAudioDramaTxt, handleExportEpub, handleImport } = useStoryTransfer({
+            const { handleExport, handleExportAudioDramaTxt, handleExportEpub, handleExportMarkdown, handleExportPdf, handleImport } = useStoryTransfer({
                 story, storyRef, setStory, setActiveStoryId, setLoadedImages, setPortraitReload, setView,
                 refreshLibrary, refreshAvailableSceneAudio, showToast, requestConfirm: handOff(requestConfirm),
                 dismissToast,
@@ -1819,6 +1819,8 @@ import {
                         getSceneAudioStatus={handOff(getSceneAudioStatus)}
                         handleExportEpub={handleExportEpub}
                         handleExportAudioDramaTxt={handleExportAudioDramaTxt}
+                        handleExportMarkdown={handleExportMarkdown}
+                        handleExportPdf={handleExportPdf}
                         handleImport={handleImport}
                         fileInputRef={fileInputRef}
                         hasAvailableUpdate={hasAvailableUpdate}
