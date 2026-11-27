@@ -100,6 +100,7 @@ import { DIRECTIVE_REVIEW_OUTPUT_FORMAT_SCHEMA } from './directiveReview';
 import { runAgentWithEscalation } from './escalation';
 import { checkSceneForTheDead } from './deadCheck';
 import { buildProseContext, type ProseContextCastMember } from './proseContext';
+import { markRestorePoint } from './restorePoint';
 import { generateScenes } from './sceneBlueprints';
 import { auditTextAgainstContract } from './series';
 import { applySurgicalEditsWithRetry, applySurgicalProsePatch } from './surgicalPatch';
@@ -354,6 +355,11 @@ export async function writeSceneProse(
         : scenesList[0]
           ? { ...scenesList[0] }
           : { title: 'Scene', scene_events: '', objective: '', cast_names: [] };
+
+    const proseBefore = asOptionalRecord(asRecord(storyToUse.prose)[`${seq}-${s}`]);
+    if (asString(proseBefore?.final).trim()) {
+        await markRestorePoint(ctx, `Before rewriting Scene ${seq + 1}.${s + 1}`, storyToUse);
+    }
 
     const isManualOrForceRewrite = Boolean(forceFullRewrite || scene.user_edited);
     const initialSceneObj = asString(scene.objective);

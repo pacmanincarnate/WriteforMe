@@ -5,6 +5,7 @@
  */
 
 import { isModelStop } from '@/services/llm';
+import { markRestorePoint } from './restorePoint';
 import {
     formatActiveActAndSequenceXml,
     inferNarrativeModeForScene,
@@ -80,6 +81,9 @@ export async function generateScenes(
               : 0;
     const storyToUse = ctx.getStory() || currentStory || {};
     const sequences = asArray<Record<string, unknown>>(storyToUse.sequences);
+    if (!isPrefetch && asArray(asRecord(storyToUse.scenes)[`${seqIdx}`]).length > 0) {
+        await markRestorePoint(ctx, `Before re-planning the scenes of Sequence ${seqIdx + 1}`, storyToUse);
+    }
 
     if (sequences.length === 0) {
         if (!isAutopilot) {

@@ -24,6 +24,7 @@ import {
     deleteStageResetImages,
     eraseAllStoredData,
     imageStore,
+    restorePointStore,
     storyStore
 } from '@/services/storage';
 
@@ -114,6 +115,15 @@ export function useStoryReset<TStory extends ResetStory = ResetStory>(
         }
 
         params.setContinuousAutopilot(false);
+        if (sourceStory?.id) {
+            // A reset throws work away on purpose; keep a way back.
+            await restorePointStore.add(
+                sourceStory.id,
+                sourceStory as Record<string, unknown>,
+                'before',
+                `Before reset: ${cfg.label}`
+            );
+        }
         const { nextStory, removedCharIds, flags } = buildRolledBackStoryState(sourceStory, stage);
 
         storyRef.current = nextStory;

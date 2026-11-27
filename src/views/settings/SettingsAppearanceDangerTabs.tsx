@@ -6,6 +6,7 @@
 import React from 'react';
 import { ChevronDown, Download, Moon, Plus, StoryResetDropdown, Sun, Trash2 } from '@/components';
 import { DEFAULT_IMAGE_STYLES, IMAGE_STYLE_CATEGORIES } from '@/config';
+import { SettingsRestorePoints } from './SettingsRestorePoints';
 import type { SettingsAppearanceTabProps, SettingsDangerTabProps } from './types';
 
 export const SettingsAppearanceTab: React.FC<SettingsAppearanceTabProps> = ({
@@ -203,6 +204,8 @@ export const SettingsAppearanceTab: React.FC<SettingsAppearanceTabProps> = ({
 
 export const SettingsDangerTab: React.FC<SettingsDangerTabProps> = ({
     story,
+    setStory,
+    showToast,
     availableSceneAudioMap,
     loading,
     handleExport,
@@ -235,6 +238,7 @@ export const SettingsDangerTab: React.FC<SettingsDangerTabProps> = ({
                         Export Database JSON
                     </button>
                 </div>
+                <SettingsRestorePoints story={story} setStory={setStory} showToast={showToast} loading={loading} />
                 <div className="bg-surface border border-edge rounded-2xl p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div>
                         <h4 className="text-sm font-bold text-ink-900 font-serif">

@@ -307,6 +307,8 @@ export interface SettingsAppearanceTabProps {
 
 export interface SettingsDangerTabProps {
     story: SettingsStory;
+    setStory: React.Dispatch<React.SetStateAction<SettingsStory>>;
+    showToast: SettingsShowToastFn;
     availableSceneAudioMap: Record<string, unknown>;
     loading: boolean;
     handleExport: () => void;

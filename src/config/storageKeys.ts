@@ -147,6 +147,11 @@ export const IDB_DATABASES = {
         name: 'EllipsisVectorStore',
         version: 1,
         stores: { vectors: 'vectors' }
+    },
+    restore: {
+        name: 'EllipsisRestoreStore',
+        version: 1,
+        stores: { meta: 'meta', data: 'data' }
     }
 } as const;
 
