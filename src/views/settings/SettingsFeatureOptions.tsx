@@ -24,6 +24,11 @@ const TOGGLES: Array<{ key: BooleanOption; title: string; help: string }> = [
         key: 'phraseHabitWatch',
         title: 'Repeated Phrase Watch',
         help: 'Before a scene is written, the last six scenes are read in code for wording used in three or more of them, and the writer is told not to use it again. No extra model call.'
+    },
+    {
+        key: 'promptCacheMarks',
+        title: 'Prompt Cache Marks',
+        help: 'For Claude models (directly or through OpenRouter): marks where the repeated start of the scene-writing prompt ends, so the writer\u2019s later turns and rewrites of the same scene read it from cache at about a tenth of the price. A scene written in a single turn and never rewritten pays about a quarter more for that part instead. Other services cache by themselves and ignore this.'
     }
 ];
 

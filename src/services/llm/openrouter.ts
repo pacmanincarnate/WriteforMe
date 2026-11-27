@@ -5,6 +5,7 @@
  * cache_control breakpoints, and automatic 400/404 fallback retries.
  */
 
+import { splitAtCachePoint } from '@/domain/prompt/cacheLayout';
 import {
     APP_HTTP_HEADERS,
     CACHE_TTLS_MS,
@@ -907,6 +908,9 @@ export async function callOpenRouter(
         let messages = baseMessages;
         if (supportsExplicitOpenRouterCacheControl(modelId)) {
             let markedSystem = false;
+            // The opening user message: the whole prompt of a single call, or the first message
+            // of a conversation, which is re-read on every turn.
+            const openingIndex = baseMessages.findIndex((m) => m.role === 'user');
             messages = baseMessages.map((m, idx) => {
                 if (
                     !markedSystem &&
@@ -923,25 +927,17 @@ export async function callOpenRouter(
                         ]
                     };
                 }
-                if (
-                    !options.messages &&
-                    idx === baseMessages.length - 1 &&
-                    m.role === 'user' &&
-                    typeof options.cacheSplitIndex === 'number' &&
-                    options.cacheSplitIndex >= 1024 &&
-                    typeof prompt === 'string' &&
-                    options.cacheSplitIndex < prompt.length
-                ) {
+                const parts =
+                    idx === openingIndex && typeof m.content === 'string'
+                        ? splitAtCachePoint(m.content, options.cacheSplitIndex)
+                        : null;
+                if (parts) {
                     appliedExplicitCacheControl = true;
                     return {
                         ...m,
                         content: [
-                            {
-                                type: 'text',
-                                text: prompt.slice(0, options.cacheSplitIndex),
-                                cache_control: { type: 'ephemeral' }
-                            },
-                            { type: 'text', text: prompt.slice(options.cacheSplitIndex) }
+                            { type: 'text', text: parts[0], cache_control: { type: 'ephemeral' } },
+                            { type: 'text', text: parts[1] }
                         ]
                     };
                 }

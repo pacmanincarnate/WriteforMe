@@ -6,6 +6,7 @@
  * to server-side refusal fallbacks.
  */
 
+import { splitAtCachePoint } from '@/domain/prompt/cacheLayout';
 import Anthropic from '@anthropic-ai/sdk';
 import { ANTHROPIC_DEFAULT_MODELS, DEFAULT_LLM_MODELS } from '@/config';
 import type { ModelDescriptor } from '@/types';
@@ -213,19 +214,28 @@ export function buildAnthropicRequest(
         if (converted.system && converted.system.trim() !== system.trim()) {
             system = [system, converted.system].filter(Boolean).join('\n\n');
         }
+        // In a conversation the opening message is re-read on every turn, so its repeated start
+        // gets a cache mark too.
+        const opening = messages.find((m) => m.role === 'user');
+        const first = opening && Array.isArray(opening.content) ? opening.content[0] : null;
+        if (opening && Array.isArray(opening.content) && first && first.type === 'text' && !first.cache_control) {
+            const parts = splitAtCachePoint(first.text, options.cacheSplitIndex);
+            if (parts) {
+                opening.content = [
+                    { type: 'text', text: parts[0], cache_control: { type: 'ephemeral' } },
+                    { type: 'text', text: parts[1] },
+                    ...opening.content.slice(1)
+                ];
+            }
+        }
     } else {
-        const split = options.cacheSplitIndex;
-        const content: BetaTextBlockParam[] =
-            typeof split === 'number' && split >= 1024 && split < prompt.length
-                ? [
-                      {
-                          type: 'text',
-                          text: prompt.slice(0, split),
-                          cache_control: { type: 'ephemeral' }
-                      },
-                      { type: 'text', text: prompt.slice(split) }
-                  ]
-                : [{ type: 'text', text: prompt }];
+        const parts = splitAtCachePoint(prompt, options.cacheSplitIndex);
+        const content: BetaTextBlockParam[] = parts
+            ? [
+                  { type: 'text', text: parts[0], cache_control: { type: 'ephemeral' } },
+                  { type: 'text', text: parts[1] }
+              ]
+            : [{ type: 'text', text: prompt }];
         messages = [{ role: 'user', content }];
     }
 
