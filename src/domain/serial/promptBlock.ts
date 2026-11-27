@@ -6,7 +6,11 @@
 
 import type { EpisodePlan, SerialState } from './types';
 
-export function formatSerialContext(serial: SerialState | undefined, plan: EpisodePlan | undefined): string {
+/** The rules a plan carries when no wording is given. The app passes the editable wording instead. */
+export const DEFAULT_SERIAL_RULES = `Move only the listed threads; others may be mentioned but not changed. A closed thread pays off on the page, not off stage.
+A parked thread gets an exit: show its owner leaving and say plainly what is left unfinished.`;
+
+export function formatSerialContext(serial: SerialState | undefined, plan: EpisodePlan | undefined, rules: string = DEFAULT_SERIAL_RULES): string {
     if (!serial || !plan) return ''; // golden prompts unchanged
     const byId = new Map(serial.threads.map((t) => [t.id, t]));
     const line = (id: string) => {
@@ -24,7 +28,5 @@ ${block('advance', plan.advance)}${block('close', plan.close)}${block('park', pl
         .map((o) => `<open_slot scope="${o.scope}" owners="${o.suggested_owners.join(', ')}"${o.grow_from ? ` grow_from="${o.grow_from}"` : ''}>${o.reason}</open_slot>\n`)
         .join('')}<due_on_page>${plan.due_on_page.join(', ')}</due_on_page>
 <ending hook="${plan.hook}"/>
-Move only the listed threads; others may be mentioned but not changed. A closed thread pays off on the page, not off stage.
-A parked thread gets an exit: show its owner leaving and say plainly what is left unfinished.
-</serial_context>\n\n`;
+${rules ? `${rules.trim()}\n` : ''}</serial_context>\n\n`;
 }

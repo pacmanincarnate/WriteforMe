@@ -20,7 +20,7 @@ structure, writing and revision, continuity and lore, the Editorial Desk, and bo
 
 ## What is and is not editable
 
-Editable: every system prompt in the registry (`PROMPTS` in `src/prompts/` and `SERIES_PROMPTS`), about sixty.
+Editable: every system prompt in the registry (`PROMPTS` in `src/prompts/`, `SERIES_PROMPTS` and `SERIAL_PROMPTS`), about sixty.
 The Audio Drama Writer is built from the Writer's audio rules plus the editable "Audio drama writing modifier".
 
 Not editable: the per-call user prompts that pipeline code builds (context blocks and output schemas, such as the

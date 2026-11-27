@@ -16,6 +16,7 @@ import { CONTINUITY_PROMPTS } from './tiers/continuity';
 import { EDITORIAL_PROMPTS } from './tiers/editorial';
 import { PROSE_PROMPTS } from './tiers/prose';
 import { SAFEGUARD_PROMPTS } from './tiers/safeguards';
+import { SERIAL_PROMPTS } from './tiers/serial';
 import { SERIES_PROMPTS } from './tiers/series';
 import { STRUCTURE_PROMPTS } from './tiers/structure';
 
@@ -69,6 +70,7 @@ const GROUPS: Array<[string, PromptTable]> = [
     ['Continuity and lore', CONTINUITY_PROMPTS as PromptTable],
     ['Editorial Desk', EDITORIAL_PROMPTS as PromptTable],
     ['Book series', SERIES_PROMPTS as unknown as PromptTable],
+    ['Serial fiction', SERIAL_PROMPTS as unknown as PromptTable],
     ['Safeguards', SAFEGUARD_PROMPTS as unknown as PromptTable]
 ];
 
@@ -101,6 +103,9 @@ const DESCRIPTIONS: Record<string, [string, string]> = {
     seriesArchitect: ['Series architect', 'Plans the series: question, long arc, per-book roadmap.'],
     contractAuditor: ['Ending contract audit', 'Checks a book closed and kept open what its contract says.'],
     secretLeakJudge: ['Secret leak judge', 'Reads a finished scene for a secret told before its planned reveal.'],
+    serialEpisodePlanner: ['Serial episode planner', 'Sent to the scene planner with each episode plan of a serial: how to use the plan.'],
+    serialEpisodeWriter: ['Serial episode writer', "Sent to the Writer with the plan of the scene's episode."],
+    serialContinuity: ['Serial thread tracking', 'Asks the Archivist to report threads put on hold or kept warm in a scene.'],
     bookRecap: ['Book recap', 'Writes the recap the next book starts from.']
 };
 

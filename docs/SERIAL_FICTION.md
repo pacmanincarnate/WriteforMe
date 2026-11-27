@@ -78,6 +78,7 @@ numbers run on across arcs.
 | `threads.ts`, `cast.ts` | Ledger helpers, cast rotation, `reassignThreadsOf` for a character who dies or retires |
 | `story.ts` | The join to a story: episodes over sequences, roster sync, planning, prompts, scene reports, the next arc, the dashboard summary |
 | `promptBlock.ts` | The `<serial_context>` block |
+| `src/prompts/tiers/serial.ts` | The editable instruction wording |
 | `storyTime.ts` | `checkArcTimeFits` for flashback and parallel arcs |
 
 ## In the app
@@ -85,6 +86,14 @@ numbers run on across arcs.
 - Setup: "Run it as a serial" with the cast rotation choice.
 - Dashboard: a read-only Serial card with the arc, episodes written, phase, threads grouped as side,
   long-running and on hold, who is on stage and who is resting, and the scheduler's warnings.
+
+## Editable wording
+
+A serial has no model call of its own, so there is no "serial architect" prompt. The episode plan is
+worked out by the app and rides along in the scene planner, Writer and Archivist prompts. The fixed
+instructions that travel with it are editable under Settings, Prompts, in the "Serial fiction" group
+(`SERIAL_PROMPTS` in `src/prompts/tiers/serial.ts`): the episode planner, the episode writer and the
+thread tracking wording. The plan itself is not editable text.
 
 ## Not built yet
 

@@ -12,6 +12,7 @@ import { isSeriesStory } from '@/domain/series/plan';
 import { formatSeriesContinuityAddendum, formatSeriesSceneDirectives } from '@/domain/series/prompts';
 import { applySeriesSceneReport, type SeriesSceneReport, type SeriesSceneReportResult } from '@/domain/series/sceneReport';
 import { isThreadOpen } from '@/domain/series/threads';
+import { SERIAL_PROMPTS } from '@/prompts/tiers/serial';
 import type {
     ArcCastPlan,
     ArcWindow,
@@ -386,11 +387,11 @@ export function formatLongformSceneDirectives(
         const list = plans && plans.length > 0 ? plans : eps.map((e) => episodePlanFor(story, e, sequenceCount));
         const split =
             eps.length === 1
-                ? `Sequence ${seq} is episode ${eps[0]}. Its last scene ends on the episode's hook.`
-                : `Sequence ${seq} holds episodes ${eps.join(', ')}. Split the scenes evenly and in order between them. The last scene of each episode ends on that episode's hook.`;
+                ? `Sequence ${seq} is episode ${eps[0]}.`
+                : `Sequence ${seq} holds episodes ${eps.join(', ')}. Split the scenes evenly and in order between them.`;
         parts.push(
-            `<serial_episodes sequence="${seq}">\nThis story is released as a serial. ${split}\nIds such as S1 name longer-running threads. When a scene moves one, add its id to that scene's threads. An <open_slot> asks for one scene that raises a new question for its owners, to be answered a few episodes on.\n${list
-                .map((plan) => formatSerialContext(state, plan).trimEnd())
+            `<serial_episodes sequence="${seq}">\n${SERIAL_PROMPTS.serialEpisodePlanner.trim()}\n${split}\n${list
+                .map((plan) => formatSerialContext(state, plan, '').trimEnd())
                 .join('\n')}\n</serial_episodes>`
         );
     } else {
@@ -401,7 +402,7 @@ export function formatLongformSceneDirectives(
             ? `This is the last scene of episode ${at.episode}: end it on the planned hook.`
             : `Episode ${at.episode} continues after this scene: do not land the episode's ending yet.`;
         parts.push(
-            `${formatSerialContext(serialStateOf(story, at.episode), plan).trimEnd()}\nTouch a listed thread only if this scene's blueprint calls for it. ${place}`
+            `${formatSerialContext(serialStateOf(story, at.episode), plan, SERIAL_PROMPTS.serialEpisodeWriter).trimEnd()}\n${place}`
         );
     }
     const contract = endingContractBlock(story, seq, audience, sequenceCount);
@@ -413,13 +414,7 @@ export function formatLongformSceneDirectives(
 export function formatLongformContinuityAddendum(story: Partial<Story> | null | undefined): string {
     const series = formatSeriesContinuityAddendum(story);
     if (!isSerialStory(story)) return series;
-    return `${series}<serial_tracking>
-This story is also a serial, released in episodes. Add one more array to the SAME JSON object, empty when nothing applies:
-  "serial_thread_notes": [ { "id": "S1", "change": "parked | kept_warm", "note": "One line: what the reader was told." } ]
-Use "parked" when the scene shows a thread's owner leaving the story for now and says what is left unfinished. Use "kept_warm" when a thread that is on hold is only mentioned, without moving.
-In a serial a thread may be "resolved" in open_thread_updates as soon as the scene truly pays it off. When the scene opens a new question meant to run for a few episodes, report it in new_thread_candidates and name its owners.
-</serial_tracking>
-`;
+    return `${series}${SERIAL_PROMPTS.serialContinuity.trim()}\n`;
 }
 
 /** Tells the cast step who the rotation seated for this arc. Empty for anything but a new serial arc. */
