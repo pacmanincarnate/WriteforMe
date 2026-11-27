@@ -10,7 +10,7 @@
 import { useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { DEFAULT_SERVICE_URLS, TIMEOUTS_MS } from '@/config';
-import { isLocalKoboldUrl, isModelStop, resumeModelCalls, stopModelCalls } from '@/services/llm';
+import { isLocalKoboldUrl, isModelStop, resetUsageMeter, resumeModelCalls, stopModelCalls } from '@/services/llm';
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 
@@ -138,6 +138,8 @@ export function useAutopilotLoop({
         const runLoop = async (): Promise<void> => {
             if (!continuousAutopilot) return;
             continuousAutopilotRef.current = true;
+            // Caps count from the start of this run.
+            resetUsageMeter();
 
             if (apiProvider === 'koboldcpp' && !(await isKoboldReachable(koboldUrl))) {
                 showToast(

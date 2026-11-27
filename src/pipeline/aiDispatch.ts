@@ -37,6 +37,7 @@ import {
     isModelStop,
     modelCallsStopped,
     modelStopSignal,
+    noteModelUsageFrom,
     sleepUnlessStopped,
     throwIfModelStopped
 } from '@/services/llm';
@@ -354,6 +355,7 @@ export async function dispatchAI(
         ...(targetProvider === 'openrouter' ? { sessionId: openRouterSessionId } : {}),
         ...(isCliBridgeProvider(targetProvider) ? { provider: targetProvider } : {}),
         onSuccess: (metadata: LlmSuccessMetadata) => {
+            noteModelUsageFrom(metadata);
             const durationSec = ((performance.now() - startTime) / 1000).toFixed(2);
             const durationMs = Math.round(performance.now() - startTime);
             const thinkingToks = metadata.thinkingTokens ?? metadata.reasoningTokensUsed ?? 0;

@@ -20,6 +20,7 @@ import {
     type PipelineRuntimeContext,
     type PipelineStory
 } from './context';
+import { autopilotCapPause, autopilotCheckpointPause } from './autopilotLimits';
 import { runAutonomousEditorialHarness } from './editorialHarness';
 import { createStoryEntityFromSetup, initStory } from './initStory';
 import { writeSceneProse } from './prosePipeline';
@@ -150,6 +151,16 @@ export async function runContinuousAutopilotStep(
         ctx.showToast('Please enter a story concept first!');
         ctx.setContinuousAutopilot?.(false);
         if (continuousRef) continuousRef.current = false;
+        return false;
+    }
+
+    // Caps are checked between steps only, so a step that has started always finishes.
+    const capReason = await autopilotCapPause().catch(() => '');
+    if (capReason) {
+        ctx.showToast(capReason, 'warning');
+        ctx.setContinuousAutopilot?.(false);
+        if (continuousRef) continuousRef.current = false;
+        ctx.setLoading(false);
         return false;
     }
 
@@ -481,6 +492,20 @@ export async function runContinuousAutopilotStep(
                     if (nextScenes.length === 0) {
                         prefetchScenesForSequence(ctx, seqIdx + 1, currentStory);
                     }
+                }
+
+                const checkpoint = autopilotCheckpointPause({
+                    seqIdx,
+                    sceneIdx,
+                    scenesInSequence: currentSeqScenes.length,
+                    sequenceActs: seqsArr.map((sq) => asRecord(sq).parent_act as number | string | undefined)
+                });
+                if (checkpoint && !isStopped()) {
+                    ctx.showToast(checkpoint, 'info');
+                    ctx.setContinuousAutopilot?.(false);
+                    if (continuousRef) continuousRef.current = false;
+                    ctx.setLoading(false);
+                    return false;
                 }
 
                 if (!isStopped()) {
