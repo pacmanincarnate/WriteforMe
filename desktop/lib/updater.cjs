@@ -80,7 +80,7 @@ function parseSha256Sums(text) {
     for (const line of String(text || '').split(/\r?\n/)) {
         const m = /^([a-f0-9]{64})\s+[* ]?(.+)$/i.exec(line.trim());
         if (!m) continue;
-        const fileName = path.basename(m[2].trim()).toLowerCase();
+        const fileName = path.win32.basename(m[2].trim()).toLowerCase();
         map.set(fileName, m[1].toLowerCase());
     }
     return map;
@@ -141,12 +141,12 @@ function escapeCmdArg(value) {
  * swaps or upgrades the portable executable, relaunches it, and removes itself.
  */
 function buildPortableUpdaterScript({ downloadedPath, currentExePath, newAssetName, pid }) {
-    const dir = path.dirname(currentExePath);
-    const currentBase = path.basename(currentExePath);
-    const safeNewName = path.basename(newAssetName || currentBase);
+    const dir = path.win32.dirname(currentExePath);
+    const currentBase = path.win32.basename(currentExePath);
+    const safeNewName = path.win32.basename(newAssetName || currentBase);
     const isVersionedExe = /^EllipsisProse-\d+\.\d+\.\d+.*-portable\.exe$/i.test(currentBase);
     const useNewFilename = isVersionedExe && safeNewName.toLowerCase() !== currentBase.toLowerCase();
-    const targetExePath = useNewFilename ? path.join(dir, safeNewName) : currentExePath;
+    const targetExePath = useNewFilename ? path.win32.join(dir, safeNewName) : currentExePath;
     const backupExePath = `${currentExePath}.old`;
 
     const dPath = escapeCmdArg(downloadedPath);
