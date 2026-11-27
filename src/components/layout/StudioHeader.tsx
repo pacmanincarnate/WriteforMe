@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { LiveCreationIsland, type LiveCreationIslandProps } from '@/components/common';
-import { ChevronRight, Loader2, Menu, Moon, Sun, Zap } from '@/components/icons';
+import { ChevronRight, Feather, Loader2, Menu, Moon, Sun } from '@/components/icons';
 import type { Story } from '@/types';
 
 export interface StudioHeaderProps {
@@ -147,7 +147,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                             </>
                         ) : (
                             <>
-                                <Zap size={13} className="text-ember-600" />
+                                <Feather size={13} className="text-ember-600" />
                                 <span className="whitespace-nowrap">Autopilot</span>
                             </>
                         )}

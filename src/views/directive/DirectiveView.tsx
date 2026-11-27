@@ -13,7 +13,7 @@ import {
     RotateCcw,
     Sparkles,
     Wand2,
-    Zap,
+    Check,
     type EditorialSubNavProps
 } from '@/components';
 import { VIEW_LABELS } from '@/config';
@@ -505,7 +505,7 @@ export function DirectiveView({
                                         activeActions.length === 0
                                     }
                                 >
-                                    <Zap size={14} className="fill-amber-300 text-amber-300" />
+                                    <Check size={14} className="text-amber-300" />
                                     Apply &amp; Execute Plan
                                     {activeActions.length > 0 ? ` (${activeActions.length})` : ''}
                                 </button>

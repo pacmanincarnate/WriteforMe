@@ -24,7 +24,7 @@ import {
     Trash2,
     Wand2,
     X,
-    Zap,
+    Feather,
     EditButton,
     HumanStructuredValue
 } from '@/components';
@@ -1128,7 +1128,7 @@ export const WriterManuscriptPane: React.FC<WriterManuscriptPaneProps> = ({
                                     disabled={loading}
                                     className="px-5 py-2.5 bg-btn hover:bg-btn-hover text-btn-ink rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition-all cursor-pointer"
                                 >
-                                    <Zap size={14} className="text-[#C9A96E]" /> Auto-Write Scene Prose
+                                    <Feather size={14} className="text-[#C9A96E]" /> Auto-Write Scene Prose
                                 </button>
                             </div>
                         </div>

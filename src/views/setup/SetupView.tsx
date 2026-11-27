@@ -13,7 +13,7 @@ import {
     LoreFileCard,
     Sparkles,
     Upload,
-    Zap,
+    Feather,
     type LoreFileItem
 } from '@/components';
 import { generateRandomArchetypes, VIEW_LABELS, type ArchetypeOption } from '@/config';
@@ -472,7 +472,7 @@ export function SetupView({
                         </>
                     ) : (
                         <>
-                            <Zap size={18} className="fill-current text-amber-300" /> Start
+                            <Feather size={18} className="text-amber-300" /> Start
                             Autopilot
                         </>
                     )}

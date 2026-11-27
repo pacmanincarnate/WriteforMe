@@ -21,7 +21,6 @@ import {
     ShieldCheck,
     Terminal,
     Trash2,
-    Zap,
     type EditorialSubNavProps
 } from '@/components';
 import { VIEW_LABELS } from '@/config';
@@ -276,7 +275,7 @@ export function EditorialView({
                                 </>
                             ) : (
                                 <>
-                                    <Zap size={14} className="text-amber-300 fill-amber-300" />
+                                    <Scale size={14} className="text-amber-300" />
                                     <span>Run Full Review &amp; 3-Wave Revision</span>
                                 </>
                             )}

@@ -26,7 +26,7 @@ import {
     Shuffle,
     Wand2,
     X,
-    Zap,
+    Feather,
     EditButton,
     EditorialSubNav
 } from '@/components';
@@ -543,7 +543,7 @@ export const WriterView: React.FC<WriterViewProps> = ({
                             className="h-[56px] rounded-xl bg-gold-tint hover:bg-gold/25 border border-gold-edge text-gold-ink flex flex-col items-center justify-center gap-1 transition-all cursor-pointer active:scale-95"
                             title="Write prose, run editorial review, illustrate, or export"
                         >
-                            <Zap size={16} className="w-4 h-4 text-gold-ink" />
+                            <Feather size={16} className="w-4 h-4 text-gold-ink" />
                             <span className="text-[11px] font-bold inline-flex items-center gap-0.5">
                                 <span>Write</span>
                                 <ChevronDown size={11} className="w-3 h-3 opacity-75" />
@@ -613,7 +613,7 @@ export const WriterView: React.FC<WriterViewProps> = ({
                                     disabled={loading}
                                     className="w-full px-3 py-2 rounded-xl text-left text-xs font-bold text-ink-900 hover:bg-wash flex items-center gap-2.5 disabled:opacity-45 cursor-pointer"
                                 >
-                                    <Zap size={14} className="w-3.5 h-3.5 text-gold-ink shrink-0" />
+                                    <Feather size={14} className="w-3.5 h-3.5 text-gold-ink shrink-0" />
                                     <span>{hasSceneProse ? 'Re-Write Prose' : 'Write Prose'}</span>
                                 </button>
                                 <button
