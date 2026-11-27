@@ -26,6 +26,8 @@ export interface FeatureOptions {
     autopilotTokenCap: number;
     /** Dollars one Autopilot run may spend, where the provider reports spending; 0 means no cap. */
     autopilotSpendCap: number;
+    /** Tell the writer which phrases the last few scenes keep reusing, so it stops. */
+    phraseHabitWatch: boolean;
 }
 
 export const DEFAULT_FEATURE_OPTIONS: FeatureOptions = {
@@ -33,7 +35,8 @@ export const DEFAULT_FEATURE_OPTIONS: FeatureOptions = {
     deadCharacterCheck: true,
     autopilotPauseAt: 'never',
     autopilotTokenCap: 0,
-    autopilotSpendCap: 0
+    autopilotSpendCap: 0,
+    phraseHabitWatch: true
 };
 
 export function normalizeFeatureOptions(raw: unknown): FeatureOptions {

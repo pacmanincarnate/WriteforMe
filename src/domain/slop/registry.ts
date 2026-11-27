@@ -389,6 +389,53 @@ export const AI_SLOP_REGISTRY: SlopPack = {
             ]
         },
         {
+            id: "wiki_significance",
+            group: "prose_style",
+            title: "Puffed-up significance (Wikipedia: Signs of AI writing)",
+            severity: "flag",
+            match: "phrase",
+            note: "Says a thing matters instead of showing what it is.",
+            items: [
+                "stands as", "serves as", "functions as", "a crucial role",
+                "a vital role", "a key role", "a significant role", "a pivotal moment",
+                "deeply rooted", "enduring legacy", "lasting legacy", "lasting impact",
+                "setting the stage for", "set the stage for", "marks a shift",
+                "marked a shift", "represents a shift", "focal point",
+                "a broader movement", "reflects broader"
+            ]
+        },
+        {
+            id: "wiki_vocabulary",
+            group: "prose_style",
+            title: "AI vocabulary (Wikipedia: Signs of AI writing)",
+            severity: "flag",
+            match: "word",
+            note: "Words studies found models overuse; one means little, several together mean a lot.",
+            items: [
+                "showcase", "showcases", "showcased", "showcasing", "highlighting",
+                "emphasize", "emphasizes", "emphasizing", "enhance", "enhances",
+                "enhanced", "enhancing", "garner", "garners", "garnered", "bolstered",
+                "crucial", "fostering", "fostered", "cultivating",
+                "encompassing", "align with", "aligns with", "aligned with",
+                "valuable insights"
+            ]
+        },
+        {
+            id: "wiki_chatbot",
+            group: "prose_style",
+            title: "Chatbot talking to its user (Wikipedia: Signs of AI writing)",
+            severity: "hard",
+            match: "phrase",
+            note: "The model talking to whoever asked, left in the prose.",
+            items: [
+                "You're absolutely right", "You are absolutely right",
+                "Would you like me to", "Is there anything else I can",
+                "as of my last update", "as of my last knowledge update",
+                "as of my last training update", "my knowledge cutoff",
+                "as a large language model", "as a language model"
+            ]
+        },
+        {
             id: "ellipsis_clinical_mastermind",
             group: "prose_style",
             title: "Clinical, mastermind & somatic clichés (EllipsisProse)",
@@ -450,6 +497,41 @@ export const AI_SLOP_REGISTRY: SlopPack = {
             title: "Smart quotes in plain text",
             severity: "off",
             note: "Only matters where plain ASCII text is required."
+        },
+        {
+            id: "wiki_here_is",
+            title: "Chatbot preamble left at the top (\"Here is the scene\")",
+            severity: "hard",
+            regex: "^\\s*(?:Here is|Here's|Here are) (?:a|an|the|your) (?:[\\w-]+ ){0,3}(?:scene|chapter|story|draft|rewrite|revision|prose|passage|text|version|continuation|script|outline)\\b",
+            flags: "i"
+        },
+        {
+            id: "wiki_placeholder",
+            title: "Unfilled placeholder in brackets",
+            severity: "hard",
+            regex: "\\[(?:insert|describe|add|enter|character|name|your|placeholder|todo|tbd|x{2,})\\b[^\\]\\n]{0,80}\\]",
+            flags: "i"
+        },
+        {
+            id: "wiki_ing_tail",
+            title: "\"-ing\" tail that adds an analysis (\", underscoring ...\")",
+            severity: "flag",
+            regex: ",\\s+(?:underscoring|reflecting|symbolizing|ensuring|contributing to|cementing|solidifying|demonstrating|illustrating|signaling|signalling|embodying)\\b",
+            flags: "i"
+        },
+        {
+            id: "wiki_not_just",
+            title: "\"Not just X, but also Y\"",
+            severity: "flag",
+            regex: "\\bnot (?:just|only|merely|simply)\\b[^.!?;\\n]{1,80}?\\bbut\\b",
+            flags: "i"
+        },
+        {
+            id: "wiki_no_no_just",
+            title: "\"No X, no Y, just Z\"",
+            severity: "flag",
+            regex: "\\bno [^,.!?;\\n]{1,30}, no [^,.!?;\\n]{1,30},? (?:just|only)\\b",
+            flags: "i"
         }
     ],
     density: [
@@ -470,6 +552,12 @@ export const AI_SLOP_REGISTRY: SlopPack = {
             id: "question_free_dialogue",
             title: "Scene with dialogue but no question mark",
             severity: "flag"
+        },
+        {
+            id: "repeated_phrase",
+            title: "Same phrase (3 to 8 words) 3+ times in a scene",
+            severity: "flag",
+            count: 3
         }
     ]
 };
@@ -487,7 +575,10 @@ export const AMBIGUOUS_SENTENCE_START_NAMES = new Set<string>([
 export const ASSISTANT_NARRATION_ONLY_ITEMS = new Set<string>([
     "of course!", "absolutely!", "certainly!", "remember,", "ultimately,",
     "moreover,", "furthermore,", "additionally,", "importantly,", "notably,",
-    "here's the thing", "feel free to", "dive into"
+    "here's the thing", "feel free to", "dive into",
+    // People do say these to each other; only narration saying them is the model talking.
+    "you're absolutely right", "you are absolutely right", "would you like me to",
+    "is there anything else i can"
 ]);
 
 export const PLACE_SUFFIX_EXCLUSIONS = new Set<string>([

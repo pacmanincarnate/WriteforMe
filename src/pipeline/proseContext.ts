@@ -33,6 +33,8 @@ import {
 import type { Act, CastMember, Relationship, SceneBlueprint, Sequence, Story } from '@/types';
 import { isSerializationPlaceholder } from '@/utils';
 import { scrubSecretFromText } from '@/domain/continuity/secretScrub';
+import { phraseHabitsLine, recentScenePassages } from '@/domain/slop';
+import { getFeatureOptions } from '@/stores/useFeatureOptionsStore';
 
 export interface ProseContextCastMember extends Partial<CastMember>, Record<string, unknown> {
     name?: string;
@@ -287,6 +289,15 @@ export function buildProseContext({
         }
     });
     const isSolo = presentChars.length <= 1;
+
+    // Wording the last few scenes keep reusing; cast and place names are not habits.
+    let phraseHabitsBlock = '';
+    if (getFeatureOptions().phraseHabitWatch) {
+        const habits = phraseHabitsLine(recentScenePassages(storyToUse.prose, seq, s), {
+            ignoreWords: (Array.isArray(storyToUse.cast) ? storyToUse.cast : []).map((c) => String(c?.name || ''))
+        });
+        if (habits) phraseHabitsBlock = `\n<phrase_habits>\n${habits}\n</phrase_habits>`;
+    }
 
     let dialogueTargetBlock: string;
     if (storyToUse.writing_mode === 'audio_drama') {
@@ -663,7 +674,7 @@ ${atmosphericOverviewBlock}
 ${modalityHandBlock}
 ${activeActAndSequenceBlock}${activeLensBlock}
 ${upcomingBoundaryBlock}
-${dialogueTargetBlock}
+${dialogueTargetBlock}${phraseHabitsBlock}
 ${
     !forceFullRewrite && existingProseText
         ? `
