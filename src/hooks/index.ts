@@ -8,6 +8,7 @@ export * from './useTtsPlayback';
 export * from './useMcpBridge';
 export * from './useStoryEditors';
 export * from './useSlopConfig';
+export * from './usePromptOverrides';
 export * from './useCustomNarrativeModes';
 export * from './useEpistemicEditors';
 export * from './useDirectivePlanEditors';

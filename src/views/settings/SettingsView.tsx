@@ -1,15 +1,16 @@
 /**
  * @module views/settings/SettingsView
- * Main Studio & LLM Settings view (`view === 'settings'`) with 5-tab navigation:
- * Model Options, Pipeline Settings, Audio Drama, Appearance, and Danger.
+ * Main Studio & LLM Settings view (`view === 'settings'`) with 6-tab navigation:
+ * Model Options, Pipeline Settings, Prompts, Audio Drama, Appearance, and Danger.
  */
 
 import React from 'react';
-import { AlertTriangle, Cpu, Radio, Settings, Sparkles, Workflow } from '@/components';
+import { AlertTriangle, Cpu, FileText, Radio, Settings, Sparkles, Workflow } from '@/components';
 import { SettingsAppearanceTab, SettingsDangerTab } from './SettingsAppearanceDangerTabs';
 import { SettingsAudioDramaTab } from './SettingsAudioDramaTab';
 import { SettingsModelsTab } from './SettingsModelsTab';
 import { SettingsPipelineTab } from './SettingsPipelineTab';
+import { SettingsPromptsTab } from './SettingsPromptsTab';
 import type { SettingsViewProps } from './types';
 
 export const SettingsView: React.FC<SettingsViewProps> = (props) => {
@@ -33,7 +34,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
             </div>
 
             {/* Settings Navigation Tabs */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 p-1.5 bg-mist-100 border border-edge-strong rounded-2xl mb-6 shadow-2xs">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 p-1.5 bg-mist-100 border border-edge-strong rounded-2xl mb-6 shadow-2xs">
                 <button
                     type="button"
                     onClick={() => setSettingsTab('models')}
@@ -57,6 +58,18 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 >
                     <Workflow size={14} />
                     <span>Pipeline Settings</span>
+                </button>
+                <button
+                    type="button"
+                    onClick={() => setSettingsTab('prompts')}
+                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        settingsTab === 'prompts'
+                            ? 'bg-btn text-btn-ink shadow-2xs'
+                            : 'text-ink-600 hover:text-ink-900 hover:bg-mist-200/60'
+                    }`}
+                >
+                    <FileText size={14} />
+                    <span>Prompts</span>
                 </button>
                 <button
                     type="button"
@@ -98,6 +111,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
 
             {settingsTab === 'models' && <SettingsModelsTab {...props} />}
             {settingsTab === 'pipeline' && <SettingsPipelineTab {...props} />}
+            {settingsTab === 'prompts' && <SettingsPromptsTab />}
             {settingsTab === 'audio_drama' && <SettingsAudioDramaTab {...props} />}
             {settingsTab === 'appearance' && <SettingsAppearanceTab {...props} />}
             {settingsTab === 'danger' && <SettingsDangerTab {...props} />}
