@@ -9,6 +9,7 @@ import {
     applyWorldUpdates,
     commitEpistemicSceneDeltas,
     formatSceneCoord,
+    parseSceneCoordinates,
     type ContinuityStoryState,
     type ProcessedLoreEntry,
     type WorldUpdateStoryState,
@@ -629,12 +630,31 @@ export async function handleWorldUpdates(
 
     let committedEpistemicGraph: unknown = null;
     let committedSecretVault: unknown = null;
+    const base = { ...(ctx.getStory() || targetStory || {}) };
+    const coordHint =
+        typeof activeSceneNum === 'string' && activeSceneNum.includes('.')
+            ? activeSceneNum.trim()
+            : typeof sceneObj?.number === 'string' && String(sceneObj.number).includes('.')
+              ? String(sceneObj.number).trim()
+              : '';
+    const parsedCoord = coordHint
+        ? parseSceneCoordinates(coordHint, base as ContinuityStoryState)
+        : null;
+    const resolvedSeqNum =
+        parsedCoord?.sequence ||
+        Number(sceneObj?.sequence_number || 0) ||
+        1;
+    const resolvedSceneNum =
+        parsedCoord?.scene ||
+        (typeof activeSceneNum === 'number' && activeSceneNum > 0
+            ? activeSceneNum
+            : Number(activeSceneNum) > 0
+              ? Number(activeSceneNum)
+              : Number(sceneObj?.scene_number || 0) || 1);
+    const resolvedActNum = Number(activeActNum) || parsedCoord?.act || 1;
+    const sceneCoord = coordHint || formatSceneCoord(resolvedSeqNum, resolvedSceneNum);
+
     try {
-        const base = { ...(ctx.getStory() || targetStory || {}) };
-        const sceneCoord =
-            typeof activeSceneNum === 'string' && activeSceneNum.includes('.')
-                ? activeSceneNum
-                : formatSceneCoord(activeActNum, activeSceneNum);
         await commitEpistemicSceneDeltas(
             base as ContinuityStoryState,
             asArray<Record<string, unknown>>(updates.epistemic_transitions),
@@ -655,8 +675,8 @@ export async function handleWorldUpdates(
             const rawItem: Partial<LoreItem> & Record<string, unknown> = {
                 topic: up.topic,
                 detail: up.detail,
-                valid_from_act: typeof activeActNum === 'number' ? activeActNum : 1,
-                valid_from_scene: typeof activeSceneNum === 'number' ? activeSceneNum : 1
+                valid_from_act: resolvedActNum,
+                valid_from_scene: resolvedSceneNum
             };
             const processed = await ingestLore(ctx, rawItem);
             processedLoreStart.push(processed);

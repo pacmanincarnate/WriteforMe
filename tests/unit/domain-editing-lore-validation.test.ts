@@ -34,7 +34,6 @@ import {
     ensureStoryArcOutputCompleteness,
     extractReviewStatus,
     findFlatValueShiftScenes,
-    findTrivialMRUBeats,
     getDynamicBannedPhrases,
     parseIssuesFromReview,
     parseValenceState,
@@ -224,7 +223,7 @@ describe('Lore Domain: queryExpansion, chunking, vectorMath, and GraphManager', 
 });
 
 describe('Validation Domain: structuralValidator, completenessNormalizers, proseQuality', () => {
-    it('validates structural outputs, extracts review verdicts, and flags trivial MRUs / flat value shifts', () => {
+    it('validates structural outputs, extracts review verdicts, and flags flat value shifts', () => {
         const storyArcRes = validateStructuralOutput(
             'Story Arc Agent',
             {
@@ -254,16 +253,6 @@ describe('Validation Domain: structuralValidator, completenessNormalizers, prose
         expect(status.status).toBe('FAIL');
         expect(status.issues).toHaveLength(1);
         expect(parseIssuesFromReview(reviewXml)).toHaveLength(1);
-
-        const trivial = findTrivialMRUBeats([
-            { char_A_action: 'He walks.', char_B_reaction: 'She sighs.' },
-            {
-                char_A_action: 'Marcus slides the forged manifest across the scarred oak table.',
-                char_B_reaction: 'Elena freezes mid-breath, staring at the crimson customs stamp.'
-            }
-        ]);
-        expect(trivial).toHaveLength(1);
-        expect(trivial[0].index).toBe(0);
 
         const flat = findFlatValueShiftScenes([
             { scene_type: 'PROACTIVE', value_shift: { start_state: 'Trust', end_state: 'Trust' } },

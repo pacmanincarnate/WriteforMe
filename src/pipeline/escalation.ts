@@ -23,14 +23,11 @@ import {
     ensureStoryArcOutputCompleteness,
     extractReviewStatus,
     findFlatValueShiftScenes,
-    findTrivialMRUBeats,
     parseIssuesFromReview,
     parseWritingOutput,
-    surgicallyRepairBeatMRUs,
     surgicallyRepairValueShifts,
     validateStructuralOutput,
     type CompletenessContext,
-    type DefectiveBeatEntry,
     type DefectiveValueShiftEntry,
     type StructuralRepairCallAIFn,
     type ValidationContext
@@ -565,103 +562,6 @@ FINAL ESCALATION PROTOCOL:
                 `[${tierName}] Structural validation failed (bypassing Reviewer LLM):`,
                 structuralValidation.errors
             );
-
-            if (
-                tierName === 'Beat Agent' &&
-                structuralValidation.errors.some(
-                    (e) =>
-                        e.includes('trivial MRU') ||
-                        e.includes('trivial action') ||
-                        e.includes('trivial reaction')
-                )
-            ) {
-                const parsedRec = asRecord(parsedData);
-                const beats = asArray<Record<string, unknown>>(
-                    parsedRec.beats || (Array.isArray(parsedData) ? parsedData : [])
-                );
-                const defectiveBeats = findTrivialMRUBeats(beats) as DefectiveBeatEntry[];
-                if (defectiveBeats.length > 0) {
-                    ctx.showToast(
-                        `Surgically repairing ${defectiveBeats.length} defective beats...`,
-                        'info'
-                    );
-                    ctx.logPipelineValidation(
-                        `${tierName} Structural Validation Gate (Attempt ${attempt}/3)${chunkPrefix}`,
-                        false,
-                        structuralValidation.errors,
-                        null,
-                        {
-                            attempt,
-                            maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
-                            tierName,
-                            type: 'pre_review_gate',
-                            actionTaken: `Intercepted ${defectiveBeats.length} trivial MRU beats for surgical repair`
-                        }
-                    );
-                    const repairResult = await surgicallyRepairBeatMRUs(
-                        defectiveBeats,
-                        beats,
-                        validationContext as Record<string, unknown>,
-                        genOutput,
-                        repairCallAI
-                    );
-                    if (repairResult.success) {
-                        ctx.showToast('Surgical repair successful!', 'success');
-                        if (repairResult.genOutput) {
-                            genOutput = repairResult.genOutput;
-                            try {
-                                const reparsed = effectiveParser(repairResult.genOutput);
-                                if (reparsed) {
-                                    parsedData = reparsed;
-                                    lastParsedData = reparsed;
-                                }
-                            } catch (e) {
-                                console.warn('[Beat Agent] Failed to re-parse repaired output:', e);
-                            }
-                        }
-                        const revalidation = validateStructuralOutput(
-                            tierName,
-                            parsedData,
-                            validationContext
-                        );
-                        if (revalidation.valid) {
-                            console.log(
-                                `[${tierName}] Structural validation passed after surgical repair.`
-                            );
-                            structuralValidation.valid = true;
-                            structuralValidation.errors = [];
-                            ctx.logPipelineValidation(
-                                `${tierName} Surgical MRU Repair (Attempt ${attempt}/3)${chunkPrefix}`,
-                                true,
-                                `Successfully repaired ${defectiveBeats.length} defective beat MRUs.`,
-                                null,
-                                {
-                                    attempt,
-                                    maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
-                                    tierName,
-                                    type: 'surgical_repair',
-                                    actionTaken: 'Proceeding to Reviewer LLM'
-                                }
-                            );
-                        }
-                    } else {
-                        ctx.logPipelineError(
-                            `${tierName} Surgical MRU Repair (Attempt ${attempt}/3)${chunkPrefix}`,
-                            'Surgical MRU repair failed',
-                            'Repair could not resolve trivial MRUs.',
-                            {
-                                attempt,
-                                maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
-                                tierName,
-                                actionTaken:
-                                    attempt < 3
-                                        ? `Retrying generation (Attempt ${attempt + 1}/3)`
-                                        : 'Escalation failure'
-                            }
-                        );
-                    }
-                }
-            }
 
             if (
                 tierName === 'Scene Agent' &&

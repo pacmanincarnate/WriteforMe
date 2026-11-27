@@ -3,14 +3,16 @@ import {
     applySurgicalEditsWithRetry,
     checkAndExecuteRSI,
     distillLore,
+    rebuildStorySoFar,
     repairBannedEntitiesWithAI,
     runAgentWithEscalation,
     runArchivistForScene,
-    updateStorySoFar,
+    syncStorySoFarAfterScene,
     type CallAiFn,
     type PipelineRuntimeContext,
     type PipelineStory
 } from '@/pipeline';
+import type { StoryMemory } from '@/types';
 import { DEFAULT_SLOP_CONFIG } from '@/domain/slop';
 import * as validation from '@/domain/validation';
 
@@ -356,12 +358,185 @@ describe('pipeline core orchestrators (Phase 6A)', () => {
         expect(res.parsedData.prose).toContain('sealed dispatch to her ribs');
     });
 
-    it('updateStorySoFar returns early when no drafted prose exists', async () => {
-        const callAI = vi.fn(async () => '');
-        const { ctx, getStorySnapshot } = makeTestContext({ id: 'empty', prose: {} }, callAI);
+    it('runArchivistForScene records scene_synopsis into story_memory and overwrites rewrites without duplication', async () => {
+        let rewrite = false;
+        const callAI = vi.fn(async () =>
+            JSON.stringify({
+                scene_synopsis: rewrite
+                    ? 'Nadia Okafor burned the forged ledger at the pier and fled before the bells rang.'
+                    : 'Nadia Okafor recovered the damp ledger from the customs locker and spotted Tomas watching.'
+            })
+        );
+        const initial: PipelineStory = {
+            id: 'story_arch_mem',
+            cast: [{ id: 'C1', name: 'Nadia Okafor', role: 'Protagonist', details: {} }],
+            lore: [],
+            sequences: [{ number: 1, parent_act: 1, title: 'Arrival' }],
+            scenes: {
+                '0': [
+                    { number: '1.1', title: 'Dockside', cast_names: ['Nadia Okafor'] },
+                    { number: '1.2', title: 'Watchtower', cast_names: ['Nadia Okafor'] }
+                ]
+            },
+            prose: {
+                '0-0': { final: 'Nadia Okafor tucked the damp ledger under her arm.' }
+            }
+        };
+        const { ctx } = makeTestContext(initial, callAI);
 
-        const out = await updateStorySoFar(ctx, getStorySnapshot(), true);
-        expect(out).toBe('');
-        expect(callAI).not.toHaveBeenCalled();
+        const firstPass = await runArchivistForScene(ctx, initial, 0, 0);
+        expect((firstPass.story_memory as StoryMemory).scenes['0-0'].synopsis).toContain(
+            'recovered the damp ledger'
+        );
+        expect(firstPass.story_so_far).toContain('recovered the damp ledger');
+
+        rewrite = true;
+        const secondPass = await runArchivistForScene(ctx, firstPass, 0, 0);
+        expect((secondPass.story_memory as StoryMemory).scenes['0-0'].synopsis).toContain(
+            'burned the forged ledger'
+        );
+        expect(secondPass.story_so_far).not.toContain('recovered the damp ledger');
+        expect(secondPass.story_so_far).toContain('burned the forged ledger');
+    });
+
+    it('runArchivistForScene falls back to deterministic blueprint delta when Archivist returns empty JSON', async () => {
+        const callAI = vi.fn(async () => '{}');
+        const initial: PipelineStory = {
+            id: 'story_arch_fallback',
+            cast: [{ id: 'C1', name: 'Maren', role: 'Lead', details: {} }],
+            lore: [],
+            sequences: [{ number: 1, parent_act: 1, title: 'Harbor' }],
+            scenes: {
+                '0': [
+                    {
+                        number: '1.1',
+                        title: 'Low Tide',
+                        pov_character: 'Maren',
+                        objective: 'Inspect the cracked sea wall',
+                        exit_hook: 'She discovers three missing weeks in the tide tally'
+                    },
+                    { number: '1.2', title: 'Next Scene', pov_character: 'Maren' }
+                ]
+            },
+            prose: {
+                '0-0': { final: 'Maren knelt beside the wet stones.' }
+            }
+        };
+        const { ctx } = makeTestContext(initial, callAI);
+
+        const merged = await runArchivistForScene(ctx, initial, 0, 0);
+        const mem = merged.story_memory as StoryMemory;
+        expect(mem.scenes['0-0'].synopsis).toContain('Inspect the cracked sea wall');
+        expect(merged.story_so_far).toContain('Low Tide');
+    });
+
+    it('syncStorySoFarAfterScene compresses completed sequences and completed acts in a telescoping pyramid', async () => {
+        const callAI = vi.fn(async (_prompt, _sys, _json, logName) => {
+            const name = String(logName || '');
+            if (name.includes('Sequence Compressor')) {
+                return '<response><compressed_sequence_summary>Maren uncovered the forged winter tallies and survived Tomas Kell\'s warning at the pier, locking her into investigating the vanished keeper.</compressed_sequence_summary></response>';
+            }
+            if (name.includes('Act Compressor')) {
+                return '<response><compressed_summary>Across Act I, Maren exposed the falsified tide ledgers, forged an uneasy alliance with the harbor pilot, and committed to crossing the sound despite Tomas Kell\'s blockade.</compressed_summary></response>';
+            }
+            return '';
+        });
+
+        const baseStory: PipelineStory = {
+            id: 'story_telescope',
+            concept: 'A coastal archivist uncovers forged tide ledgers.',
+            core_thematic_argument: 'Memory survives what paper hides.',
+            threads: [{ id: 'T1', name: 'Main Mystery', description: 'Find the vanished keeper.' }],
+            acts: [
+                { number: 1, title: 'Setup', act_mandate: 'Establish the harbor and lock Maren in.' },
+                { number: 2, title: 'Confrontation', act_mandate: 'Escalate across the sound.' }
+            ],
+            sequences: [
+                { number: 1, parent_act: 1, title: 'Status Quo & Discovery', dramatic_question: 'Are the ledgers forged?' },
+                { number: 2, parent_act: 1, title: 'Lock-In', dramatic_question: 'Will Maren cross the sound?' },
+                { number: 3, parent_act: 2, title: 'New Territory', dramatic_question: 'Who runs the lighthouse?' }
+            ],
+            scenes: {
+                '0': [
+                    { number: '1.1', title: 'Tally Room', pov_character: 'Maren', objective: 'Audit ledgers' },
+                    { number: '1.2', title: 'Pier Warning', pov_character: 'Maren', objective: 'Confront Tomas' }
+                ],
+                '1': [
+                    { number: '2.1', title: 'Boat Slip', pov_character: 'Maren', objective: 'Secure passage' }
+                ],
+                '2': [
+                    { number: '3.1', title: 'Outer Shoal', pov_character: 'Maren', objective: 'Reach the light' }
+                ]
+            },
+            prose: {
+                '0-0': { final: 'Scene 1.1 prose.' },
+                '0-1': { final: 'Scene 1.2 prose.' }
+            }
+        };
+
+        const { ctx } = makeTestContext(baseStory, callAI);
+
+        // Completing Sequence 1 (Act 1 still has Sequence 2 unwritten) -> Sequence Compressor fires, Act Compressor does not.
+        const afterSeq1 = await syncStorySoFarAfterScene(ctx, baseStory, 0, 1, {
+            isAutopilot: true,
+            sceneSynopsis: 'Tomas warned Maren off the dock, confirming the ledger forgery matters.'
+        });
+        expect((afterSeq1.story_memory as StoryMemory).sequences['0'].summary).toContain('forged winter tallies');
+        expect((afterSeq1.story_memory as StoryMemory).acts['1']).toBeUndefined();
+        expect(afterSeq1.story_so_far).toContain('[Sequence 1 — Status Quo & Discovery]:');
+        expect(afterSeq1.story_so_far).not.toContain('Scene 1.1 (Tally Room):');
+
+        // Completing Sequence 2 (completes all sequences in Act 1) -> Sequence Compressor + Act Compressor fire!
+        const withSeq2Prose: PipelineStory = {
+            ...afterSeq1,
+            prose: {
+                ...(afterSeq1.prose as Record<string, unknown>),
+                '1-0': { final: 'Scene 2.1 prose.' }
+            }
+        };
+        const afterAct1 = await syncStorySoFarAfterScene(ctx, withSeq2Prose, 1, 0, {
+            isAutopilot: true,
+            sceneSynopsis: 'Maren bribed the pilot and sailed past the breakwater at midnight.'
+        });
+        expect((afterAct1.story_memory as StoryMemory).acts['1'].summary).toContain('Across Act I');
+        expect(afterAct1.story_so_far).toContain('[Act 1 — Setup]:');
+        expect(afterAct1.story_so_far).not.toContain('[Sequence 1 — Status Quo & Discovery]:');
+    });
+
+    it('rebuildStorySoFar compresses bloated legacy story_so_far with spatial handoff tags', async () => {
+        const callAI = vi.fn(async (_prompt, _sys, _json, logName) => {
+            if (String(logName).includes('Sequence Compressor')) {
+                return '<response><compressed_sequence_summary>Maren verified the missing tally weeks and escaped the flooded cellar with the brass seal.</compressed_sequence_summary></response>';
+            }
+            return '';
+        });
+
+        const legacyBloated: PipelineStory = {
+            id: 'story_bloated',
+            concept: 'Harbor mystery.',
+            story_so_far:
+                '- Maren walked in.\n- [TERMINAL SPATIAL & INTERACTION STATE]: Maren in tally room holding inkwell.\n\n' +
+                Array(20).fill('Detailed tactical handoff paragraph with repetitive blocking.').join('\n\n'),
+            acts: [{ number: 1, title: 'Setup' }],
+            sequences: [
+                { number: 1, parent_act: 1, title: 'Opening' },
+                { number: 2, parent_act: 1, title: 'Second Seq' }
+            ],
+            scenes: {
+                '0': [{ number: '1.1', title: 'Cellar', pov_character: 'Maren', objective: 'Find seal' }],
+                '1': [{ number: '2.1', title: 'Quay', pov_character: 'Maren', objective: 'Board skiff' }]
+            },
+            prose: {
+                '0-0': { final: 'Maren pried open the grate.' }
+            }
+        };
+
+        const { ctx, toasts } = makeTestContext(legacyBloated, callAI);
+        const rebuilt = await rebuildStorySoFar(ctx, legacyBloated, true);
+
+        expect(rebuilt.story_so_far).toContain('[Sequence 1 — Opening]:');
+        expect(rebuilt.story_so_far).not.toContain('TERMINAL SPATIAL & INTERACTION STATE');
+        expect(String(rebuilt.story_so_far).length).toBeLessThan(String(legacyBloated.story_so_far).length);
+        expect(toasts.some((t) => t.message.includes('Compressed Story So Far'))).toBe(true);
     });
 });

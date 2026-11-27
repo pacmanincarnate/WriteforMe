@@ -11,9 +11,9 @@ import {
 } from '@/prompts';
 
 describe('Prompt Registry & Protocol Builders', () => {
-    it('exports all 60 canonical prompt keys with non-empty strings', () => {
+    it('exports all 61 canonical prompt keys with non-empty strings', () => {
         const keys = Object.keys(PROMPTS);
-        expect(keys).toHaveLength(60);
+        expect(keys).toHaveLength(61);
         for (const key of keys) {
             const val = PROMPTS[key as keyof typeof PROMPTS];
             expect(typeof val).toBe('string');
@@ -21,13 +21,22 @@ describe('Prompt Registry & Protocol Builders', () => {
         }
     });
 
-    it('preserves all 6 legacy aliases and mode-specific writing system prompts', () => {
+    it('preserves all legacy aliases and mode-specific writing system prompts', () => {
+        expect(PROMPTS.storySoFarAgent).toBe(PROMPTS.sequenceCompressorAgent);
+        expect(PROMPTS.sequenceCompressorAgent).toContain('<compressed_sequence_summary>');
         expect(PROMPTS.writing).toBe(PROMPTS.writingAgent);
         expect(PROMPTS.characterDeveloper).toBe(PROMPTS.characterDevelopment);
         expect(PROMPTS.storyArcPlanner).toBe(PROMPTS.storyArc);
         expect(PROMPTS.actDivisionPlanner).toBe(PROMPTS.actAgent);
         expect(PROMPTS.sequencePlanner).toBe(PROMPTS.sequenceAgent);
         expect(PROMPTS.sceneRosterPlanner).toBe(PROMPTS.scenePlannerAgent);
+        expect(PROMPTS.sceneRosterAgent).toBe(PROMPTS.scenePlannerAgent);
+        expect(PROMPTS.sceneRosterReview).toBe(PROMPTS.sequenceReview);
+        expect(PROMPTS.sceneExpanderAgent).toBe(PROMPTS.scenePlannerAgent);
+        expect(PROMPTS.sceneExpanderReview).toBe(PROMPTS.sequenceReview);
+        expect(PROMPTS.surgicalEditorSceneExpansion).toBe(PROMPTS.surgicalEditorStructural);
+        expect(PROMPTS.surgicalMRUChoreographer).toBe(PROMPTS.surgicalEditorStructural);
+        expect(PROMPTS.editorialInvestigatorAgent).toBe(PROMPTS.editorialTribunalAgent);
 
         const proseSys = buildWritingSystemPrompt({ isAudioDrama: false });
         const dramaSys = buildWritingSystemPrompt({ isAudioDrama: true });

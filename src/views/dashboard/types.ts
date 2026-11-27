@@ -5,6 +5,7 @@
 
 import type React from 'react';
 import type { StoryResetStageKey } from '@/domain/lifecycle';
+import type { StoryMemory } from '@/types';
 
 export interface DashboardCastMember {
     id?: string;
@@ -123,6 +124,7 @@ export interface DashboardStory {
     author_note?: string;
     status_quo?: string;
     story_so_far?: string;
+    story_memory?: StoryMemory;
     writing_mode?: string;
     coverStyle?: number;
     book_type?: string;
@@ -292,6 +294,7 @@ export interface DashboardViewProps {
         options?: Record<string, unknown>
     ) => void | Promise<void>;
     generateStoryArc: () => void | Promise<void>;
+    rebuildStorySoFar?: () => void | Promise<void>;
     epistemicViewTab: string;
     setEpistemicViewTab: (tab: string) => void;
     epistemicScrubberCoord: string;

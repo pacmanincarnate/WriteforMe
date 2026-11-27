@@ -16,8 +16,13 @@ import {
     type VoiceCastMember
 } from '@/domain/audio';
 import {
+    buildFallbackSceneDelta,
     ensureEpistemicGraph,
     formatArchivistBlueprintContext,
+    renderStorySoFar,
+    resolveSequenceParentAct,
+    sanitizeScenePlotDelta,
+    upsertSceneMemoryDelta,
     type ContinuityStoryState,
     type WorldUpdatesPayload
 } from '@/domain/continuity';
@@ -612,6 +617,7 @@ FORMATTING DIRECTIVE: Output format must be strictly valid JSON. Do not write ma
 
 Output Schema:
 {
+  "scene_synopsis": "2-3 concise narrative sentences (35-65 words) summarizing ONLY the key plot actions, causal turns, and irreversible character or relationship shifts dramatized in this scene. Name characters explicitly; omit room-by-room blocking and atmospheric description.",
   "cast_updates": [
     {
       "name": "Character Name",
@@ -806,6 +812,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                 }
             }
 
+            let resultStory: PipelineStory = storyState;
             const mergedStory = await handleWorldUpdates(
                 ctx,
                 effectiveUpdates,
@@ -815,10 +822,49 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                 scene
             );
             if (mergedStory) {
-                return mergedStory;
+                resultStory = mergedStory;
             }
+            const rawSynopsis = sanitizeScenePlotDelta(asString(effectiveUpdates.scene_synopsis));
+            const effectiveSynopsis =
+                rawSynopsis.length >= 15
+                    ? rawSynopsis
+                    : buildFallbackSceneDelta(scene, seqIdx, sceneIdx, finalProseText);
+            const nextMemory = upsertSceneMemoryDelta(resultStory.story_memory, {
+                key: `${seqIdx}-${sceneIdx}`,
+                seqIdx,
+                sceneIdx,
+                sceneNumber:
+                    asString(scene.number) || `${Number(sequenceData.number || seqIdx + 1)}.${sceneIdx + 1}`,
+                title: asString(scene.title) || `Scene ${seqIdx + 1}.${sceneIdx + 1}`,
+                synopsis: effectiveSynopsis,
+                parentAct: resolveSequenceParentAct(sequenceData, seqIdx),
+                totalScenesInSeq: scenes.length
+            });
+            const nextSoFar = renderStorySoFar(nextMemory, resultStory);
+            return {
+                ...resultStory,
+                story_memory: nextMemory,
+                story_so_far: nextSoFar
+            };
         }
         console.warn('Archivist returned no usable updates.');
+        const fallbackSynopsis = buildFallbackSceneDelta(scene, seqIdx, sceneIdx, finalProseText);
+        const fallbackMemory = upsertSceneMemoryDelta(storyState.story_memory, {
+            key: `${seqIdx}-${sceneIdx}`,
+            seqIdx,
+            sceneIdx,
+            sceneNumber:
+                asString(scene.number) || `${Number(sequenceData.number || seqIdx + 1)}.${sceneIdx + 1}`,
+            title: asString(scene.title) || `Scene ${seqIdx + 1}.${sceneIdx + 1}`,
+            synopsis: fallbackSynopsis,
+            parentAct: resolveSequenceParentAct(sequenceData, seqIdx),
+            totalScenesInSeq: scenes.length
+        });
+        return {
+            ...storyState,
+            story_memory: fallbackMemory,
+            story_so_far: renderStorySoFar(fallbackMemory, storyState)
+        };
     } catch (archError) {
         console.warn('Archivist step failed or skipped:', archError);
     }

@@ -130,12 +130,13 @@ You will receive the following context blocks:
 - <scene_text>: The final prose written for the scene.
 
 CRITICAL CONTINUITY DIRECTIVE:
-Extract helpful, concrete hard facts established in the narrative prose that future scenes must remember (e.g. hair color, eye color, scars, attire, items placed in pockets/hidden/given, room layout or architectural features, character opinions/suspicions, and bargains/deadlines). Do NOT record abstract emotional valence shifts or repetitive scene plot summaries.
+Extract helpful, concrete hard facts established in the narrative prose that future scenes must remember (e.g. hair color, eye color, scars, attire, items placed in pockets/hidden/given, room layout or architectural features, character opinions/suspicions, and bargains/deadlines). Do NOT record abstract emotional valence shifts or plot summaries inside "continuity_facts"; place the concise causal plot summary strictly in "scene_synopsis".
 
 Output format must be JSON. Do NOT wrap your output in markdown code blocks, do NOT write any preamble, and do NOT write any post-JSON explanations. Start directly with the character '{' and end with '}'.
 
 Output format:
 {
+  "scene_synopsis": "2-3 concise narrative sentences (35-65 words) summarizing ONLY the key plot actions, causal turns, and irreversible character or relationship shifts dramatized in this scene. Name characters explicitly; omit room-by-room blocking and atmospheric description.",
   "cast_updates": [
     {
       "name": "Character Name",

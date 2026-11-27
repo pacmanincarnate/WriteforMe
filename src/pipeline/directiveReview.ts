@@ -15,6 +15,7 @@ import {
 } from '@/domain/continuity';
 import {
     actForSequence,
+    buildGenreToneStyleBlocks,
     getSceneActiveCast,
     type ActiveCastMember
 } from '@/domain/story';
@@ -50,10 +51,6 @@ Output Schema:
 </response>
 </output_format_description>`;
 
-export const DIRECTIVE_REVIEW_OUTPUT_FORMAT = `${DIRECTIVE_REVIEW_OUTPUT_FORMAT_SCHEMA}
-
-BEGIN PROSE CRITIQUE REVIEW`;
-
 export interface DirectiveReviewResult {
     status: 'PASS' | 'FAIL';
     issues: ReviewIssueItem[];
@@ -65,6 +62,8 @@ export interface DirectiveReviewStoryState extends ContinuityStoryState {
     sequences?: Sequence[];
     scenes?: Record<string, Array<SceneBlueprint & Record<string, unknown>>>;
     cast?: ActiveCastMember[];
+    world_primer?: string;
+    story_so_far?: string;
     synthesized_authorial_persona?: string;
     genre_pacing_and_dialogue_rules?: string;
     strict_anti_patterns?: string;
@@ -72,7 +71,9 @@ export interface DirectiveReviewStoryState extends ContinuityStoryState {
         genre?: string;
         mood?: string;
         writing_guide?: string;
-        synthesized_authorial_persona?: string;
+        world_primer?: string;
+    story_so_far?: string;
+    synthesized_authorial_persona?: string;
         genre_pacing_and_dialogue_rules?: string;
         strict_anti_patterns?: string;
     };
@@ -139,6 +140,13 @@ export function buildDirectiveReviewContext(
     const antiPatterns =
         storyState.strict_anti_patterns || storyState.style?.strict_anti_patterns || '';
     const pillars = `${persona ? `<synthesized_authorial_persona>\n${persona}\n</synthesized_authorial_persona>\n\n` : ''}${genreRules ? `<genre_pacing_and_dialogue_rules>\n${genreRules}\n</genre_pacing_and_dialogue_rules>\n\n` : ''}${antiPatterns ? `<strict_anti_patterns>\n${antiPatterns}\n</strict_anti_patterns>\n\n` : ''}`;
+    const styleBlocks = buildGenreToneStyleBlocks(
+        (storyState.style || {}) as Record<string, unknown>
+    );
+    const worldPrimerBlock = storyState.world_primer
+        ? `<world_primer>\n${String(storyState.world_primer).trim()}\n</world_primer>\n\n`
+        : '';
+    const storySoFarBlock = `<story_so_far>\n${String(storyState.story_so_far || '').trim() || 'Beginning of story (no prior scenes).'}\n</story_so_far>\n`;
 
     const rawProseEntry = storyState.prose?.[sId];
     const generatedProse =
@@ -161,9 +169,11 @@ export function buildDirectiveReviewContext(
         seqScenes.length > 0 ? { sceneIndex: sceneIdx, totalScenes: seqScenes.length } : undefined
     );
 
-    return `${pillars}${DIRECTIVE_REVIEW_OUTPUT_FORMAT_SCHEMA}
+    return `${pillars}${styleBlocks}
 
-<continuity_ledger>
+${DIRECTIVE_REVIEW_OUTPUT_FORMAT_SCHEMA}
+
+${worldPrimerBlock}${storySoFarBlock}<continuity_ledger>
 ${formatContinuityLedgerForPrompt(storyState, {
     sequence: seqIdx + 1,
     scene: sceneIdx + 1,

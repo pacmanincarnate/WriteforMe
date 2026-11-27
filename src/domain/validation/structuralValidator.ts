@@ -325,54 +325,6 @@ export function validateStructuralOutput(
                 consecutiveSolo = 0;
             }
         }
-    } else if (tierName === 'Beat Agent') {
-        const beats = (
-            Array.isArray(dataObj.beats)
-                ? dataObj.beats
-                : Array.isArray(parsedData)
-                  ? parsedData
-                  : []
-        ) as Array<Record<string, unknown>>;
-        if (!Array.isArray(beats) || beats.length < 1) {
-            errors.push('Beat Agent: No beats generated in chunk');
-        } else {
-            for (let i = 0; i < beats.length; i++) {
-                const b = beats[i];
-                const bType = String(b.beat_type || '').toUpperCase();
-                const isSoloOrEnv =
-                    bType.includes('ENVIRONMENT') ||
-                    bType.includes('TRANSITIONAL') ||
-                    b.reaction === '—' ||
-                    b.char_B_reaction === '—' ||
-                    b.reactor === '—' ||
-                    b.char_B === '—';
-                const action = String(b.action || b.char_A_action || '').trim();
-                const reaction = String(b.reaction || b.char_B_reaction || '').trim();
-                if (!action || action.length < 15) {
-                    errors.push(
-                        `Beat Agent: Beat ${b.id || i + 1} has trivial action (< 15 chars)`
-                    );
-                }
-                if (!isSoloOrEnv && (!reaction || (reaction.length < 15 && reaction !== '—'))) {
-                    errors.push(
-                        `Beat Agent: Beat ${b.id || i + 1} has trivial reaction (< 15 chars)`
-                    );
-                }
-            }
-            for (let i = 0; i < beats.length; i++) {
-                const b = beats[i];
-                const bType = String(b.beat_type || '').toUpperCase();
-                const isEnv = bType.includes('ENVIRONMENT');
-                if (!isEnv) {
-                    const initStr = String(b.initiator || '');
-                    if (!initStr || (initStr.trim().length < 2 && initStr.trim() !== '—')) {
-                        errors.push(
-                            `Beat Agent: Beat ${b.id || i + 1} missing initiator character attribution`
-                        );
-                    }
-                }
-            }
-        }
     } else if (tierName === 'Writing Agent') {
         const prose =
             typeof dataObj.prose === 'string'
@@ -874,38 +826,6 @@ export function parseIssuesFromReview(reviewText: unknown): ReviewIssueItem[] {
         }
     }
     return issues;
-}
-
-/** Finds beats whose action or non-solo reaction falls below minimum length. */
-export function findTrivialMRUBeats(
-    beats: Array<Record<string, unknown>>
-): Array<{ index: number; beat: Record<string, unknown>; reason: string }> {
-    const defective: Array<{ index: number; beat: Record<string, unknown>; reason: string }> = [];
-    for (let i = 0; i < beats.length; i++) {
-        const b = beats[i];
-        const bType = String(b.beat_type || '').toUpperCase();
-        const isSoloOrEnv =
-            bType.includes('ENVIRONMENT') ||
-            bType.includes('TRANSITIONAL') ||
-            b.reaction === '—' ||
-            b.char_B_reaction === '—' ||
-            b.reactor === '—' ||
-            b.char_B === '—';
-        const actStr = String(b.char_A_action || b.action || '');
-        const reactStr = String(b.char_B_reaction || b.reaction || '');
-
-        const actionDefective = actStr.trim().length < 25;
-        const reactionDefective = !isSoloOrEnv && reactStr.trim().length < 25;
-
-        if (actionDefective || reactionDefective) {
-            defective.push({
-                index: i,
-                beat: b,
-                reason: `Trivial/underdeveloped MRU: Action (${actStr.trim().length} chars), Reaction (${reactStr.trim().length} chars)`
-            });
-        }
-    }
-    return defective;
 }
 
 /** Finds proactive scenes whose start and end value shifts fail to change polarity or state. */

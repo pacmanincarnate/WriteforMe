@@ -18,6 +18,9 @@ import {
     buildScenePlannerContinuityBlock,
     ensureEpistemicGraph,
     formatSceneCharactersList,
+    pruneStoryMemoryForSequence,
+    renderStorySoFar,
+    resolveSequenceParentAct,
     type ContinuityStoryState
 } from '@/domain/continuity';
 import {
@@ -1038,15 +1041,28 @@ If ANY spatial contradiction, redundant first-meeting re-introduction, or next-s
             Object.keys(cleanedProse).forEach((k) => {
                 if (k.startsWith(`${seqIdx}-`) || k === `${seqIdx}`) delete cleanedProse[k];
             });
+            const nextScenes = {
+                ...asRecord(prev.scenes),
+                [`${seqIdx}`]: newScenes
+            };
+            const nextMemory = pruneStoryMemoryForSequence(
+                prev.story_memory,
+                seqIdx,
+                resolveSequenceParentAct(currentSequence, seqIdx)
+            );
+            const nextSoFar = renderStorySoFar(nextMemory, {
+                ...prev,
+                scenes: nextScenes,
+                prose: cleanedProse
+            });
             return {
                 ...prev,
                 length_control: updatedLengthControl,
-                scenes: {
-                    ...asRecord(prev.scenes),
-                    [`${seqIdx}`]: newScenes
-                },
+                scenes: nextScenes,
                 beats: cleanedBeats,
-                prose: cleanedProse
+                prose: cleanedProse,
+                story_memory: nextMemory,
+                story_so_far: nextSoFar
             };
         });
 

@@ -15,7 +15,7 @@ import {
     type RollbackStoryState
 } from '@/domain/lifecycle';
 import { formatAllVerboseLogs, formatVerboseLogEntry } from '@/domain/story';
-import { surgicallyRepairBeatMRUs, surgicallyRepairValueShifts } from '@/domain/validation';
+import { surgicallyRepairValueShifts } from '@/domain/validation';
 
 function makeLifecycleStory(): RollbackStoryState {
     return {
@@ -187,27 +187,7 @@ describe('Story Domain: logFormatter', () => {
 });
 
 describe('Validation Domain: structuralRepair', () => {
-    it('repairs defective MRU beats and flat scene value shifts via injected callAIFn', async () => {
-        const beatMock = vi.fn(async () => `<response><repaired_beats><beat>
-<beat_id>1</beat_id>
-<char_A_tactic>Confront the gatekeeper with the torn ledger page.</char_A_tactic>
-<char_A_action>Elena slams the salt-stained ledger down beside Kell's tea mug, forcing the ink column into his lamplight.</char_A_action>
-<char_B_reaction>Kell's fingers stiffen around the mug handle while his jaw works silently over the missing tally dates.</char_B_reaction>
-<power_shift>Elena seizes conversational leverage.</power_shift>
-</beat></repaired_beats></response>`);
-
-        const beats = [{ beat_id: '1', char_A_action: 'Talks.', char_B_reaction: 'Nods.' }];
-        const beatRes = await surgicallyRepairBeatMRUs(
-            [{ index: 0, beat: beats[0] }],
-            beats,
-            { title: 'Customs Desk' },
-            '<beats><beat><beat_id>1</beat_id><char_A_action>Talks.</char_A_action></beat></beats>',
-            beatMock
-        );
-        expect(beatRes.success).toBe(true);
-        expect(beatRes.repairedCount).toBe(1);
-        expect(beats[0].char_A_action).toContain('slams the salt-stained ledger');
-
+    it('repairs flat scene value shifts via injected callAIFn', async () => {
         const vsMock = vi.fn(async () => `<response><repaired_scenes><scene>
 <number>1.1</number>
 <value_shift><start_state>Guarded curiosity</start_state><end_state>Cornered suspicion</end_state></value_shift>

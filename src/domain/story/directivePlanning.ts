@@ -15,7 +15,6 @@ import {
     tokenMatch
 } from '@/utils';
 import { resolveCharacter } from './entities';
-import { formatSceneSummary } from './structure';
 
 export interface ActiveCastMember extends CastMember {
     aliases?: unknown[];
@@ -254,13 +253,6 @@ export function resolveSceneCastFields(
     });
 
     return { cast_ids: castIds, cast_names: castNames, characters_present: [...castNames] };
-}
-
-/** Builds a concise text summary from a scene blueprint. */
-export function buildSceneDescriptionFromBlueprint(
-    scene: Parameters<typeof formatSceneSummary>[0] = {}
-): string {
-    return formatSceneSummary(scene);
 }
 
 /** Appends a future-mandate bullet line to an existing text block without duplicating identical text. */

@@ -15,14 +15,10 @@ import {
     extractProseTextTail,
     findIntersectingBeliefsForConsolidation,
     formatArchivistBlueprintContext,
-    formatChoreographedBeatHistory,
     formatContinuityLedgerForPrompt,
     formatSceneCharactersList,
     formatSceneCoord,
-    formatSequenceCastProfiles,
-    getContinuityContext,
     getSequenceScenesList,
-    ingestSceneContinuityData,
     initEpistemicGraph,
     initKnowledgeGraph,
     isBeliefActiveAt,
@@ -131,29 +127,23 @@ describe('Continuity Domain: ledger', () => {
         ).toBe(true);
     });
 
-    it('ingests continuity data into the ledger and formats prompt context', () => {
+    it('formats active continuity ledger entries chronologically', () => {
         const story = makeSampleStoryState();
-        story.continuity_ledger = ingestSceneContinuityData(
+        story.continuity_ledger = [
             {
-                number: '1.1',
-                hard_facts_introduced: [
-                    {
-                        category: 'physical_state',
-                        key: 'elena_left_wrist',
-                        fact: 'Elena sprained her left wrist climbing the piling.',
-                        character: 'Elena Vance'
-                    }
-                ]
-            },
-            story
-        );
-        expect((story.continuity_ledger || []).length).toBeGreaterThan(0);
+                key: 'elena_left_wrist',
+                value: 'Elena sprained her left wrist climbing the piling.',
+                category: 'physical_state',
+                valid_from_act: 1,
+                valid_from_sequence: 1,
+                valid_from_scene: 1,
+                entity_id: 'Elena Vance',
+                status: 'active'
+            }
+        ];
 
-        const formatted = formatContinuityLedgerForPrompt(story);
+        const formatted = formatContinuityLedgerForPrompt(story, '2.1');
         expect(formatted).toContain('Elena');
-
-        const legacyCtx = getContinuityContext(story, '2.1');
-        expect(typeof legacyCtx).toBe('string');
     });
 });
 
@@ -330,18 +320,6 @@ describe('Continuity Domain: contextBuilders and activeState', () => {
         expect(boundary.isSequenceBoundary).toBe(false);
         expect(boundary.xmlBlock).toContain('Locked Office');
 
-        expect(
-            formatChoreographedBeatHistory([
-                {
-                    initiator: 'Elena',
-                    reactor: 'Marcus',
-                    action: 'Elena crouches beside the charred hull.',
-                    reaction: 'Marcus checks the pier shadows.'
-                }
-            ])
-        ).toContain('Elena crouches');
-
-        expect(formatSequenceCastProfiles(story, { scene_cast: ['Elena Vance'] })).toContain('Elena Vance');
         expect(
             formatArchivistBlueprintContext({
                 hard_facts_introduced: [{ category: 'Prop', key: 'Key', fact: 'Brass customs key locked in safe.' }]
@@ -521,5 +499,50 @@ describe('Continuity Domain: contextBuilders and activeState', () => {
         });
         expect(catalystGuard.isSequenceBoundary).toBe(true);
         expect(catalystGuard.xmlBlock).toContain('Elena debates burning the ledger before dawn.');
+    });
+
+    it('derives fallback sceneCoord from scopeOpts in compileActiveState when scene.number lacks a dot', () => {
+        const story = makeSampleStoryState();
+        (story.secret_vault![0] as Record<string, unknown>).reveal_anchor = {
+            act_number: 2,
+            sequence_number: 5,
+            scene_number: 2,
+            trigger_condition: 'Midnight dock confrontation'
+        };
+        story.scenes = {
+            ...story.scenes,
+            '4': [
+                { title: 'Dock Approach', characters_present: ['Elena Vance', 'Marcus Cole'] },
+                { title: 'Midnight Vault', characters_present: ['Elena Vance', 'Marcus Cole'] }
+            ]
+        };
+
+        const bridgeSceneState = compileActiveState(
+            story,
+            {
+                title: 'Bridge Scene Without Number',
+                pov_character: 'Elena Vance',
+                setting: 'Midnight Vault',
+                dominant_narrative_mode: 'SUSPENSE',
+                characters_present: ['Elena Vance', 'Marcus Cole']
+            },
+            [],
+            { act: 2, sequence: 5, scene: 2 }
+        );
+        expect(bridgeSceneState).toContain('MANDATORY REVELATION EVENT');
+
+        const earlySceneState = compileActiveState(
+            story,
+            {
+                title: 'Bridge Opening',
+                pov_character: 'Elena Vance',
+                setting: 'Dock Approach',
+                dominant_narrative_mode: 'SUSPENSE',
+                characters_present: ['Elena Vance', 'Marcus Cole']
+            },
+            [],
+            { act: 2, sequence: 5, scene: 1 }
+        );
+        expect(earlySceneState).not.toContain('MANDATORY REVELATION EVENT');
     });
 });

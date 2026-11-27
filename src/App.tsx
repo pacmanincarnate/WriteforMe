@@ -73,7 +73,8 @@ import {
     revertHarnessTransaction as orchestrateRevertHarnessTransaction,
     revertAllHarnessTransactions as orchestrateRevertAllHarnessTransactions,
     handleAutopilot as orchestrateHandleAutopilot,
-    runContinuousAutopilotStep as orchestrateRunContinuousAutopilotStep
+    runContinuousAutopilotStep as orchestrateRunContinuousAutopilotStep,
+    rebuildStorySoFar as orchestrateRebuildStorySoFar
 } from '@/pipeline';
 import {
     EditModal,
@@ -1548,6 +1549,9 @@ import {
             // ============================================================================
             // STORY SO FAR UPDATER
             // ============================================================================
+            const rebuildStorySoFar = async (): Promise<void> => {
+                await orchestrateRebuildStorySoFar(getPipelineCtx());
+            };
 
             // ============================================================================
             // TIER 3.1 & 3.2: SEQUENCE AGENT (LARGE)
@@ -2008,6 +2012,7 @@ import {
                                     handleResetStoryStage={handleResetStoryStage}
                                     initStory={handOff(initStory)}
                                     generateStoryArc={handOff(generateStoryArc)}
+                                    rebuildStorySoFar={rebuildStorySoFar}
                                     epistemicViewTab={epistemicViewTab}
                                     setEpistemicViewTab={setEpistemicViewTab}
                                     epistemicScrubberCoord={epistemicScrubberCoord}

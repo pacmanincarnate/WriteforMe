@@ -19,6 +19,7 @@ import {
     Layers,
     Loader2,
     Plus,
+    RefreshCw,
     Shuffle,
     Sliders,
     Sparkles,
@@ -27,6 +28,10 @@ import {
     Workflow,
     type EditorialSubNavProps
 } from '@/components';
+import {
+    STORY_SO_FAR_BLOATED_WORD_THRESHOLD,
+    ensureStoryMemory
+} from '@/domain/continuity';
 import {
     LENGTH_CONTROL,
     calculateStoryStats,
@@ -40,7 +45,7 @@ import {
     translateLoadingStepToHuman
 } from '@/domain/story';
 import { storyStore } from '@/services/storage';
-import { parseMarkdown } from '@/utils';
+import { countWords, parseMarkdown } from '@/utils';
 import { DashboardEpistemicPanel } from './DashboardEpistemicPanel';
 import { DashboardFolioSidebar } from './DashboardFolioSidebar';
 import type { DashboardViewProps } from './types';
@@ -83,6 +88,7 @@ export function DashboardView({
     handleResetStoryStage,
     initStory,
     generateStoryArc,
+    rebuildStorySoFar,
     epistemicViewTab,
     setEpistemicViewTab,
     epistemicScrubberCoord,
@@ -541,36 +547,97 @@ export function DashboardView({
                         )}
 
                         {/* Story So Far */}
-                        {story.story_so_far && (
-                            <div className="pt-4 border-t border-edge-soft space-y-2">
-                                <div className="flex justify-between items-center">
-                                    <span className="text-xs font-bold text-ink-500 uppercase tracking-wider font-mono">
-                                        Story So Far (Continuity Synopsis)
-                                    </span>
-                                    <EditButton
-                                        title="Story So Far"
-                                        value={story.story_so_far}
-                                        onSave={() =>
-                                            openEditModal(
-                                                'Story So Far',
-                                                story.story_so_far || '',
-                                                (val) =>
-                                                    setStory((prev) => ({
-                                                        ...prev,
-                                                        story_so_far: val
-                                                    }))
-                                            )
-                                        }
-                                    />
+                        {(story.story_so_far || stats.draftedScenes > 0) && (() => {
+                            const soFarText = String(story.story_so_far || '');
+                            const soFarWords = countWords(soFarText);
+                            const mem = ensureStoryMemory(story.story_memory);
+                            const actSumCount = Object.keys(mem.acts).length;
+                            const seqSumCount = Object.keys(mem.sequences).length;
+                            const hasLegacySpatialBloat = /\[TERMINAL SPATIAL\s*&?\s*INTERACTION STATE\]/i.test(soFarText);
+                            const needsCompression =
+                                soFarWords > STORY_SO_FAR_BLOATED_WORD_THRESHOLD || hasLegacySpatialBloat;
+                            return (
+                                <div className="pt-4 border-t border-edge-soft space-y-2">
+                                    <div className="flex flex-wrap justify-between items-center gap-2">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className="text-xs font-bold text-ink-500 uppercase tracking-wider font-mono">
+                                                Story So Far (Continuity Synopsis)
+                                            </span>
+                                            {soFarWords > 0 && (
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-subtle text-ink-600 border border-edge-soft">
+                                                    {soFarWords.toLocaleString()} words
+                                                </span>
+                                            )}
+                                            {(actSumCount > 0 || seqSumCount > 0) && (
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20">
+                                                    {actSumCount > 0 ? `${actSumCount} Act${actSumCount > 1 ? 's' : ''}` : ''}
+                                                    {actSumCount > 0 && seqSumCount > 0 ? ' · ' : ''}
+                                                    {seqSumCount > 0 ? `${seqSumCount} Seq${seqSumCount > 1 ? 's' : ''} compressed` : ''}
+                                                </span>
+                                            )}
+                                            {needsCompression && (
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/30">
+                                                    Needs Compression
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            {rebuildStorySoFar && stats.draftedScenes > 0 && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => rebuildStorySoFar()}
+                                                    disabled={loading || continuousAutopilot}
+                                                    title="Compress completed sequences/acts and rebuild Story So Far from drafted scenes"
+                                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-edge bg-subtle hover:bg-surface text-ink-700 hover:text-ink-900 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <RefreshCw size={11} className={loading ? 'animate-spin' : ''} />
+                                                    Compress / Rebuild
+                                                </button>
+                                            )}
+                                            <EditButton
+                                                title="Story So Far"
+                                                value={soFarText}
+                                                onSave={() =>
+                                                    openEditModal(
+                                                        'Story So Far',
+                                                        soFarText,
+                                                        (val) =>
+                                                            setStory((prev) => {
+                                                                const updated = {
+                                                                    ...prev,
+                                                                    story_so_far: val,
+                                                                    story_memory: {
+                                                                        ...ensureStoryMemory(prev.story_memory),
+                                                                        manualBaseText: val
+                                                                    }
+                                                                };
+                                                                if (updated.id) {
+                                                                    storyStore.saveStory(updated.id, updated).catch((err) =>
+                                                                        console.warn('Failed saving edited Story So Far:', err)
+                                                                    );
+                                                                }
+                                                                return updated;
+                                                            })
+                                                    )
+                                                }
+                                            />
+                                        </div>
+                                    </div>
+                                    {soFarText ? (
+                                        <div
+                                            className="text-[15px] text-ink-700 leading-[1.75] prose max-w-none py-1 font-serif"
+                                            dangerouslySetInnerHTML={{
+                                                __html: parseMarkdown(soFarText)
+                                            }}
+                                        />
+                                    ) : (
+                                        <p className="text-xs italic text-ink-500 py-1">
+                                            Drafted scenes exist without a synthesized synopsis yet. Click &ldquo;Compress / Rebuild&rdquo; to generate one.
+                                        </p>
+                                    )}
                                 </div>
-                                <div
-                                    className="text-[15px] text-ink-700 leading-[1.75] prose max-w-none py-1 font-serif"
-                                    dangerouslySetInnerHTML={{
-                                        __html: parseMarkdown(story.story_so_far)
-                                    }}
-                                />
-                            </div>
-                        )}
+                            );
+                        })()}
                     </div>
 
                     {/* Macro Story Arc & Thematic Thesis Card (Tier 1.1) */}

@@ -3,7 +3,12 @@
  * Default story document factory for newly initialized or fallback projects.
  */
 
-import { initEpistemicGraph, type EpistemicGraph } from '@/domain/continuity';
+import {
+    createEmptyStoryMemory,
+    initEpistemicGraph,
+    type EpistemicGraph
+} from '@/domain/continuity';
+import type { StoryMemory } from '@/types';
 
 export interface DefaultStoryTemplate extends Record<string, unknown> {
     id: string;
@@ -15,6 +20,7 @@ export interface DefaultStoryTemplate extends Record<string, unknown> {
     length_control: { sequences: Record<string, unknown> };
     concept: string;
     story_so_far: string;
+    story_memory: StoryMemory;
     status_quo: string;
     inciting_incident: string;
     themes: string;
@@ -57,6 +63,7 @@ export function createDefaultStoryTemplate(id = 'story_default'): DefaultStoryTe
         length_control: { sequences: {} },
         concept: '',
         story_so_far: '',
+        story_memory: createEmptyStoryMemory(),
         status_quo: '',
         inciting_incident: '',
         themes: '',

@@ -1000,9 +1000,8 @@ export function parseStructuredStyle(
 /** Builds standardized `<genre_classification>`, `<tone_and_atmosphere>`, and `<writing_style_description>` blocks. */
 export function buildGenreToneStyleBlocks(
     styleObj: Record<string, unknown> = {},
-    { includeTechnicalSpecs = false, loreContext = '' }: { includeTechnicalSpecs?: boolean; loreContext?: string } = {}
+    { includeTechnicalSpecs = false }: { includeTechnicalSpecs?: boolean } = {}
 ): string {
-    void loreContext;
     const style = ((styleObj?.style as Record<string, unknown> | undefined) || styleObj || {}) as Record<
         string,
         unknown
