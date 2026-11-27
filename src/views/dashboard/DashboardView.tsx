@@ -7,6 +7,7 @@
  */
 
 import {
+    CollapsibleProse,
     Book,
     CheckCircle2,
     Compass,
@@ -458,13 +459,9 @@ export function DashboardView({
                                     }
                                 />
                             </div>
-                            <div
+                            <CollapsibleProse
                                 className="font-serif text-[16.5px] text-ink-800 leading-[1.75] prose max-w-none py-1"
-                                dangerouslySetInnerHTML={{
-                                    __html: parseMarkdown(
-                                        story.concept || 'No concept generated yet.'
-                                    )
-                                }}
+                                html={parseMarkdown(story.concept || 'No concept generated yet.')}
                             />
                         </div>
 
@@ -487,14 +484,9 @@ export function DashboardView({
                                     }
                                 />
                             </div>
-                            <div
+                            <CollapsibleProse
                                 className="font-serif text-[15.5px] text-ink-800 leading-[1.75] prose max-w-none bg-gold-tint/35 border-l-2 border-gold pl-4 py-2.5 rounded-r-xl"
-                                dangerouslySetInnerHTML={{
-                                    __html: parseMarkdown(
-                                        story.author_note ||
-                                            "No author's note set. Click edit to add global creative direction."
-                                    )
-                                }}
+                                html={parseMarkdown(story.author_note || "No author's note set. Click edit to add global creative direction.")}
                             />
                         </div>
 
@@ -521,11 +513,9 @@ export function DashboardView({
                                         }
                                     />
                                 </div>
-                                <div
+                                <CollapsibleProse
                                     className="text-[15px] text-ink-700 leading-[1.75] prose max-w-none py-1 font-serif"
-                                    dangerouslySetInnerHTML={{
-                                        __html: parseMarkdown(story.status_quo)
-                                    }}
+                                    html={parseMarkdown(story.status_quo)}
                                 />
                             </div>
                         )}
@@ -608,11 +598,9 @@ export function DashboardView({
                                         </div>
                                     </div>
                                     {soFarText ? (
-                                        <div
+                                        <CollapsibleProse
                                             className="text-[15px] text-ink-700 leading-[1.75] prose max-w-none py-1 font-serif"
-                                            dangerouslySetInnerHTML={{
-                                                __html: parseMarkdown(soFarText)
-                                            }}
+                                            html={parseMarkdown(soFarText)}
                                         />
                                     ) : (
                                         <p className="text-xs italic text-ink-500 py-1">

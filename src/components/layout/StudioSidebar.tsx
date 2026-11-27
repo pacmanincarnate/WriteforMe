@@ -192,7 +192,13 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                 </div>
 
                 {/* Semantic Grouped Navigation */}
-                <div className="sidebar-nav flex-1 overflow-y-auto p-3 space-y-4">
+                <div
+                    className="sidebar-nav flex-1 overflow-y-auto p-3 space-y-4"
+                    onClick={(e) => {
+                        // On a phone the sidebar is a drawer over the page: picking a place closes it.
+                        if ((e.target as HTMLElement).closest('.nav-btn')) setIsSidebarOpen(false);
+                    }}
+                >
                     {/* SPACE 1: STUDIO WORKSPACE */}
                     <div className="space-y-0.5">
                         <button

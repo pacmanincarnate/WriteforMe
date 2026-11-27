@@ -85,11 +85,11 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                                 setView('library');
                                 refreshLibrary();
                             }}
-                            className="hover:text-gold-ink cursor-pointer font-medium transition-colors whitespace-nowrap"
+                            className="hidden sm:inline hover:text-gold-ink cursor-pointer font-medium transition-colors whitespace-nowrap"
                         >
                             Bookshelf
                         </span>
-                        <ChevronRight size={12} className="text-ink-300 shrink-0" />
+                        <ChevronRight size={12} className="hidden sm:block text-ink-300 shrink-0" />
                         <span
                             onClick={() => setView('dashboard')}
                             className="font-serif font-bold text-ink-900 hover:text-gold-ink cursor-pointer max-w-[140px] sm:max-w-[240px] truncate transition-colors whitespace-nowrap"
