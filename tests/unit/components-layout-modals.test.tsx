@@ -158,7 +158,6 @@ describe('Phase 5H: StudioSidebar, StudioHeader, and remaining modals', () => {
         const setView = vi.fn();
         const setIsSidebarOpen = vi.fn();
         const toggleTheme = vi.fn();
-        const enterReaderMode = vi.fn();
         const setContinuousAutopilot = vi.fn();
 
         renderIntoRoot(
@@ -170,7 +169,6 @@ describe('Phase 5H: StudioSidebar, StudioHeader, and remaining modals', () => {
                 toggleTheme={toggleTheme}
                 setIsSidebarOpen={setIsSidebarOpen}
                 refreshLibrary={vi.fn()}
-                enterReaderMode={enterReaderMode}
                 loading={false}
                 loadingStep=""
                 continuousAutopilot={false}
@@ -194,11 +192,6 @@ describe('Phase 5H: StudioSidebar, StudioHeader, and remaining modals', () => {
             menuBtn.click();
         });
         expect(setIsSidebarOpen).toHaveBeenCalledWith(true);
-
-        act(() => {
-            findButton('Reader').click();
-        });
-        expect(enterReaderMode).toHaveBeenCalledTimes(1);
 
         act(() => {
             findButton('Autopilot').click();

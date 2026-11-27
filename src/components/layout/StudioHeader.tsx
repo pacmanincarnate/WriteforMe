@@ -1,12 +1,12 @@
 /**
  * @module components/layout/StudioHeader
  * Sticky top header with mobile menu trigger, Bookshelf/Story/View breadcrumbs,
- * LiveCreationIsland, Reader Mode trigger, Autopilot toggle, and Theme Switcher.
+ * LiveCreationIsland, Autopilot toggle, and Theme Switcher.
  */
 
 import React from 'react';
 import { LiveCreationIsland, type LiveCreationIslandProps } from '@/components/common';
-import { BookOpen, ChevronRight, Loader2, Menu, Moon, Sun, Zap } from '@/components/icons';
+import { ChevronRight, Loader2, Menu, Moon, Sun, Zap } from '@/components/icons';
 import type { Story } from '@/types';
 
 export interface StudioHeaderProps {
@@ -17,7 +17,6 @@ export interface StudioHeaderProps {
     toggleTheme: () => void;
     setIsSidebarOpen: (open: boolean) => void;
     refreshLibrary: () => void | Promise<void>;
-    enterReaderMode: (seqIdx?: number, sceneIdx?: number) => void;
     loading: boolean;
     loadingStep: string;
     continuousAutopilot: boolean;
@@ -40,7 +39,6 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
     toggleTheme,
     setIsSidebarOpen,
     refreshLibrary,
-    enterReaderMode,
     loading,
     loadingStep,
     continuousAutopilot,
@@ -125,17 +123,8 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                     )}
                 </div>
 
-                {/* Header Actions: Reader Mode, Autopilot & Theme Switcher */}
+                {/* Header Actions: Autopilot & Theme Switcher */}
                 <div className="flex items-center gap-2 shrink-0 ml-auto pl-2 pr-1">
-                    <button
-                        onClick={() => enterReaderMode()}
-                        className="px-3 py-1.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 border shrink-0 bg-gold-tint hover:bg-gold-tint border-gold-edge text-gold-ink cursor-pointer"
-                        title="Enter Ebook Reading Mode"
-                    >
-                        <BookOpen size={13} />
-                        <span className="whitespace-nowrap">Reader</span>
-                    </button>
-
                     <button
                         onClick={() => {
                             if (!continuousAutopilot && view === 'setup') {

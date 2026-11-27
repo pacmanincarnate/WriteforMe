@@ -1838,7 +1838,6 @@ import {
                             toggleTheme={toggleTheme}
                             setIsSidebarOpen={setIsSidebarOpen}
                             refreshLibrary={refreshLibrary}
-                            enterReaderMode={enterReaderMode}
                             loading={loading}
                             loadingStep={loadingStep}
                             continuousAutopilot={continuousAutopilot}
