@@ -135,7 +135,7 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                 } ${view === 'reader' ? 'hidden md:hidden' : ''} shadow-sm`}
             >
                 {/* Studio Logo Header */}
-                <div className="sidebar-header p-4 flex justify-between items-center border-b border-edge bg-surface/70 backdrop-blur-sm">
+                <div className="sidebar-header relative h-[3.75rem] px-3.5 flex justify-between items-center border-b border-edge bg-surface/70 backdrop-blur-sm">
                     <div className="sidebar-brand flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-xl overflow-hidden border border-gold-edge shadow-sm flex-shrink-0 bg-btn flex items-center justify-center">
                             <img src="ELPIcon2.jpg" alt="EllipsisProse Icon" className="w-full h-full object-cover" />
@@ -164,7 +164,7 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                     <button
                         type="button"
                         onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-                        className="hidden md:flex shrink-0 items-center justify-center text-ink-400 hover:text-ink-800 p-1.5 rounded-lg hover:bg-wash transition-colors"
+                        className="sidebar-toggle hidden md:flex shrink-0 items-center justify-center text-ink-400 hover:text-ink-800 p-1.5 rounded-lg hover:bg-wash transition-colors"
                         title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                         aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                         aria-expanded={!isSidebarCollapsed}
