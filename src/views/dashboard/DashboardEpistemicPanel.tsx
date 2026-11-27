@@ -22,7 +22,8 @@ import {
     Trash2,
     Unlock,
     User,
-    Users
+    Users,
+    FoldedSection
 } from '@/components';
 import {
     compareSceneCoordinates,
@@ -80,22 +81,16 @@ export function DashboardEpistemicPanel({
     openEditModal
 }: DashboardEpistemicPanelProps) {
     return (
-        <div className="bg-surface p-6 sm:p-8 rounded-2xl border border-edge shadow-sm space-y-5">
+        <FoldedSection
+            title={
+                isInspectorMode
+                    ? 'Secrets and beliefs (Bi-Temporal Hard Sandbox)'
+                    : 'Secrets and beliefs'
+            }
+            summary={`${Array.isArray(story.secret_vault) ? story.secret_vault.length : 0} secrets`}
+        >
             {/* Header with Title and Tab Switcher */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-edge">
-                <div>
-                    <div className="flex items-center gap-2">
-                        <h3 className="text-xs font-bold text-gold-ink uppercase tracking-wider font-mono flex items-center gap-2">
-                            <Share2 size={15} /> Secrets, Dramatic Irony &amp; Character Beliefs
-                        </h3>
-                        {isInspectorMode && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-mono uppercase bg-gold-ink/10 text-gold-ink border border-gold-ink/20">
-                                Bi-Temporal Hard Sandbox
-                            </span>
-                        )}
-                    </div>
-                </div>
-
                 {/* Tab Switcher */}
                 <div className="flex items-center gap-1 p-1 bg-inset rounded-xl border border-edge self-start sm:self-auto">
                     <button
@@ -163,13 +158,11 @@ export function DashboardEpistemicPanel({
                               currentGraph.propositions || {}
                           ) as unknown as DashboardEpistemicProposition[]);
 
-                    const rawEdges = (
-                        Array.isArray(currentGraph.first_order_edges)
-                            ? currentGraph.first_order_edges
-                            : Array.isArray(currentGraph.holds_belief_edges)
-                              ? currentGraph.holds_belief_edges
-                              : []
-                    ) as unknown as DashboardEpistemicBeliefEdge[];
+                    const rawEdges = (Array.isArray(currentGraph.first_order_edges)
+                        ? currentGraph.first_order_edges
+                        : Array.isArray(currentGraph.holds_belief_edges)
+                          ? currentGraph.holds_belief_edges
+                          : []) as unknown as DashboardEpistemicBeliefEdge[];
 
                     const storyArg = story as unknown as Parameters<
                         typeof compareSceneCoordinates
@@ -256,9 +249,7 @@ export function DashboardEpistemicPanel({
                                         className="w-full text-xs font-mono bg-surface border border-edge rounded-lg px-2.5 py-1.5 text-ink-900 focus:outline-none focus:border-gold-ink"
                                     >
                                         <option value="ALL">All Characters &amp; Reader</option>
-                                        <option value="meta_reader">
-                                            Reader (Dramatic Irony)
-                                        </option>
+                                        <option value="meta_reader">Reader (Dramatic Irony)</option>
                                         {(story.cast || []).map((c) => (
                                             <option key={c.id || c.name} value={c.id || c.name}>
                                                 {c.name} ({c.role || 'Cast'})
@@ -1115,6 +1106,6 @@ export function DashboardEpistemicPanel({
                         </div>
                     );
                 })()}
-        </div>
+        </FoldedSection>
     );
 }

@@ -128,11 +128,11 @@ describe('Phase 5E: Dashboard, Directive, and Editorial views', () => {
         );
 
         expect(container.textContent).toContain('The Salt Observatory');
-        expect(container.textContent).toContain('Start Reading Mode');
+        expect(container.textContent).toContain('Start reading');
         expect(container.textContent).toContain('Secret Vault (1)');
 
         const readBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-            b.textContent?.includes('Start Reading Mode')
+            b.textContent?.includes('Start reading')
         );
         const polishBtn = Array.from(container.querySelectorAll('button')).find((b) =>
             b.textContent?.includes('Review & Polish Manuscript')
