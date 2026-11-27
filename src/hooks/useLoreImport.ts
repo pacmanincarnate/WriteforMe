@@ -20,7 +20,8 @@ import {
     updateImportedLoreFile,
     type ImportedLoreFile
 } from '@/domain/lore';
-import { extractTextFromFile } from '@/services/documents';
+import { lorebookToLoreItems } from '@/domain/imports';
+import { extractTextFromFile, openLorebookFile } from '@/services/documents';
 import { storyStore } from '@/services/storage';
 import { safeLocalStorageSet } from '@/utils';
 
@@ -64,6 +65,7 @@ export interface UseLoreImportResult {
     handleLoreImport: (eventOrFiles: FilesInput) => Promise<void>;
     /** Existing story: chunk, index and append files to the story's lore. */
     handlePostGenLoreImport: (fileOrFiles: FilesInput) => Promise<void>;
+    handleLorebookImport: (file: File) => Promise<void>;
 }
 
 const isInputEvent = (value: FilesInput): value is FileInputEvent =>
@@ -245,6 +247,46 @@ export function useLoreImport<TStory extends LoreStory = LoreStory>({
         }
     };
 
+    /** A lorebook from another app (or the one inside a character card): each entry becomes a lore item. */
+    const handleLorebookImport = async (file: File): Promise<void> => {
+        if (!file) return;
+        setLoading(true);
+        try {
+            setLoadingStep(`Reading lorebook '${file.name}'...`);
+            const book = await openLorebookFile(file);
+            const items = lorebookToLoreItems(book);
+            if (items.length === 0) {
+                showToast(`"${book.name}" has no entries that are switched on and have text.`, 'warn');
+                return;
+            }
+            setLoadingStep(`Indexing ${items.length} lorebook entries into RAG vector store...`);
+            const combinedList = [...(story.lore || []), ...items];
+            const processedList = await ingestLoreBatch(combinedList, {
+                clearExisting: true,
+                fingerprintProcessed: true
+            });
+            const finalLore = processedList && processedList.length > 0 ? processedList : combinedList;
+            setStory((prev) => {
+                const updated = { ...prev, lore: finalLore };
+                if (updated.id) {
+                    storyStore
+                        .saveStory(updated.id, updated as Record<string, unknown>)
+                        .catch((err) => console.warn('Failed saving lorebook import to storyStore:', err));
+                }
+                return updated;
+            });
+            const left = book.skipped > 0 ? ` ${book.skipped} switched-off or empty ${book.skipped === 1 ? 'entry was' : 'entries were'} left out.` : '';
+            showToast(
+                `Imported ${items.length} ${items.length === 1 ? 'entry' : 'entries'} from "${book.name}" (${book.format}).${left}`,
+                'success'
+            );
+        } catch (err) {
+            showToast(`Lorebook import failed: ${errorMessage(err)}`, 'error');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     return {
         importedLoreFiles,
         setImportedLoreFiles,
@@ -256,6 +298,7 @@ export function useLoreImport<TStory extends LoreStory = LoreStory>({
         handleUpdateLoreFile,
         handleRemoveLoreFile,
         handleLoreImport,
-        handlePostGenLoreImport
+        handlePostGenLoreImport,
+        handleLorebookImport
     };
 }

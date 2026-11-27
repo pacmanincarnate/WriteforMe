@@ -606,7 +606,8 @@ import {
                 handleUpdateLoreFile,
                 handleRemoveLoreFile,
                 handleLoreImport,
-                handlePostGenLoreImport
+                handlePostGenLoreImport,
+                handleLorebookImport
             } = useLoreImport({
                 story, setStory, setWorldPrimer, showToast, setLoading, setLoadingStep,
                 ingestLoreBatch: (loreList, options) => ingestLoreBatch(handOff(loreList), options)
@@ -2111,6 +2112,7 @@ import {
                                     isRebuildingRag={isRebuildingRag}
                                     rebuildRagIndex={rebuildRagIndex}
                                     handlePostGenLoreImport={handlePostGenLoreImport}
+                                    handleLorebookImport={handleLorebookImport}
                                     ingestLore={ingestLore}
                                     handleDeleteLore={handleDeleteLore}
                                     openEditModal={openEditModal}
