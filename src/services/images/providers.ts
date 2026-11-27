@@ -1,14 +1,15 @@
 /**
  * @module services/images/providers
- * Multi-provider image generation dispatcher (ComfyUI, Gemini Imagen / generateContent, OpenRouter).
+ * Multi-provider image generation dispatcher (ComfyUI, Gemini Imagen / generateContent, OpenRouter, OpenAI).
  */
 
 import { APP_HTTP_HEADERS, CLOUD_API_URLS, DEFAULT_IMAGE_MODELS } from '@/config';
 import { fetchWithTimeout } from '@/services/http';
 import { withCloudActivity } from '@/services/vram';
 import { generateComfyImage, type ComfyGenerationOptions } from './comfyui';
+import { generateOpenAiImage } from './openai';
 
-export type ImageProviderName = 'comfyui' | 'gemini' | 'openrouter' | string;
+export type ImageProviderName = 'comfyui' | 'gemini' | 'openrouter' | 'openai' | string;
 
 export interface ImageGenerationConfig {
     provider: ImageProviderName;
@@ -132,6 +133,13 @@ function extractGeminiErrorMessage(status: number, errText: string): string {
     return errMsg;
 }
 
+/** The text-provider key an image provider may borrow. OpenAI has no text provider here, so it borrows none. */
+function fallbackKeyFor(prov: ImageProviderName, config: ImageGenerationConfig): string | undefined {
+    if (prov === 'gemini') return config.fallbackGeminiKey;
+    if (prov === 'openrouter') return config.fallbackOpenRouterKey;
+    return undefined;
+}
+
 /** Dispatches an image generation prompt to the configured provider and returns a data URL. */
 export async function generateImage(
     prompt: string,
@@ -140,12 +148,18 @@ export async function generateImage(
 ): Promise<string> {
     const prov = config.provider;
     const model = config.model;
-    const key =
-        config.apiKey || (prov === 'gemini' ? config.fallbackGeminiKey : config.fallbackOpenRouterKey);
+    const key = config.apiKey || fallbackKeyFor(prov, config);
 
     if (prov === 'comfyui') {
         const comfyOpts: ComfyGenerationOptions = config.comfy || { unet: '', clip: '', vae: '' };
         return generateComfyImage(prompt, aspectRatio, comfyOpts);
+    }
+
+    if (prov === 'openai') {
+        if (!key) {
+            throw new Error('OpenAI image generation needs an OpenAI API key. Add one in Settings.');
+        }
+        return withCloudActivity(() => generateOpenAiImage(prompt, aspectRatio, model, key));
     }
 
     if (!key) {

@@ -247,6 +247,33 @@ export const DEFAULT_GEMINI_IMAGE_MODELS: readonly ImageStylePreset[] = [
     }
 ];
 
+/** OpenAI's GPT Image models, newest first. OpenAI has no browser-readable image catalog, so this list is kept by hand. */
+export const OPENAI_IMAGE_MODELS: readonly ImageStylePreset[] = [
+    {
+        id: 'gpt-image-2.6-flare',
+        name: 'GPT Image 2.6 Flare',
+        description: 'Fast everyday image generation'
+    },
+    {
+        id: 'gpt-image-2.6-sunburst',
+        name: 'GPT Image 2.6 Sunburst',
+        description: 'Highest fidelity, slower'
+    },
+    {
+        id: 'gpt-image-2.5-flare',
+        name: 'GPT Image 2.5 Flare',
+        description: 'Fast everyday image generation'
+    },
+    {
+        id: 'gpt-image-2.5-sunburst',
+        name: 'GPT Image 2.5 Sunburst',
+        description: 'Highest fidelity, slower'
+    },
+    { id: 'gpt-image-2', name: 'GPT Image 2', description: 'Widely available default' },
+    { id: 'gpt-image-1.5', name: 'GPT Image 1.5', description: 'Previous generation' },
+    { id: 'gpt-image-1-mini', name: 'GPT Image 1 Mini', description: 'Cheapest' }
+];
+
 export const DEFAULT_OPENROUTER_IMAGE_MODELS: readonly ImageStylePreset[] = [
     {
         id: 'black-forest-labs/flux.2-pro',

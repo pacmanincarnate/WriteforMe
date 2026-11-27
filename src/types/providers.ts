@@ -28,7 +28,7 @@ export function isLocalProvider(provider: unknown): boolean {
     return provider === 'koboldcpp' || isCliBridgeProvider(provider);
 }
 export type ModelRole = 'all' | 'dev' | 'review' | 'prose';
-export type ImageProviderId = 'gemini' | 'openrouter' | 'comfyui' | string;
+export type ImageProviderId = 'gemini' | 'openrouter' | 'openai' | 'comfyui' | string;
 
 export interface ProviderModelConfig {
     provider: ProviderId;
