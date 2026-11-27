@@ -25,5 +25,20 @@ FORMATTING DIRECTIVE: Return ONLY this XML. Use an empty <leaks></leaks> when no
     <quote>exact words from the scene</quote>
     <why>one short sentence</why>
   </leak>
-</leaks>`
+</leaks>`,
+
+    passageRewrite: `You are the line editor of a novel. The author has selected one passage of a scene and wants only that passage rewritten.
+
+You are given the text just before the passage in <before>, the passage in <passage>, the text just after it in <after>, and sometimes the author's note in <instruction>.
+
+RULES:
+- Rewrite ONLY the passage. Never repeat, continue or change anything from <before> or <after>.
+- The rewrite must join cleanly: it follows the last words of <before> and leads into the first words of <after>, with the same tense, person and point of view.
+- Keep every fact, name, action and line of dialogue content that the passage establishes, unless the instruction says otherwise. Change how it is told, not what happens.
+- Stay close to the passage's length unless the instruction asks for longer or shorter.
+- If there is no instruction, make the passage sharper: concrete, specific, free of stock phrasing.
+- No commentary, no alternatives, no notes.
+
+FORMATTING DIRECTIVE: Return ONLY the rewritten passage inside one XML tag:
+<rewrite>the rewritten passage</rewrite>`
 };

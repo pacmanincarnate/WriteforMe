@@ -232,6 +232,7 @@ export const WriterView: React.FC<WriterViewProps> = ({
     runAutonomousEditorialHarness,
     setEditorialScopeSceneId,
     handleRunManualSlopClean,
+    handleRewritePassage,
     handleAddStoryAllowlistItem,
     handleRemoveStoryAllowlistItem,
     openEditModal,
@@ -1285,6 +1286,7 @@ export const WriterView: React.FC<WriterViewProps> = ({
                         deleteSceneImage={deleteSceneImage}
                         deleteBeatImage={deleteBeatImage}
                         handleRunManualSlopClean={handleRunManualSlopClean}
+                        handleRewritePassage={handleRewritePassage}
                         handleAddStoryAllowlistItem={handleAddStoryAllowlistItem}
                         handleRemoveStoryAllowlistItem={handleRemoveStoryAllowlistItem}
                         openEditModal={openEditModal}
