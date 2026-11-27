@@ -35,6 +35,11 @@ export interface SetupViewProps {
     setInputSeriesOpener?: (opener: boolean) => void;
     inputSeriesTitle?: string;
     setInputSeriesTitle?: (title: string) => void;
+    /** True when the story is a serial: ongoing arcs released in episodes. A serial is always a series. */
+    inputSerial?: boolean;
+    setInputSerial?: (serial: boolean) => void;
+    inputSerialRotation?: 'anchored' | 'ensemble';
+    setInputSerialRotation?: (rotation: 'anchored' | 'ensemble') => void;
     inputWritingMode: string;
     setInputWritingMode: (mode: string) => void;
     archetypeOptions: ArchetypeOption[];
@@ -74,6 +79,10 @@ export function SetupView({
     setInputSeriesOpener,
     inputSeriesTitle = '',
     setInputSeriesTitle,
+    inputSerial = false,
+    setInputSerial,
+    inputSerialRotation = 'anchored',
+    setInputSerialRotation,
     inputWritingMode,
     setInputWritingMode,
     archetypeOptions,
@@ -286,7 +295,8 @@ export function SetupView({
                         <input
                             type="checkbox"
                             className="mt-0.5 accent-gold"
-                            checked={inputSeriesOpener}
+                            checked={inputSeriesOpener || inputSerial}
+                            disabled={inputSerial}
                             onChange={(e) => setInputSeriesOpener(e.target.checked)}
                         />
                         <span>
@@ -297,7 +307,38 @@ export function SetupView({
                             </span>
                         </span>
                     </label>
-                    {inputSeriesOpener && (
+                    {setInputSerial && (
+                        <label className="flex items-start gap-2.5 text-xs text-ink-700 cursor-pointer select-none mt-2.5">
+                            <input
+                                type="checkbox"
+                                className="mt-0.5 accent-gold"
+                                checked={inputSerial}
+                                onChange={(e) => setInputSerial(e.target.checked)}
+                            />
+                            <span>
+                                <span className="font-semibold">Run it as a serial</span>
+                                <span className="block text-ink-500 mt-0.5">
+                                    An ongoing story told in arcs and released in episodes. Each
+                                    book is one arc, side plots open and close along the way, and
+                                    the cast can change between arcs.
+                                </span>
+                            </span>
+                        </label>
+                    )}
+                    {inputSerial && setInputSerialRotation && (
+                        <select
+                            aria-label="Cast rotation"
+                            className="w-full mt-2.5 bg-surface border border-edge-strong rounded-xl p-3 text-sm text-ink-900 focus:border-gold outline-none shadow-2xs"
+                            value={inputSerialRotation}
+                            onChange={(e) =>
+                                setInputSerialRotation(e.target.value === 'ensemble' ? 'ensemble' : 'anchored')
+                            }
+                        >
+                            <option value="anchored">The lead is in every arc; the rest of the cast rotates</option>
+                            <option value="ensemble">Ensemble: anyone, the lead included, can sit an arc out</option>
+                        </select>
+                    )}
+                    {(inputSeriesOpener || inputSerial) && (
                         <input
                             type="text"
                             className="w-full mt-2.5 bg-surface border border-edge-strong rounded-xl p-3 text-sm text-ink-900 focus:border-gold outline-none shadow-2xs placeholder:text-ink-400"

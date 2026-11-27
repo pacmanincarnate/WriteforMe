@@ -6,6 +6,7 @@
  */
 
 import { createDefaultStoryTemplate } from '@/domain/lifecycle';
+import { carrySerialToNextArc } from '@/domain/serial';
 import { buildSequelSeed, createSeriesOpener, isSeriesStory } from '@/domain/series';
 import type { Story } from '@/types';
 import { asString, type PipelineRuntimeContext, type PipelineStory } from './context';
@@ -54,6 +55,9 @@ export async function startNextBook(
         { newStoryId, title: asString(input.title), concept, recap, authorNote: input.authorNote },
         createDefaultStoryTemplate(newStoryId) as unknown as Record<string, unknown>
     ) as PipelineStory;
+    // A serial's next arc keeps its roster, its episode count and its parked threads.
+    const serial = carrySerialToNextArc(source as Partial<Story>);
+    if (serial) seed.serial = serial;
 
     await activateCreatedStory(ctx, newStoryId, seed);
     ctx.setWorldPrimer(asString(seed.world_primer) || null);

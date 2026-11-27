@@ -194,5 +194,7 @@ export interface Story {
     series?: import('./series').SeriesInfo;
     /** Series threads carried across books. Per-book A/B/C threads stay in `threads`. */
     open_threads?: import('./series').OpenThread[];
+    /** Present only on a serial: a series whose books are arcs released in episodes. */
+    serial?: import('./serial').SerialInfo;
     [key: string]: unknown;
 }

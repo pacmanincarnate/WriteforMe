@@ -9,7 +9,7 @@ import type { ContractViolation, OpenThread, OpenThreadUpdate, SecretEvent, Seri
 import { checkEndingContract } from './contract';
 import { isSeriesStory } from './plan';
 import { applySecretEvents } from './secrets';
-import { acceptThreadCandidates, applyOpenThreadUpdates, seriesThreadLimits } from './threads';
+import { acceptThreadCandidates, applyOpenThreadUpdates, seriesThreadLimits, type SeriesThreadLimits } from './threads';
 
 export interface SeriesSceneReport {
     open_thread_updates?: OpenThreadUpdate[];
@@ -49,12 +49,14 @@ export function mergeContractViolations(
 export function applySeriesSceneReport(
     story: Partial<Story> | null | undefined,
     report: SeriesSceneReport | null | undefined,
-    sceneLabel: string
+    sceneLabel: string,
+    /** Replaces the word-count limits. A serial passes its own thread policy here. */
+    limitsOverride?: SeriesThreadLimits
 ): SeriesSceneReportResult {
     if (!isSeriesStory(story) || !report) return { patch: {}, openedThreads: [], newViolations: [] };
     const book = story.series.book_number;
     const updated = applyOpenThreadUpdates(story.open_threads, report.open_thread_updates, sceneLabel, book);
-    const limits = seriesThreadLimits((story as Record<string, unknown>).target_word_count ?? story.target_words);
+    const limits = limitsOverride ?? seriesThreadLimits((story as Record<string, unknown>).target_word_count ?? story.target_words);
     const { threads, accepted } = acceptThreadCandidates(updated, report.new_thread_candidates, limits, book, sceneLabel);
     const { secrets, leaks } = applySecretEvents(story, report.secret_events, sceneLabel);
 

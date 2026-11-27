@@ -47,6 +47,7 @@ import {
     mergeReturningCast,
     validateSequelLead
 } from '@/domain/series';
+import { createSerialInfo, formatSerialCastBlock } from '@/domain/serial';
 import { PROMPTS } from '@/prompts';
 import { logStore, storyStore } from '@/services/storage';
 import { isLocalProvider, type CastMember, type LoreItem, type Story } from '@/types';
@@ -156,6 +157,9 @@ export async function createStoryEntityFromSetup(
     const capturedLoreText = setupDraft.importedLoreText || '';
     const capturedSeriesOpener = Boolean(setupDraft.inputSeriesOpener);
     const capturedSeriesTitle = (setupDraft.inputSeriesTitle || '').trim();
+    // A serial is always a series: each arc is one book of it.
+    const capturedSerial = Boolean(setupDraft.inputSerial);
+    const capturedSerialRotation = setupDraft.inputSerialRotation === 'ensemble' ? 'ensemble' : 'anchored';
 
     const newStoryId = `story_${Date.now()}`;
     const bookTypesMap = LENGTH_CONTROL.BOOK_TYPES as Record<
@@ -211,9 +215,10 @@ export async function createStoryEntityFromSetup(
                 justification: baselineSeqRanges.justification
             }
         },
-        ...(capturedSeriesOpener
+        ...(capturedSeriesOpener || capturedSerial
             ? { series: createSeriesOpener(capturedSeriesTitle, capturedTitle), open_threads: [] }
-            : {})
+            : {}),
+        ...(capturedSerial ? { serial: createSerialInfo({ rotation: capturedSerialRotation }) } : {})
     };
 
     const pendingSetupLore = ctx.getPendingSetupLoreMap?.();
@@ -405,7 +410,7 @@ export async function initStory(
 
     try {
         // Both series blocks are empty strings for a standalone story.
-        let finalPrompt = `${formatSeriesContext(baselineStory)}${formatSeriesConceptRules(baselineStory)}<concept>${conceptToUse}</concept>`;
+        let finalPrompt = `${formatSeriesContext(baselineStory)}${formatSerialCastBlock(baselineStory as Partial<Story>)}${formatSeriesConceptRules(baselineStory)}<concept>${conceptToUse}</concept>`;
         const primer =
             loreTextToUse && loreTextToUse.trim().length > 0
                 ? await distillLore(ctx, loreTextToUse, { storyId: newStoryId })

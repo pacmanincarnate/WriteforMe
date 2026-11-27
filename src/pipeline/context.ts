@@ -177,6 +177,10 @@ export interface PipelineRuntimeContext {
         /** True when the new story is Book 1 of a series. */
         inputSeriesOpener?: boolean;
         inputSeriesTitle?: string;
+        /** True when the new story is a serial: a series whose books are arcs released in episodes. */
+        inputSerial?: boolean;
+        /** 'anchored' keeps the lead in every arc; 'ensemble' lets anyone sit an arc out. */
+        inputSerialRotation?: string;
     };
     clearSetupDraft?: () => void;
     getPendingSetupLoreMap?: () => Record<string, string>;

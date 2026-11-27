@@ -18,10 +18,13 @@ export const SETUP_DRAFT_STORAGE_KEYS = {
     bookType: STORAGE_KEYS.draftBookType,
     customWords: STORAGE_KEYS.draftCustomWords,
     seriesOpener: STORAGE_KEYS.draftSeriesOpener,
-    seriesTitle: STORAGE_KEYS.draftSeriesTitle
+    seriesTitle: STORAGE_KEYS.draftSeriesTitle,
+    serial: STORAGE_KEYS.draftSerial,
+    serialRotation: STORAGE_KEYS.draftSerialRotation
 } as const;
 
 export type SetupWritingMode = 'novel' | 'audio_drama';
+export type SetupSerialRotation = 'anchored' | 'ensemble';
 
 export const DEFAULT_SETUP_BOOK_TYPE = 'popular';
 export const DEFAULT_SETUP_CUSTOM_WORDS = 80000;
@@ -45,6 +48,12 @@ export interface UseSetupDraftResult {
     setInputSeriesOpener: Dispatch<SetStateAction<boolean>>;
     inputSeriesTitle: string;
     setInputSeriesTitle: Dispatch<SetStateAction<string>>;
+    /** True when the new story is a serial: ongoing arcs released in episodes. */
+    inputSerial: boolean;
+    setInputSerial: Dispatch<SetStateAction<boolean>>;
+    /** Cast rotation for a serial: the lead stays in every arc, or anyone may sit one out. */
+    inputSerialRotation: SetupSerialRotation;
+    setInputSerialRotation: Dispatch<SetStateAction<SetupSerialRotation>>;
     /** Puts every field back to its default and removes the stored draft. */
     resetSetupDraftFields: () => void;
 }
@@ -94,6 +103,11 @@ export function useSetupDraft(): UseSetupDraftResult {
         readDraftString(SETUP_DRAFT_STORAGE_KEYS.seriesTitle)
     );
 
+    const [inputSerial, setInputSerial] = useState(() => readDraftString(SETUP_DRAFT_STORAGE_KEYS.serial) === '1');
+    const [inputSerialRotation, setInputSerialRotation] = useState<SetupSerialRotation>(() =>
+        readDraftString(SETUP_DRAFT_STORAGE_KEYS.serialRotation) === 'ensemble' ? 'ensemble' : 'anchored'
+    );
+
     useEffect(() => {
         persistDraftText(SETUP_DRAFT_STORAGE_KEYS.title, inputTitle);
     }, [inputTitle]);
@@ -118,6 +132,12 @@ export function useSetupDraft(): UseSetupDraftResult {
     useEffect(() => {
         persistDraftText(SETUP_DRAFT_STORAGE_KEYS.seriesTitle, inputSeriesTitle);
     }, [inputSeriesTitle]);
+    useEffect(() => {
+        persistDraftText(SETUP_DRAFT_STORAGE_KEYS.serial, inputSerial ? '1' : '');
+    }, [inputSerial]);
+    useEffect(() => {
+        persistDraftText(SETUP_DRAFT_STORAGE_KEYS.serialRotation, inputSerialRotation === 'ensemble' ? 'ensemble' : '');
+    }, [inputSerialRotation]);
 
     const resetSetupDraftFields = useCallback(() => {
         setInputTitle('');
@@ -128,6 +148,8 @@ export function useSetupDraft(): UseSetupDraftResult {
         setInputCustomWords(DEFAULT_SETUP_CUSTOM_WORDS);
         setInputSeriesOpener(false);
         setInputSeriesTitle('');
+        setInputSerial(false);
+        setInputSerialRotation('anchored');
         try {
             for (const key of Object.values(SETUP_DRAFT_STORAGE_KEYS)) localStorage.removeItem(key);
         } catch {
@@ -152,6 +174,10 @@ export function useSetupDraft(): UseSetupDraftResult {
         setInputSeriesOpener,
         inputSeriesTitle,
         setInputSeriesTitle,
+        inputSerial,
+        setInputSerial,
+        inputSerialRotation,
+        setInputSerialRotation,
         resetSetupDraftFields
     };
 }

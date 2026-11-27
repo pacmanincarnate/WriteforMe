@@ -18,6 +18,7 @@ import {
     parseActNumber
 } from '@/domain/story';
 import { migrateLoreTitles } from '@/domain/lore';
+import { normalizeSerialFields } from '@/domain/serial/story';
 import { normalizeSeriesFields } from '@/domain/series/plan';
 import {
     extractPersonalizedReferenceTextFromInterview,
@@ -467,6 +468,7 @@ export function migrateStoryToSequences<TStory>(storyData: TStory): TStory {
 
     // Series fields are optional: a story without them is left exactly as it was.
     normalizeSeriesFields(story as Record<string, unknown>);
+    normalizeSerialFields(story as Record<string, unknown>);
 
     return story as unknown as TStory;
 }

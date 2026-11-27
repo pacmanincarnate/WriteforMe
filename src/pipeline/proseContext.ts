@@ -21,7 +21,7 @@ import {
     isPreCatalystSequenceOneScene,
     type ContinuityStoryState
 } from '@/domain/continuity';
-import { formatSeriesSceneDirectives } from '@/domain/series';
+import { formatLongformSceneDirectives } from '@/domain/serial';
 import {
     buildGenreToneStyleBlocks,
     buildRelationshipFrictionBlock,
@@ -504,6 +504,8 @@ ${canonicalInterviews}
             : '';
     })();
 
+    const serialSceneCount = Array.isArray(storyToUse.scenes?.[`${seq}`]) ? storyToUse.scenes[`${seq}`].length : s + 1;
+
     const bridgeMandateBlock = (() => {
         if (!scene?.is_bridge_scene) return '';
         const seqScenesList =
@@ -566,7 +568,7 @@ ${staticWorldPrimerBlock}<story_so_far>
 ${storyToUse.story_so_far || 'The story is just beginning (no prose has been written yet).'}
 </story_so_far>
 
-${formatSeriesSceneDirectives(storyToUse as unknown as Partial<Story>, currentSeqNum, 'prose', storyToUse.sequences?.length || 8)}${canonicalInterviewsBlock}<active_characters_profiles>
+${formatLongformSceneDirectives(storyToUse as unknown as Partial<Story>, currentSeqNum, 'prose', storyToUse.sequences?.length || 8, { index: s, count: serialSceneCount })}${canonicalInterviewsBlock}<active_characters_profiles>
 [EMOTIONAL TEMPERATURE: Write these characters as human beings who feel deeply. Their traits are not clinical diagnoses, but the messy result of lived experiences. Allow for genuine emotional warmth and irrational human complexity.]
 ${sanitizedActiveCast
     .filter(Boolean)

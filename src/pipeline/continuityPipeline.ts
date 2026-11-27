@@ -34,11 +34,11 @@ import {
     FALLBACK_GROUNDED_PLACES
 } from '@/domain/slop';
 import {
-    applySeriesSceneReport,
-    describeViolation,
-    formatSeriesContinuityAddendum,
-    type SeriesSceneReport
-} from '@/domain/series';
+    applyLongformSceneReport,
+    formatLongformContinuityAddendum,
+    type SerialSceneReport
+} from '@/domain/serial';
+import { describeViolation, type SeriesSceneReport } from '@/domain/series';
 import {
     actForSequence,
     buildGenreToneBlocks,
@@ -692,7 +692,7 @@ Output Schema:
 }
 CRITICAL MANDATE: For EVERY character listed in <cast_list> who participated in or was present during this scene, you MUST output their updated "character_state_updates" capturing their real-time emotional state, unresolved tension, physical condition, and location at the conclusion of the scene.
 </output_format_description>
-${formatSeriesContinuityAddendum(storyState as Partial<Story>)}
+${formatLongformContinuityAddendum(storyState as Partial<Story>)}
 <current_lore_topics>
 ${currentLoreList}
 </current_lore_topics>
@@ -719,6 +719,7 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
             open_thread_updates?: SeriesSceneReport['open_thread_updates'];
             new_thread_candidates?: SeriesSceneReport['new_thread_candidates'];
             secret_events?: SeriesSceneReport['secret_events'];
+            serial_thread_notes?: SerialSceneReport['serial_thread_notes'];
         }
         let updates: ArchivistUpdatesPayload | null = null;
 
@@ -832,11 +833,24 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                 scene
             );
             if (mergedStory) {
-                const seriesResult = applySeriesSceneReport(
+                const sceneCast = scene.cast_names ?? scene.characters_present;
+                const seriesResult = applyLongformSceneReport(
                     mergedStory as Partial<Story>,
                     effectiveUpdates,
-                    asString(scene.number) || `${seqIdx + 1}.${sceneIdx + 1}`
+                    asString(scene.number) || `${seqIdx + 1}.${sceneIdx + 1}`,
+                    {
+                        seqNum: asNumber(sequenceData.number, seqIdx + 1),
+                        sceneIdx,
+                        sceneCount: asArray(asRecord(mergedStory.scenes)[`${seqIdx}`]).length || sceneIdx + 1,
+                        sequenceCount: asArray(mergedStory.sequences).length || 8,
+                        sceneKey: `${seqIdx}-${sceneIdx}`,
+                        charactersPresent: (Array.isArray(sceneCast) ? sceneCast : asStringArray(sceneCast))
+                            .map((c) => (typeof c === 'string' ? c : asString(asRecord(c).name)))
+                            .filter(Boolean),
+                        pov: asString(scene.pov_character) || undefined
+                    }
                 );
+                seriesResult.serialNotes.forEach((note) => ctx.showToast(note, 'info'));
                 seriesResult.openedThreads.forEach((t) =>
                     ctx.showToast(`Series thread opened: ${t.title}`, 'info')
                 );
