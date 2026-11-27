@@ -421,6 +421,9 @@ function registerIpc() {
             })
         )
     ));
+    ipcMain.handle('backends:launchComfy', guard(() =>
+        controller.ensureComfyRunning(() => pushState(), () => {}, { explicit: true })
+    ));
     ipcMain.handle('backends:openWindow', guard(() => { openBackendsWindow(); }));
     ipcMain.handle('backends:acquireGpuLease', guard((modality, hints) => controller.vram.acquireLease(modality, hints)));
     ipcMain.handle('backends:releaseGpuLease', guard((leaseId) => controller.vram.releaseLease(leaseId)));

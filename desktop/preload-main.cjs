@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('ellipsisDesktopBackends', {
     isDesktop: true,
     ensureKoboldRunning: () => ipcRenderer.invoke('backends:ensureKoboldRunning'),
     ensureComfyRunning: () => ipcRenderer.invoke('backends:ensureComfyRunning'),
+    launchComfy: () => ipcRenderer.invoke('backends:launchComfy'),
     acquireGpuLease: (modality, hints) => ipcRenderer.invoke('backends:acquireGpuLease', modality, hints),
     releaseGpuLease: (leaseId) => ipcRenderer.invoke('backends:releaseGpuLease', leaseId),
     setCloudActivity: (activeOrCount) => ipcRenderer.invoke('backends:setCloudActivity', activeOrCount),

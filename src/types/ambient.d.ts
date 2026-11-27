@@ -97,6 +97,11 @@ interface DesktopBackendsBridgeAmbient {
         value?: { ready: boolean; started: boolean; status?: string; reason?: string };
         error?: string;
     }>;
+    launchComfy?: () => Promise<{
+        ok: boolean;
+        value?: { ready: boolean; started: boolean; status?: string; reason?: string };
+        error?: string;
+    }>;
     acquireGpuLease?: (
         modality: 'llm' | 'audio' | 'image',
         hints?: Record<string, unknown>

@@ -433,3 +433,39 @@ test('startInstalled skips comfyui while ensureComfyRunning starts it silently o
     assert.equal(r3.started, false, 'subsequent call sees already running');
     assert.equal(startCalls.length, 1);
 });
+
+test('the Launch button starts ComfyUI even with autostart switched off', async () => {
+    const work = tmp();
+    const comfyDir = path.join(work, 'comfy');
+    fs.mkdirSync(path.join(comfyDir, 'python_embeded'), { recursive: true });
+    fs.mkdirSync(path.join(comfyDir, 'ComfyUI'), { recursive: true });
+    fs.writeFileSync(path.join(comfyDir, 'python_embeded', 'python.exe'), 'py');
+    fs.writeFileSync(path.join(comfyDir, 'ComfyUI', 'main.py'), 'print(1)');
+
+    const settings = new DesktopSettings(path.join(work, 'userdata'));
+    settings.update({
+        backendsDir: path.join(work, 'backends'),
+        customPaths: { comfyui: comfyDir },
+        autostart: { comfyui: false }
+    });
+    const startCalls = [];
+    const ctl = new Controller({
+        settings,
+        supervisor: {
+            status: () => ({ status: 'stopped', log: [] }),
+            async start(id, spec) { startCalls.push({ id, spec }); return { id, status: 'running', log: [] }; },
+            stop() {}
+        },
+        appFilesDir: work,
+        dataDir: path.join(work, 'data'),
+        node: { command: process.execPath, env: {} },
+        httpOkFn: async () => false
+    });
+
+    const silent = await ctl.ensureComfyRunning();
+    assert.equal(silent.reason, 'autostart-disabled');
+    const asked = await ctl.ensureComfyRunning(() => {}, () => {}, { explicit: true });
+    assert.equal(asked.ready, true);
+    assert.equal(startCalls.length, 1);
+    assert.ok(startCalls[0].spec.args.includes('--enable-cors-header'));
+});

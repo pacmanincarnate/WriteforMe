@@ -500,6 +500,52 @@ function getAudioPaths(storyId, type, seqIdx, sceneIdx = null) {
     };
 }
 
+let comfyLauncher;
+/** The ComfyUI launcher, or null where its helper files are not shipped (the desktop app has its own). */
+function getComfyLauncher() {
+    if (comfyLauncher !== undefined) return comfyLauncher;
+    try {
+        const { ComfyLauncher } = require('./comfy-launcher.js');
+        const launcher = new ComfyLauncher({ dataDir: DATA_DIR, rootDir: ROOT });
+        // ComfyUI started from here closes with this server, however the server is closed.
+        process.on('exit', () => launcher.dispose());
+        for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+            process.on(signal, () => process.exit(0));
+        }
+        comfyLauncher = launcher;
+    } catch (_) {
+        comfyLauncher = null;
+    }
+    return comfyLauncher;
+}
+
+/** GET /api/comfyui/status and POST /api/comfyui/launch, for the person at this machine only. */
+async function handleComfyRequest(req, res, parsedUrl) {
+    const method = (req.method || 'GET').toUpperCase();
+    if (method === 'OPTIONS') {
+        setCorsHeaders(res);
+        res.writeHead(204);
+        res.end();
+        return;
+    }
+    const { isLocalRequest } = require('./comfy-launcher.js');
+    const launcher = isLocalRequest(req) ? getComfyLauncher() : null;
+    if (!launcher) {
+        sendJson(res, 200, { available: false });
+        return;
+    }
+    if (method === 'GET' && parsedUrl.pathname === '/api/comfyui/status') {
+        sendJson(res, 200, launcher.status());
+        return;
+    }
+    if (method === 'POST' && parsedUrl.pathname === '/api/comfyui/launch') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, { available: true, ...(await launcher.launch(body || {})) });
+        return;
+    }
+    sendJson(res, 404, { error: 'Not Found' });
+}
+
 async function handleApiRequest(req, res, parsedUrl) {
     const method = (req.method || 'GET').toUpperCase();
     if (method === 'OPTIONS') {
@@ -843,6 +889,14 @@ const server = http.createServer((req, res) => {
     } catch (_) {
         res.writeHead(400, { 'Content-Type': 'text/plain' });
         res.end('Bad Request');
+        return;
+    }
+
+    if (parsedUrl.pathname.startsWith('/api/comfyui/')) {
+        handleComfyRequest(req, res, parsedUrl).catch((err) => {
+            if (!res.headersSent) sendJson(res, 200, { available: false, error: err?.message || 'ComfyUI launcher failed' });
+            else try { res.end(); } catch (_) {}
+        });
         return;
     }
 

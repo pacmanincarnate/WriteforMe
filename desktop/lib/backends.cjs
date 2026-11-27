@@ -224,7 +224,7 @@ function launchSpec(backend, variant, layout, options = {}) {
         if (!hasAutoLaunchFlag) args.push('--disable-auto-launch');
         args.push(
             '--listen', '127.0.0.1',
-            '--port', String(backend.port),
+            '--port', String(options.port || backend.port),
             // The app calls ComfyUI from the page at http://127.0.0.1:3000, which needs CORS.
             '--enable-cors-header'
         );

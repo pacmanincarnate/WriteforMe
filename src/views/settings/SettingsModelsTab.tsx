@@ -19,6 +19,7 @@ import {
 import { getKoboldLoadedModelName } from '@/services/llm';
 import { CLI_BRIDGE_DEFAULT_URLS, isCliBridgeProvider } from '@/types';
 import type { SettingsModelsTabProps } from './types';
+import { ComfyConnection } from './ComfyConnection';
 import { OpenAiImageModel } from './OpenAiImageModel';
 
 function readKoboldGlobalModel(): string | undefined {
@@ -1354,20 +1355,11 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 placeholder={DEFAULT_SERVICE_URLS.comfyui}
                             />
                         </div>
-                        <div className="flex justify-between items-center gap-4">
-                            <p role="status" className="text-xs text-ink-500 break-words">
-                                {comfyStatus.online
-                                    ? `Online. ComfyUI ${comfyStatus.version} on ${comfyStatus.device}`
-                                    : comfyStatus.error || 'Press Refresh to connect to ComfyUI.'}
-                            </p>
-                            <button
-                                type="button"
-                                onClick={() => void refreshComfyInfo({ startIfNeeded: true })}
-                                className="text-xs text-gold-ink hover:text-ink-900 font-medium flex items-center gap-1 transition-colors"
-                            >
-                                Refresh
-                            </button>
-                        </div>
+                        <ComfyConnection
+                            comfyUrl={comfyUrl}
+                            comfyStatus={comfyStatus}
+                            refreshComfyInfo={refreshComfyInfo}
+                        />
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {comfySelectFields.map((field) => (
                                 <div key={field.id}>
@@ -1421,10 +1413,6 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 </div>
                             ))}
                         </div>
-                        <p className="text-xs text-ink-500">
-                            Start ComfyUI with --enable-cors-header (loopback listen is fine). Uses Krea 2 Turbo:
-                            diffusion model + Qwen3-VL text encoder + Qwen VAE.
-                        </p>
                     </div>
                 )}
                 <p className="text-xs text-ink-400 mt-2">
