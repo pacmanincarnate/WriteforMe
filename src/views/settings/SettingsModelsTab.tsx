@@ -1139,7 +1139,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-xs font-bold text-ink-700 mb-1 font-mono">
+                        <label className="flex items-center min-h-[36px] text-xs font-bold text-ink-700 mb-1 font-mono">
                             Image API Provider
                         </label>
                         <div className="relative">
@@ -1174,7 +1174,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
 
                     {imageProvider !== 'comfyui' && (
                         <div>
-                            <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center justify-between min-h-[36px] mb-1">
                                 <label className="block text-xs font-bold text-ink-700 font-mono">Image Model</label>
                                 {(imageProvider === 'gemini' || imageProvider === 'openrouter') && (
                                     <button
