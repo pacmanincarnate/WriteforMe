@@ -37,6 +37,7 @@ import {
     getHumanReadableTtsError,
     getVoiceDescriptionForCharacter,
     getVoiceReferenceTextForCharacter,
+    hasGenderRegisterContradiction,
     integerToEnglishWords,
     isAudioDramaScriptText,
     isLegacyBoilerplateVoiceProfile,
@@ -395,5 +396,155 @@ describe('Audio Domain: DSP & WAV encoding', () => {
         expect(view.getUint16(34, true)).toBe(16);
         expect(tag(36)).toBe('data');
         expect(view.getUint32(40, true)).toBe(wavSamples.length * 2);
+    });
+
+    it('prevents and heals gender/age register contradictions and extracts quoted interview speech cleanly', () => {
+        expect(
+            hasGenderRegisterContradiction('A young adult female voice, late twenties, deep baritone.')
+        ).toBe(true);
+        expect(
+            hasGenderRegisterContradiction('A young adult male voice, late twenties, warm soprano.')
+        ).toBe(true);
+        expect(
+            hasGenderRegisterContradiction('A child around eight years old male voice, deep baritone.')
+        ).toBe(true);
+        expect(
+            hasGenderRegisterContradiction('A young adult female voice, late twenties, rich contralto pitch.')
+        ).toBe(false);
+        expect(
+            hasGenderRegisterContradiction('A middle-aged male voice, deep baritone.')
+        ).toBe(false);
+
+        const femaleProfile = synthesizeVoiceDesignProfile(
+            {
+                id: 'f1',
+                name: 'Marisol',
+                gender: 'female',
+                age: '27',
+                bio: 'She sings beneath the viaduct while ignoring the deep baritone roar of freight trains.'
+            },
+            'Marisol',
+            { genre: 'literary fiction' }
+        );
+        expect(hasGenderRegisterContradiction(femaleProfile)).toBe(false);
+        expect(femaleProfile).not.toMatch(/\b(baritone|bass)\b/i);
+
+        const childProfile = synthesizeVoiceDesignProfile(
+            {
+                id: 'c_kid',
+                name: 'Pip',
+                gender: 'male',
+                age: '8',
+                bio: 'A small child who imitates a deep baritone radio announcer.'
+            },
+            'Pip',
+            {}
+        );
+        expect(hasGenderRegisterContradiction(childProfile)).toBe(false);
+
+        const healedDesc = getVoiceDescriptionForCharacter('Marisol', {
+            cast: [
+                {
+                    id: 'f1',
+                    name: 'Marisol',
+                    gender: 'female',
+                    age: '27',
+                    vocal_cadence:
+                        'A young adult female voice, late twenties, deep baritone and measured pace.'
+                },
+                {
+                    id: 'f2',
+                    name: 'Clara',
+                    gender: 'female',
+                    age: '30',
+                    vocal_cadence: 'Custom edited deep contralto cadence.',
+                    user_edited_cadence: true
+                }
+            ]
+        });
+        expect(hasGenderRegisterContradiction(healedDesc)).toBe(false);
+        expect(healedDesc).not.toMatch(/\bbaritone\b/i);
+        expect(
+            getVoiceDescriptionForCharacter('Clara', {
+                cast: [
+                    {
+                        id: 'f2',
+                        name: 'Clara',
+                        gender: 'female',
+                        age: '30',
+                        vocal_cadence: 'Custom edited deep contralto cadence.',
+                        user_edited_cadence: true
+                    }
+                ]
+            })
+        ).toBe('Custom edited deep contralto cadence.');
+
+        const mixedInterview = [
+            '<first_person_interview>',
+            'Tico shifts his weight against the doorframe and watches the interviewer across the table.',
+            '"I do not chase glory anymore," Tico says softly.',
+            '"If the tide rises past the pilings tonight, we haul every crate up the seawall before midnight and nobody leaves an oar behind."',
+            'He glances out the salt-streaked window.',
+            '"Ask Don Arturo where the harbor ledger went," he adds, "before the magistrate signs the dockyard seal and locks every gate in town."',
+            '</first_person_interview>'
+        ].join(' ');
+        const extractedQuotes = extractPersonalizedReferenceTextFromInterview(mixedInterview, {
+            characterName: 'Tico'
+        });
+        expect(extractedQuotes).toContain('I do not chase glory anymore.');
+        expect(extractedQuotes).toContain('Ask Don Arturo where the harbor ledger went, before the magistrate');
+        expect(extractedQuotes).not.toContain('shifts his weight');
+        expect(extractedQuotes).not.toContain('interviewer');
+        expect(extractedQuotes).not.toContain('Tico says softly');
+        expect(estimateReferenceTextSeconds(extractedQuotes)).toBeGreaterThanOrEqual(15);
+
+        const unquotedWithStageIntro = [
+            'Elena watches the interviewer from the corner chair.',
+            'I grew up near the docks where the foghorns never stopped singing before dawn.',
+            'Every morning my father checked the brass barometer and counted the outgoing trawlers by hull color.',
+            'When the harbor froze in ninety-two, we burned crate timber in an iron stove.'
+        ].join(' ');
+        const extractedUnquoted = extractPersonalizedReferenceTextFromInterview(unquotedWithStageIntro, {
+            characterName: 'Elena'
+        });
+        expect(extractedUnquoted).not.toContain('interviewer');
+        expect(extractedUnquoted).toContain('I grew up near the docks');
+
+        const storyWithStaleAndCustomRef = {
+            cast: [
+                {
+                    id: 'c_tico',
+                    name: 'Tico',
+                    reference_text:
+                        'Tico shifts his weight against the doorframe and watches the interviewer quietly for a long moment before speaking.',
+                    details: { deep_profile: mixedInterview }
+                },
+                {
+                    id: 'c_custom',
+                    name: 'Nori',
+                    reference_text: 'User custom spoken anchor line kept verbatim.',
+                    user_edited_reference_text: true,
+                    details: { deep_profile: mixedInterview }
+                }
+            ]
+        };
+        const upgradedTicoRef = getVoiceReferenceTextForCharacter('Tico', storyWithStaleAndCustomRef);
+        expect(upgradedTicoRef).not.toContain('shifts his weight');
+        expect(upgradedTicoRef).toContain('I do not chase glory anymore.');
+        expect(getVoiceReferenceTextForCharacter('Nori', storyWithStaleAndCustomRef)).toBe(
+            'User custom spoken anchor line kept verbatim.'
+        );
+    });
+
+    it('caps Drama-3 chunks at 4 speakers by default without changing chunk duration windows', () => {
+        const sixSpeakerTurns = ['Narrator', 'Alice', 'Bob', 'Cara', 'Dan', 'Eve'].map((speaker) => ({
+            speaker,
+            spokenText: `${speaker} speaks a brief line at the harbor.`
+        }));
+        const chunks = chunkAudioDramaTurns(sixSpeakerTurns);
+        expect(chunks.length).toBeGreaterThanOrEqual(2);
+        for (const c of chunks) {
+            expect(c.speakers.length).toBeLessThanOrEqual(4);
+        }
     });
 });

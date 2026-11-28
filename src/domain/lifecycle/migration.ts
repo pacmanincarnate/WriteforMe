@@ -362,7 +362,9 @@ export function migrateStoryToSequences<TStory>(storyData: TStory): TStory {
                     c.deep_profile ||
                     c.canonical_interview_voice ||
                     '';
-                const derivedRef = extractPersonalizedReferenceTextFromInterview(interviewSrc);
+                const derivedRef = extractPersonalizedReferenceTextFromInterview(interviewSrc, {
+                    characterName: c.name
+                });
                 if (derivedRef) {
                     c.reference_text = derivedRef;
                 } else if (c.reference_text) {

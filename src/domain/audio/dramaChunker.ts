@@ -288,7 +288,7 @@ export function chunkAudioDramaTurns(
     const maxSpeakersPerChunk =
         typeof settings?.maxSpeakersPerChunk === 'number' && settings.maxSpeakersPerChunk > 0
             ? settings.maxSpeakersPerChunk
-            : 16;
+            : 4;
 
     const expandedTurns: DramaTurnLike[] = [];
     turns.forEach((t) => {
@@ -332,7 +332,7 @@ export function chunkAudioDramaTurns(
     for (let k = 0; k < n; k++) {
         prefDur[k + 1] = prefDur[k] + enriched[k].estimatedSec;
         prefWords[k + 1] = prefWords[k] + enriched[k].wordCount;
-        allSceneSpeakers.add(enriched[k].speaker);
+        allSceneSpeakers.add(enriched[k].speaker.trim().toLowerCase());
     }
 
     const totalDur = prefDur[n];
@@ -345,8 +345,9 @@ export function chunkAudioDramaTurns(
         const speakerList: string[] = [];
         const speakerSeen = new Set<string>();
         for (const ct of chunkTurns) {
-            if (!speakerSeen.has(ct.speaker)) {
-                speakerSeen.add(ct.speaker);
+            const spkNorm = ct.speaker.trim().toLowerCase();
+            if (!speakerSeen.has(spkNorm)) {
+                speakerSeen.add(spkNorm);
                 speakerList.push(ct.speaker);
             }
         }
@@ -406,7 +407,7 @@ export function chunkAudioDramaTurns(
     for (let i = n - 1; i >= 0; i--) {
         const segSpeakers = new Set<string>();
         for (let j = i + 1; j <= n; j++) {
-            segSpeakers.add(enriched[j - 1].speaker);
+            segSpeakers.add(enriched[j - 1].speaker.trim().toLowerCase());
             const segDur = prefDur[j] - prefDur[i];
             const segWords = prefWords[j] - prefWords[i];
 

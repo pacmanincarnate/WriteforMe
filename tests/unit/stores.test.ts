@@ -195,6 +195,25 @@ describe('Phase 5C: Typed Zustand 5 stores and storage hydration', () => {
         expect(usePipelineStore.getState().promptLog[0].function).toBe(
             `Delay ${STORE_PROMPT_LOG_CAP + 14}`
         );
+
+        // Formatted audio dispatch prompt & metadata overrides preserve custom text in promptLog
+        p.logAudioDramaPipelineStageStart(
+            'drama3_request',
+            'Drama-3 Request: Segment 1/2 (Narrator, Elena)',
+            { input: '<|speaker:0|> Hello.' },
+            {
+                formattedPrompt: '=== DRAMA-3 -> AUDIO.CPP DISPATCH AUDIT ===\n<|speaker:0|> Hello.',
+                modelUsed: 'drama-3',
+                provider: 'audio.cpp'
+            }
+        );
+        const dramaEntry = usePipelineStore.getState().promptLog[0];
+        expect(dramaEntry.prompt).toBe(
+            '=== DRAMA-3 -> AUDIO.CPP DISPATCH AUDIT ===\n<|speaker:0|> Hello.'
+        );
+        expect(dramaEntry.modelUsed).toBe('drama-3');
+        expect(dramaEntry.provider).toBe('audio.cpp');
+        expect(dramaEntry.isAudio).toBe(true);
     });
 
     it('updates Audio store playback, queue updaters, and scene/sequence audio maps', () => {

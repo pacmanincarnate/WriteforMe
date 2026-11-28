@@ -1855,7 +1855,7 @@ export function useTtsPlayback(params: UseTtsPlaybackParams): UseTtsPlaybackResu
                     rawTurns && rawTurns.length > 0 ? rawTurns : parsedDrama;
                 turnsForVoiceRegistration = baseTurns;
                 chunks = chunkAudioDramaTurns(baseTurns as unknown as never[], {
-                    maxSpeakersPerChunk: 16,
+                    maxSpeakersPerChunk: 4,
                     sceneSeed
                 }) as unknown as SharedTtsQueueItem[];
             } else {

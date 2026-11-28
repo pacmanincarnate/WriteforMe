@@ -268,6 +268,23 @@ export function isValidVoiceDesignProfile(text: unknown): boolean {
 
 export const isValidQwenVoiceProfile = isValidVoiceDesignProfile;
 
+/** Detects mismatched gender or age cues paired with incompatible vocal register terms. */
+export function hasGenderRegisterContradiction(text: unknown): boolean {
+    if (!text || typeof text !== 'string') return false;
+    const trimmed = text.trim();
+    if (!trimmed) return false;
+    const hasFemale = /\b(female|woman|girl|mother|sister|lady|matron)\b/i.test(trimmed);
+    const hasMale = /\b(male|man|boy|father|brother)\b/i.test(trimmed);
+    const hasChild = /\bchild(?:\s+around\s+\d+\s+years?\s+old)?\b/i.test(trimmed);
+    const hasMaleLowReg = /\b(baritone|bass)\b/i.test(trimmed);
+    const hasFemaleReg = /\b(soprano|mezzo-soprano|contralto)\b/i.test(trimmed);
+    const hasAdultLowReg = /\b(baritone|bass|contralto|deep\s+low)\b/i.test(trimmed);
+    if (hasFemale && !hasMale && hasMaleLowReg) return true;
+    if (hasMale && !hasFemale && hasFemaleReg) return true;
+    if (hasChild && hasAdultLowReg) return true;
+    return false;
+}
+
 /** Deterministic FNV-1a 32-bit unsigned hash used for differentiating ensemble voices. */
 export function computeVoiceVarietyHash(str: unknown): number {
     const s = String(str || 'character')
@@ -600,14 +617,21 @@ export function synthesizeVoiceDesignProfile(
     };
 
     let pitchDesc: string;
-    if (/\b(deep\s+baritone|baritone|bass)\b/i.test(combinedContext)) {
+    if (ageCategory === 'child') {
+        const genderPool = pitchPools[gender] || pitchPools.neutral;
+        const childPool = genderPool.child;
+        pitchDesc = childPool[(charHash + slotOffset * 2) % childPool.length];
+    } else if (gender !== 'female' && /\b(deep\s+baritone|baritone|bass)\b/i.test(combinedContext)) {
         pitchDesc = 'deep baritone';
     } else if (/\b(contralto|low-pitched|husky\s+low|deep\s+voice)\b/i.test(combinedContext)) {
         pitchDesc = gender === 'female' ? 'low contralto pitch' : 'deep low pitch';
-    } else if (/\b(high-pitched\s+with\s+resonance|soprano|bright\s+high)\b/i.test(combinedContext)) {
+    } else if (
+        gender !== 'male' &&
+        /\b(high-pitched\s+with\s+resonance|soprano|bright\s+high)\b/i.test(combinedContext)
+    ) {
         pitchDesc = 'high-pitched with resonance';
     } else if (/\b(high-pitched|shrill|piercing|high\s+voice)\b/i.test(combinedContext)) {
-        pitchDesc = 'high pitch';
+        pitchDesc = gender === 'male' ? 'high tenor pitch' : 'high pitch';
     } else {
         const genderPool = pitchPools[gender] || pitchPools.neutral;
         const agePitchPool = genderPool[ageCategory] || genderPool['young adult'];
@@ -890,33 +914,138 @@ export function splitReferenceTextIntoSentences(cleanedText: unknown): string[] 
 }
 
 /**
- * Extracts enough full sentences from the beginning of a character's interview
+ * Extracts quoted first-person speech spans from mixed interview text (preserving double
+ * quotes while stripping XML/markdown/stage-direction wrappers), joining consecutive spans
+ * with clean sentence punctuation before final sanitization.
+ */
+function extractQuotedSpeechFromInterview(rawText: unknown): string {
+    if (!rawText || typeof rawText !== 'string') return '';
+    let text = String(rawText).replace(/^\uFEFF/, '').replace(/\r\n/g, '\n');
+
+    if (/<first_person_interview>/i.test(text)) {
+        const closedMatch = text.match(/<first_person_interview>([\s\S]*?)<\/first_person_interview>/i);
+        if (closedMatch) {
+            text = closedMatch[1];
+        } else {
+            const openMatch = text.match(/<first_person_interview>([\s\S]*)$/i);
+            if (openMatch) text = openMatch[1];
+        }
+    } else if (/<(?:response|character_registry)\b/i.test(text)) {
+        return '';
+    }
+
+    text = text
+        .replace(/<\|(?:im_start|im_end|voice|text|interleave|speaker:\d+|semantic:[^|>]*)\|>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\[[^\]]*\]/g, ' ')
+        .replace(/\([^)]*\)/g, ' ')
+        .replace(/^#+\s+/gm, '')
+        .replace(/^\s*[-*•]\s+/gm, '')
+        .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+        .replace(/\*([^*\n]+)\*/g, '$1')
+        .replace(/__([^_\n]+)__/g, '$1')
+        .replace(/_([^_\n]+)_/g, '$1')
+        .replace(/`([^`\n]+)`/g, '$1');
+
+    const spans: string[] = [];
+    const quotePattern = /"([^"\r\n]+)"|\u201C([^\u201D\r\n]+)\u201D/g;
+    let match: RegExpExecArray | null;
+    while ((match = quotePattern.exec(text)) !== null) {
+        const segment = String(match[1] ?? match[2] ?? '').replace(/\s+/g, ' ').trim();
+        if (segment) spans.push(segment);
+    }
+    if (spans.length === 0) return '';
+
+    let joined = spans[0];
+    for (let i = 1; i < spans.length; i++) {
+        const next = spans[i];
+        if (!next) continue;
+        const startsLower = /^[a-z]/.test(next);
+        if (joined.endsWith(',')) {
+            joined = (startsLower ? joined : `${joined.slice(0, -1)}.`) + ` ${next}`;
+        } else if (/[.?!\u2026\u2014\u2013;]$/.test(joined)) {
+            joined = `${joined} ${next}`;
+        } else {
+            joined = `${joined}. ${next}`;
+        }
+    }
+
+    return sanitizeVoiceReferenceText(joined);
+}
+
+/**
+ * Extracts enough full sentences of spoken dialogue from a character's interview
  * to reach at least ~15 seconds of speech without cutting mid-sentence.
  */
 export function extractPersonalizedReferenceTextFromInterview(
     interviewText: unknown,
-    options: { minSeconds?: number } = {}
+    options: { minSeconds?: number; characterName?: string } = {}
 ): string {
     const minSeconds =
         typeof options?.minSeconds === 'number' && options.minSeconds > 0
             ? options.minSeconds
             : VOICE_REFERENCE_MIN_SECONDS;
 
+    const selectSentencesFrom = (sentences: string[], startIndex: number): string => {
+        let reachedMin = false;
+        const selected: string[] = [];
+        for (let i = startIndex; i < sentences.length; i++) {
+            selected.push(sentences[i]);
+            if (estimateReferenceTextSeconds(selected.join(' ')) >= minSeconds) {
+                reachedMin = true;
+                break;
+            }
+        }
+        return reachedMin ? selected.join(' ').trim() : '';
+    };
+
+    const quotedSpeech = extractQuotedSpeechFromInterview(interviewText);
+    if (quotedSpeech) {
+        const quotedSentences = splitReferenceTextIntoSentences(quotedSpeech);
+        if (quotedSentences.length > 0) {
+            const quotedResult = selectSentencesFrom(quotedSentences, 0);
+            if (quotedResult) return quotedResult;
+        }
+    }
+
     const sentences = splitReferenceTextIntoSentences(interviewText);
     if (sentences.length === 0) return '';
 
-    let reachedMin = false;
-    const selected: string[] = [];
-    for (let i = 0; i < sentences.length; i++) {
-        selected.push(sentences[i]);
-        const estSec = estimateReferenceTextSeconds(selected.join(' '));
-        if (estSec >= minSeconds) {
-            reachedMin = true;
+    const rawName = String(options?.characterName || '').trim();
+    const firstName = rawName.split(/\s+/)[0] || '';
+    const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const namePrefixRegex = rawName
+        ? new RegExp(
+              `^(?:${escapeRegex(rawName)}${
+                  firstName && firstName.toLowerCase() !== rawName.toLowerCase()
+                      ? `|${escapeRegex(firstName)}`
+                      : ''
+              })\\b`,
+              'i'
+          )
+        : null;
+
+    let firstSpokenIdx = 0;
+    while (firstSpokenIdx < sentences.length) {
+        const s = sentences[firstSpokenIdx];
+        const hasFirstPerson = /\b(?:I|I'm|I've|I'd|I'll|my|me|mine|myself|we|we're|our|us)\b/i.test(
+            s
+        );
+        const mentionsObserver = /\b(?:interviewer|questioner|recorder|microphone|camera)\b/i.test(s);
+        const startsWithCharName = Boolean(namePrefixRegex && namePrefixRegex.test(s));
+        if (!hasFirstPerson && (mentionsObserver || startsWithCharName)) {
+            firstSpokenIdx++;
+        } else {
             break;
         }
     }
-    if (!reachedMin) return '';
-    return selected.join(' ').trim();
+
+    if (firstSpokenIdx > 0 && firstSpokenIdx < sentences.length) {
+        const trimmedLeadResult = selectSentencesFrom(sentences, firstSpokenIdx);
+        if (trimmedLeadResult) return trimmedLeadResult;
+    }
+
+    return selectSentencesFrom(sentences, 0);
 }
 
 /**
@@ -1001,10 +1130,7 @@ export function getVoiceReferenceTextForCharacter(
                 story?.user_edited?.[`cast.${found.name}.reference_text`]
         );
         const storedRef = sanitizeVoiceReferenceText(found.reference_text || '');
-        if (
-            storedRef &&
-            (isCustom || estimateReferenceTextSeconds(storedRef) >= VOICE_REFERENCE_MIN_SECONDS)
-        ) {
+        if (isCustom && storedRef) {
             return storedRef;
         }
 
@@ -1014,8 +1140,14 @@ export function getVoiceReferenceTextForCharacter(
             found.deep_profile ||
             found.canonical_interview_voice ||
             '';
-        const extracted = extractPersonalizedReferenceTextFromInterview(interviewSource);
+        const extracted = extractPersonalizedReferenceTextFromInterview(interviewSource, {
+            characterName: found.name
+        });
         if (extracted) return extracted;
+
+        if (storedRef && estimateReferenceTextSeconds(storedRef) >= VOICE_REFERENCE_MIN_SECONDS) {
+            return storedRef;
+        }
     }
 
     return RAIN_SENTENCE;
@@ -1102,14 +1234,20 @@ export function getVoiceDescriptionForCharacter(
             ].map((c) => cleanCharacterNameFromVoiceProfile(c || '', [cleanName, found.name]));
             const primaryUsable =
                 isUsableVocalDescription(directUserCadence) &&
-                !isLegacyBoilerplateVoiceProfile(directUserCadence)
+                !isLegacyBoilerplateVoiceProfile(directUserCadence) &&
+                !hasGenderRegisterContradiction(directUserCadence)
                     ? directUserCadence
                     : '';
             const strippedCadence =
                 primaryUsable ||
-                cadenceCandidates.find((c) => isValidVoiceDesignProfile(c)) ||
                 cadenceCandidates.find(
-                    (c) => isUsableVocalDescription(c) && !isLegacyBoilerplateVoiceProfile(c)
+                    (c) => isValidVoiceDesignProfile(c) && !hasGenderRegisterContradiction(c)
+                ) ||
+                cadenceCandidates.find(
+                    (c) =>
+                        isUsableVocalDescription(c) &&
+                        !isLegacyBoilerplateVoiceProfile(c) &&
+                        !hasGenderRegisterContradiction(c)
                 ) ||
                 '';
             if (isUsableVocalDescription(strippedCadence)) {
@@ -1145,7 +1283,32 @@ export function getVoiceDescriptionForCharacter(
                     desc = `${genderAgePrefix}. ${cleanCadence}`;
                 }
             } else {
-                desc = synthesizeVoiceDesignProfile(found, found.name || cleanName, story);
+                const safeChar: VoiceCastMember = { ...found };
+                if (hasGenderRegisterContradiction(safeChar.vocal_cadence)) {
+                    delete safeChar.vocal_cadence;
+                }
+                if (hasGenderRegisterContradiction(safeChar.vocal_profile)) {
+                    delete safeChar.vocal_profile;
+                }
+                if (hasGenderRegisterContradiction(safeChar.voice_profile)) {
+                    delete safeChar.voice_profile;
+                }
+                if (hasGenderRegisterContradiction(safeChar.voice_description)) {
+                    delete safeChar.voice_description;
+                }
+                if (
+                    typeof safeChar.voice === 'string' &&
+                    hasGenderRegisterContradiction(safeChar.voice)
+                ) {
+                    delete safeChar.voice;
+                }
+                if (
+                    safeChar.details &&
+                    hasGenderRegisterContradiction(safeChar.details.vocal_profile)
+                ) {
+                    safeChar.details = { ...safeChar.details, vocal_profile: undefined };
+                }
+                desc = synthesizeVoiceDesignProfile(safeChar, safeChar.name || cleanName, story);
             }
         }
     } else {

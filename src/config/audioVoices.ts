@@ -181,7 +181,7 @@ export const DEFAULT_AUDIO_DRAMA_SETTINGS: AudioDramaSettings = {
     breezeModelId: 'breeze-tts',
     breezeAudioTemperature: 0.35,
     dramaModelId: 'drama-3',
-    dramaAudioTemperature: 0.9,
+    dramaAudioTemperature: 1.0,
     dramaAudioTopP: 0.9,
     dramaAudioTopK: 30,
     dramaOffloadProfile: 'auto',
@@ -252,7 +252,9 @@ export function migrateAudioDramaSettings(saved: Record<string, unknown> | null 
     if (!migrated.asrMode) migrated.asrMode = 'auto';
     if (migrated.scenePauseGapMs === undefined) migrated.scenePauseGapMs = 2000;
     if (migrated.breezeAudioTemperature === undefined) migrated.breezeAudioTemperature = 0.35;
-    if (migrated.dramaAudioTemperature === undefined) migrated.dramaAudioTemperature = 0.9;
+    if (migrated.dramaAudioTemperature === undefined || migrated.dramaAudioTemperature === 0.9) {
+        migrated.dramaAudioTemperature = 1.0;
+    }
     if (migrated.dramaAudioTopP === undefined) migrated.dramaAudioTopP = 0.9;
     if (migrated.dramaAudioTopK === undefined) migrated.dramaAudioTopK = 30;
 

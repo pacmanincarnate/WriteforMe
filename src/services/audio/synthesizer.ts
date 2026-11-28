@@ -53,6 +53,7 @@ import {
     sanitizeAudioBlob,
     stitchAudioBlobsWithPause
 } from './codec';
+import { logDrama3RequestDispatch } from './drama3RequestLog';
 import { logAudioStageComplete, logAudioStageError, logAudioStageStart } from './logger';
 import {
     buildDrama3Payload,
@@ -281,6 +282,18 @@ export async function synthesizeDrama3SegmentChunk({
                             dramaPayload.missing_ref_speakers || []
                         ).join(', ')}]`
                     );
+                    logAudioStageError(
+                        'drama3_request',
+                        `Drama-3 Skipped: Live Segment ${chunkIndex + 1}/${totalChunks} missing voice reference(s)`,
+                        lastErr,
+                        {
+                            chunkIndex: chunkIndex + 1,
+                            totalChunks,
+                            chunkId: chunk.chunkId || null,
+                            speakerSlots: dramaPayload.speaker_slots,
+                            missingRefSpeakers: dramaPayload.missing_ref_speakers
+                        }
+                    );
                     console.warn(
                         `[Audio Drama Live] Segment ${chunkIndex + 1}/${totalChunks} has ${
                             dramaPayload.speaker_slots.length
@@ -289,6 +302,18 @@ export async function synthesizeDrama3SegmentChunk({
                     break;
                 }
                 const wireBody = toDrama3HttpBody(dramaPayload);
+                logDrama3RequestDispatch({
+                    source: 'live_reader',
+                    route: 'bridge',
+                    endpoint: `${bridgeUrl}/v1/audio/speech`,
+                    chunk,
+                    chunkIndex,
+                    totalChunks,
+                    attempt: attempt + 1,
+                    dramaPayload,
+                    wireBody: wireBody as Record<string, unknown>,
+                    anchorsMap
+                });
                 console.log(
                     `[Audio Drama Live] Dispatching Segment ${chunkIndex + 1}/${totalChunks} to Drama-3 [${dramaPayload.model}] | ` +
                         `~${chunk.estimatedDurationSec || 60}s (${chunk.wordCount} words, ${turns.length} turns, split=${
@@ -312,6 +337,18 @@ export async function synthesizeDrama3SegmentChunk({
 
                     if (!res || res.status === 502 || res.status === 404) {
                         if (!res || res.status === 502) liveAudioCppWaveState.activeWave = 0;
+                        logDrama3RequestDispatch({
+                            source: 'live_reader',
+                            route: 'direct_audiocpp',
+                            endpoint: `${audioCppUrl}/v1/audio/speech`,
+                            chunk,
+                            chunkIndex,
+                            totalChunks,
+                            attempt: attempt + 1,
+                            dramaPayload,
+                            wireBody: wireBody as Record<string, unknown>,
+                            anchorsMap
+                        });
                         res = await fetchWithTimeout(
                             `${audioCppUrl}/v1/audio/speech`,
                             postInit,
@@ -717,7 +754,7 @@ export async function _rawSynthesizeAudioDramaChunk({
         const effectiveTemp = isDramaModel
             ? typeof effectiveSettings.dramaAudioTemperature === 'number'
                 ? effectiveSettings.dramaAudioTemperature
-                : 0.9
+                : 1.0
             : typeof effectiveSettings.breezeAudioTemperature === 'number'
               ? effectiveSettings.breezeAudioTemperature
               : typeof rawCppTemp === 'number' && Number.isFinite(rawCppTemp)
@@ -835,6 +872,39 @@ export async function _rawSynthesizeAudioDramaChunk({
                           )}${refText.length > 120 ? '...' : ''}"`
                         : '')
             );
+
+            if (isDramaModel) {
+                let normAudioCppUrl = String(
+                    effectiveSettings.audioCppUrl || DEFAULT_SERVICE_URLS.audioCpp
+                ).trim();
+                if (!/^https?:\/\//i.test(normAudioCppUrl)) {
+                    normAudioCppUrl = 'http://' + normAudioCppUrl;
+                }
+                normAudioCppUrl = normAudioCppUrl.replace(/\/+$/, '');
+                let normBridgeUrl = String(
+                    effectiveSettings.studioBridgeUrl || DEFAULT_SERVICE_URLS.audioStudioBridge
+                ).trim();
+                if (!/^https?:\/\//i.test(normBridgeUrl)) {
+                    normBridgeUrl = 'http://' + normBridgeUrl;
+                }
+                normBridgeUrl = normBridgeUrl.replace(/\/+$/, '');
+                const singleRoute =
+                    targetUrl === normAudioCppUrl && targetUrl !== normBridgeUrl
+                        ? 'direct_audiocpp'
+                        : 'bridge';
+                logDrama3RequestDispatch({
+                    source: 'single_line',
+                    route: singleRoute,
+                    endpoint: `${targetUrl}/v1/audio/speech`,
+                    chunk,
+                    chunkIndex,
+                    totalChunks,
+                    attempt: 1,
+                    wireBody: payload as Record<string, unknown>,
+                    singleSpeaker: speakerLabel,
+                    singleAnchor: anchorRecord
+                });
+            }
 
             let res: Response;
             const dynamicTimeoutMs = Math.min(90000, Math.max(30000, wordCount * 1200 + 10000));
