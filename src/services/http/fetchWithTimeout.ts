@@ -10,7 +10,10 @@ export type FetchTimeoutOptions = RequestInit;
 /** The caller's own reason for aborting, when its signal (not the deadline) ended the request. */
 function callerAbortReason(signal: AbortSignal | null | undefined): Error | null {
     if (!signal || !signal.aborted) return null;
-    return signal.reason instanceof Error ? signal.reason : null;
+    if (signal.reason instanceof Error && signal.reason.name !== 'AbortError') {
+        return signal.reason;
+    }
+    return null;
 }
 
 export interface FetchIdleTimeoutHandle {
