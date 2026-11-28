@@ -20,6 +20,7 @@ import {
     getDeterministicVoiceSeed,
     getLiveStoryForAudio,
     getVoiceDescriptionForCharacter,
+    hasGenderRegisterContradiction,
     isLegacyBoilerplateVoiceProfile,
     isMasterVoiceRecordMatching,
     isUsableVocalDescription,
@@ -290,6 +291,25 @@ export async function ensureSpeakerMasterVoice(
     return { ...record, _freshAudioBlob: masterBlob };
 }
 
+/** Looks up a calibrated Master Voice anchor record by speaker name across case/suffix variants. */
+export function findSpeakerAnchor(
+    anchorsMap: Map<string, MasterVoiceRecordLike> | null | undefined,
+    speakerName: string
+): MasterVoiceRecordLike | undefined {
+    const spkBase = String(speakerName || '').trim();
+    if (!anchorsMap || !spkBase) return undefined;
+    const spkLower = spkBase.toLowerCase();
+    return (
+        anchorsMap.get(`${spkBase}_master`) ||
+        anchorsMap.get(spkBase) ||
+        anchorsMap.get(`${spkLower}_master`) ||
+        anchorsMap.get(spkLower) ||
+        (spkLower === 'narrator'
+            ? anchorsMap.get('Narrator_master') || anchorsMap.get('NARRATOR_master')
+            : undefined)
+    );
+}
+
 export function buildDrama3Payload(
     chunk: Drama3ChunkInput | null | undefined,
     anchorsMap: Map<string, MasterVoiceRecordLike>,
@@ -320,35 +340,71 @@ export function buildDrama3Payload(
         return left + (hasEndPunct ? ' ' : '. ') + right;
     };
 
+    const rawTurnEntries: Array<{
+        canonKey: string;
+        displayName: string;
+        turnText: string;
+        origIndex: unknown;
+    }> = [];
+
     for (const t of chunk?.turns || []) {
         const turnRec = t as DramaTurnLike & { originalTurn?: { index?: unknown } };
-        const spk = String(turnRec.speakerKey || turnRec.speaker || 'Narrator');
-        const spkCanonKey = spk.trim().toLowerCase() || 'narrator';
-        if (!slotOf.has(spkCanonKey)) {
-            if (slotOf.size >= MAX_SPEAKERS) {
-                const fallbackKey = [...slotOf.keys()][MAX_SPEAKERS - 1];
-                slotOf.set(spkCanonKey, slotOf.get(fallbackKey) ?? 0);
-            } else {
-                const nextSlot = slotOf.size;
-                slotOf.set(spkCanonKey, nextSlot);
-                slotDisplayNames[nextSlot] = spk;
-            }
-        }
-        const slot = slotOf.get(spkCanonKey) ?? 0;
         const turnText = sanitizeDrama3Segment(
             turnRec.drama3Text || turnRec.spokenText || turnRec.cleanText || turnRec.text || ''
         );
         if (!turnText) continue;
 
+        const spk = String(turnRec.speakerKey || turnRec.speaker || 'Narrator').trim() || 'Narrator';
+        const isNarratorTurn = spk.toLowerCase() === 'narrator';
+        const anchor = isNarratorTurn ? null : findSpeakerAnchor(anchorsMap, spk);
+        const anchorSpk =
+            typeof anchor?.speakerKey === 'string' && anchor.speakerKey.trim()
+                ? anchor.speakerKey.trim()
+                : '';
+        const canonKey = isNarratorTurn
+            ? 'narrator'
+            : anchorSpk
+              ? anchorSpk.toLowerCase()
+              : anchor && isValidVoiceRefPath(anchor.refPath)
+                ? `ref:${String(anchor.refPath).replace(/\\/g, '/').toLowerCase()}`
+                : spk.toLowerCase();
+        const displayName = isNarratorTurn ? 'Narrator' : anchorSpk || spk;
+
+        rawTurnEntries.push({
+            canonKey,
+            displayName,
+            turnText,
+            origIndex: turnRec.originalTurn?.index
+        });
+    }
+
+    if (rawTurnEntries.some((entry) => entry.canonKey === 'narrator')) {
+        slotOf.set('narrator', 0);
+        slotDisplayNames[0] = 'Narrator';
+    }
+
+    for (const entry of rawTurnEntries) {
+        if (!slotOf.has(entry.canonKey)) {
+            if (slotOf.size >= MAX_SPEAKERS) {
+                const fallbackKey = [...slotOf.keys()][MAX_SPEAKERS - 1];
+                slotOf.set(entry.canonKey, slotOf.get(fallbackKey) ?? 0);
+            } else {
+                const nextSlot = slotOf.size;
+                slotOf.set(entry.canonKey, nextSlot);
+                slotDisplayNames[nextSlot] = entry.displayName;
+            }
+        }
+        const slot = slotOf.get(entry.canonKey) ?? 0;
+
         const last = segments[segments.length - 1];
         if (last && last.slot === slot) {
-            last.text = joinDrama3SegmentText(last.text, turnText);
+            last.text = joinDrama3SegmentText(last.text, entry.turnText);
         } else {
             segments.push({
                 slot,
-                spk: slotDisplayNames[slot] || spk,
-                text: turnText,
-                origIndex: turnRec.originalTurn?.index
+                spk: slotDisplayNames[slot] || entry.displayName,
+                text: entry.turnText,
+                origIndex: entry.origIndex
             });
         }
     }
@@ -363,15 +419,7 @@ export function buildDrama3Payload(
     let allRefsValid = orderedSpeakers.length > 0;
     for (let i = 0; i < orderedSpeakers.length; i++) {
         const spkBase = orderedSpeakers[i];
-        const spkLower = String(spkBase).trim().toLowerCase();
-        const anchor =
-            anchorsMap?.get(`${spkBase}_master`) ||
-            anchorsMap?.get(spkBase) ||
-            anchorsMap?.get(`${spkLower}_master`) ||
-            anchorsMap?.get(spkLower) ||
-            (spkLower === 'narrator'
-                ? anchorsMap?.get('Narrator_master') || anchorsMap?.get('NARRATOR_master')
-                : undefined);
+        const anchor = findSpeakerAnchor(anchorsMap, spkBase);
         if (anchor && isValidVoiceRefPath(anchor.refPath)) {
             const normalizedPath = String(anchor.refPath).replace(/\\/g, '/');
             references.push({
@@ -404,7 +452,7 @@ export function buildDrama3Payload(
     const baseTemp =
         typeof effectiveSettings.dramaAudioTemperature === 'number'
             ? effectiveSettings.dramaAudioTemperature
-            : 0.9;
+            : 1.0;
     const dramaTemp = attempt >= 1 ? +Math.max(0.1, baseTemp * 0.89).toFixed(2) : baseTemp;
     const dramaTopP =
         typeof effectiveSettings.dramaAudioTopP === 'number'
@@ -693,7 +741,8 @@ export function ensureAudioDramaVoicesRegistered<TStory extends AudioStoryLike>(
         if (
             !hasCustomEditedText &&
             (!isUsableVocalDescription(updatedChar.vocal_cadence) ||
-                isLegacyBoilerplateVoiceProfile(updatedChar.vocal_cadence))
+                isLegacyBoilerplateVoiceProfile(updatedChar.vocal_cadence) ||
+                hasGenderRegisterContradiction(updatedChar.vocal_cadence))
         ) {
             updatedChar.vocal_cadence = getVoiceDescriptionForCharacter(updatedChar, nextStory);
             fillPatch.vocal_cadence = updatedChar.vocal_cadence;
@@ -725,7 +774,9 @@ export function ensureAudioDramaVoicesRegistered<TStory extends AudioStoryLike>(
                 updatedChar.deep_profile ||
                 updatedChar.canonical_interview_voice ||
                 '';
-            const derivedRef = extractPersonalizedReferenceTextFromInterview(interviewSrc);
+            const derivedRef = extractPersonalizedReferenceTextFromInterview(interviewSrc, {
+                characterName: updatedChar.name
+            });
             if (derivedRef) {
                 if (updatedChar.reference_text !== derivedRef) {
                     updatedChar.reference_text = derivedRef;

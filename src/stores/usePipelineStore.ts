@@ -27,6 +27,9 @@ export interface PipelineLogMeta {
     tierName?: string;
     summary?: string;
     systemPrompt?: string;
+    formattedPrompt?: string;
+    modelUsed?: string;
+    provider?: string;
     attempt?: number;
     maxAttempts?: number;
     actionTaken?: string | null;
@@ -369,6 +372,10 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
             typeof details === 'object' && details !== null
                 ? JSON.stringify(details, null, 2)
                 : String(details || '');
+        const formattedPrompt =
+            typeof meta.formattedPrompt === 'string' && meta.formattedPrompt.trim()
+                ? meta.formattedPrompt
+                : `[RUNNING STAGE: ${stageKey}]\n${stageTitle}\n\n${detailText}`;
         get().setCurrentPipelineStep(22);
         get().appendPromptLog({
             id: logId,
@@ -384,9 +391,11 @@ export const usePipelineStore = create<PipelineStore>((set, get) => ({
             status: 'running',
             isValidation: false,
             validationSummary: stageTitle,
-            prompt: `[RUNNING STAGE: ${stageKey}]\n${stageTitle}\n\n${detailText}`,
+            prompt: formattedPrompt,
             systemPrompt: 'AUDIO DRAMA TTS PIPELINE: ' + String(stageKey).toUpperCase(),
             tierName: 'Tier 7.0: Audio Drama',
+            ...(meta.modelUsed ? { modelUsed: meta.modelUsed } : {}),
+            ...(meta.provider ? { provider: meta.provider } : {}),
             parameters: (details as Record<string, unknown>) || {},
             meta: meta || {}
         });

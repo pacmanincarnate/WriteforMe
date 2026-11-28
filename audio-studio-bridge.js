@@ -34,6 +34,11 @@ const AUDIOCPP_CONFIGS_DIR = process.env.ELLIPSISPROSE_AUDIOCPP_CONFIG_DIR
     ? path.resolve(process.env.ELLIPSISPROSE_AUDIOCPP_CONFIG_DIR)
     : path.join(ROOT_DIR, 'audiocpp');
 const RUNTIME_WAVE2_CONFIG_PATH = path.join(path.dirname(CACHE_DIR), 'runtime_wave2_drama3.json');
+const DRAMA3_LOG_FILE = process.env.ELLIPSISPROSE_DRAMA3_LOG_FILE
+    ? path.resolve(process.env.ELLIPSISPROSE_DRAMA3_LOG_FILE)
+    : process.env.ELLIPSISPROSE_BRIDGE_CACHE_DIR
+        ? path.join(path.dirname(CACHE_DIR), 'drama3-requests.jsonl')
+        : path.join(ROOT_DIR, 'Logs', 'drama3-requests.jsonl');
 const LEGACY_AUDIOCPP_HOME = 'D:\\AI_Projects\\Audiocpp\\audio.cpp';
 
 /** Working folder for the daemon: an explicit override, the original dev checkout, or the binary's folder. */
@@ -65,8 +70,10 @@ for (let i = 2; i < process.argv.length; i += 2) {
     else if (key === 'idle-unload-sec') settings.idleUnloadSec = Number(val) || 0;
 }
 
-// Ensure cache directory exists
-fs.mkdirSync(CACHE_DIR, { recursive: true });
+// Ensure cache directory exists when running as the bridge daemon (lazy creation in library mode)
+if (require.main === module) {
+    fs.mkdirSync(CACHE_DIR, { recursive: true });
+}
 
 function getVqSidecarPath(wavPath) {
     return `${wavPath}.vq.json`;
@@ -141,9 +148,11 @@ function pruneVoiceCache({ keepStoryId = '', deleteAll = false, maxAgeMs = 0 } =
 }
 
 // Startup only deduplicates superseded master hashes for the same speaker; keep all active Master WAVs across restarts
-const _startupPrune = pruneVoiceCache({});
-if (_startupPrune.deleted > 0) {
-    console.log(`[Bridge Startup] Pruned ${_startupPrune.deleted} superseded duplicate voice WAV sample(s); ${_startupPrune.remaining} active.`);
+if (require.main === module) {
+    const _startupPrune = pruneVoiceCache({});
+    if (_startupPrune.deleted > 0) {
+        console.log(`[Bridge Startup] Pruned ${_startupPrune.deleted} superseded duplicate voice WAV sample(s); ${_startupPrune.remaining} active.`);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,6 +241,7 @@ const state = {
     cudaWarmupFirstLogged: false,
     cudaGraphReuseSuppressed: 0,
     logRing: [],
+    drama3RequestRing: [],
     swapMode: settings.swapMode,
     perfStats: {
         last: null,
@@ -925,11 +935,13 @@ function handleHealth(req, res) {
             routes: {
                 health: '/health',
                 logs: '/logs',
+                drama3_logs: '/logs/drama3',
                 voices: '/voices/:speakerKey',
                 activate_wave: '/wave/:n/activate',
                 deactivate_wave: '/wave/deactivate',
                 proxy_v1: '/v1/*'
-            }
+            },
+            drama3_log_file: DRAMA3_LOG_FILE
         });
     });
 }
@@ -952,6 +964,7 @@ function handlePutVoice(req, res, speakerKey) {
         const filePath = path.join(CACHE_DIR, fileName);
 
         try {
+            fs.mkdirSync(CACHE_DIR, { recursive: true });
             fs.writeFileSync(filePath, buffer);
             try {
                 const staleVq = getVqSidecarPath(filePath);
@@ -1305,8 +1318,38 @@ function postDaemonJson(pathname, payloadObj, timeoutMs = 120000) {
     });
 }
 
+function summarizeVqCodes(vqCodes) {
+    if (!Array.isArray(vqCodes) || vqCodes.length === 0 || !Array.isArray(vqCodes[0])) {
+        return null;
+    }
+    const sha256 = crypto.createHash('sha256').update(JSON.stringify(vqCodes)).digest('hex');
+    return {
+        shape: [vqCodes.length, vqCodes[0].length],
+        sha256,
+        preview: vqCodes[0].slice(0, 8)
+    };
+}
+
+function extractSpeakerTagFromRefText(text) {
+    const m = String(text || '').match(/<\|speaker:\d+\|>/i);
+    return m ? m[0] : null;
+}
+
+function parseDrama3RefsField(rawVal) {
+    if (Array.isArray(rawVal)) return rawVal;
+    if (typeof rawVal === 'string' && rawVal.trim()) {
+        try {
+            const parsed = JSON.parse(rawVal);
+            return Array.isArray(parsed) ? parsed : [];
+        } catch (_) {
+            return [];
+        }
+    }
+    return [];
+}
+
 async function resolveReferencesWithVqCodes(bodyObj) {
-    const meta = { hits: 0, encoded: 0, total: 0, encodeMs: 0, active: false };
+    const meta = { hits: 0, encoded: 0, total: 0, encodeMs: 0, active: false, refAudit: [] };
     if (!bodyObj || typeof bodyObj !== 'object' || !bodyObj.options || typeof bodyObj.options !== 'object') {
         return { bodyObj, meta };
     }
@@ -1355,19 +1398,32 @@ async function resolveReferencesWithVqCodes(bodyObj) {
         }
         const cacheProbe = loadCachedVqCodes(rawAudioPath);
         if (!cacheProbe) {
-            byNormPath.set(normKey, { rawAudioPath, vq_codes: null, stat: null, wavSha256: null });
+            byNormPath.set(normKey, {
+                rawAudioPath,
+                vq_codes: null,
+                stat: null,
+                wavSha256: null,
+                mode: 'raw_audio_path'
+            });
             continue;
         }
         if (cacheProbe.vq_codes) {
             meta.hits++;
-            byNormPath.set(normKey, { rawAudioPath, vq_codes: cacheProbe.vq_codes, stat: cacheProbe.stat, wavSha256: cacheProbe.wavSha256 });
+            byNormPath.set(normKey, {
+                rawAudioPath,
+                vq_codes: cacheProbe.vq_codes,
+                stat: cacheProbe.stat,
+                wavSha256: cacheProbe.wavSha256,
+                mode: 'vq_cache_hit'
+            });
         } else {
             const entry = {
                 rawAudioPath,
                 text: String(desc.text || 'Reference speech.').replace(/<\|speaker:\d+\|>/gi, '').trim() || 'Reference speech.',
                 vq_codes: null,
                 stat: cacheProbe.stat,
-                wavSha256: cacheProbe.wavSha256
+                wavSha256: cacheProbe.wavSha256,
+                mode: 'raw_audio_path'
             };
             byNormPath.set(normKey, entry);
             missingList.push(entry);
@@ -1396,13 +1452,21 @@ async function resolveReferencesWithVqCodes(bodyObj) {
                 }, 300000);
                 const artifacts = Array.isArray(taskResp?.artifacts) ? taskResp.artifacts : [];
                 for (let idx = 0; idx < batch.length; idx++) {
-                    const art = artifacts.find(a => a && a.id === `drama3_reference_${idx}`) || artifacts[idx];
+                    const expectedId = `drama3_reference_${idx}`;
+                    const art = artifacts.find(a => a && a.id === expectedId) || artifacts[idx];
                     if (!art || typeof art.payload !== 'string') continue;
                     const decoded = JSON.parse(Buffer.from(art.payload, 'base64').toString('utf8'));
                     if (Array.isArray(decoded?.vq_codes) && decoded.vq_codes.length === 10 && decoded.vq_codes[0]?.length > 0) {
                         batch[idx].vq_codes = decoded.vq_codes;
+                        batch[idx].mode = 'vq_encoded';
                         saveCachedVqCodes(batch[idx].rawAudioPath, batch[idx].stat, batch[idx].wavSha256, decoded.vq_codes);
                         meta.encoded++;
+                        const vqSum = summarizeVqCodes(decoded.vq_codes);
+                        pushLog(
+                            `[Drama-3 EncodeRef] batchIdx=${idx} | tag=<|speaker:${idx}|> | artifact=${art.id || 'unknown'} | ` +
+                            `audio=${batch[idx].rawAudioPath} | frames=${decoded.vq_codes[0].length} | ` +
+                            `vqSha=${vqSum ? vqSum.sha256.slice(0, 12) : 'none'} | text="${batch[idx].text}"`
+                        );
                     }
                 }
             }
@@ -1412,15 +1476,68 @@ async function resolveReferencesWithVqCodes(bodyObj) {
         meta.encodeMs = Date.now() - encStart;
     }
 
-    const rewritten = refs.map(desc => {
+    const rewritten = refs.map((desc, idx) => {
         if (!desc || typeof desc !== 'object') return desc;
-        if (Array.isArray(desc.vq_codes) && desc.vq_codes.length === 10) return desc;
-        const rawAudioPath = desc.audio_path || desc.audio;
-        if (typeof rawAudioPath !== 'string' || !rawAudioPath.trim()) return desc;
+        const textStr = String(desc.text || '');
+        const speakerTag = extractSpeakerTagFromRefText(textStr);
+        const rawAudioPath = desc.audio_path || desc.audio || null;
+
+        if (Array.isArray(desc.vq_codes) && desc.vq_codes.length === 10) {
+            const vqSum = summarizeVqCodes(desc.vq_codes);
+            meta.refAudit.push({
+                index: idx,
+                speakerTag,
+                text: textStr,
+                incomingAudioPath: rawAudioPath,
+                mode: 'vq_prebuilt',
+                wavSize: null,
+                wavSha256: null,
+                vqShape: vqSum ? vqSum.shape : null,
+                vqSha256: vqSum ? vqSum.sha256 : null
+            });
+            return desc;
+        }
+        if (typeof rawAudioPath !== 'string' || !rawAudioPath.trim()) {
+            meta.refAudit.push({
+                index: idx,
+                speakerTag,
+                text: textStr,
+                incomingAudioPath: null,
+                mode: 'raw_audio_path',
+                wavSize: null,
+                wavSha256: null,
+                vqShape: null,
+                vqSha256: null
+            });
+            return desc;
+        }
         const entry = byNormPath.get(path.resolve(rawAudioPath).toLowerCase());
         if (entry && Array.isArray(entry.vq_codes) && entry.vq_codes.length === 10) {
+            const vqSum = summarizeVqCodes(entry.vq_codes);
+            meta.refAudit.push({
+                index: idx,
+                speakerTag,
+                text: textStr,
+                incomingAudioPath: rawAudioPath,
+                mode: entry.mode === 'vq_encoded' ? 'vq_encoded' : 'vq_cache_hit',
+                wavSize: entry.stat?.size ?? null,
+                wavSha256: entry.wavSha256 ?? null,
+                vqShape: vqSum ? vqSum.shape : null,
+                vqSha256: vqSum ? vqSum.sha256 : null
+            });
             return { text: desc.text, vq_codes: entry.vq_codes };
         }
+        meta.refAudit.push({
+            index: idx,
+            speakerTag,
+            text: textStr,
+            incomingAudioPath: rawAudioPath,
+            mode: 'raw_audio_path',
+            wavSize: entry?.stat?.size ?? null,
+            wavSha256: entry?.wavSha256 ?? null,
+            vqShape: null,
+            vqSha256: null
+        });
         return desc;
     });
 
@@ -1433,6 +1550,140 @@ async function resolveReferencesWithVqCodes(bodyObj) {
     };
     pushLog(`[VQ Cache] References: ${meta.hits}/${meta.total} cached hits, ${meta.encoded} newly encoded (${meta.encodeMs}ms).`);
     return { bodyObj: nextBody, meta };
+}
+
+function summarizeForwardedBody(forwardedBody) {
+    if (!forwardedBody || typeof forwardedBody !== 'object') return forwardedBody;
+    const summary = { ...forwardedBody };
+    if (forwardedBody.options && typeof forwardedBody.options === 'object') {
+        const nextOptions = { ...forwardedBody.options };
+        for (const key of ['references', 'multi_reference_cond']) {
+            if (nextOptions[key] === undefined) continue;
+            const parsedRefs = parseDrama3RefsField(nextOptions[key]);
+            if (parsedRefs.length > 0) {
+                nextOptions[key] = parsedRefs.map((ref) => {
+                    if (!ref || typeof ref !== 'object') return ref;
+                    const copy = { ...ref };
+                    if (Array.isArray(copy.vq_codes)) {
+                        copy.vq_codes = summarizeVqCodes(copy.vq_codes);
+                    }
+                    return copy;
+                });
+            }
+        }
+        summary.options = nextOptions;
+    }
+    return summary;
+}
+
+function buildDrama3AuditRecord({ targetUrl, incomingBody = {}, forwardedBody = null, vqMeta = null }) {
+    const incoming = incomingBody && typeof incomingBody === 'object' ? incomingBody : {};
+    const forwarded = forwardedBody && typeof forwardedBody === 'object' ? forwardedBody : incoming;
+    const incomingOpts = incoming.options && typeof incoming.options === 'object' ? incoming.options : {};
+    const forwardedOpts = forwarded.options && typeof forwarded.options === 'object' ? forwarded.options : {};
+
+    const incomingRefs = parseDrama3RefsField(
+        incomingOpts.references !== undefined ? incomingOpts.references : incomingOpts.multi_reference_cond
+    );
+    const forwardedRefs = parseDrama3RefsField(
+        forwardedOpts.references !== undefined ? forwardedOpts.references : forwardedOpts.multi_reference_cond
+    );
+    const metaAudit = Array.isArray(vqMeta?.refAudit) ? vqMeta.refAudit : [];
+    const maxLen = Math.max(incomingRefs.length, forwardedRefs.length, metaAudit.length);
+
+    const references = [];
+    for (let i = 0; i < maxLen; i++) {
+        const inc = incomingRefs[i] && typeof incomingRefs[i] === 'object' ? incomingRefs[i] : {};
+        const fwd = forwardedRefs[i] && typeof forwardedRefs[i] === 'object' ? forwardedRefs[i] : {};
+        const ma = metaAudit[i] && typeof metaAudit[i] === 'object' ? metaAudit[i] : {};
+        const text = String(fwd.text ?? inc.text ?? ma.text ?? '');
+        const fwdVq = Array.isArray(fwd.vq_codes) ? summarizeVqCodes(fwd.vq_codes) : null;
+        const sentField = Array.isArray(fwd.vq_codes)
+            ? 'vq_codes'
+            : (fwd.audio_path || fwd.audio)
+                ? 'audio_path'
+                : 'other';
+
+        references.push({
+            index: i,
+            speakerTag: ma.speakerTag || extractSpeakerTagFromRefText(text),
+            text,
+            incomingAudioPath: ma.incomingAudioPath || inc.audio_path || inc.audio || null,
+            mode: ma.mode || (sentField === 'vq_codes' ? 'vq_prebuilt' : 'raw_audio_path'),
+            wavSize: ma.wavSize ?? null,
+            wavSha256: ma.wavSha256 ?? null,
+            vqShape: ma.vqShape || fwdVq?.shape || null,
+            vqSha256: ma.vqSha256 || fwdVq?.sha256 || null,
+            sentField
+        });
+    }
+
+    return {
+        ts: new Date().toISOString(),
+        targetUrl,
+        model: String(forwarded.model || incoming.model || 'drama-3'),
+        task: String(forwarded.task || incoming.task || 'tts'),
+        seed: forwarded.seed ?? incoming.seed ?? null,
+        temperature: forwarded.temperature ?? incoming.temperature ?? null,
+        top_p: forwarded.top_p ?? incoming.top_p ?? null,
+        top_k: forwarded.top_k ?? incoming.top_k ?? null,
+        max_tokens: forwarded.max_tokens ?? incoming.max_tokens ?? null,
+        response_format: forwarded.response_format || incoming.response_format || null,
+        input: String(forwarded.input ?? incoming.input ?? ''),
+        references,
+        vqMeta: vqMeta || null,
+        forwardedPayloadSummary: summarizeForwardedBody(forwarded),
+        response: null
+    };
+}
+
+function formatDrama3AuditConsoleSummary(record) {
+    const lines = [];
+    lines.push(
+        `[Drama-3 Dispatch -> Audio.cpp] ${record.targetUrl} | model=${record.model} | task=${record.task} | ` +
+        `seed=${record.seed ?? 'none'} | temp=${record.temperature ?? 'N/A'} | top_p=${record.top_p ?? 'N/A'} | ` +
+        `top_k=${record.top_k ?? 'N/A'} | max_tokens=${record.max_tokens ?? 'N/A'}`
+    );
+    if (Array.isArray(record.references) && record.references.length > 0) {
+        lines.push(`  References (${record.references.length}):`);
+        for (const r of record.references) {
+            const wavName = r.incomingAudioPath ? path.basename(String(r.incomingAudioPath)) : 'none';
+            const wavShort = r.wavSha256 ? r.wavSha256.slice(0, 12) : 'none';
+            const vqShort = r.vqSha256 ? r.vqSha256.slice(0, 12) : 'none';
+            const frames = Array.isArray(r.vqShape) ? r.vqShape[1] : 0;
+            lines.push(
+                `    ref[${r.index}] | ${r.speakerTag || '(no-tag)'} | ${r.mode} | wav=${wavName} | ` +
+                `wavSha=${wavShort} | vqSha=${vqShort} | frames=${frames} | text="${r.text}"`
+            );
+        }
+    } else {
+        lines.push('  References (0): none');
+    }
+    lines.push('  Input Script:');
+    lines.push(record.input || '(empty)');
+    return lines.join('\n');
+}
+
+function appendDrama3AuditLog(record, logFilePath = DRAMA3_LOG_FILE) {
+    try {
+        const dir = path.dirname(logFilePath);
+        fs.mkdirSync(dir, { recursive: true });
+        if (fs.existsSync(logFilePath)) {
+            const stat = fs.statSync(logFilePath);
+            if (stat.size > 25 * 1024 * 1024) {
+                const prevPath = logFilePath.replace(/\.jsonl$/i, '') + '.prev.jsonl';
+                try {
+                    if (fs.existsSync(prevPath)) fs.unlinkSync(prevPath);
+                } catch (_) {}
+                fs.renameSync(logFilePath, prevPath);
+            }
+        }
+        fs.appendFileSync(logFilePath, JSON.stringify(record) + '\n', 'utf8');
+        return true;
+    } catch (err) {
+        pushLog(`[Drama-3 Log Warning] Could not append audit log (${logFilePath}): ${err.message}`);
+        return false;
+    }
 }
 
 function recordWave2Perf(modelId, audioSec, wallSec, vqMeta) {
@@ -1493,14 +1744,47 @@ function forwardProxyRequest(req, res, targetUrl, headers, bodyBuffer = null, te
                 }
             });
             proxyRes.on('end', () => {
+                const wallSec = (Date.now() - reqStartMs) / 1000;
+                let audioSec = null;
                 if (hdrBuf.length >= 44 && hdrBuf.toString('ascii', 0, 4) === 'RIFF' && hdrBuf.toString('ascii', 8, 12) === 'WAVE') {
                     const byteRate = hdrBuf.readUInt32LE(28);
                     if (byteRate > 0) {
-                        const audioSec = Math.max(0, (totalBytes - 44) / byteRate);
-                        const wallSec = (Date.now() - reqStartMs) / 1000;
+                        audioSec = Math.max(0, (totalBytes - 44) / byteRate);
                         recordWave2Perf(telemetryCtx.modelId, audioSec, wallSec, telemetryCtx.vqMeta);
                     }
                 }
+                if (telemetryCtx.auditRecord) {
+                    telemetryCtx.auditRecord.response = {
+                        status: proxyRes.statusCode,
+                        bytes: totalBytes,
+                        audioSec: audioSec !== null ? Number(audioSec.toFixed(2)) : null,
+                        wallSec: Number(wallSec.toFixed(2))
+                    };
+                    pushLog(
+                        `[Drama-3 Response] HTTP ${proxyRes.statusCode} | ${totalBytes} bytes` +
+                        `${audioSec !== null ? ` (${audioSec.toFixed(1)}s audio)` : ''} in ${wallSec.toFixed(1)}s`
+                    );
+                }
+            });
+        } else if (telemetryCtx && telemetryCtx.auditRecord) {
+            let errBuf = Buffer.alloc(0);
+            proxyRes.on('data', chunk => {
+                if (errBuf.length < 2048) {
+                    const needed = 2048 - errBuf.length;
+                    errBuf = Buffer.concat([errBuf, chunk.subarray(0, needed)]);
+                }
+            });
+            proxyRes.on('end', () => {
+                const wallSec = (Date.now() - reqStartMs) / 1000;
+                const errSnippet = errBuf.toString('utf8').replace(/\s+/g, ' ').trim();
+                telemetryCtx.auditRecord.response = {
+                    status: proxyRes.statusCode,
+                    wallSec: Number(wallSec.toFixed(2)),
+                    errorSnippet: errSnippet
+                };
+                pushLog(
+                    `[Drama-3 Response] HTTP ${proxyRes.statusCode} ERROR in ${wallSec.toFixed(1)}s: ${errSnippet || '(empty)'}`
+                );
             });
         }
 
@@ -1571,19 +1855,36 @@ function handleProxyV1(req, res, pathname = '') {
 
         const isDramaModel = state.activeWave === 2 || /drama/i.test(String(parsed?.model || ''));
         let finalBuf = rawBuf;
+        let forwardedBodyObj = parsed;
         let vqMeta = null;
         if (isDramaModel) {
             try {
                 const resolved = await resolveReferencesWithVqCodes(parsed);
                 vqMeta = resolved.meta;
-                finalBuf = Buffer.from(JSON.stringify(resolved.bodyObj), 'utf8');
+                forwardedBodyObj = resolved.bodyObj || parsed;
+                finalBuf = Buffer.from(JSON.stringify(forwardedBodyObj), 'utf8');
                 delete headers['transfer-encoding'];
                 headers['content-length'] = String(finalBuf.length);
             } catch (vqErr) {
                 pushLog(`[VQ Cache Warning] Unexpected error resolving references (${vqErr.message}); forwarding raw payload.`);
             }
         }
-        const telemetryCtx = isDramaModel ? { modelId: parsed?.model || state.activeModel || 'drama-3', vqMeta } : null;
+        let auditRecord = null;
+        if (isDramaModel) {
+            auditRecord = buildDrama3AuditRecord({
+                targetUrl,
+                incomingBody: parsed,
+                forwardedBody: forwardedBodyObj,
+                vqMeta
+            });
+            state.drama3RequestRing.push(auditRecord);
+            if (state.drama3RequestRing.length > 50) state.drama3RequestRing.shift();
+            pushLog(formatDrama3AuditConsoleSummary(auditRecord));
+            appendDrama3AuditLog(auditRecord);
+        }
+        const telemetryCtx = isDramaModel
+            ? { modelId: parsed?.model || state.activeModel || 'drama-3', vqMeta, auditRecord }
+            : null;
         forwardProxyRequest(req, res, targetUrl, headers, finalBuf, telemetryCtx);
     });
     req.on('error', err => {
@@ -1613,6 +1914,15 @@ const server = http.createServer((req, res) => {
     // Route: GET /logs
     if (req.method === 'GET' && pathname === '/logs') {
         return sendJson(res, 200, { logs: state.logRing });
+    }
+
+    // Route: GET /logs/drama3
+    if (req.method === 'GET' && pathname === '/logs/drama3') {
+        return sendJson(res, 200, {
+            log_file: DRAMA3_LOG_FILE,
+            count: state.drama3RequestRing.length,
+            entries: state.drama3RequestRing
+        });
     }
 
     // Route: POST /voices/invalidate
@@ -1664,18 +1974,6 @@ const server = http.createServer((req, res) => {
 });
 
 let idleUnloadTimer = null;
-if (settings.idleUnloadSec > 0) {
-    idleUnloadTimer = setInterval(() => {
-        if (state.activeWave !== null && state.inFlightRequests === 0) {
-            const idleMs = Date.now() - state.lastActivityAt;
-            if (idleMs >= settings.idleUnloadSec * 1000) {
-                pushLog(`[Idle Unload] No audio activity for ${settings.idleUnloadSec}s; deactivating Wave ${state.activeWave}...`);
-                void deactivateWave().catch(() => {});
-            }
-        }
-    }, 15000);
-    if (typeof idleUnloadTimer.unref === 'function') idleUnloadTimer.unref();
-}
 
 // Clean shutdown handler
 function shutdown() {
@@ -1685,15 +1983,40 @@ function shutdown() {
     stopActiveDaemon().finally(() => process.exit(0));
 }
 
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+if (require.main === module) {
+    if (settings.idleUnloadSec > 0) {
+        idleUnloadTimer = setInterval(() => {
+            if (state.activeWave !== null && state.inFlightRequests === 0) {
+                const idleMs = Date.now() - state.lastActivityAt;
+                if (idleMs >= settings.idleUnloadSec * 1000) {
+                    pushLog(`[Idle Unload] No audio activity for ${settings.idleUnloadSec}s; deactivating Wave ${state.activeWave}...`);
+                    void deactivateWave().catch(() => {});
+                }
+            }
+        }, 15000);
+        if (typeof idleUnloadTimer.unref === 'function') idleUnloadTimer.unref();
+    }
 
-server.timeout = 0;
-server.keepAliveTimeout = 910000;
-server.requestTimeout = 910000;
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
 
-server.listen(settings.port, settings.bind, () => {
-    pushLog(`=== EllipsisProse Audio Studio Bridge running on http://${settings.bind}:${settings.port} ===`);
-    pushLog(`Configured daemon port: ${settings.daemonPort} | Swap mode: ${settings.swapMode}`);
-    pushLog(`Voice reference cache: ${CACHE_DIR}`);
-});
+    server.timeout = 0;
+    server.keepAliveTimeout = 910000;
+    server.requestTimeout = 910000;
+
+    server.listen(settings.port, settings.bind, () => {
+        pushLog(`=== EllipsisProse Audio Studio Bridge running on http://${settings.bind}:${settings.port} ===`);
+        pushLog(`Configured daemon port: ${settings.daemonPort} | Swap mode: ${settings.swapMode}`);
+        pushLog(`Voice reference cache: ${CACHE_DIR}`);
+        pushLog(`Drama-3 request log: ${DRAMA3_LOG_FILE}`);
+    });
+}
+
+module.exports = {
+    DRAMA3_LOG_FILE,
+    summarizeVqCodes,
+    buildDrama3AuditRecord,
+    formatDrama3AuditConsoleSummary,
+    appendDrama3AuditLog,
+    resolveReferencesWithVqCodes
+};

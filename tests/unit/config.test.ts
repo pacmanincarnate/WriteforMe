@@ -71,6 +71,16 @@ describe('Config Banks & Audio Settings Migration', () => {
         expect(migrated.dramaCpuExpertLayers).toBe(40);
         expect('mossModelId' in migrated).toBe(false);
         expect(DEFAULT_AUDIO_DRAMA_SETTINGS.pipelineTier).toBe(3);
+        expect(DEFAULT_AUDIO_DRAMA_SETTINGS.dramaAudioTemperature).toBe(1.0);
+        expect(DEFAULT_AUDIO_DRAMA_SETTINGS.dramaAudioTopP).toBe(0.9);
+        expect(DEFAULT_AUDIO_DRAMA_SETTINGS.dramaAudioTopK).toBe(30);
+        expect(migrated.dramaAudioTemperature).toBe(1.0);
+
+        const migratedLegacyDefault = migrateAudioDramaSettings({ dramaAudioTemperature: 0.9 });
+        expect(migratedLegacyDefault.dramaAudioTemperature).toBe(1.0);
+
+        const preservedCustomTemp = migrateAudioDramaSettings({ dramaAudioTemperature: 0.85 });
+        expect(preservedCustomTemp.dramaAudioTemperature).toBe(0.85);
     });
 
     it('infers narrative modes and formats structural modality hands', () => {

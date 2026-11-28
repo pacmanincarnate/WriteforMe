@@ -83,6 +83,7 @@ import {
     postStudioWorkerTask,
     stitchAudioBlobsWithPause
 } from './codec';
+import { logDrama3RequestDispatch } from './drama3RequestLog';
 import { logAudioStageComplete, logAudioStageError, logAudioStageStart } from './logger';
 import {
     buildDrama3Payload,
@@ -263,6 +264,7 @@ export async function runStudioRenderJob({
             }) as unknown as DramaTurnLike[];
             if (rawParsed && rawParsed.length > 0) {
                 sceneChunks = chunkAudioDramaTurns(rawParsed, {
+                    maxSpeakersPerChunk: 4,
                     sceneSeed
                 }) as ExtendedDramaSegment[];
             }
@@ -638,6 +640,22 @@ export async function runStudioRenderJob({
                             dramaPayload.speaker_slots.length > 1 &&
                             dramaPayload.references_meta.length === 0
                         ) {
+                            logAudioStageError(
+                                'drama3_request',
+                                `Drama-3 Skipped: Segment ${i + 1}/${allChunks.length} missing voice reference(s)`,
+                                new Error(
+                                    `Missing valid voice references for [${(
+                                        dramaPayload.missing_ref_speakers || []
+                                    ).join(', ')}]`
+                                ),
+                                {
+                                    chunkIndex: i + 1,
+                                    totalChunks: allChunks.length,
+                                    chunkId: ch.id || ch.chunkId || null,
+                                    speakerSlots: dramaPayload.speaker_slots,
+                                    missingRefSpeakers: dramaPayload.missing_ref_speakers
+                                }
+                            );
                             console.warn(
                                 `[Hybrid Studio] Segment ${i + 1}/${allChunks.length} has ${
                                     dramaPayload.speaker_slots.length
@@ -651,6 +669,18 @@ export async function runStudioRenderJob({
                         }
                         const wireBody = toDrama3HttpBody(dramaPayload);
                         const segDispatchTime = performance.now();
+                        logDrama3RequestDispatch({
+                            source: 'studio_render',
+                            route: 'bridge',
+                            endpoint: `${bridgeUrl}/v1/audio/speech`,
+                            chunk: ch,
+                            chunkIndex: i,
+                            totalChunks: allChunks.length,
+                            attempt: attempt + 1,
+                            dramaPayload,
+                            wireBody: wireBody as Record<string, unknown>,
+                            anchorsMap
+                        });
                         console.log(
                             `[Hybrid Studio] Dispatching Segment ${i + 1}/${allChunks.length} (~${
                                 ch.estimatedDurationSec || 60
@@ -689,6 +719,18 @@ export async function runStudioRenderJob({
                                         `[Hybrid Studio] Bridge unreachable at ${bridgeUrl}. Retrying directly on Audio.cpp daemon (${audioCppUrl})...`
                                     );
                                 }
+                                logDrama3RequestDispatch({
+                                    source: 'studio_render',
+                                    route: 'direct_audiocpp',
+                                    endpoint: `${audioCppUrl}/v1/audio/speech`,
+                                    chunk: ch,
+                                    chunkIndex: i,
+                                    totalChunks: allChunks.length,
+                                    attempt: attempt + 1,
+                                    dramaPayload,
+                                    wireBody: wireBody as Record<string, unknown>,
+                                    anchorsMap
+                                });
                                 res = await fetchWithTimeout(
                                     audioCppUrl + '/v1/audio/speech',
                                     postInit,
