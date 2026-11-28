@@ -184,8 +184,8 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                 <div
                     className="sidebar-nav flex-1 overflow-y-auto p-3 space-y-4"
                     onClick={(e) => {
-                        // On a phone the sidebar is a drawer over the page: picking a place closes it.
-                        if ((e.target as HTMLElement).closest('.nav-btn')) setIsSidebarOpen(false);
+                        // On a phone the sidebar is a drawer over the page: picking a place or toggling an autopilot closes it.
+                        if ((e.target as HTMLElement).closest('.nav-btn, .nav-action-btn')) setIsSidebarOpen(false);
                     }}
                 >
                     {/* SPACE 1: STUDIO WORKSPACE */}
@@ -239,78 +239,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                             </span>
                         </button>
                         <button
-                            type="button"
-                            onClick={() => handleAutopilot({ fromSetup: view === 'setup' })}
-                            className={`nav-btn ${continuousAutopilot ? 'active text-gold-ink bg-gold-tint font-bold' : ''}`}
-                            title={
-                                continuousAutopilot
-                                    ? 'Stop Autonomous Novel Generation'
-                                    : 'Start Continuous Novel Autopilot'
-                            }
-                        >
-                            <div className="relative flex items-center">
-                                <Play
-                                    size={15}
-                                    className={continuousAutopilot ? 'text-gold-ink fill-current animate-pulse' : ''}
-                                />
-                                {continuousAutopilot && (
-                                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-ping" />
-                                )}
-                            </div>
-                            <span className="nav-label flex items-center justify-between flex-1">
-                                <span>Autopilot</span>
-                                {continuousAutopilot && (
-                                    <span className="text-[10px] font-mono font-bold bg-gold-tint text-gold-ink px-1.5 py-0.5 rounded-full border border-gold-edge">
-                                        ON
-                                    </span>
-                                )}
-                            </span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleToggleAudioAutopilot}
-                            className={`nav-btn ${
-                                isAudioAutopilotRunning ? 'active text-gold-ink bg-gold-tint font-bold' : ''
-                            }`}
-                            title={
-                                isAudioAutopilotRunning
-                                    ? 'Stop Audio Autopilot'
-                                    : 'Generate scene audio autonomously for offline listening & export'
-                            }
-                        >
-                            <div className="relative flex items-center">
-                                <Headphones
-                                    size={15}
-                                    className={isAudioAutopilotRunning ? 'text-gold-ink animate-pulse' : ''}
-                                />
-                                {isAudioAutopilotRunning && (
-                                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-ping" />
-                                )}
-                            </div>
-                            <span className="nav-label flex items-center justify-between flex-1 gap-1.5">
-                                <span className="truncate">Audio Autopilot</span>
-                                {isAudioAutopilotRunning ? (
-                                    <span className="text-[10px] font-mono font-bold bg-gold-tint text-gold-ink px-1.5 py-0.5 rounded-full border border-gold-edge shrink-0">
-                                        ON · {storyAudioSummary.readyCount}/{storyAudioSummary.totalDrafted}
-                                    </span>
-                                ) : isAudioAutopilotQueued ? (
-                                    <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-700 px-1.5 py-0.5 rounded-full border border-amber-500/30 shrink-0">
-                                        QUEUED
-                                    </span>
-                                ) : storyAudioSummary.totalDrafted > 0 ? (
-                                    <span
-                                        className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-full border shrink-0 ${
-                                            storyAudioSummary.readyCount === storyAudioSummary.totalDrafted
-                                                ? 'bg-sage-tint text-sage-800 border-sage-edge'
-                                                : 'bg-wash text-ink-500 border-edge'
-                                        }`}
-                                    >
-                                        {storyAudioSummary.readyCount}/{storyAudioSummary.totalDrafted}
-                                    </span>
-                                ) : null}
-                            </span>
-                        </button>
-                        <button
                             onClick={() => {
                                 if (selectedSequence !== null && selectedScene !== null) {
                                     setView('writer');
@@ -340,6 +268,88 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                             title="Reading & Listening Room"
                         >
                             <BookOpen size={15} /> <span className="nav-label">Reading Room</span>
+                        </button>
+                    </div>
+
+                    {/* AUTONOMOUS ACTION CONTROLS */}
+                    <div className="pt-2 border-t border-edge/70 space-y-1.5">
+                        <button
+                            type="button"
+                            onClick={() => handleAutopilot({ fromSetup: view === 'setup' })}
+                            className={`nav-action-btn ${continuousAutopilot ? 'active' : ''}`}
+                            title={
+                                continuousAutopilot
+                                    ? 'Stop Autonomous Novel Generation'
+                                    : 'Start Continuous Novel Autopilot'
+                            }
+                        >
+                            <div className="relative flex items-center shrink-0">
+                                <Play
+                                    size={15}
+                                    className={continuousAutopilot ? 'text-gold-ink fill-current animate-pulse' : 'text-gold-ink'}
+                                />
+                                {continuousAutopilot && (
+                                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-ping" />
+                                )}
+                            </div>
+                            <span className="nav-label flex items-center justify-between flex-1">
+                                <span>Autopilot</span>
+                                <span
+                                    className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${
+                                        continuousAutopilot
+                                            ? 'bg-gold-tint text-gold-ink border-gold-edge'
+                                            : 'bg-wash text-ink-500 border-edge'
+                                    }`}
+                                >
+                                    {continuousAutopilot ? 'ON' : 'OFF'}
+                                </span>
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleToggleAudioAutopilot}
+                            className={`nav-action-btn ${isAudioAutopilotRunning ? 'active' : ''}`}
+                            title={
+                                isAudioAutopilotRunning
+                                    ? 'Stop Audio Autopilot'
+                                    : 'Generate scene audio autonomously for offline listening & export'
+                            }
+                        >
+                            <div className="relative flex items-center shrink-0">
+                                <Headphones
+                                    size={15}
+                                    className={isAudioAutopilotRunning ? 'text-gold-ink animate-pulse' : 'text-gold-ink'}
+                                />
+                                {isAudioAutopilotRunning && (
+                                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-ping" />
+                                )}
+                            </div>
+                            <span className="nav-label flex items-center justify-between flex-1 gap-1.5">
+                                <span className="truncate">Audio Autopilot</span>
+                                {isAudioAutopilotRunning ? (
+                                    <span className="text-[10px] font-mono font-bold bg-gold-tint text-gold-ink px-1.5 py-0.5 rounded-full border border-gold-edge shrink-0">
+                                        ON · {storyAudioSummary.readyCount}/{storyAudioSummary.totalDrafted}
+                                    </span>
+                                ) : isAudioAutopilotQueued ? (
+                                    <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-700 px-1.5 py-0.5 rounded-full border border-amber-500/30 shrink-0">
+                                        QUEUED
+                                    </span>
+                                ) : storyAudioSummary.totalDrafted > 0 ? (
+                                    <span
+                                        className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-full border shrink-0 ${
+                                            storyAudioSummary.readyCount === storyAudioSummary.totalDrafted
+                                                ? 'bg-sage-tint text-sage-800 border-sage-edge'
+                                                : 'bg-wash text-ink-500 border-edge'
+                                        }`}
+                                    >
+                                        {storyAudioSummary.readyCount}/{storyAudioSummary.totalDrafted}
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] font-mono font-bold bg-wash text-ink-500 px-1.5 py-0.5 rounded-full border border-edge shrink-0">
+                                        OFF
+                                    </span>
+                                )}
+                            </span>
                         </button>
                     </div>
 
