@@ -797,6 +797,26 @@ export const SettingsPipelineTab: React.FC<SettingsPipelineTabProps> = ({
                         </div>
                     </label>
 
+                    <label className="flex items-start gap-2.5 p-3 rounded-xl bg-wash border border-edge cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={slopConfig?.enableNameBank !== false}
+                            onChange={(e) =>
+                                setSlopConfig((prev) => ({
+                                    ...(prev || DEFAULT_SLOP_CONFIG),
+                                    enableNameBank: e.target.checked
+                                }))
+                            }
+                            className="mt-0.5 accent-[#9A7432]"
+                        />
+                        <div>
+                            <div className="text-xs font-bold text-ink-900">Real-Name Bank</div>
+                            <div className="text-[11px] text-ink-500 mt-0.5">
+                                Offer real names for the story&apos;s time and place, and flag made-up ones.
+                            </div>
+                        </div>
+                    </label>
+
                     <div className="p-3 rounded-xl bg-wash border border-edge space-y-2">
                         <div className="flex items-center justify-between gap-2">
                             <span className="text-xs font-bold text-ink-900">Em-Dash Policy</span>

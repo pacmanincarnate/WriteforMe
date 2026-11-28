@@ -55,6 +55,7 @@ import {
     generateCharacterProfile as orchestrateGenerateCharacterProfile,
     runAgentWithEscalation as orchestrateRunAgentWithEscalation,
     initStory as orchestrateInitStory,
+    startNextBook as orchestrateStartNextBook,
     generateStoryArc as orchestrateGenerateStoryArc,
     generateActsAndSequences as orchestrateGenerateActsAndSequences,
     generateSequences as orchestrateGenerateSequences,
@@ -83,6 +84,7 @@ import {
     InterventionModal,
     CritiqueModal,
     LogDetailModal,
+    BackToTop,
     ToastNotification,
     StudioSidebar,
     StudioHeader,
@@ -319,6 +321,8 @@ import {
                 openRouterMaxTokens, setOpenRouterMaxTokens,
                 nanoGptKey, setNanoGptKey,
                 nanoGptModel, setNanoGptModel,
+                anthropicKey, setAnthropicKey,
+                anthropicModel, setAnthropicModel,
                 koboldUrl, setKoboldUrl,
                 koboldModel, setKoboldModel,
                 codexUrl, setCodexUrl,
@@ -585,6 +589,10 @@ import {
                 inputWritingMode, setInputWritingMode,
                 inputBookType, setInputBookType,
                 inputCustomWords, setInputCustomWords,
+                inputSeriesOpener, setInputSeriesOpener,
+                inputSeriesTitle, setInputSeriesTitle,
+                inputSerial, setInputSerial,
+                inputSerialRotation, setInputSerialRotation,
                 resetSetupDraftFields
             } = useSetupDraft();
             // World-building document import: Setup drafts and post-generation lore (Phase 6E-3).
@@ -1105,6 +1113,10 @@ import {
                     inputWritingMode,
                     inputBookType,
                     inputCustomWords,
+                    inputSeriesOpener,
+                    inputSeriesTitle,
+                    inputSerial,
+                    inputSerialRotation,
                     importedLoreText
                 }),
                 clearSetupDraft,
@@ -1137,6 +1149,7 @@ import {
                     apiKey,
                     openRouterKey,
                     nanoGptKey,
+                    anthropicKey,
                     koboldUrl,
                     codexUrl,
                     claudeUrl,
@@ -1308,6 +1321,8 @@ import {
 
 
             const initStory = (isAutopilotOrEvent: CtxArgs<typeof orchestrateInitStory>[0] = false, options: CtxArgs<typeof orchestrateInitStory>[1] = {}) => orchestrateInitStory(getPipelineCtx(), isAutopilotOrEvent, options);
+            // Book series: creates the next book from the active story and builds its bible.
+            const startNextBook = (input: CtxArgs<typeof orchestrateStartNextBook>[0]) => orchestrateStartNextBook(getPipelineCtx(), input);
 
             // ============================================================================
             // TIER 1.1: STORY ARC PLANNER & TIER 1.2: STORY ARC REVIEWER
@@ -1683,12 +1698,14 @@ import {
                     geminiModel,
                     openRouterModel,
                     nanoGptModel,
+                    anthropicModel,
                     koboldModel,
                     codexModel,
                     claudeModel,
                     apiKey,
                     openRouterKey,
                     nanoGptKey,
+                    anthropicKey,
                     koboldUrl,
                     codexUrl,
                     claudeUrl,
@@ -1713,12 +1730,14 @@ import {
                     setGeminiModel,
                     setOpenRouterModel,
                     setNanoGptModel,
+                    setAnthropicModel,
                     setKoboldModel,
                     setCodexModel,
                     setClaudeModel,
                     setApiKey,
                     setOpenRouterKey,
                     setNanoGptKey,
+                    setAnthropicKey,
                     setKoboldUrl,
                     setCodexUrl,
                     setClaudeUrl,
@@ -1832,6 +1851,7 @@ import {
                         />
 
                         <main className={`flex-1 overflow-y-auto overflow-x-hidden ${view === 'reader' ? 'p-0 overflow-hidden' : 'p-4 md:p-8'}`}>
+                            <BackToTop />
                             {view === 'reader' && (
                                 <ReaderView
                                     story={story}
@@ -1953,6 +1973,14 @@ import {
                                     setInputBookType={setInputBookType}
                                     inputCustomWords={inputCustomWords}
                                     setInputCustomWords={setInputCustomWords}
+                                    inputSeriesOpener={inputSeriesOpener}
+                                    setInputSeriesOpener={setInputSeriesOpener}
+                                    inputSeriesTitle={inputSeriesTitle}
+                                    setInputSeriesTitle={setInputSeriesTitle}
+                                    inputSerial={inputSerial}
+                                    setInputSerial={setInputSerial}
+                                    inputSerialRotation={inputSerialRotation}
+                                    setInputSerialRotation={setInputSerialRotation}
                                     inputWritingMode={inputWritingMode}
                                     setInputWritingMode={handOff(setInputWritingMode)}
                                     archetypeOptions={archetypeOptions}
@@ -2013,6 +2041,7 @@ import {
                                     initStory={handOff(initStory)}
                                     generateStoryArc={handOff(generateStoryArc)}
                                     rebuildStorySoFar={rebuildStorySoFar}
+                                    startNextBook={startNextBook}
                                     epistemicViewTab={epistemicViewTab}
                                     setEpistemicViewTab={setEpistemicViewTab}
                                     epistemicScrubberCoord={epistemicScrubberCoord}
@@ -2440,6 +2469,10 @@ import {
                                 setNanoGptKey={setNanoGptKey}
                                 nanoGptModel={nanoGptModel}
                                 setNanoGptModel={setNanoGptModel}
+                                anthropicKey={anthropicKey}
+                                setAnthropicKey={setAnthropicKey}
+                                anthropicModel={anthropicModel}
+                                setAnthropicModel={setAnthropicModel}
                                 koboldUrl={koboldUrl}
                                 setKoboldUrl={setKoboldUrl}
                                 koboldModel={koboldModel}

@@ -4,7 +4,7 @@
 ## Getting Started
 1. To get started, navigate to https://pacmanincarnate.github.io/WriteforMe/
 This is a static page hosted on GitHub; all your data is stored entirely in your browser's cache.
-2. Navigate to settings in the left panel to set your model backends. The app supports Gemini, OpenRouter, NanoGPT, or Codex APIs, your Claude Code login (see `ClaudeCodeUse.md`), or a local KoboldCPP instance for text generation.
+2. Navigate to settings in the left panel to set your model backends. The app supports Gemini, OpenRouter, NanoGPT, Anthropic (Claude models with your own API key), or Codex APIs, your Claude Code login (see `ClaudeCodeUse.md`), or a local KoboldCPP instance for text generation.
 (Setting up an account in OpenRouter is free with several models, and adding money lets you use a wider selection.) Using a local model with KoboldCPP is completely free, as long as you have a dedicated graphics card.
 3. You can also set up image generation using Gemini, OpenRouter, or a local ComfyUI instance using Krea 2.
 4. Once your model backend is set up, navigate to New Story Setup. Here you can provide your story prompt, giving as much or as little detail as you like.

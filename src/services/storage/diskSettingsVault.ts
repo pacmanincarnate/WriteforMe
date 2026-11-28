@@ -19,6 +19,7 @@ export const DISK_SETTINGS_API_KEY_NAMES = new Set<string>([
     STORAGE_KEYS.geminiApiKey,
     STORAGE_KEYS.openRouterKey,
     STORAGE_KEYS.nanoGptKey,
+    STORAGE_KEYS.anthropicKey,
     STORAGE_KEYS.imageApiKey
 ]);
 

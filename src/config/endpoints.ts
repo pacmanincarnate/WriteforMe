@@ -47,6 +47,9 @@ export const CLOUD_API_URLS = {
     nanoGptSearch: 'https://nano-gpt.com/api/explore/search',
     nanoGptEmbeddings: 'https://nano-gpt.com/api/v1/embeddings',
     nanoGptHomePage: 'https://nano-gpt.com',
+    anthropicBase: 'https://api.anthropic.com',
+    anthropicMessages: 'https://api.anthropic.com/v1/messages',
+    anthropicKeysPage: 'https://console.anthropic.com/settings/keys',
     githubApiRepos: 'https://api.github.com/repos'
 } as const;
 

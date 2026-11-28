@@ -42,6 +42,8 @@ export interface SlopConfig {
     schemaVersion: number;
     enableSlopAudit: boolean;
     enableUpstreamNameAudit: boolean;
+    /** Offer real names from the name banks and flag names that read as made up. Missing means on. */
+    enableNameBank?: boolean;
     emDashMode: 'density' | 'strict' | 'off';
     emDashMaxPer1k: number;
     categorySeverities: Record<string, SlopSeverity>;

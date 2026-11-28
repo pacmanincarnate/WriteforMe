@@ -21,6 +21,7 @@ import {
     isPreCatalystSequenceOneScene,
     type ContinuityStoryState
 } from '@/domain/continuity';
+import { formatLongformSceneDirectives } from '@/domain/serial';
 import {
     buildGenreToneStyleBlocks,
     buildRelationshipFrictionBlock,
@@ -29,7 +30,7 @@ import {
     parseActNumber,
     parseValueShiftInput
 } from '@/domain/story';
-import type { Act, CastMember, Relationship, SceneBlueprint, Sequence } from '@/types';
+import type { Act, CastMember, Relationship, SceneBlueprint, Sequence, Story } from '@/types';
 import { isSerializationPlaceholder, safeEscapeRegex } from '@/utils';
 
 export interface ProseContextCastMember extends Partial<CastMember>, Record<string, unknown> {
@@ -503,6 +504,8 @@ ${canonicalInterviews}
             : '';
     })();
 
+    const serialSceneCount = Array.isArray(storyToUse.scenes?.[`${seq}`]) ? storyToUse.scenes[`${seq}`].length : s + 1;
+
     const bridgeMandateBlock = (() => {
         if (!scene?.is_bridge_scene) return '';
         const seqScenesList =
@@ -565,7 +568,7 @@ ${staticWorldPrimerBlock}<story_so_far>
 ${storyToUse.story_so_far || 'The story is just beginning (no prose has been written yet).'}
 </story_so_far>
 
-${canonicalInterviewsBlock}<active_characters_profiles>
+${formatLongformSceneDirectives(storyToUse as unknown as Partial<Story>, currentSeqNum, 'prose', storyToUse.sequences?.length || 8, { index: s, count: serialSceneCount })}${canonicalInterviewsBlock}<active_characters_profiles>
 [EMOTIONAL TEMPERATURE: Write these characters as human beings who feel deeply. Their traits are not clinical diagnoses, but the messy result of lived experiences. Allow for genuine emotional warmth and irrational human complexity.]
 ${sanitizedActiveCast
     .filter(Boolean)

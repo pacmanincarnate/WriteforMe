@@ -212,6 +212,21 @@ describe('pipeline story structure orchestrators (Phase 6B)', () => {
         expect(storyStore.saveStory).toHaveBeenCalled();
     });
 
+    it('createStoryEntityFromSetup makes a serial a series with a serial layer, and leaves other stories without one', async () => {
+        const plain = makeStructureTestContext({ id: 'story_default' }, vi.fn(async () => ''));
+        const solo = await createStoryEntityFromSetup(plain.ctx);
+        expect(solo?.story.series).toBeUndefined();
+        expect(solo?.story.serial).toBeUndefined();
+
+        const { ctx } = makeStructureTestContext({ id: 'story_default' }, vi.fn(async () => ''));
+        const draft = ctx.getSetupDraft?.() || {};
+        ctx.getSetupDraft = () => ({ ...draft, inputSerial: true, inputSerialRotation: 'ensemble' });
+        const res = await createStoryEntityFromSetup(ctx);
+        expect(res?.story.series).toMatchObject({ book_number: 1 });
+        expect(res?.story.open_threads).toEqual([]);
+        expect(res?.story.serial).toMatchObject({ arc_first_episode: 1, policy: { cast: { rotation: 'ensemble' }, episodesPerSequence: 2 } });
+    });
+
     it('generateStoryArc updates active story arc fields when review passes', async () => {
         const callAI = vi.fn(async (_p, _s, _j, logName) => {
             if (String(logName).includes('Reviewer')) {

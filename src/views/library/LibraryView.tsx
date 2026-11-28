@@ -20,7 +20,9 @@ import {
     Trash2,
     X
 } from '@/components';
+import { seriesBadgeLabel } from '@/domain/series';
 import { calculateStoryStats, getCoverStyleIndex } from '@/domain/story';
+import type { Story } from '@/types';
 
 export interface LibraryStoryRecord {
     id: string;
@@ -211,6 +213,13 @@ export function LibraryView({
                         const isActive = item.id === activeStoryId;
                         const stats = item.stats;
                         const coverSrc = libraryCovers[item.id];
+                        const seriesBadge = seriesBadgeLabel(
+                            s as Partial<Story>,
+                            libraryStories.map((other) => other.data as Partial<Story>)
+                        );
+                        const seriesTitle = seriesBadge
+                            ? String((s.series as { title?: string } | undefined)?.title || '')
+                            : '';
 
                         // Sequence-based completion: each sequence contributes equally,
                         // with partial credit based on completed scenes / total scenes.
@@ -361,6 +370,15 @@ export function LibraryView({
                                             {s.title || 'Untitled'}
                                         </h2>
                                     </div>
+                                    {seriesBadge && (
+                                        <div
+                                            className="text-xs font-mono text-ink-500 -mt-1 mb-1 truncate"
+                                            title={`${seriesBadge} of the series ${seriesTitle}`}
+                                        >
+                                            <span className="font-bold text-gold-ink">{seriesBadge}</span>
+                                            {seriesTitle ? ` · ${seriesTitle}` : ''}
+                                        </div>
+                                    )}
 
                                     {/* Concept preview */}
                                     <p

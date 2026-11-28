@@ -521,6 +521,7 @@ export const DEFAULT_SLOP_CONFIG: SlopConfig = {
     schemaVersion: 1,
     enableSlopAudit: true,
     enableUpstreamNameAudit: true,
+    enableNameBank: true,
     emDashMode: "density",
     emDashMaxPer1k: 3,
     categorySeverities: {

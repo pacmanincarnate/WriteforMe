@@ -38,6 +38,8 @@ import {
     parseActNumber,
     parseValueShiftInput
 } from '@/domain/story';
+import { applySerialSequencePlan, formatLongformSceneDirectives, planSerialSequence } from '@/domain/serial';
+import { isHiddenThisBook } from '@/domain/series';
 import { PROMPTS } from '@/prompts';
 import { storyStore } from '@/services/storage';
 import type { CastMember, LoreItem, SceneBlueprint, Story } from '@/types';
@@ -636,13 +638,24 @@ export async function generateScenes(
         const seqSecretLines = Array.isArray(storyToUse.secret_vault)
             ? asArray<Record<string, unknown>>(storyToUse.secret_vault).map(
                   (s) =>
-                      `- Secret [prop_${asString(s.id)}_truth]: "${asString(s.title)}" (Status: ${asString(s.status) || 'dormant'}) -> Target Reveal: Sequence ${asRecord(s.reveal_anchor).sequence_number || s.reveal_target_sequence || 7}`
+                      `- Secret [prop_${asString(s.id)}_truth]: "${asString(s.title)}" (Status: ${asString(s.status) || 'dormant'}) -> ${
+                          isHiddenThisBook(s as Parameters<typeof isHiddenThisBook>[0], storyToUse)
+                              ? `HELD for Book ${asString(s.reveal_book)}: never reveal or confirm in this book`
+                              : `Target Reveal: Sequence ${asRecord(s.reveal_anchor).sequence_number || s.reveal_target_sequence || 7}`
+                      }`
               )
             : [];
         const combinedEpistemicLines = [...seqSecretLines, ...epPropLines].join('\n');
         const epistemicPromptBlock = combinedEpistemicLines
             ? `<active_epistemic_propositions>\n${combinedEpistemicLines}\n</active_epistemic_propositions>\n\n`
             : '';
+
+        // A serial plans this sequence's episodes once, so every attempt sees the same plan.
+        const serialPlan = planSerialSequence(
+            (ctx.getStory() || storyToUse) as Partial<Story>,
+            currentSeqNum,
+            asArray((ctx.getStory() || storyToUse).sequences).length || 8
+        );
 
         let newScenes: Array<SceneBlueprint & Record<string, unknown>> = [];
         let attempts = 0;
@@ -675,7 +688,7 @@ ${availableStylesXml}
 
 ${sceneLoreBlocks ? `${sceneLoreBlocks}\n\n` : ''}${castRosterBlock}
 
-${epistemicPromptBlock}
+${epistemicPromptBlock}${formatLongformSceneDirectives(liveStoryForScenes, liveSeqNum, 'planner', liveSeqs.length || 8, undefined, serialPlan?.plans)}
 
 <story_bible_context>
 Synthesized Authorial Persona: ${asString(liveStoryForScenes.synthesized_authorial_persona)}
@@ -1057,6 +1070,8 @@ If ANY spatial contradiction, redundant first-meeting re-introduction, or next-s
             });
             return {
                 ...prev,
+                // The episode plan the planner just used, kept so prose follows the same one.
+                ...applySerialSequencePlan(prev as Partial<Story>, serialPlan),
                 length_control: updatedLengthControl,
                 scenes: nextScenes,
                 beats: cleanedBeats,

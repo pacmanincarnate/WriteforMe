@@ -127,4 +127,38 @@ describe('useSetupDraft', () => {
         expect(localStorage.getItem(KEYS.bookType)).toBeNull();
         expect(localStorage.getItem(KEYS.customWords)).toBeNull();
     });
+
+    it('keeps the series option off by default, stores it, and clears it on reset', () => {
+        const h = mount();
+        expect(h()).toMatchObject({ inputSeriesOpener: false, inputSeriesTitle: '' });
+        expect(localStorage.getItem(KEYS.seriesOpener)).toBeNull();
+        act(() => {
+            h().setInputSeriesOpener(true);
+            h().setInputSeriesTitle('The Harbour Books');
+        });
+        expect(localStorage.getItem(KEYS.seriesOpener)).toBe('1');
+        expect(localStorage.getItem(KEYS.seriesTitle)).toBe('The Harbour Books');
+        expect(mount()()).toMatchObject({ inputSeriesOpener: true, inputSeriesTitle: 'The Harbour Books' });
+        act(() => h().resetSetupDraftFields());
+        expect(h()).toMatchObject({ inputSeriesOpener: false, inputSeriesTitle: '' });
+        expect(localStorage.getItem(KEYS.seriesOpener)).toBeNull();
+        expect(localStorage.getItem(KEYS.seriesTitle)).toBeNull();
+    });
+
+    it('keeps the serial option off by default, stores it with its rotation, and clears it on reset', () => {
+        const h = mount();
+        expect(h()).toMatchObject({ inputSerial: false, inputSerialRotation: 'anchored' });
+        expect(localStorage.getItem(KEYS.serial)).toBeNull();
+        act(() => {
+            h().setInputSerial(true);
+            h().setInputSerialRotation('ensemble');
+        });
+        expect(localStorage.getItem(KEYS.serial)).toBe('1');
+        expect(localStorage.getItem(KEYS.serialRotation)).toBe('ensemble');
+        expect(mount()()).toMatchObject({ inputSerial: true, inputSerialRotation: 'ensemble' });
+        act(() => h().resetSetupDraftFields());
+        expect(h()).toMatchObject({ inputSerial: false, inputSerialRotation: 'anchored' });
+        expect(localStorage.getItem(KEYS.serial)).toBeNull();
+        expect(localStorage.getItem(KEYS.serialRotation)).toBeNull();
+    });
 });

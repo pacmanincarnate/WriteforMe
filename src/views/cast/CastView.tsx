@@ -5,6 +5,7 @@
  */
 
 import type React from 'react';
+import { VIEW_LABELS } from '@/config';
 import {
     CharacterCard,
     EditorialSubNav,
@@ -231,12 +232,8 @@ export function CastView({
             <div className="bg-surface p-6 sm:p-7 rounded-2xl border border-edge shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <div>
                     <h2 className="text-2xl font-bold font-serif text-ink-900 flex items-center gap-2.5 tracking-tight">
-                        <Users className="text-gold-ink" size={22} /> Cast &amp; Character Web
+                        <Users className="text-gold-ink" size={22} /> {VIEW_LABELS.cast}
                     </h2>
-                    <p className="text-xs text-ink-500 mt-1">
-                        Dramatis personæ mapped to the Four-Corner Dilemma Web with Safety Habits,
-                        contrasting ways of living, and distinct vocal traits.
-                    </p>
                 </div>
                 <button
                     onClick={handleIntroduceCharacter}

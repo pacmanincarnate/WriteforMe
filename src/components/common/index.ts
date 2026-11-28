@@ -1,3 +1,4 @@
+export * from './BackToTop';
 export * from './BufferedTextarea';
 export * from './EditButton';
 export * from './EditorialSubNav';

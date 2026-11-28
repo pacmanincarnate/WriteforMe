@@ -1,6 +1,13 @@
 import { DEFAULT_SERVICE_URLS } from '@/config/endpoints';
 
-export type ProviderId = 'gemini' | 'openrouter' | 'nanogpt' | 'koboldcpp' | 'codex' | 'claude';
+export type ProviderId =
+    | 'gemini'
+    | 'openrouter'
+    | 'nanogpt'
+    | 'anthropic'
+    | 'koboldcpp'
+    | 'codex'
+    | 'claude';
 
 /**
  * Providers served by a local CLI bridge (codex-bridge.js, claude-bridge.js). Both speak the same

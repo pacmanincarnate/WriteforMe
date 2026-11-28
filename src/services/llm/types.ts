@@ -76,6 +76,11 @@ export interface LlmChatMessage {
     reasoning_content?: string;
     thought?: string;
     thinking?: string;
+    /**
+     * The Anthropic API's own content blocks for an assistant turn. Kept so a tool loop can
+     * send the turn back as the API produced it (thinking blocks included).
+     */
+    anthropicContent?: unknown[];
 }
 
 export interface GeminiFunctionCall {

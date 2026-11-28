@@ -27,12 +27,19 @@ import {
     type WorldUpdatesPayload
 } from '@/domain/continuity';
 import { computeChangeRatio, SURGICAL_MAX_CHANGE_RATIO } from '@/domain/editing';
+import { createStoryNameRoll } from './nameBank';
 import {
     applyCascadingNameReplacements as domainApplyCascadingNameReplacements,
     auditEntityNamesAndPlaces as domainAuditEntityNamesAndPlaces,
     FALLBACK_GROUNDED_NAMES,
     FALLBACK_GROUNDED_PLACES
 } from '@/domain/slop';
+import {
+    applyLongformSceneReport,
+    formatLongformContinuityAddendum,
+    type SerialSceneReport
+} from '@/domain/serial';
+import { describeViolation, type SeriesSceneReport } from '@/domain/series';
 import {
     actForSequence,
     buildGenreToneBlocks,
@@ -47,7 +54,8 @@ import type {
     CastMember,
     EntityNameViolation,
     LoreItem,
-    SceneBlueprint
+    SceneBlueprint,
+    Story
 } from '@/types';
 import { decodeXmlEntities, extractTag } from '@/utils';
 import {
@@ -470,6 +478,20 @@ export async function repairBannedEntitiesWithAI(
     );
     let pending: EntityNameViolation[] = violations.slice();
     const auditFn = getAuditFn(ctx);
+    // Real names for this story's time and place: offered to the model, and used if it fails twice.
+    const nameRoll = violations.some((v) => v.entityType !== 'place')
+        ? await createStoryNameRoll(ctx, {
+              story: ctxStory,
+              setting: `${asString(ctxStory?.concept)}\n${String(storyContext || '')}`,
+              avoid: existingNames
+          }).catch(() => null)
+        : null;
+    const nameBankHint = nameRoll
+        ? `<name_bank>\nReal names people of this time and place carry. Prefer these for characters: ${Array.from(
+              { length: 8 },
+              (_, i) => nameRoll.draw(`repair-${i}`, { pronouns: i % 2 === 0 ? 'she' : 'he' }).full
+          ).join(', ')}\n</name_bank>\n`
+        : '';
     const slopConfig = ctx.getSlopConfig();
 
     const parseReplaceTags = (xmlText: string): Record<string, string> => {
@@ -492,7 +514,7 @@ export async function repairBannedEntitiesWithAI(
 
     for (let attempt = 1; attempt <= 2 && pending.length > 0; attempt++) {
         try {
-            const prompt = `<story_context>\n${String(storyContext || '').slice(0, 1400)}\n</story_context>\n<existing_cast_names>\n${Array.from(usedNamesLower).join(', ') || '(none)'}\n</existing_cast_names>\n<flagged_entities>\n${pending.map((v) => `- [${v.entityType || 'character'} | ${v.severity || 'hard'}] "${v.name}" -> ${v.reason}`).join('\n')}\n</flagged_entities>\n${attempt > 1 ? '<retry_note>Previous replacements were still flagged or collided with existing names. Provide fresh, culturally varied, everyday grounded names.</retry_note>\n' : ''}Output ONLY <replacements><replace old="..." new="..." /></replacements>.`;
+            const prompt = `<story_context>\n${String(storyContext || '').slice(0, 1400)}\n</story_context>\n<existing_cast_names>\n${Array.from(usedNamesLower).join(', ') || '(none)'}\n</existing_cast_names>\n<flagged_entities>\n${pending.map((v) => `- [${v.entityType || 'character'} | ${v.severity || 'hard'}] "${v.name}" -> ${v.reason}`).join('\n')}\n</flagged_entities>\n${nameBankHint}${attempt > 1 ? '<retry_note>Previous replacements were still flagged or collided with existing names. Provide fresh, culturally varied, everyday grounded names.</retry_note>\n' : ''}Output ONLY <replacements><replace old="..." new="..." /></replacements>.`;
             const raw = await ctx.callAI(
                 prompt,
                 PROMPTS.entityNameRepair,
@@ -550,7 +572,13 @@ export async function repairBannedEntitiesWithAI(
                 : ['Alder Street', 'St. Jude Annex', 'Harborview Foundry', 'Eastgate Station'];
         pending.forEach((v) => {
             const pool = v.entityType === 'place' ? fallbackPlaces : fallbackNames;
-            let pick = pool.find((item) => !usedNamesLower.has(item.toLowerCase()));
+            let pick: string | undefined;
+            if (nameRoll && v.entityType !== 'place') {
+                // Drawn from the bank for the story's own time and place, the same shape as the old name.
+                const drawn = nameRoll.replacementFor(v.name, { surname: /^surnames/.test(v.categoryId) });
+                if (drawn && !usedNamesLower.has(drawn.toLowerCase())) pick = drawn;
+            }
+            if (!pick) pick = pool.find((item) => !usedNamesLower.has(item.toLowerCase()));
             if (!pick) {
                 pick =
                     v.entityType === 'place'
@@ -685,7 +713,7 @@ Output Schema:
 }
 CRITICAL MANDATE: For EVERY character listed in <cast_list> who participated in or was present during this scene, you MUST output their updated "character_state_updates" capturing their real-time emotional state, unresolved tension, physical condition, and location at the conclusion of the scene.
 </output_format_description>
-
+${formatLongformContinuityAddendum(storyState as Partial<Story>)}
 <current_lore_topics>
 ${currentLoreList}
 </current_lore_topics>
@@ -709,6 +737,10 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
             new_characters?: Array<CastMember & Record<string, unknown>>;
             lore_updates?: Array<{ topic?: string; detail?: string }>;
             epistemic_transitions?: Array<Record<string, unknown>>;
+            open_thread_updates?: SeriesSceneReport['open_thread_updates'];
+            new_thread_candidates?: SeriesSceneReport['new_thread_candidates'];
+            secret_events?: SeriesSceneReport['secret_events'];
+            serial_thread_notes?: SerialSceneReport['serial_thread_notes'];
         }
         let updates: ArchivistUpdatesPayload | null = null;
 
@@ -822,7 +854,29 @@ BEGIN EXTRACTING SCENE ARCHIVE FACTS
                 scene
             );
             if (mergedStory) {
-                resultStory = mergedStory;
+                const sceneCast = scene.cast_names ?? scene.characters_present;
+                const seriesResult = applyLongformSceneReport(
+                    mergedStory as Partial<Story>,
+                    effectiveUpdates,
+                    asString(scene.number) || `${seqIdx + 1}.${sceneIdx + 1}`,
+                    {
+                        seqNum: asNumber(sequenceData.number, seqIdx + 1),
+                        sceneIdx,
+                        sceneCount: asArray(asRecord(mergedStory.scenes)[`${seqIdx}`]).length || sceneIdx + 1,
+                        sequenceCount: asArray(mergedStory.sequences).length || 8,
+                        sceneKey: `${seqIdx}-${sceneIdx}`,
+                        charactersPresent: (Array.isArray(sceneCast) ? sceneCast : asStringArray(sceneCast))
+                            .map((c) => (typeof c === 'string' ? c : asString(asRecord(c).name)))
+                            .filter(Boolean),
+                        pov: asString(scene.pov_character) || undefined
+                    }
+                );
+                seriesResult.serialNotes.forEach((note) => ctx.showToast(note, 'info'));
+                seriesResult.openedThreads.forEach((t) =>
+                    ctx.showToast(`Series thread opened: ${t.title}`, 'info')
+                );
+                seriesResult.newViolations.forEach((v) => ctx.showToast(describeViolation(v), 'warning'));
+                resultStory = { ...mergedStory, ...seriesResult.patch } as PipelineStory;
             }
             const rawSynopsis = sanitizeScenePlotDelta(asString(effectiveUpdates.scene_synopsis));
             const effectiveSynopsis =

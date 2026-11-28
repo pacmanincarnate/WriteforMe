@@ -3,6 +3,7 @@
  * Literary horizontal sub-navigation for Story Folio and Manuscript Studio view groups.
  */
 
+import { VIEW_LABELS } from '@/config';
 import {
     Activity,
     Feather,
@@ -68,35 +69,35 @@ export function EditorialSubNav({
         items = [
             {
                 id: 'dashboard',
-                label: 'Overview',
+                label: VIEW_LABELS.dashboard,
                 icon: Activity,
                 badge: null,
                 tooltip: 'Story overview, premise, core thesis, and metrics'
             },
             {
                 id: 'cast',
-                label: 'Cast & Characters',
+                label: VIEW_LABELS.cast,
                 icon: Users,
                 badge: castCount > 0 ? castCount : null,
                 tooltip: 'Dramatis personae, voice profiles, and character arcs'
             },
             {
                 id: 'relationships',
-                label: 'Character Dynamics',
+                label: VIEW_LABELS.relationships,
                 icon: Heart,
                 badge: null,
                 tooltip: 'Interpersonal tensions, alliances, and relational axes'
             },
             {
                 id: 'lore',
-                label: 'World & Archives',
+                label: VIEW_LABELS.lore,
                 icon: Globe,
                 badge: loreCount > 0 ? loreCount : null,
                 tooltip: 'World bible, canon knowledge, and historical archives'
             },
             {
                 id: 'inspector',
-                label: 'Memory Search',
+                label: VIEW_LABELS.inspector,
                 icon: Search,
                 badge: null,
                 tooltip: 'Vector database semantic memory search'
@@ -111,7 +112,7 @@ export function EditorialSubNav({
         items = [
             {
                 id: 'structure',
-                label: 'Story Outline',
+                label: VIEW_LABELS.structure,
                 shortLabel: 'Outline',
                 icon: Layers,
                 badge: null,
@@ -120,8 +121,8 @@ export function EditorialSubNav({
             {
                 id: 'writer',
                 targetView: hasSelectedScene ? 'writer' : 'structure',
-                label: 'Scene Studio',
-                shortLabel: 'Scene Studio',
+                label: VIEW_LABELS.sequence_dashboard,
+                shortLabel: VIEW_LABELS.sequence_dashboard,
                 icon: Feather,
                 badge: null,
                 tooltip: hasSelectedScene
@@ -130,7 +131,7 @@ export function EditorialSubNav({
             },
             {
                 id: 'directive',
-                label: 'Request Change',
+                label: VIEW_LABELS.directive,
                 shortLabel: 'Change',
                 icon: Wand2,
                 badge: null,
@@ -139,7 +140,7 @@ export function EditorialSubNav({
             },
             {
                 id: 'editorial',
-                label: 'Developmental Polish',
+                label: VIEW_LABELS.editorial,
                 shortLabel: 'Polish',
                 icon: Scale,
                 badge: null,

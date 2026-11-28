@@ -10,6 +10,7 @@ export { STRUCTURE_PROMPTS } from './tiers/structure';
 export { PROSE_PROMPTS } from './tiers/prose';
 export { CONTINUITY_PROMPTS } from './tiers/continuity';
 export { EDITORIAL_PROMPTS } from './tiers/editorial';
+export { SERIES_PROMPTS } from './tiers/series';
 
 import { buildWritingSystemPrompt } from './systemPrompt';
 import { CONCEPT_PROMPTS } from './tiers/concept';

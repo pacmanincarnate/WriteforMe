@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import {
+    ANTHROPIC_DEFAULT_MODELS,
     DEFAULT_LLM_MODELS,
     DEFAULT_SAVED_MODELS,
     DEFAULT_SERVICE_URLS,
@@ -23,6 +24,7 @@ import type { ComfyOptionsCatalog, ComfyStatusInfo } from '@/services/images';
 import { fetchComfyInfoCatalog } from '@/services/images';
 import {
     checkKoboldCPPStatus,
+    fetchAnthropicModels,
     fetchClaudeCatalog,
     fetchCodexCatalog,
     fetchGeminiCatalog,
@@ -65,6 +67,7 @@ export interface UseModelSearchDependencies {
     geminiModelsList: string[];
     openRouterModelsList: OpenRouterCatalogModel[];
     nanoGptModelsList: NanoGptCatalogEntry[];
+    anthropicModelsList: ModelDescriptor[];
     fetchGeminiModels: () => Promise<void>;
 }
 
@@ -90,6 +93,7 @@ export function useModelSearch(
         geminiModelsList,
         openRouterModelsList,
         nanoGptModelsList,
+        anthropicModelsList,
         fetchGeminiModels
     }: UseModelSearchDependencies
 ): UseModelSearchResult {
@@ -139,6 +143,8 @@ export function useModelSearch(
                         nanoGptModelsList
                     );
                     if (active) setResults(found);
+                } else if (providerToUse === 'anthropic') {
+                    if (active) setResults(filterModelsClientSide(anthropicModelsList, q));
                 }
             } catch (e) {
                 console.error(`${label} model search error:`, e);
@@ -162,6 +168,7 @@ export function useModelSearch(
         geminiModelsList,
         openRouterModelsList,
         nanoGptModelsList,
+        anthropicModelsList,
         label
     ]);
 
@@ -229,6 +236,11 @@ export interface UseModelCatalogResult {
     setNanoGptKey: Dispatch<SetStateAction<string>>;
     nanoGptModel: string;
     setNanoGptModel: Dispatch<SetStateAction<string>>;
+    anthropicKey: string;
+    setAnthropicKey: Dispatch<SetStateAction<string>>;
+    anthropicModel: string;
+    setAnthropicModel: Dispatch<SetStateAction<string>>;
+    anthropicModelsList: ModelDescriptor[];
     koboldUrl: string;
     setKoboldUrl: Dispatch<SetStateAction<string>>;
     koboldModel: string;
@@ -323,6 +335,7 @@ export interface UseModelCatalogResult {
     fetchOpenRouterImageModels: (showFeedback?: boolean) => Promise<OpenRouterImageModelInfo[]>;
     refreshOpenRouterModels: (force?: boolean) => Promise<void>;
     refreshNanoGptModels: (force?: boolean) => Promise<void>;
+    refreshAnthropicModels: () => Promise<void>;
     checkKoboldStatus: () => Promise<void>;
     refreshCodexModels: () => Promise<void>;
     refreshClaudeModels: () => Promise<void>;
@@ -387,7 +400,9 @@ export function useModelCatalog({
     const [embeddingProvider, setEmbeddingProvider] = useState(
         () =>
             localStorage.getItem(STORAGE_KEYS.embeddingProvider) ||
-            (isCliBridgeProvider(apiProvider) ? 'gemini' : apiProvider)
+            (isCliBridgeProvider(apiProvider) || apiProvider === 'anthropic'
+                ? 'gemini'
+                : apiProvider)
     );
     const [apiKey, setApiKey] = useState(() => localStorage.getItem(STORAGE_KEYS.geminiApiKey) || '');
     const [apiTimeout, setApiTimeout] = useState(() => {
@@ -422,6 +437,16 @@ export function useModelCatalog({
     const [nanoGptModel, setNanoGptModel] = useState(
         () => localStorage.getItem(STORAGE_KEYS.nanoGptModel) || DEFAULT_LLM_MODELS.nanogpt
     );
+    const [anthropicKey, setAnthropicKey] = useState(
+        () => localStorage.getItem(STORAGE_KEYS.anthropicKey) || ''
+    );
+    const [anthropicModel, setAnthropicModel] = useState(
+        () => localStorage.getItem(STORAGE_KEYS.anthropicModel) || DEFAULT_LLM_MODELS.anthropic
+    );
+    const [anthropicModelsList, setAnthropicModelsList] = useState<ModelDescriptor[]>(() => [
+        ...ANTHROPIC_DEFAULT_MODELS
+    ]);
+    const anthropicRefreshId = useRef(0);
     const [koboldUrl, setKoboldUrl] = useState(
         () => localStorage.getItem(STORAGE_KEYS.koboldUrl) || DEFAULT_SERVICE_URLS.koboldcpp
     );
@@ -613,6 +638,12 @@ export function useModelCatalog({
         safeLocalStorageSet(STORAGE_KEYS.nanoGptModel, nanoGptModel);
     }, [nanoGptModel]);
     useEffect(() => {
+        safeLocalStorageSet(STORAGE_KEYS.anthropicKey, anthropicKey);
+    }, [anthropicKey]);
+    useEffect(() => {
+        safeLocalStorageSet(STORAGE_KEYS.anthropicModel, anthropicModel);
+    }, [anthropicModel]);
+    useEffect(() => {
         safeLocalStorageSet(STORAGE_KEYS.nanoGptProseModel, nanoGptProseModel);
     }, [nanoGptProseModel]);
     useEffect(() => {
@@ -695,12 +726,14 @@ export function useModelCatalog({
             geminiModel,
             openRouterModel,
             nanoGptModel,
+            anthropicModel,
             codexModel,
             claudeModel,
             koboldModel,
             koboldLoadedModel
         }),
         [
+            anthropicModel,
             apiProvider,
             claudeModel,
             codexModel,
@@ -885,6 +918,13 @@ export function useModelCatalog({
         }
     }, [koboldUrl]);
 
+    const refreshAnthropicModels = useCallback(async (): Promise<void> => {
+        const refreshId = ++anthropicRefreshId.current;
+        const models = await fetchAnthropicModels(anthropicKey);
+        if (refreshId !== anthropicRefreshId.current) return;
+        setAnthropicModelsList(models);
+    }, [anthropicKey]);
+
     const refreshCodexModels = useCallback(async (): Promise<void> => {
         const refreshId = ++codexRefreshId.current;
         setCodexStatus({ online: false, model: null, error: null });
@@ -946,6 +986,8 @@ export function useModelCatalog({
                 await fetchOpenRouterImageModels(false);
             } else if (prov === 'nanogpt') {
                 await refreshNanoGptModels();
+            } else if (prov === 'anthropic') {
+                await refreshAnthropicModels();
             } else if (prov === 'codex') {
                 await refreshCodexModels();
             } else if (prov === 'claude') {
@@ -961,6 +1003,7 @@ export function useModelCatalog({
             fetchGeminiImageModels,
             fetchGeminiModels,
             fetchOpenRouterImageModels,
+            refreshAnthropicModels,
             refreshClaudeModels,
             refreshCodexModels,
             refreshNanoGptModels,
@@ -995,6 +1038,9 @@ export function useModelCatalog({
             }
             if (activeProviders.has('nanogpt') && nanoGptModelsList.length === 0) {
                 void refreshNanoGptModels();
+            }
+            if (activeProviders.has('anthropic') && anthropicKey) {
+                void refreshAnthropicModels();
             }
             if (activeProviders.has('koboldcpp')) {
                 void checkKoboldStatus();
@@ -1039,6 +1085,8 @@ export function useModelCatalog({
         fetchOpenRouterImageModels,
         refreshOpenRouterModels,
         refreshNanoGptModels,
+        anthropicKey,
+        refreshAnthropicModels,
         checkKoboldStatus,
         refreshCodexModels,
         refreshClaudeModels,
@@ -1053,6 +1101,7 @@ export function useModelCatalog({
         geminiModelsList,
         openRouterModelsList,
         nanoGptModelsList,
+        anthropicModelsList,
         fetchGeminiModels
     };
 
@@ -1118,6 +1167,7 @@ export function useModelCatalog({
                         geminiModel,
                         openRouterModel,
                         nanoGptModel,
+                        anthropicModel,
                         codexModel,
                         claudeModel,
                         koboldModel,
@@ -1135,6 +1185,7 @@ export function useModelCatalog({
                     apiKey,
                     openRouterKey,
                     nanoGptKey,
+                    anthropicKey,
                     koboldUrl,
                     codexUrl,
                     claudeUrl,
@@ -1155,6 +1206,8 @@ export function useModelCatalog({
             return typeof res === 'string' ? res : JSON.stringify(res ?? '');
         },
         [
+            anthropicKey,
+            anthropicModel,
             apiKey,
             apiProvider,
             apiTimeout,
@@ -1225,6 +1278,11 @@ export function useModelCatalog({
         setNanoGptKey,
         nanoGptModel,
         setNanoGptModel,
+        anthropicKey,
+        setAnthropicKey,
+        anthropicModel,
+        setAnthropicModel,
+        anthropicModelsList,
         koboldUrl,
         setKoboldUrl,
         koboldModel,
@@ -1319,6 +1377,7 @@ export function useModelCatalog({
         fetchOpenRouterImageModels,
         refreshOpenRouterModels,
         refreshNanoGptModels,
+        refreshAnthropicModels,
         checkKoboldStatus,
         refreshCodexModels,
         refreshClaudeModels,

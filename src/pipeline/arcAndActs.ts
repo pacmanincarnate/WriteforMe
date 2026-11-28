@@ -22,6 +22,12 @@ import {
     resolveCharacter,
     type NormalizedSequence
 } from '@/domain/story';
+import {
+    formatSeriesPlanningBlock,
+    formatSeriesSequenceHints,
+    isSeriesStory,
+    keepSeriesVaultEntries
+} from '@/domain/series';
 import { PROMPTS } from '@/prompts';
 import { storyStore } from '@/services/storage';
 import type { CastMember, LoreItem, Story } from '@/types';
@@ -36,6 +42,13 @@ import {
     type PipelineStory
 } from './context';
 import { runAgentWithEscalation } from './escalation';
+import { applySeriesAfterArc, auditTextAgainstContract } from './series';
+
+/** The last two `<sequence>` blocks of a sequence plan: the part an ending contract governs. */
+function finalSequenceBlocks(genOutput: string): string {
+    const blocks = genOutput.match(/<sequence(?:\s+[^>]*)?>[\s\S]*?<\/sequence>/gi) || [];
+    return blocks.slice(-2).join('\n');
+}
 
 export interface ParsedActItem {
     number: number;
@@ -92,12 +105,13 @@ export function buildStoryArcGeneratorPrompt({
                   CastMember & Record<string, unknown>
               >);
     const authorNoteXml = authorNoteStory ? getAuthorNoteXml(authorNoteStory) : '';
+    const seriesPlanningBlock = authorNoteStory ? formatSeriesPlanningBlock(authorNoteStory) : '';
     return `
 <user_concept>
 ${concept}
 </user_concept>
 
-${arcLoreBlocks ? `${arcLoreBlocks}\n\n` : ''}${pillarsBlock}${buildGenreToneStyleBlocks(style)}
+${arcLoreBlocks ? `${arcLoreBlocks}\n\n` : ''}${pillarsBlock}${buildGenreToneStyleBlocks(style)}${seriesPlanningBlock}
 
 ${heartOfTheDilemma ? `<heart_of_the_dilemma>\n${heartOfTheDilemma}\n</heart_of_the_dilemma>\n\n` : ''}<status_quo>
 ${statusQuo}
@@ -321,7 +335,7 @@ export async function generateStoryArc(
         const parsedVault = asArray(parsedArc.secret_vault);
         const parsedThreads = asArray(parsedArc.threads);
 
-        const updatedStory = ctx.setStory((prev) => ({
+        const updatedStory = ctx.setStory((prev) => applySeriesAfterArc({
             ...prev,
             starting_value_state:
                 prev.starting_value_state && prev.starting_value_state !== storyToUse.starting_value_state
@@ -348,7 +362,12 @@ export async function generateStoryArc(
                 prev.inciting_incident && prev.inciting_incident !== storyToUse.inciting_incident
                     ? prev.inciting_incident
                     : asString(parsedArc.inciting_incident) || asString(prev.inciting_incident),
-            secret_vault: parsedVault.length > 0 ? parsedVault : asArray(prev.secret_vault),
+            secret_vault:
+                parsedVault.length > 0
+                    ? isSeriesStory(prev)
+                        ? keepSeriesVaultEntries(prev.secret_vault, parsedVault)
+                        : parsedVault
+                    : asArray(prev.secret_vault),
             threads: parsedThreads.length > 0 ? parsedThreads : prev.threads
         }));
 
@@ -571,7 +590,7 @@ ${actLoreBlocks ? `${actLoreBlocks}\n\n` : ''}<overall_story_information>
 <status_quo>${asString(storyToUse.status_quo)}</status_quo>
 </overall_story_information>
 
-<story_arc>
+${formatSeriesPlanningBlock(storyToUse)}<story_arc>
 <core_thematic_argument>${asString(storyToUse.core_thematic_argument)}</core_thematic_argument>
 <starting_value_state>${asString(storyToUse.starting_value_state)}</starting_value_state>
 <ending_value_state>${asString(storyToUse.ending_value_state)}</ending_value_state>
@@ -888,7 +907,8 @@ BEGIN ACT CRITIQUE REVIEW
         );
         const getSequenceContext = () => {
             const currentLive = ctx.getStory() || intermediateStoryWithActs;
-            return buildSequencePromptContext(
+            const seriesHints = formatSeriesSequenceHints(currentLive);
+            return `${buildSequencePromptContext(
                 currentLive as Partial<Story> & ContinuityStoryState,
                 (currentLive.relationships || nextRels) as Record<string, Record<string, unknown>>,
                 asArray<Record<string, unknown>>(currentLive.acts).length > 0
@@ -896,7 +916,7 @@ BEGIN ACT CRITIQUE REVIEW
                     : (actsData as unknown as Array<Record<string, unknown>>),
                 1,
                 seqLoreDocs
-            );
+            )}${seriesHints ? `\n\n${seriesHints}` : ''}`;
         };
 
         const seqResult = await runAgentWithEscalation<{ sequences: NormalizedSequence[] }>(ctx, {
@@ -988,6 +1008,9 @@ ${genOutput}
 BEGIN SEQUENCE CRITIQUE REVIEW
 `,
             parserFn: (text) => ({ sequences: parseSequencesXML(text) }),
+            // Series only: the plan for the last sequences must respect the ending contract.
+            gateFn: (genOutput) =>
+                auditTextAgainstContract(ctx, ctx.getStory(), finalSequenceBlocks(genOutput), 'plan'),
             modelSize: 'dev',
             spawningContext: 'Novel Sequence Architecture',
             parentTierFailFn: async (reasons) => {
@@ -1166,13 +1189,14 @@ export async function generateSequences(
         );
         const getSequenceContext = () => {
             const liveStory = ctx.getStory() || storyToUse;
-            return buildSequencePromptContext(
+            const seriesHints = formatSeriesSequenceHints(liveStory);
+            return `${buildSequencePromptContext(
                 liveStory as Partial<Story> & ContinuityStoryState,
                 null,
                 null,
                 1,
                 seqLoreDocs
-            );
+            )}${seriesHints ? `\n\n${seriesHints}` : ''}`;
         };
 
         const seqResult = await runAgentWithEscalation<{ sequences: NormalizedSequence[] }>(ctx, {
@@ -1243,6 +1267,9 @@ BEGIN DEVELOPING STORY SEQUENCES
             reviewerPromptFn: (genOutput) =>
                 `${getSequenceContext()}\n\n<output_format_description>\nFORMATTING DIRECTIVE: Return your evaluation strictly as XML tags. Do not use YAML or markdown blocks.\nCRITICAL XML RULE: Enclose the entire response in <response>...</response>.\n\nOutput Schema:\n<response>\n  <critique_analysis>Analyze each sequence's dramatic question, dramatic purpose, pacing contribution, causal linkage, spatial/state alignment between Sequence N's ending_hook and Sequence N+1's starting_state, and anti-preemption boundaries (no duplicate character introductions or encroaching events). VERIFY that EXACTLY 8 sequences (Sequences 1 through 8) are present.</critique_analysis>\n  <status>PASS</status> <!-- or FAIL -->\n  <deviation_reasons>\n    <reason>Explain the exact issue and how to fix it. If fewer than 8 sequences are generated, FAIL and explicitly demand all 8 sequences.</reason>\n  </deviation_reasons>\n</response>\n</output_format_description>\n\nMANDATORY CRITERION: Count the <sequence> tags. If fewer than 8 sequences are present (e.g. only 1 or 2 sequences generated), status MUST be FAIL with deviation reason "Incomplete structure: exactly 8 sequences across Acts 1, 2, and 3 are required."\n\n<generated_sequences>\n${genOutput}\n</generated_sequences>\n\nBEGIN SEQUENCE CRITIQUE REVIEW`,
             parserFn: (text) => ({ sequences: parseSequencesXML(text) }),
+            // Series only: the plan for the last sequences must respect the ending contract.
+            gateFn: (genOutput) =>
+                auditTextAgainstContract(ctx, ctx.getStory(), finalSequenceBlocks(genOutput), 'plan'),
             modelSize: 'dev',
             spawningContext: 'Novel Sequence Architecture',
             parentTierFailFn: async (reasons) => {

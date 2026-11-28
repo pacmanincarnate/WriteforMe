@@ -23,6 +23,7 @@ export interface ProviderModelSettings {
     geminiModel?: string;
     openRouterModel?: string;
     nanoGptModel?: string;
+    anthropicModel?: string;
     codexModel?: string;
     claudeModel?: string;
     koboldModel?: string;
@@ -74,6 +75,7 @@ export function getDefaultModelForProvider(
     if (prov === 'gemini') return settings.geminiModel || DEFAULT_LLM_MODELS.gemini;
     if (prov === 'openrouter') return settings.openRouterModel || DEFAULT_LLM_MODELS.openrouter;
     if (prov === 'nanogpt') return settings.nanoGptModel || DEFAULT_LLM_MODELS.nanogpt;
+    if (prov === 'anthropic') return settings.anthropicModel || DEFAULT_LLM_MODELS.anthropic;
     if (prov === 'codex') return settings.codexModel || DEFAULT_LLM_MODELS.codex;
     if (prov === 'claude') return settings.claudeModel || DEFAULT_LLM_MODELS.claude;
     if (prov === 'koboldcpp') {

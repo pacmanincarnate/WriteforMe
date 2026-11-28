@@ -174,6 +174,13 @@ export interface PipelineRuntimeContext {
         inputBookType?: string;
         inputCustomWords?: string | number;
         importedLoreText?: string;
+        /** True when the new story is Book 1 of a series. */
+        inputSeriesOpener?: boolean;
+        inputSeriesTitle?: string;
+        /** True when the new story is a serial: a series whose books are arcs released in episodes. */
+        inputSerial?: boolean;
+        /** 'anchored' keeps the lead in every arc; 'ensemble' lets anyone sit an arc out. */
+        inputSerialRotation?: string;
     };
     clearSetupDraft?: () => void;
     getPendingSetupLoreMap?: () => Record<string, string>;
@@ -208,6 +215,7 @@ export interface PipelineRuntimeContext {
         apiKey?: string;
         openRouterKey?: string;
         nanoGptKey?: string;
+        anthropicKey?: string;
         koboldUrl?: string;
         codexUrl?: string;
         claudeUrl?: string;

@@ -35,6 +35,7 @@ import {
     runContinuityAuditor,
     type ContinuityStoryState
 } from '@/domain/continuity';
+import { isRevealDueThisBook, isSeriesStory } from '@/domain/series';
 import { formatSlopAuditForPrompt, scanTextForSlop } from '@/domain/slop';
 import {
     actForSequence,
@@ -85,6 +86,7 @@ import {
 } from '@/utils';
 import {
     asArray,
+    asNumber,
     asOptionalRecord,
     asRecord,
     asString,
@@ -97,6 +99,7 @@ import { DIRECTIVE_REVIEW_OUTPUT_FORMAT_SCHEMA } from './directiveReview';
 import { runAgentWithEscalation } from './escalation';
 import { buildProseContext, type ProseContextCastMember } from './proseContext';
 import { generateScenes } from './sceneBlueprints';
+import { auditTextAgainstContract } from './series';
 import { applySurgicalEditsWithRetry, applySurgicalProsePatch } from './surgicalPatch';
 import { syncStorySoFarAfterScene } from './storySoFar';
 import { runAudioDramaVoiceDirectorPass } from './voiceDirector';
@@ -1455,6 +1458,7 @@ ${dynamicBannedList.map((p) => `- ${p}`).join('\n')}
         if (targetProvider === 'gemini') effectiveApiKey = creds.apiKey || '';
         else if (targetProvider === 'openrouter') effectiveApiKey = creds.openRouterKey || '';
         else if (targetProvider === 'nanogpt') effectiveApiKey = creds.nanoGptKey || '';
+        else if (targetProvider === 'anthropic') effectiveApiKey = creds.anthropicKey || '';
         else if (targetProvider === 'koboldcpp') {
             effectiveBaseUrl = creds.koboldUrl || DEFAULT_SERVICE_URLS.koboldcpp;
         } else if (targetProvider === 'codex') {
@@ -1550,6 +1554,18 @@ ${isAudioDramaStory ? 'Begin writing current scene audio drama script.' : 'Begin
             tierName: 'Writing Agent',
             isAutopilot: autoP,
             initialGenOutput: initialAgenticOutput,
+            // Series only: prose in the final sequences must respect the ending contract.
+            gateFn:
+                isSeriesStory(storyToUse) &&
+                seq >= asArray(storyToUse.sequences).length - 2
+                    ? (genOutput) =>
+                          auditTextAgainstContract(
+                              ctx,
+                              ctx.getStory() || storyToUse,
+                              extractTag(genOutput, 'prose_text') || genOutput,
+                              'prose'
+                          )
+                    : null,
             context: {
                 ...scene,
                 rollingDialogueStats,
@@ -2225,6 +2241,10 @@ ${auditLines}
                 ? asArray<Record<string, unknown>>(prev.secret_vault).map((sec) => {
                       const sCopy = { ...sec };
                       if (
+                          isRevealDueThisBook(
+                              sCopy as Parameters<typeof isRevealDueThisBook>[0],
+                              asNumber(asRecord(prev.series).book_number, 0)
+                          ) &&
                           isSecretRevealScene(
                               sCopy,
                               currentSeqNumForVault,

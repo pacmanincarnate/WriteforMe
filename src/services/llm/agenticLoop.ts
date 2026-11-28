@@ -19,6 +19,7 @@ import {
 } from '@/domain/audio';
 import { callGemini } from './gemini';
 import { callKoboldCPP } from './koboldcpp';
+import { callAnthropic } from './anthropic';
 import { callNanoGPT } from './nanogpt';
 import { callOpenRouter } from './openrouter';
 import { WRITING_AGENT_TOOLS, executeLocalTool, type LocalToolContext } from './tools';
@@ -179,6 +180,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
             return `${CLOUD_API_URLS.geminiModels}/${model}:generateContent`;
         }
         if (effectiveProvider === 'nanogpt') return CLOUD_API_URLS.nanoGptChat;
+        if (effectiveProvider === 'anthropic') return CLOUD_API_URLS.anthropicMessages;
         if (effectiveProvider === 'openrouter') {
             return CLOUD_API_URLS.openRouterChat;
         }
@@ -578,6 +580,8 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                     ? 'Claude Code'
                   : effectiveProvider === 'nanogpt'
                     ? 'nano-GPT'
+                  : effectiveProvider === 'anthropic'
+                    ? 'Anthropic'
                     : 'OpenRouter';
 
         const messages: LlmChatMessage[] = [
@@ -645,6 +649,11 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                                 return callNanoGPT(apiKey, model, '', systemPrompt, false, {
                                     ...turnOpts,
                                     max_tokens: enrichedOptions.max_tokens || 16384
+                                }) as Promise<OpenAICompatibleFullResult>;
+                            } else if (effectiveProvider === 'anthropic') {
+                                return callAnthropic(apiKey, model, '', systemPrompt, false, {
+                                    ...turnOpts,
+                                    max_tokens: enrichedOptions.max_tokens || 32768
                                 }) as Promise<OpenAICompatibleFullResult>;
                             }
                             const targetUrl =

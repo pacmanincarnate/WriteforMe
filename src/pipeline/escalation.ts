@@ -54,6 +54,7 @@ import {
     computeSpawnedCharacterVoiceSeed,
     repairBannedEntitiesWithAI
 } from './continuityPipeline';
+import { ensureNameBanks } from './nameBank';
 import { triggerLoreExtraction } from './lorePipeline';
 import { applySurgicalEditsWithRetry } from './surgicalPatch';
 
@@ -74,6 +75,12 @@ export interface EscalationParams<TParsed = Record<string, unknown>> {
     reviewerPromptFn?: ((genOutput: string) => string) | null;
     parserFn?: (raw: string) => TParsed;
     validateFn?: (data: TParsed) => { valid: boolean; errors?: string[] };
+    /**
+     * Optional extra gate, run after structural validation passes. Returned strings are fed
+     * back as revision reasons and the tier is regenerated, like a structural failure.
+     * The final attempt is never blocked, so a stubborn gate cannot stall the pipeline.
+     */
+    gateFn?: ((genOutput: string, parsedData: TParsed) => Promise<string[]> | string[]) | null;
     modelSize?: string;
     spawningContext?: string;
     parentTierFailFn?: ((reasons: string[]) => void) | null;
@@ -124,7 +131,8 @@ export async function runAgentWithEscalation<TParsed = Record<string, unknown>>(
         isAutopilot = false,
         context = null,
         chunkContext = '',
-        initialGenOutput = ''
+        initialGenOutput = '',
+        gateFn = null
     } = params;
 
     let attempt = 1;
@@ -138,6 +146,7 @@ export async function runAgentWithEscalation<TParsed = Record<string, unknown>>(
     const spawnedBriefs: EscalationCharacterBrief[] = [];
     const escalationHistory: EscalationHistoryEntry[] = [];
 
+    await ensureNameBanks(ctx);
     const auditFn = ctx.auditEntityNamesAndPlaces || domainAuditEntityNamesAndPlaces;
     const cascadeFn = ctx.applyCascadingNameReplacements || domainApplyCascadingNameReplacements;
 
@@ -705,6 +714,41 @@ FINAL ESCALATION PROTOCOL:
                             : 'Proceeding to Reviewer LLM'
                 }
             );
+        }
+
+        if (gateFn && attempt < RETRY_LIMITS.escalationMaxAttempts) {
+            let gateErrors: string[] = [];
+            try {
+                gateErrors = (await gateFn(genOutput, parsedData)) || [];
+            } catch (gateErr) {
+                console.warn(`[${tierName}] Extra gate failed to run, skipping:`, gateErr);
+            }
+            if (gateErrors.length > 0) {
+                ctx.showToast(`${tierName}: ${gateErrors[0]}`, 'warning');
+                ctx.logPipelineValidation(
+                    `${tierName} Contract Gate (Attempt ${attempt}/3)${chunkPrefix}`,
+                    false,
+                    gateErrors,
+                    null,
+                    {
+                        attempt,
+                        maxAttempts: RETRY_LIMITS.escalationMaxAttempts,
+                        tierName,
+                        type: 'structural_gate',
+                        actionTaken: `Retrying generation (Attempt ${attempt + 1}/3) with the contract violations named`,
+                        errors: gateErrors
+                    }
+                );
+                escalationHistory.push({
+                    attempt,
+                    reasons: [...gateErrors],
+                    critique: 'Series ending contract gate failed.'
+                });
+                attempt++;
+                deviationReasons = gateErrors;
+                console.groupEnd();
+                continue;
+            }
         }
 
         let briefs: EscalationCharacterBrief[] = [];

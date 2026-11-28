@@ -48,6 +48,8 @@ import { storyStore } from '@/services/storage';
 import { countWords, parseMarkdown } from '@/utils';
 import { DashboardEpistemicPanel } from './DashboardEpistemicPanel';
 import { DashboardFolioSidebar } from './DashboardFolioSidebar';
+import { DashboardSerialPanel } from './DashboardSerialPanel';
+import { DashboardSeriesPanel } from './DashboardSeriesPanel';
 import type { DashboardViewProps } from './types';
 
 export function DashboardView({
@@ -89,6 +91,7 @@ export function DashboardView({
     initStory,
     generateStoryArc,
     rebuildStorySoFar,
+    startNextBook,
     epistemicViewTab,
     setEpistemicViewTab,
     epistemicScrubberCoord,
@@ -840,6 +843,20 @@ export function DashboardView({
                             </div>
                         )}
                     </div>
+
+                    {/* Series Plan card: only for a series, or to start a sequel */}
+                    <DashboardSeriesPanel
+                        story={story}
+                        setStory={setStory}
+                        loading={loading}
+                        startNextBook={startNextBook}
+                        openEditModal={openEditModal}
+                        openFormModal={openFormModal}
+                        requestConfirm={requestConfirm}
+                    />
+
+                    {/* Serial card: only for a serial */}
+                    <DashboardSerialPanel story={story} />
 
                     {/* Secret Vault & Epistemic State Machine (GESM) Card */}
                     <DashboardEpistemicPanel

@@ -18,10 +18,11 @@ import {
     sanitizeScenePlotDelta,
     upsertSceneMemoryDelta
 } from '@/domain/continuity';
+import { formatSeriesThreadStatus } from '@/domain/series';
 import { parseActNumber } from '@/domain/story';
 import { PROMPTS } from '@/prompts';
 import { storyStore } from '@/services/storage';
-import type { StoryMemory } from '@/types';
+import type { Story, StoryMemory } from '@/types';
 import { countWords, decodeXmlEntities, extractTag } from '@/utils';
 import {
     asArray,
@@ -177,6 +178,7 @@ ${formatThreadsXml(currentStory)}
 <sequence_scene_events>
 ${sceneEventLines.join('\n')}
 </sequence_scene_events>
+${formatSeriesThreadStatus(currentStory as Partial<Story>).trimEnd()}
 
 <output_format_description>
 FORMATTING DIRECTIVE: Return strictly as XML tags. Do not use markdown code blocks.
@@ -284,6 +286,7 @@ ${formatThreadsXml(currentStory)}
 <completed_act_sequences>
 ${actSeqSummaries.join('\n\n')}
 </completed_act_sequences>
+${formatSeriesThreadStatus(currentStory as Partial<Story>).trimEnd()}
 
 <output_format_description>
 FORMATTING DIRECTIVE: Return strictly as XML tags. Do not use markdown code blocks.

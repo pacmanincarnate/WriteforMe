@@ -327,7 +327,7 @@ describe('Phase 5E: Dashboard, Directive, and Editorial views', () => {
                 setEditorialHarnessTab={setEditorialHarnessTab}
             />
         );
-        expect(container.textContent).toContain('Developmental Novel Review');
+        expect(container.textContent).toContain('Developmental Polish');
         expect(container.textContent).toContain('Voice DNA extracted');
 
         const addExemptionBtn = Array.from(container.querySelectorAll('button')).find((b) =>
