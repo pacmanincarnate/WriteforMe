@@ -57,13 +57,22 @@ A label is placed by the words in it, not by an exact name: "Hair Colour", "Eye 
 | Other names (used to match dialogue to the speaker) | AKA, alias, nickname, goes by |
 | Role | role, occupation, job, type |
 | Appearance (used for portraits and scene pictures) | gender, species, age, height, build, hair, eyes, marks, clothing |
-| Flaw and desire | flaw, weakness, vulnerability; desire, want (up to 400 characters, longer text stays in the profile) |
+| Flaw and desire | flaw, weakness, vulnerability; desire, want (up to 400 characters, longer text stays in the sheet) |
 | Goals | goals, motivation, ambition |
 | History | summary, history, background, backstory, bio |
-| Deep profile | everything, grouped: description, appearance, personality, goals, how they talk and move, history, relationships, secrets, notes |
+| Age and gender (the voice profile is built from these) | age; gender, sex, pronouns |
+| Character sheet | everything, grouped: description, appearance, personality, goals, how they talk and move, history, relationships, secrets, notes |
 
 A label nothing recognises takes the place of the heading it sits under; with no such heading it
-is kept under **Notes** in the deep profile. Nothing in the file is dropped.
+is kept under **Notes** in the character sheet. Nothing in the file is dropped.
+
+**The sheet is not the interview.** The grouped sheet is kept on the character as its own thing
+(**Read Character Sheet** on the card, editable). The persona interview is left empty, and is
+written by the model the first time the character is in a scene, with the sheet given to it as
+canon. The Writer is shown both for every character in a scene: the sheet for facts, the interview
+for voice. Unrevealed vault secrets are scrubbed from the sheet the same way as from the interview.
+A story saved by the first build of this import, which put the sheet in the interview, is put
+right when it is opened.
 
 The character comes in as **supporting**, like one from a card. Set the Four-Corner slot on the
 card afterwards.
@@ -75,7 +84,7 @@ that one, with the label and any note in brackets as its text. A relationship th
 text is not changed. The lines are kept on the character, so importing someone they name later
 links the two then. A name two cast members share links to neither.
 
-**Secrets.** A sheet's secrets go into the deep profile, not the Secret Vault. A vault secret is
+**Secrets.** A sheet's secrets stay in the character sheet, not the Secret Vault. A vault secret is
 hidden from the Writer until its reveal, which is a plot decision the sheet does not make.
 
 A character whose name is already in the cast is left out, and the message says so. Files over

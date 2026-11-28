@@ -42,7 +42,7 @@ function proseParams(overrides: { status?: string; revealSeq?: number; seqNumber
         activeCast: [
             { id: 'C1', name: 'Tom Reyes', details: { deep_profile: 'Tom trusts the harbor office too much. He counts crates twice.' } },
             { id: 'C2', name: 'Mara Quillon', details: { deep_profile: `She smiles at inspectors. ${TRUTH}. She sleeps badly.` }, interview_psychology: `I keep books. ${REWORDED} That is all.` },
-            { id: 'C3', name: 'Ilse Brandt', details: { deep_profile: `Ilse runs the night shift. ${REWORDED} She says nothing.` } }
+            { id: 'C3', name: 'Ilse Brandt', details: { deep_profile: `Ilse runs the night shift. ${REWORDED} She says nothing.`, sheet: `NOTES\nIlse keeps a spare key. ${REWORDED}` } }
         ]
     } as unknown as ProseParams;
 }
@@ -86,6 +86,9 @@ describe('secret privacy: the Writer prompt', () => {
         expect(out).toContain('She smiles at inspectors.');
         expect(out).toContain('Ilse runs the night shift.');
         expect(out).toContain('He counts crates twice.');
+        // An imported character sheet is shown to the Writer too, scrubbed the same way.
+        expect(out).toContain('<character_sheet name="Ilse Brandt">');
+        expect(out).toContain('Ilse keeps a spare key.');
     });
 
     it('carries it once the secret is revealed', () => {

@@ -40,7 +40,14 @@ export interface SheetRelationLine {
 export type SheetCastMember = ImportedCastMember & {
     aliases: string[];
     appearance?: string;
-    details: ImportedCastMember['details'] & { sheet_relationships?: SheetRelationLine[] };
+    /** Stated on the sheet; the voice profile is built from these rather than guessed from prose. */
+    age?: string;
+    gender?: string;
+    details: ImportedCastMember['details'] & {
+        /** The whole sheet, grouped. The persona interview is left for the model to write from it. */
+        sheet: string;
+        sheet_relationships?: SheetRelationLine[];
+    };
 };
 
 export const SHEET_FILE_LIMIT_BYTES = 2 * 1024 * 1024;
@@ -261,7 +268,8 @@ export function sheetCharacterName(sheet: CharacterSheet): string {
 
 /**
  * A cast member from a sheet: a supporting character, like one from a card. The whole sheet is
- * the deep profile, grouped; the parts the app reads on their own (aliases, appearance, history,
+ * kept as `details.sheet`, grouped, and the persona interview is left empty for the model to
+ * write from it; the parts the app reads on their own (aliases, appearance, history,
  * goals, flaw, desire) are also set as fields.
  */
 export function sheetToCastMember(sheet: CharacterSheet, id: string): SheetCastMember {
@@ -311,7 +319,12 @@ export function sheetToCastMember(sheet: CharacterSheet, id: string): SheetCastM
         .slice(0, CARD_LIMITS.field);
 
     const description = lines('description');
-    const history = lines('history') || description;
+    const told = grouped.get('history') || [];
+    const history = (told.length === 1 ? told[0].value : lines('history')) || description;
+    const stated = (label: RegExp): string => withoutBrackets(pick([label]).split('\n')[0]);
+    const age = stated(/^age$/).match(/\d{1,3}/)?.[0];
+    const gender = stated(/^(gender|sex)$/) || (stated(/^pronouns?$/).match(/\b(she|he|they)\b/i)?.[0] || '').replace(/^she$/i, 'female').replace(/^he$/i, 'male').replace(/^they$/i, 'non-binary');
+
     const role = pick(ROLE_LABELS).split('\n')[0].replace(/^character\s*[-–—:]\s*/i, '').trim();
     const said = pick(SAMPLE_LABELS);
     const sample = said.match(/["“]([^"”]{8,240})["”]/)?.[1] || firstSentence(said, 240);
@@ -337,11 +350,14 @@ export function sheetToCastMember(sheet: CharacterSheet, id: string): SheetCastM
         the_wake_up_call: '',
         ...(grouped.has('appearance') ? { appearance: lines('appearance') } : {}),
         ...(sample ? { voice_sample: sample } : {}),
+        ...(age ? { age } : {}),
+        ...(gender && gender.length <= 30 ? { gender } : {}),
         details: {
             history,
             goals: lines('goals') || 'Pursuing their personal goal within the story world.',
             story_events: 'Imported from a Markdown file.',
-            deep_profile: profile,
+            deep_profile: '',
+            sheet: profile,
             ...(relations.length > 0 ? { sheet_relationships: relations } : {})
         },
         voice: { tone: 'Measured', rhythm: 'Direct', tics: [] }
@@ -429,4 +445,26 @@ export function linkSheetRelationships<T extends LinkableMember>(
         }
     }
     return { relationships: next, added };
+}
+
+const SHEET_OPENING = new RegExp(`^(?:${Object.values(GROUP_TITLES).join('|')})\\n`);
+
+/**
+ * The first build of this import put the sheet in the persona interview. A cast member still
+ * carrying one there has it moved to `details.sheet`, so the interview can be written properly.
+ */
+export function moveSheetOutOfInterview<T extends { details?: Record<string, unknown> | null }>(member: T): T {
+    const details = member?.details;
+    if (!details || details.sheet || typeof details.deep_profile !== 'string' || !SHEET_OPENING.test(details.deep_profile)) return member;
+    return { ...member, details: { ...details, sheet: details.deep_profile, deep_profile: '' } };
+}
+
+/** The author's sheet as a prompt block, or nothing for a character who has none. */
+export function characterSheetBlock(member: { name?: string; details?: Record<string, unknown> | null } | null | undefined): string {
+    const sheet = typeof member?.details?.sheet === 'string' ? member.details.sheet.trim() : '';
+    if (!sheet) return '';
+    return `<character_sheet name="${member?.name || 'Character'}">
+[The author's own notes on this character. They are canon: appearance, history, habits and relationships given here outrank anything inferred elsewhere.]
+${sheet}
+</character_sheet>\n`;
 }

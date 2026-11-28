@@ -34,6 +34,7 @@ import {
 import type { Act, CastMember, Relationship, SceneBlueprint, Sequence, Story } from '@/types';
 import { isSerializationPlaceholder } from '@/utils';
 import { scrubSecretFromText } from '@/domain/continuity/secretScrub';
+import { characterSheetBlock } from '@/domain/imports';
 import { phraseHabitsLine, recentScenePassages } from '@/domain/slop';
 import { getFeatureOptions } from '@/stores/useFeatureOptionsStore';
 
@@ -238,6 +239,7 @@ export function buildProseContext({
                         ignoreWords: castNameWords
                     });
                 if (cloned.details.deep_profile) cloned.details.deep_profile = scrub(cloned.details.deep_profile);
+                if (typeof cloned.details.sheet === 'string') cloned.details.sheet = scrub(cloned.details.sheet);
                 if (cloned.interview_psychology) cloned.interview_psychology = scrub(cloned.interview_psychology);
                 if (cloned.deep_profile) cloned.deep_profile = scrub(cloned.deep_profile);
             }
@@ -502,12 +504,13 @@ ${rawInterview}
             })
             .filter(Boolean)
             .join('\n\n');
-        return canonicalInterviews
+        const sheets = sanitizedActiveCast.map((ch) => characterSheetBlock(ch)).filter(Boolean).join('');
+        return `${sheets}${canonicalInterviews
             ? `<canonical_character_interview_voice>
 [CANONICAL VOICE MANDATE: The following excerpts represent each character's authentic voice, speech rhythm, emotional defense mechanisms, and vocabulary. In dialogue and POV narration, you MUST honor the vocal cadence, idioms, and emotional defense style established in their own words below.]
 ${canonicalInterviews}
 </canonical_character_interview_voice>\n`
-            : '';
+            : ''}`;
     })();
 
     // Everything above this mark is the same for every call that writes this scene (its later

@@ -347,7 +347,7 @@ export function synthesizeVoiceDesignProfile(
         charObj?.sceneEmotions || '',
         charObj?.sceneDialogueSample || '',
         charObj?.details?.history || '',
-        String(charObj?.details?.deep_profile || '').slice(0, 600)
+        String(charObj?.details?.deep_profile || charObj?.details?.sheet || '').slice(0, 600)
     ].join(' ');
 
     const combinedContext = `${primaryIdentityText} ${traitsAndPsychologyText}`;
@@ -365,7 +365,12 @@ export function synthesizeVoiceDesignProfile(
     );
     const slotOffset = castIdx >= 0 ? castIdx : charHash % 7;
 
-    const explicitGender = String(charObj?.gender || '')
+    // A sheet or card may state these as labelled lines ("Age: 20", "Gender: Female") rather than
+    // as fields. A stated line outranks anything guessed from the prose.
+    const statedLines = `${String(charObj?.appearance || '')}\n${String(charObj?.details?.sheet || '')}\n${String(charObj?.details?.deep_profile || '')}`;
+    const statedAge = statedLines.match(/^\s*age\s*:\s*(\d{1,3})\b/im);
+    const statedGender = statedLines.match(/^\s*(?:gender|sex)\s*:\s*([a-z-]+)/im);
+    const explicitGender = String(charObj?.gender || statedGender?.[1] || '')
         .toLowerCase()
         .trim();
     const femPronouns = (
@@ -425,8 +430,9 @@ export function synthesizeVoiceDesignProfile(
 
     const ageSource = `${charObj?.age || ''} ${primaryIdentityText} ${combinedContext}`;
     const explicitYearMatch =
-        ageSource.match(/\b(\d{1,2})(?:\s*-?\s*years?\s*-?\s*old)\b/i) ||
-        (charObj?.age ? String(charObj.age).match(/\b(\d{1,3})\b/) : null);
+        (charObj?.age ? String(charObj.age).match(/\b(\d{1,3})\b/) : null) ||
+        statedAge ||
+        ageSource.match(/\b(\d{1,2})(?:\s*-?\s*years?\s*-?\s*old)\b/i);
     if (explicitYearMatch) {
         explicitYears = parseInt(explicitYearMatch[1], 10);
     } else {
@@ -482,6 +488,14 @@ export function synthesizeVoiceDesignProfile(
         }
     }
 
+    // "An only child", "as a child" and "since high school" describe a past or a family, not how
+    // old the speaker is now.
+    const ageWords = combinedContext
+        .replace(/\b(?:only|eldest|oldest|youngest|middle|first|second|third)\s+(?:child|kid)\b/gi, ' ')
+        .replace(/\b(?:as|was|were)\s+(?:a|an)\s+(?:young\s+|small\s+|little\s+)?(?:child|kid|teen|teenager)\b/gi, ' ')
+        .replace(/\b(?:child|kid)\s+of\b|\b(?:his|her|their|my|own|with)\s+(?:child|kid)\b/gi, ' ')
+        .replace(/\b(?:since|in|from|after|during|before|through|at)\s+(?:elementary|high)\s+school\b/gi, ' ');
+
     const hasAdultHonorific =
         /^(?:Dr\.|Doctor|Capt\.|Captain|Det\.|Detective|Prof\.|Professor|Lord|Lady|Sir|Dame|General|Colonel|Major|Inspector|Judge|Magistrate|Warden|Abbot|Bishop|Archbishop|Cardinal)\b/i.test(
             nameStr
@@ -510,13 +524,13 @@ export function synthesizeVoiceDesignProfile(
         ageCategory = 'middle-aged';
     } else if (
         /\b(teen|teenager|adolescent|high\s+school|youth|youngster|apprentice\s+boy|apprentice\s+girl)\b/i.test(
-            combinedContext
+            ageWords
         )
     ) {
         ageCategory = 'teenager';
     } else if (
         /\b(child|kid|little\s+boy|little\s+girl|elementary|young\s+child|orphan\s+child)\b/i.test(
-            combinedContext
+            ageWords
         )
     ) {
         ageCategory = 'child';
