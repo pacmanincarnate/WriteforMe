@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
     cleanWorldPart,
-    loreProposals,
     worldAnswerObject,
     worldDraftLore,
     worldPartAsk,
@@ -14,9 +13,11 @@ import {
     type WorldPowers
 } from '@/domain/lore';
 import type { PipelineRuntimeContext } from '@/pipeline/context';
+import * as lorePipeline from '@/pipeline/lorePipeline';
 import { buildWorldFromPitch } from '@/pipeline/worldBuilder';
 import { SAFEGUARD_PROMPTS } from '@/prompts';
 import { ModelStopError } from '@/services/llm';
+import { GeneratedWorldModal } from '@/views/dashboard/GeneratedWorldModal';
 import { WorldBuilderPanel } from '@/views/lore/WorldBuilderPanel';
 
 const land = () => ({
@@ -162,7 +163,11 @@ describe('asking and turning the world into lore', () => {
 });
 
 describe('building the world', () => {
-    const run = (answers: unknown[], story: Record<string, unknown> = { title: 'Tidewrack', genre: 'Fantasy', lore: [{ topic: 'The Old Capital', detail: 'Drowned.' }] }) => {
+    const run = (
+        answers: unknown[],
+        story: Record<string, unknown> = { id: 'story-1', title: 'Tidewrack', genre: 'Fantasy', lore: [{ topic: 'The Old Capital', detail: 'Drowned.' }] },
+        withRag = false
+    ) => {
         let current = story;
         const queue = [...answers];
         const callAI = vi.fn<(...args: unknown[]) => Promise<string>>(async () => {
@@ -175,26 +180,46 @@ describe('building the world', () => {
             callAI,
             getStory: () => current,
             setStory: (updater: (prev: typeof current) => typeof current) => (current = updater(current)),
-            setLoadingStep: (step: string) => steps.push(step)
+            setLoadingStep: (step: string) => steps.push(step),
+            ...(withRag
+                ? {
+                      getEmbeddingService: () => null,
+                      setRagStatus: vi.fn(),
+                      getRagIndexRevision: () => 0
+                  }
+                : {})
         } as unknown as PipelineRuntimeContext;
         return { ctx, callAI, steps, story: () => current };
     };
 
-    it('asks for three parts in order and queues the world for approval', async () => {
-        const world = run([land(), powers(), past()]);
-        const result = await buildWorldFromPitch(world.ctx, { pitch: 'A drowned archipelago.', size: 'small' });
-        expect(result).toMatchObject({ ok: true, written: 14, added: 14 });
-        expect(world.callAI.mock.calls.map((c) => c[3])).toEqual(['World Builder: land', 'World Builder: powers', 'World Builder: past']);
-        expect(world.callAI.mock.calls.every((c) => c[1] === SAFEGUARD_PROMPTS.worldBuilder && c[2] === true && c[4] === 'structure')).toBe(true);
-        expect(String(world.callAI.mock.calls[0][0])).toContain('Title: Tidewrack');
-        expect(String(world.callAI.mock.calls[2][0])).toContain('- Causeway Wardens: Tax every crossing.');
-        expect(world.steps[0]).toBe('Building the world: the land…');
-        expect(world.steps[world.steps.length - 1]).toBe('');
-        const waiting = loreProposals(world.story());
-        expect(waiting).toHaveLength(14);
-        expect(waiting[0]).toMatchObject({ topic: 'Region: The Shoals', act: 1, scene: 1 });
-        // Nothing is canon yet.
-        expect(world.story().lore).toHaveLength(1);
+    it('asks for three parts in order, ingests lore directly via ingestLoreBatch, and saves generated_world', async () => {
+        const ingestSpy = vi
+            .spyOn(lorePipeline, 'ingestLoreBatch')
+            .mockImplementation(async (_ctx, items) => items.map((item) => ({ ...item, id: `lore_${item.topic}`, is_merged: false })));
+        try {
+            const world = run([land(), powers(), past()], undefined, true);
+            const result = await buildWorldFromPitch(world.ctx, { pitch: 'A drowned archipelago.', size: 'small' });
+            expect(result).toMatchObject({ ok: true, written: 14, added: 14 });
+            expect(world.callAI.mock.calls.map((c) => c[3])).toEqual(['World Builder: land', 'World Builder: powers', 'World Builder: past']);
+            expect(world.callAI.mock.calls.every((c) => c[1] === SAFEGUARD_PROMPTS.worldBuilder && c[2] === true && c[4] === 'structure')).toBe(true);
+            expect(String(world.callAI.mock.calls[0][0])).toContain('Title: Tidewrack');
+            expect(String(world.callAI.mock.calls[2][0])).toContain('- Causeway Wardens: Tax every crossing.');
+            expect(world.steps[0]).toBe('Building the world: the land…');
+            expect(world.steps[world.steps.length - 1]).toBe('');
+            expect(ingestSpy).toHaveBeenCalledTimes(1);
+            expect(ingestSpy.mock.calls[0][1]).toHaveLength(14);
+            expect(ingestSpy.mock.calls[0][2]).toMatchObject({ clearExisting: false, storyId: 'story-1' });
+            const storyLore = world.story().lore as Array<Record<string, unknown>>;
+            expect(storyLore).toHaveLength(15);
+            expect(storyLore[1]).toMatchObject({ topic: 'Region: The Shoals' });
+            expect(world.story().generated_world).toMatchObject({
+                pitch: 'A drowned archipelago.',
+                size: 'small',
+                draft: { land: expect.any(Object), powers: expect.any(Object), past: expect.any(Object) }
+            });
+        } finally {
+            ingestSpy.mockRestore();
+        }
     });
 
     it('asks again with the problems, once, and gives up without adding anything', async () => {
@@ -209,7 +234,8 @@ describe('building the world', () => {
         const tooSmall = await buildWorldFromPitch(failed.ctx, { pitch: 'p', size: 'huge' });
         expect(tooSmall).toMatchObject({ ok: false, part: 'land' });
         expect(failed.callAI).toHaveBeenCalledTimes(2);
-        expect(loreProposals(failed.story())).toEqual([]);
+        expect(failed.story().lore).toHaveLength(1);
+        expect(failed.story().generated_world).toBeUndefined();
         expect(failed.steps[failed.steps.length - 1]).toBe('');
     });
 
@@ -225,7 +251,7 @@ describe('building the world', () => {
     });
 });
 
-describe('the panel on the Lore page', () => {
+describe('the panel on the Lore page and Overview modal', () => {
     let host: HTMLDivElement;
     let root: ReturnType<typeof createRoot>;
     beforeEach(() => {
@@ -270,9 +296,34 @@ describe('the panel on the Lore page', () => {
         });
         await press();
         expect(buildWorld).toHaveBeenCalledWith({ pitch: 'A drowned archipelago.', size: 'large' });
-        expect(showToast).toHaveBeenCalledWith('The world is drafted: 14 lore items are waiting for your approval below.', 'success');
+        expect(showToast).toHaveBeenCalledWith('The world is built: 14 lore entries added and indexed for the story.', 'success');
         expect(host.querySelector('[role="alert"]')).toBeNull();
         await press();
         expect(host.querySelector('[role="alert"]')?.textContent).toBe('The model could not do it.');
+    });
+
+    it('renders the Generated World modal with regions, places, peoples, factions, history, and rules', () => {
+        const onClose = vi.fn();
+        act(() =>
+            root.render(
+                <GeneratedWorldModal
+                    isOpen={true}
+                    generatedWorld={{ pitch: 'A drowned archipelago.', size: 'small', draft: draft() }}
+                    onClose={onClose}
+                />
+            )
+        );
+        expect(host.textContent).toContain('Generated World');
+        expect(host.textContent).toContain('A drowned archipelago.');
+        expect(host.textContent).toContain('The Shoals');
+        expect(host.textContent).toContain('Saltgate');
+        expect(host.textContent).toContain('Shoalfolk');
+        expect(host.textContent).toContain('Lamp Guild');
+        expect(host.textContent).toContain('The Great Tide took the old capital.');
+        expect(host.textContent).toContain('Charts lie');
+        act(() => {
+            (host.querySelector('button[aria-label="Close generated world viewer"]') as HTMLButtonElement).click();
+        });
+        expect(onClose).toHaveBeenCalledTimes(1);
     });
 });

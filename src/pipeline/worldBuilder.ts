@@ -2,8 +2,8 @@
  * @module pipeline/worldBuilder
  * "Build a world from a pitch": three model calls, one for each part of the world, each checked
  * in code before the next is asked for. A refused part is asked for once more with its problems
- * listed. The finished world is not written into the story: it is queued as lore proposals for
- * the author to approve on the Lore page.
+ * listed. The finished world is converted to lore items, indexed via `ingestLoreBatch` (mirroring
+ * document ingestion at story initiation), and saved on `story.generated_world` for Overview.
  */
 
 import {
@@ -11,7 +11,6 @@ import {
     WORLD_PARTS,
     WORLD_SIZES,
     cleanWorldPart,
-    queueLoreProposals,
     worldAnswerObject,
     worldDraftLore,
     worldPartAsk,
@@ -24,6 +23,7 @@ import { SAFEGUARD_PROMPTS } from '@/prompts';
 import { isModelStop } from '@/services/llm';
 import type { PipelineRuntimeContext } from './context';
 import { asArray, asString } from './context';
+import { ingestLoreBatch } from './lorePipeline';
 
 export interface WorldBuildRequest {
     pitch: string;
@@ -93,11 +93,63 @@ export async function buildWorldFromPitch(ctx: PipelineRuntimeContext, request: 
     }
 
     const lore = worldDraftLore(draft);
+    const existingTopicsBeforeIngest = new Set(
+        asArray<Record<string, unknown>>(story.lore).map((item) => asString(item?.topic).trim().toLowerCase()).filter(Boolean)
+    );
+    const newLoreItems = lore.filter((item) => {
+        const key = item.topic.trim().toLowerCase();
+        if (!key || existingTopicsBeforeIngest.has(key)) return false;
+        existingTopicsBeforeIngest.add(key);
+        return true;
+    });
+
+    let processedLore: Array<Record<string, unknown>> = newLoreItems.map((item) => ({ ...item }));
+    const canIngestBatch =
+        newLoreItems.length > 0 &&
+        typeof ctx.getEmbeddingService === 'function' &&
+        typeof ctx.setRagStatus === 'function' &&
+        typeof ctx.getRagIndexRevision === 'function';
+    if (canIngestBatch) {
+        ctx.setLoadingStep('Indexing built world lore…');
+        try {
+            const indexed = await ingestLoreBatch(ctx, newLoreItems, {
+                clearExisting: false,
+                storyId: asString(story.id) || undefined
+            });
+            if (Array.isArray(indexed) && indexed.length > 0) {
+                processedLore = indexed as unknown as Array<Record<string, unknown>>;
+            }
+        } catch (err) {
+            console.warn('[buildWorldFromPitch] Failed to ingest world lore batch; saving raw lore entries:', err);
+        } finally {
+            ctx.setLoadingStep('');
+        }
+    }
+
     let added = 0;
+    const createdAt = new Date().toISOString();
     ctx.setStory((prev) => {
-        const queued = queueLoreProposals(prev, lore, { act: 1, scene: 1 });
-        added = queued.added;
-        return queued.story;
+        const prevLore = asArray<Record<string, unknown>>(prev.lore);
+        const seenTopics = new Set(
+            prevLore.map((item) => asString(item?.topic).trim().toLowerCase()).filter(Boolean)
+        );
+        const uniqueNew = processedLore.filter((item) => {
+            const topicKey = asString(item?.topic).trim().toLowerCase();
+            if (!topicKey || seenTopics.has(topicKey)) return false;
+            seenTopics.add(topicKey);
+            return true;
+        });
+        added = uniqueNew.length;
+        return {
+            ...prev,
+            lore: [...prevLore, ...uniqueNew],
+            generated_world: {
+                pitch,
+                size,
+                createdAt,
+                draft
+            }
+        };
     });
     return { ok: true, draft, written: lore.length, added };
 }

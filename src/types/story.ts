@@ -196,5 +196,31 @@ export interface Story {
     open_threads?: import('./series').OpenThread[];
     /** Present only on a serial: a series whose books are arcs released in episodes. */
     serial?: import('./serial').SerialInfo;
+    /** Last world built from a pitch on the Lore view, saved for inspection from Overview. */
+    generated_world?: {
+        pitch: string;
+        size: string;
+        createdAt?: string;
+        draft: {
+            land?: {
+                regions: Array<{ name: string; summary: string }>;
+                places: Array<{ name: string; region: string; kind: string; summary: string }>;
+            };
+            powers?: {
+                peoples: Array<{ name: string; summary: string }>;
+                factions: Array<{
+                    name: string;
+                    goal: string;
+                    holds: string[];
+                    rivals: string[];
+                    allies: string[];
+                }>;
+            };
+            past?: {
+                history: Array<{ when: string; event: string }>;
+                rules: Array<{ name: string; rule: string }>;
+            };
+        };
+    } | null;
     [key: string]: unknown;
 }

@@ -3,7 +3,8 @@
  * A world from a pitch, in three parts: the land (regions and places), the powers (peoples and
  * factions), and the past (history and the rules the world runs on). Each part is asked for as one
  * JSON object and checked here, in code, before the next is asked for, so a later part can lean on
- * the names of an earlier one. The finished draft becomes lore proposals the author approves.
+ * the names of an earlier one. The finished draft converts into lore items for the story and is
+ * saved for inspection on Overview.
  */
 
 export const WORLD_PARTS = ['land', 'powers', 'past'] as const;

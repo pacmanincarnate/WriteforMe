@@ -22,11 +22,13 @@ The model is also shown the story's title, genre and tone, and the topics of the
 
 ## What you get
 
-The finished world becomes lore proposals: one item for each region, place, people, faction, history entry and rule. They appear in the **Proposed by the model** list on the Lore page (the same list review mode uses). Approve an item to add it to the story's lore and index it, or dismiss it. Nothing is part of the story until you approve it.
+The finished world converts into story lore (one entry for each region, place, people, faction, history entry and rule), is processed and indexed through `ingestLoreBatch` like initiation documents, and is added directly to `story.lore` (skipping topics already present).
+
+The structured world draft is also saved on `story.generated_world`, and **Overview** displays a **View Generated World** button to inspect the regions, places, peoples, factions, history, and rules at any time.
 
 ## Cost
 
-Three model calls, or up to six when parts have to be asked for again. Stop works as usual and leaves nothing behind.
+Three model calls, or up to six when parts have to be asked for again (plus RAG indexing for the new lore entries). Stop works as usual and leaves nothing behind.
 
 ## Limits
 

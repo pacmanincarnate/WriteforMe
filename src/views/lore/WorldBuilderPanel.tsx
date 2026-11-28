@@ -1,7 +1,8 @@
 /**
  * @module views/lore/WorldBuilderPanel
  * "Build a world from a pitch" on the Lore page. The author writes a few sentences and picks a
- * size; the world is written in three checked parts and arrives as lore proposals to approve.
+ * size; the world is written in three checked parts, converted into story lore, indexed, and
+ * saved for inspection from Overview.
  */
 
 import React, { useState } from 'react';
@@ -33,8 +34,8 @@ export function WorldBuilderPanel({ buildWorld, showToast }: WorldBuilderPanelPr
             if (result.ok) {
                 showToast(
                     result.added > 0
-                        ? `The world is drafted: ${result.added} lore items are waiting for your approval below.`
-                        : 'The world was drafted, but everything in it was already in your lore or waiting.',
+                        ? `The world is built: ${result.added} lore entries added and indexed for the story.`
+                        : 'The world was built, and all entries were already present in your lore.',
                     result.added > 0 ? 'success' : 'info'
                 );
             } else {
@@ -53,9 +54,9 @@ export function WorldBuilderPanel({ buildWorld, showToast }: WorldBuilderPanelPr
             <div className="mt-3 space-y-3">
                 <p className="text-xs text-ink-500">
                     Describe the world in a few sentences. It is written in three parts (the land, then the peoples and
-                    factions, then the history and rules), and each part is checked against the ones before it. Nothing
-                    is added to the story until you approve it. This makes three model calls, or up to six if a part
-                    has to be asked for again.
+                    factions, then the history and rules), and each part is checked against the ones before it. When
+                    finished, the world is added directly to your story&apos;s lore and can be viewed from Overview. This
+                    makes three model calls, or up to six if a part has to be asked for again.
                 </p>
                 <textarea
                     value={pitch}

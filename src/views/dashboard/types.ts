@@ -205,6 +205,7 @@ export interface DashboardStory {
         };
         [key: string]: unknown;
     };
+    generated_world?: import('@/types').Story['generated_world'];
     [key: string]: unknown;
 }
 

@@ -5,13 +5,14 @@
  * EPUB/MP3/script exports, Audio Autopilot status bar, and Story Reset dropdown.
  */
 
-import type React from 'react';
+import React, { useState } from 'react';
 import {
     Book,
     BookCoverAudioArt,
     BookOpen,
     Download,
     FileText,
+    Globe,
     Headphones,
     Image,
     Loader2,
@@ -27,6 +28,7 @@ import type { StoryResetStageKey } from '@/domain/lifecycle';
 import { findNextUnwrittenScene, getCoverStyleIndex } from '@/domain/story';
 import { useUiStore } from '@/stores';
 import { storyStore } from '@/services/storage';
+import { GeneratedWorldModal } from './GeneratedWorldModal';
 import type { DashboardAudioSummary, DashboardStory } from './types';
 
 export interface DashboardFolioSidebarProps {
@@ -120,6 +122,7 @@ export function DashboardFolioSidebar({
 }: DashboardFolioSidebarProps) {
     const setSelectedSequence = useUiStore((s) => s.setSelectedSequence);
     const setSelectedScene = useUiStore((s) => s.setSelectedScene);
+    const [showGeneratedWorldModal, setShowGeneratedWorldModal] = useState(false);
     const nextScene = findNextUnwrittenScene(
         story as unknown as Parameters<typeof findNextUnwrittenScene>[0]
     );
@@ -280,6 +283,25 @@ export function DashboardFolioSidebar({
                             : 'Start reading'}
                     </span>
                 </button>
+
+                {story.generated_world?.draft && (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => setShowGeneratedWorldModal(true)}
+                            data-testid="view-generated-world-btn"
+                            className="w-full min-h-[44px] py-2 px-4 rounded-xl bg-surface hover:bg-lift border border-edge-strong hover:border-gold/50 text-ink-800 font-bold text-xs shadow-2xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+                        >
+                            <Globe size={14} className="text-gold-ink" />
+                            <span>View Generated World</span>
+                        </button>
+                        <GeneratedWorldModal
+                            isOpen={showGeneratedWorldModal}
+                            generatedWorld={story.generated_world}
+                            onClose={() => setShowGeneratedWorldModal(false)}
+                        />
+                    </>
+                )}
 
                 {nextScene && (
                     <div className="pt-4 border-t border-edge-soft space-y-3">
