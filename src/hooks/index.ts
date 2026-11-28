@@ -1,4 +1,5 @@
 export * from './useDebounce';
+export * from './useReaderAudioClearance';
 export * from './useReaderController';
 export * from './useStoryImages';
 export * from './useImageApiKeys';

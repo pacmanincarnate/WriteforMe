@@ -241,22 +241,75 @@
         }
 
         /* Audio Drama Script Typography (bracketed cues & per-character speaker hues) */
+        :root,
+        .reader-theme-light {
+            --drama-cue-color: rgba(87, 83, 78, 0.82);
+            --drama-cue-bg: rgba(120, 113, 108, 0.08);
+            --drama-speaker-narrator: #6B635B;
+            --drama-speaker-hue-0: #2E5A88;
+            --drama-speaker-hue-1: #9A4832;
+            --drama-speaker-hue-2: #2F6B52;
+            --drama-speaker-hue-3: #73447A;
+            --drama-speaker-hue-4: #8C5E1A;
+            --drama-speaker-hue-5: #236B73;
+            --drama-speaker-hue-6: #474994;
+            --drama-speaker-hue-7: #8F3D58;
+            --drama-speaker-hue-8: #5D6826;
+            --drama-speaker-hue-9: #2C6282;
+            --drama-speaker-hue-10: #7D3B68;
+            --drama-speaker-hue-11: #8A4F26;
+        }
+
+        .reader-theme-sepia {
+            --drama-cue-color: rgba(102, 79, 53, 0.84);
+            --drama-cue-bg: rgba(112, 92, 70, 0.10);
+            --drama-speaker-narrator: #705C46;
+            --drama-speaker-hue-0: #2E5A88;
+            --drama-speaker-hue-1: #9A4832;
+            --drama-speaker-hue-2: #2F6B52;
+            --drama-speaker-hue-3: #73447A;
+            --drama-speaker-hue-4: #8C5E1A;
+            --drama-speaker-hue-5: #236B73;
+            --drama-speaker-hue-6: #474994;
+            --drama-speaker-hue-7: #8F3D58;
+            --drama-speaker-hue-8: #5D6826;
+            --drama-speaker-hue-9: #2C6282;
+            --drama-speaker-hue-10: #7D3B68;
+            --drama-speaker-hue-11: #8A4F26;
+        }
+
+        html.dark,
+        .reader-theme-dark,
+        .reader-theme-oled {
+            --drama-cue-color: rgba(214, 211, 209, 0.72);
+            --drama-cue-bg: rgba(255, 255, 255, 0.06);
+            --drama-speaker-narrator: #A8A095;
+            --drama-speaker-hue-0: #7FB3E6;
+            --drama-speaker-hue-1: #E59883;
+            --drama-speaker-hue-2: #7CC7A4;
+            --drama-speaker-hue-3: #C89AD0;
+            --drama-speaker-hue-4: #DFB06B;
+            --drama-speaker-hue-5: #72C8D1;
+            --drama-speaker-hue-6: #9DA0E8;
+            --drama-speaker-hue-7: #E08DA7;
+            --drama-speaker-hue-8: #B4C272;
+            --drama-speaker-hue-9: #7CBCE0;
+            --drama-speaker-hue-10: #D48EC0;
+            --drama-speaker-hue-11: #DB9E72;
+        }
+
         .drama-bracket-cue {
             font-style: italic;
             font-size: 0.88em;
             font-weight: 400;
             letter-spacing: 0.01em;
-            color: rgba(87, 83, 78, 0.78);
-        }
-
-        .reader-theme-sepia .drama-bracket-cue {
-            color: rgba(102, 79, 53, 0.78);
-        }
-
-        html.dark .drama-bracket-cue,
-        .reader-theme-dark .drama-bracket-cue,
-        .reader-theme-oled .drama-bracket-cue {
-            color: rgba(214, 211, 209, 0.65);
+            color: var(--drama-cue-color);
+            background-color: var(--drama-cue-bg);
+            padding: 0.02em 0.3em;
+            border-radius: 0.28em;
+            text-shadow: none;
+            box-decoration-break: clone;
+            -webkit-box-decoration-break: clone;
         }
 
         .drama-speaker-name {
@@ -264,45 +317,19 @@
             letter-spacing: 0.02em;
         }
 
-        .drama-speaker-narrator {
-            color: #6B635B;
-        }
-
-        .reader-theme-sepia .drama-speaker-narrator {
-            color: #705C46;
-        }
-
-        html.dark .drama-speaker-narrator,
-        .reader-theme-dark .drama-speaker-narrator,
-        .reader-theme-oled .drama-speaker-narrator {
-            color: #A8A095;
-        }
-
-        .drama-speaker-hue-0  { color: #2E5A88; }
-        .drama-speaker-hue-1  { color: #9A4832; }
-        .drama-speaker-hue-2  { color: #2F6B52; }
-        .drama-speaker-hue-3  { color: #73447A; }
-        .drama-speaker-hue-4  { color: #8C5E1A; }
-        .drama-speaker-hue-5  { color: #236B73; }
-        .drama-speaker-hue-6  { color: #474994; }
-        .drama-speaker-hue-7  { color: #8F3D58; }
-        .drama-speaker-hue-8  { color: #5D6826; }
-        .drama-speaker-hue-9  { color: #2C6282; }
-        .drama-speaker-hue-10 { color: #7D3B68; }
-        .drama-speaker-hue-11 { color: #8A4F26; }
-
-        html.dark .drama-speaker-hue-0,  .reader-theme-dark .drama-speaker-hue-0,  .reader-theme-oled .drama-speaker-hue-0  { color: #7FB3E6; }
-        html.dark .drama-speaker-hue-1,  .reader-theme-dark .drama-speaker-hue-1,  .reader-theme-oled .drama-speaker-hue-1  { color: #E59883; }
-        html.dark .drama-speaker-hue-2,  .reader-theme-dark .drama-speaker-hue-2,  .reader-theme-oled .drama-speaker-hue-2  { color: #7CC7A4; }
-        html.dark .drama-speaker-hue-3,  .reader-theme-dark .drama-speaker-hue-3,  .reader-theme-oled .drama-speaker-hue-3  { color: #C89AD0; }
-        html.dark .drama-speaker-hue-4,  .reader-theme-dark .drama-speaker-hue-4,  .reader-theme-oled .drama-speaker-hue-4  { color: #DFB06B; }
-        html.dark .drama-speaker-hue-5,  .reader-theme-dark .drama-speaker-hue-5,  .reader-theme-oled .drama-speaker-hue-5  { color: #72C8D1; }
-        html.dark .drama-speaker-hue-6,  .reader-theme-dark .drama-speaker-hue-6,  .reader-theme-oled .drama-speaker-hue-6  { color: #9DA0E8; }
-        html.dark .drama-speaker-hue-7,  .reader-theme-dark .drama-speaker-hue-7,  .reader-theme-oled .drama-speaker-hue-7  { color: #E08DA7; }
-        html.dark .drama-speaker-hue-8,  .reader-theme-dark .drama-speaker-hue-8,  .reader-theme-oled .drama-speaker-hue-8  { color: #B4C272; }
-        html.dark .drama-speaker-hue-9,  .reader-theme-dark .drama-speaker-hue-9,  .reader-theme-oled .drama-speaker-hue-9  { color: #7CBCE0; }
-        html.dark .drama-speaker-hue-10, .reader-theme-dark .drama-speaker-hue-10, .reader-theme-oled .drama-speaker-hue-10 { color: #D48EC0; }
-        html.dark .drama-speaker-hue-11, .reader-theme-dark .drama-speaker-hue-11, .reader-theme-oled .drama-speaker-hue-11 { color: #DB9E72; }
+        .drama-speaker-narrator { color: var(--drama-speaker-narrator); }
+        .drama-speaker-hue-0  { color: var(--drama-speaker-hue-0); }
+        .drama-speaker-hue-1  { color: var(--drama-speaker-hue-1); }
+        .drama-speaker-hue-2  { color: var(--drama-speaker-hue-2); }
+        .drama-speaker-hue-3  { color: var(--drama-speaker-hue-3); }
+        .drama-speaker-hue-4  { color: var(--drama-speaker-hue-4); }
+        .drama-speaker-hue-5  { color: var(--drama-speaker-hue-5); }
+        .drama-speaker-hue-6  { color: var(--drama-speaker-hue-6); }
+        .drama-speaker-hue-7  { color: var(--drama-speaker-hue-7); }
+        .drama-speaker-hue-8  { color: var(--drama-speaker-hue-8); }
+        .drama-speaker-hue-9  { color: var(--drama-speaker-hue-9); }
+        .drama-speaker-hue-10 { color: var(--drama-speaker-hue-10); }
+        .drama-speaker-hue-11 { color: var(--drama-speaker-hue-11); }
 
         .prose blockquote {
             border-left: 3px solid var(--accent-gold);

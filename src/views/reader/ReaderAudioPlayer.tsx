@@ -5,7 +5,7 @@
  */
 
 import type React from 'react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import {
     AlertCircle,
     ChevronLeft,
@@ -26,6 +26,7 @@ import {
 } from '@/components/icons';
 import { KOKORO_VOICE_GROUPS } from '@/config';
 import { getHumanReadableTtsError } from '@/domain/audio';
+import { useReaderAudioClearance } from '@/hooks/useReaderAudioClearance';
 import { formatPlaybackTime } from './measureReaderPages';
 import type {
     ReaderPlaySceneAudioFn,
@@ -89,6 +90,7 @@ export interface ReaderAudioPlayerProps {
     ttsAudioRef?: React.RefObject<HTMLAudioElement>;
     isAuditioningVoice?: boolean;
     stopAllAudioPlayback?: () => void;
+    onClearanceChange?: (px: number | null) => void;
 }
 
 export function ReaderAudioPlayer({
@@ -136,9 +138,12 @@ export function ReaderAudioPlayer({
     isPlayingMasterSceneMp3 = false,
     ttsAudioRef,
     isAuditioningVoice = false,
-    stopAllAudioPlayback
+    stopAllAudioPlayback,
+    onClearanceChange
 }: ReaderAudioPlayerProps) {
     const [isAudioSettingsOpen, setIsAudioSettingsOpen] = useState(false);
+    const barRef = useRef<HTMLDivElement | null>(null);
+    useReaderAudioClearance(barRef, true, isAudioSettingsOpen, onClearanceChange);
 
     const activeQueueItem = ttsQueue[ttsCurrentChunkIndex] || null;
     const playingSeq = ttsPlayingScene?.seqIdx ?? activeChapterIdx;
@@ -219,6 +224,7 @@ export function ReaderAudioPlayer({
 
     return (
         <div
+            ref={barRef}
             className={`reader-tts-floating-bar rounded-2xl p-2.5 sm:px-3.5 sm:py-2.5 shadow-xl space-y-2 animate-fade-in ${
                 !isReaderHudVisible ? 'opacity-95 hover:opacity-100' : ''
             }`}

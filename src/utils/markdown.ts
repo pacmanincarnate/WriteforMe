@@ -148,6 +148,16 @@ export function parseMarkdown(input: unknown): string {
 
 export const DRAMA_SPEAKER_HUE_COUNT = 12;
 
+export interface AudioDramaSpeakerPalette {
+    speakerColorMap: Map<string, number>;
+    usedColorIndices: Set<number>;
+}
+
+export interface FormatReaderProseOptions {
+    isAudioDrama?: boolean;
+    speakerPalette?: AudioDramaSpeakerPalette;
+}
+
 /**
  * Returns the CSS class for an audio drama speaker prefix, assigning each
  * character a deterministic yet collision-free hue within the current script.
@@ -185,17 +195,63 @@ export function getAudioDramaSpeakerClass(
 }
 
 /**
+ * Creates a shared speaker palette pre-seeded with story cast names so each
+ * character keeps the same subtle hue across every scene and chapter.
+ */
+export function createAudioDramaSpeakerPalette(
+    castNames?: ReadonlyArray<string | null | undefined>
+): AudioDramaSpeakerPalette {
+    const speakerColorMap = new Map<string, number>();
+    const usedColorIndices = new Set<number>();
+    if (Array.isArray(castNames)) {
+        for (const name of castNames) {
+            if (typeof name === 'string' && name.trim()) {
+                getAudioDramaSpeakerClass(name, speakerColorMap, usedColorIndices);
+            }
+        }
+    }
+    return { speakerColorMap, usedColorIndices };
+}
+
+function isValidDramaSpeakerName(name: string): boolean {
+    if (!name || /[.!?]$/.test(name) || /^\d+$/.test(name)) return false;
+    return name.split(/\s+/).filter(Boolean).length <= 5;
+}
+
+function looksLikeAudioDramaScript(text: string): boolean {
+    if (!text) return false;
+    const cleanLines = text
+        .split('\n')
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith('#') && !l.startsWith('===') && !/^---+$/.test(l) && !/^\*\s*\*\s*\*$/.test(l));
+    if (cleanLines.length < 2) return false;
+    const speakerLineRe =
+        /^(?:\*{1,2}|_{1,2})?([\p{L}\p{N}][\p{L}\p{N}_'’.\-\s&/]{0,44}?)(?:\*{1,2}|_{1,2})?(?:\s*(?:\[[^\]\r\n]{1,60}\]|\([^)\r\n]{1,40}\)))?\s*:(?:\*{1,2}|_{1,2})?\s+\S/iu;
+    let speakerLines = 0;
+    for (const line of cleanLines) {
+        const m = line.match(speakerLineRe);
+        if (m && isValidDramaSpeakerName(m[1].trim())) {
+            speakerLines++;
+        }
+    }
+    return speakerLines / cleanLines.length >= 0.5;
+}
+
+/**
  * Styles speaker names at the front of lines (with per-character hues)
  * and bracketed stage/vocal instructions in rendered audio drama HTML.
  */
-export function formatAudioDramaScriptHtml(html: string): string {
+export function formatAudioDramaScriptHtml(
+    html: string,
+    palette?: AudioDramaSpeakerPalette
+): string {
     if (!html || typeof html !== 'string') return html || '';
-    const speakerColorMap = new Map<string, number>();
-    const usedColorIndices = new Set<number>();
+    const speakerColorMap = palette?.speakerColorMap ?? new Map<string, number>();
+    const usedColorIndices = palette?.usedColorIndices ?? new Set<number>();
 
     // 1. Style character names at the start of lines (<p>, <li>, <br>, or string start)
     let out = html.replace(
-        /(^|<(?:p|li)(?:\s+[^>]*)?>|<br\s*\/?>)(\s*)(?:<(strong|b)>)?([A-Za-z0-9][A-Za-z0-9_'’.\-\s]{0,44}?)(<\/\3>)?(\s*(?:\[[^\]\r\n]{1,60}\]|\([^)\r\n]{1,40}\))?\s*:)(<\/\3>)?/gi,
+        /(^|<(?:p|li)(?:\s+[^>]*)?>|<br\s*\/?>)(\s*)(?:<(strong|b)>)?([\p{L}\p{N}][\p{L}\p{N}_'’.\-\s&/]{0,44}?)(<\/\3>)?(\s*(?:\[[^\]\r\n]{1,60}\]|\([^)\r\n]{1,40}\))?\s*:)(<\/\3>)?(?=\s|<|$)/giu,
         (
             match,
             leadTag: string,
@@ -207,7 +263,7 @@ export function formatAudioDramaScriptHtml(html: string): string {
             endClose: string | undefined
         ) => {
             const trimmedName = rawName.trim();
-            if (!trimmedName || /[.!?]$/.test(trimmedName)) return match;
+            if (!isValidDramaSpeakerName(trimmedName)) return match;
             const cls = getAudioDramaSpeakerClass(trimmedName, speakerColorMap, usedColorIndices);
             const unclosedOpen = boldTag && !midClose && !endClose ? `<${boldTag}>` : '';
             if (/^\s*:$/.test(suffix)) {
@@ -230,7 +286,10 @@ export function formatAudioDramaScriptHtml(html: string): string {
  * Formats reader prose or audio drama script into HTML with scene-break
  * dividers, dialogue quote highlighting, and Drama-3 vocal tag styling.
  */
-export function formatReaderProse(input: unknown): string {
+export function formatReaderProse(
+    input: unknown,
+    options?: FormatReaderProseOptions
+): string {
     if (!input) return '';
     let prose: string;
     if (typeof input !== 'string') {
@@ -252,12 +311,7 @@ export function formatReaderProse(input: unknown): string {
         prose = input;
     }
 
-    const win =
-        typeof window !== 'undefined'
-            ? (window as unknown as { isAudioDramaScriptText?: (s: string) => boolean })
-            : null;
-    const isDramaScript =
-        Boolean(win?.isAudioDramaScriptText) && Boolean(win!.isAudioDramaScriptText!(prose));
+    const isDramaScript = options?.isAudioDrama === true || looksLikeAudioDramaScript(prose);
     const hasDramaTags =
         isDramaScript || /<(whisper|emphasis|stress|soft|fast|slow|forceful)>[\s\S]*?<\/\1>/i.test(prose);
     if (hasDramaTags) {
@@ -303,7 +357,7 @@ export function formatReaderProse(input: unknown): string {
         );
 
         if (isDramaScript) {
-            html = formatAudioDramaScriptHtml(html);
+            html = formatAudioDramaScriptHtml(html, options?.speakerPalette);
         }
     } catch (e) {
         console.warn('formatReaderProse dialogue highlighting error:', e);
