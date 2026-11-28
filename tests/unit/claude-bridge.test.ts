@@ -242,9 +242,15 @@ describe('claude-bridge: request and output handling', () => {
                 location: exe
             });
             const unix = put('unix', 'claude');
+            // On Windows temp paths contain a drive colon (`C:\...`), which POSIX PATH splits on.
             expect(
-                bridge.findCli('', { platform: 'linux', home, env: { PATH: `/nowhere:${path.join(home, 'unix')}` } })
-            ).toMatchObject({ command: unix });
+                bridge.cliLocations('', { platform: 'linux', home: '/home/u', env: { PATH: '/nowhere:/home/u/unix' } })[1]
+            ).toBe(path.join('/home/u/unix', 'claude'));
+            if (!unix.includes(':')) {
+                expect(
+                    bridge.findCli('', { platform: 'linux', home, env: { PATH: `/nowhere:${path.join(home, 'unix')}` } })
+                ).toMatchObject({ command: unix });
+            }
         });
 
         it('finds the native, WinGet and npm installs when PATH does not have them', () => {
