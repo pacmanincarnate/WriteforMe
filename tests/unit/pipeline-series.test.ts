@@ -3,12 +3,12 @@ import { createSeriesOpener } from '@/domain/series';
 import { DEFAULT_SLOP_CONFIG } from '@/domain/slop';
 import {
     auditTextAgainstContract,
+    compressCompletedSequence,
     generateBookRecap,
     runAgentWithEscalation,
     runArchivistForScene,
     runSeriesArchitect,
     startNextBook,
-    updateStorySoFar,
     type CallAiFn,
     type PipelineRuntimeContext,
     type PipelineStory
@@ -147,14 +147,14 @@ describe('series pipeline steps', () => {
 
     it('shows the series threads to the Story So Far step only for a series', async () => {
         const base: PipelineStory = { ...sceneStory, concept: 'A ledger goes missing.', acts: [] };
-        const reply = `<response><story_so_far>${'Nadia recovers the ledger at the docks. '.repeat(3)}</story_so_far></response>`;
+        const reply = `<response><compressed_sequence_summary>${'Nadia recovers the ledger at the docks. '.repeat(3)}</compressed_sequence_summary></response>`;
         const plain = vi.fn<CallAiFn>(async () => reply);
-        await updateStorySoFar(makeCtx(base, plain).ctx, base);
+        await compressCompletedSequence(makeCtx(base, plain).ctx, base, 0);
         expect(String(plain.mock.calls[0][0])).not.toContain('series_thread_status');
 
         const withSeries = { ...base, series: seriesHeader(), open_threads: [thread()] };
         const series = vi.fn<CallAiFn>(async () => reply);
-        await updateStorySoFar(makeCtx(withSeries, series).ctx, withSeries);
+        await compressCompletedSequence(makeCtx(withSeries, series).ctx, withSeries, 0);
         expect(String(series.mock.calls[0][0])).toContain('S1 "The missing ledger" [open]');
     });
 
