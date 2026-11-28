@@ -4,10 +4,13 @@
  */
 
 import type React from 'react';
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { Sparkles } from '@/components/icons';
+import { UI_DELAYS_MS } from '@/config';
 import { getAdaptiveCoverTypography, getCoverStyleIndex } from '@/domain/story';
+import { useDebounce } from '@/hooks/useDebounce';
 import { ensureCoverFontsLoaded } from '@/services/browser';
+import { fitCoverTitle } from './fitCoverTitle';
 
 export interface CoverStoryInput {
     id?: string;
@@ -22,16 +25,62 @@ export interface StylizedBlankCoverProps {
     onCycleStyle?: (e: React.MouseEvent<HTMLButtonElement>) => void;
 }
 
-export function StylizedBlankCover({
+/**
+ * The cover. Its title follows the story's title once typing pauses, fades in when it
+ * changes, and is shrunk to fit whenever the title, style, fonts or cover size change.
+ */
+export function StylizedBlankCover(props: StylizedBlankCoverProps) {
+    const frame = useRef<HTMLDivElement>(null);
+    const { story, isLarge } = props;
+    const title = useDebounce(story?.title, UI_DELAYS_MS.coverTitleSettle);
+    const shownTitle = useRef(title);
+
+    useEffect(() => {
+        ensureCoverFontsLoaded();
+    }, []);
+
+    useLayoutEffect(() => {
+        const el = frame.current;
+        if (!el) return;
+        let live = true;
+        const fit = () => {
+            if (live) el.querySelectorAll<HTMLElement>('h2').forEach(fitCoverTitle);
+        };
+        fit();
+        document.fonts?.ready.then(fit);
+        const host = el.parentElement;
+        const observer =
+            host && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(fit) : null;
+        if (observer && host) observer.observe(host);
+        return () => {
+            live = false;
+            observer?.disconnect();
+        };
+    }, [title, story?.coverStyle, story?.id, isLarge]);
+
+    useLayoutEffect(() => {
+        if (shownTitle.current === title) return;
+        shownTitle.current = title;
+        const still = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+        if (still) return;
+        frame.current?.querySelectorAll<HTMLElement>('h2').forEach((heading) => {
+            heading.animate?.([{ opacity: 0 }, { opacity: 1 }], { duration: 260, easing: 'ease-out' });
+        });
+    }, [title]);
+
+    return (
+        <div ref={frame} className="contents">
+            <CoverComposition {...props} story={{ ...story, title }} />
+        </div>
+    );
+}
+
+function CoverComposition({
     story = {},
     theme = 'light',
     isLarge = false,
     onCycleStyle
 }: StylizedBlankCoverProps) {
-    useEffect(() => {
-        ensureCoverFontsLoaded();
-    }, []);
-
     const title = (story.title || 'Untitled Novel').trim();
     const styleIdx =
         typeof story.coverStyle === 'number'
@@ -73,11 +122,9 @@ export function StylizedBlankCover({
                             fontFamily: "'Bodoni Moda', 'DM Serif Display', Georgia, serif",
                             writingMode: 'vertical-rl',
                             transform: 'rotate(180deg)',
-                            fontSize: typo.fontSize,
+                            fontSize: `calc(${typo.fontSize} * var(--cover-fit, 1))`,
                             letterSpacing: typo.letterSpacing,
-                            lineHeight: typo.lineHeight,
-                            overflowWrap: 'break-word',
-                            wordBreak: 'break-word'
+                            lineHeight: typo.lineHeight
                         }}
                         className={`font-bold uppercase max-h-[90%] ${
                             isDark ? 'text-[#F5F0E8] [text-shadow:0_1px_4px_rgba(0,0,0,0.9)]' : 'text-ink-900'
@@ -156,11 +203,9 @@ export function StylizedBlankCover({
                     <h2
                         style={{
                             fontFamily: "'Syne', 'Unbounded', 'Plus Jakarta Sans', sans-serif",
-                            fontSize: typo.fontSize,
+                            fontSize: `calc(${typo.fontSize} * var(--cover-fit, 1))`,
                             lineHeight: typo.lineHeight,
-                            letterSpacing: typo.letterSpacing,
-                            overflowWrap: 'break-word',
-                            wordBreak: 'break-word'
+                            letterSpacing: typo.letterSpacing
                         }}
                         className={`font-black uppercase ${isDark ? 'text-[#F5F0E8]' : 'text-ink-900'}`}
                     >
@@ -212,10 +257,8 @@ export function StylizedBlankCover({
                     <h2
                         style={{
                             fontFamily: "'Pinyon Script', cursive",
-                            fontSize: typo.fontSize,
-                            lineHeight: typo.lineHeight,
-                            overflowWrap: 'break-word',
-                            wordBreak: 'break-word'
+                            fontSize: `calc(${typo.fontSize} * var(--cover-fit, 1))`,
+                            lineHeight: typo.lineHeight
                         }}
                         className={
                             isDark ? 'text-[#FAF5E8] [text-shadow:0_0_14px_rgba(201,169,110,0.7)]' : 'text-ink-900'
@@ -258,11 +301,9 @@ export function StylizedBlankCover({
                     <h2
                         style={{
                             fontFamily: "'Antonio', 'Oswald', sans-serif",
-                            fontSize: typo.fontSize,
+                            fontSize: `calc(${typo.fontSize} * var(--cover-fit, 1))`,
                             letterSpacing: typo.letterSpacing,
-                            lineHeight: typo.lineHeight,
-                            overflowWrap: 'break-word',
-                            wordBreak: 'break-word'
+                            lineHeight: typo.lineHeight
                         }}
                         className={`font-light uppercase ${isDark ? 'text-[#F5F0E8]' : 'text-ink-900'}`}
                     >
@@ -350,11 +391,9 @@ export function StylizedBlankCover({
                     <h2
                         style={{
                             fontFamily: "'Cinzel Decorative', 'Cinzel', serif",
-                            fontSize: typo.fontSize,
+                            fontSize: `calc(${typo.fontSize} * var(--cover-fit, 1))`,
                             letterSpacing: typo.letterSpacing,
-                            lineHeight: typo.lineHeight,
-                            overflowWrap: 'break-word',
-                            wordBreak: 'break-word'
+                            lineHeight: typo.lineHeight
                         }}
                         className={`font-bold uppercase mt-2 ${isDark ? 'text-[#F5F0E8]' : 'text-ink-900'}`}
                     >
@@ -392,11 +431,9 @@ export function StylizedBlankCover({
                             fontFamily: "'Space Grotesk', sans-serif",
                             writingMode: 'vertical-rl',
                             transform: 'rotate(180deg)',
-                            fontSize: typo.fontSize,
+                            fontSize: `calc(${typo.fontSize} * var(--cover-fit, 1))`,
                             letterSpacing: typo.letterSpacing,
-                            lineHeight: typo.lineHeight,
-                            overflowWrap: 'break-word',
-                            wordBreak: 'break-word'
+                            lineHeight: typo.lineHeight
                         }}
                         className={`font-black uppercase max-h-[90%] ${
                             isDark ? 'text-[#F5F0E8]' : 'text-ink-900'
@@ -476,10 +513,8 @@ export function StylizedBlankCover({
                     <h2
                         style={{
                             fontFamily: "'Newsreader', 'Cormorant Garamond', Georgia, serif",
-                            fontSize: typo.fontSize,
-                            lineHeight: typo.lineHeight,
-                            overflowWrap: 'break-word',
-                            wordBreak: 'break-word'
+                            fontSize: `calc(${typo.fontSize} * var(--cover-fit, 1))`,
+                            lineHeight: typo.lineHeight
                         }}
                         className={`italic font-normal ${
                             isDark ? 'text-[#FAF6EE] [text-shadow:0_1px_6px_rgba(0,0,0,0.9)]' : 'text-ink-900'
@@ -546,11 +581,9 @@ export function StylizedBlankCover({
                 <h2
                     style={{
                         fontFamily: "'Prata', 'Merriweather', Georgia, serif",
-                        fontSize: typo.fontSize,
+                        fontSize: `calc(${typo.fontSize} * var(--cover-fit, 1))`,
                         letterSpacing: typo.letterSpacing,
-                        lineHeight: typo.lineHeight,
-                        overflowWrap: 'break-word',
-                        wordBreak: 'break-word'
+                        lineHeight: typo.lineHeight
                     }}
                     className="font-bold uppercase px-6 text-[#FDF8F0] [text-shadow:0_2px_8px_rgba(0,0,0,0.9)]"
                 >
