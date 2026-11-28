@@ -7,6 +7,7 @@ import {
     EmbeddingService,
     getLocalEmbeddingModel,
     isLocalEmbeddingAvailable,
+    resetKoboldEmbeddingProbeCache,
     resetLocalEmbeddingProbe,
     setLocalEmbeddingModel
 } from '@/services/rag';
@@ -81,6 +82,7 @@ afterEach(() => {
     act(() => root.unmount());
     container.remove();
     delete window.ellipsisDesktopBackends;
+    resetKoboldEmbeddingProbeCache();
     resetLocalEmbeddingProbe();
     resetVaultDetectorForTests();
     vi.unstubAllGlobals();
@@ -97,7 +99,8 @@ describe('built-in embedding provider', () => {
         expect(new EmbeddingService('', 'llamacpp').isConfigured()).toBe(true);
     });
 
-    it('embeds through the desktop bridge and names the model in the index fingerprint', async () => {
+    it('embeds through the desktop bridge and names the model in the index fingerprint when KoboldCPP is unavailable', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED'); }));
         const bridge = installBridge(status());
         const service = new EmbeddingService('', 'llamacpp', undefined, undefined, 'qwen3-embedding-0.6b');
         expect(service.getProviderLabel()).toBe('llamacpp|qwen3-embedding-0.6b');
@@ -111,7 +114,33 @@ describe('built-in embedding provider', () => {
         ]);
     });
 
+    it('prefers KoboldCPP embeddings ahead of built-in llama.cpp when KoboldCPP answers', async () => {
+        const fetchMock = vi.fn(async () =>
+            new Response(JSON.stringify({ data: [{ embedding: [9, 8, 7] }] }), {
+                status: 200,
+                headers: { 'content-type': 'application/json' }
+            })
+        );
+        vi.stubGlobal('fetch', fetchMock);
+        const bridge = installBridge(status());
+        const service = new EmbeddingService('', 'llamacpp', 'http://127.0.0.1:5001');
+
+        await expect(service.getEmbedding('The Red Keep')).resolves.toEqual([9, 8, 7]);
+        expect(bridge.embed).not.toHaveBeenCalled();
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to built-in llama.cpp when KoboldCPP returns an HTTP error', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('Embeddings disabled', { status: 400 })));
+        const bridge = installBridge(status());
+        const service = new EmbeddingService('', 'llamacpp', 'http://127.0.0.1:5001');
+
+        await expect(service.getEmbedding('The Red Keep')).resolves.toEqual([1, 2, 3]);
+        expect(bridge.embed).toHaveBeenCalledWith('embeddinggemma-2', ['The Red Keep'], 'document');
+    });
+
     it('surfaces the desktop app\'s reason when the model cannot answer', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('ECONNREFUSED'); }));
         const bridge = installBridge(status());
         bridge.embed.mockResolvedValueOnce({ ok: false, error: 'llama.cpp could not load the model: bad magic' } as never);
         await expect(new EmbeddingService('', 'llamacpp').getEmbedding('x')).rejects.toThrow('bad magic');

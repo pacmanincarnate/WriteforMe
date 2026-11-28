@@ -30,6 +30,7 @@ The list also shows embedding `.gguf` files already on the PC: any file with `em
 
 ## How it runs
 
+- **KoboldCPP first when available:** When **Built-in** (`llamacpp`) is active, `EmbeddingService` checks KoboldCPP (`/v1/embeddings`) first. If a running KoboldCPP instance answers with valid embeddings, it handles lore indexing and search directly; if KoboldCPP is unreachable or lacks an embedding model, it falls back seamlessly to the bundled CPU `llama.cpp` server below.
 - llama.cpp is the pinned build `b11457`, checked against its SHA-256. The two suggested models are checked the same way. The desktop app unpacks with its bundled 7-Zip; the launcher uses the system's `tar` (Windows 10 and later).
 - `llama-server` runs in embedding mode on a free loopback port, **on the processor only** (`-ngl 0`), with at most four threads and a 2,048-token context. Texts are cut to 6,000 characters.
 - Because it never touches the graphics card, it takes no lease from the VRAM coordinator and is never unloaded by it. KoboldCpp, ComfyUI and audio.cpp keep the whole card.

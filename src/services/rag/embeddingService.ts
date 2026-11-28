@@ -29,6 +29,80 @@ export type EmbeddingProvider =
 /** A search embeds a query; the index embeds documents. Only the built-in model tells them apart. */
 export type EmbeddingKind = 'query' | 'document';
 
+const KOBOLD_PROBE_TTL_MS = 30000;
+const KOBOLD_PROBE_TIMEOUT_MS = 2500;
+
+interface KoboldProbeEntry {
+    available: boolean;
+    checkedAt: number;
+}
+
+const koboldEmbeddingProbeCache = new Map<string, KoboldProbeEntry>();
+
+function normalizeKoboldBaseUrl(baseUrl?: string): string {
+    return baseUrl && String(baseUrl).trim()
+        ? String(baseUrl).trim().replace(/\/+$/, '')
+        : DEFAULT_SERVICE_URLS.koboldcpp;
+}
+
+/** Clears cached KoboldCPP embedding reachability results (primarily for tests). */
+export function resetKoboldEmbeddingProbeCache(): void {
+    koboldEmbeddingProbeCache.clear();
+}
+
+function getCachedKoboldEmbeddingStatus(cleanUrl: string): boolean | null {
+    const entry = koboldEmbeddingProbeCache.get(cleanUrl);
+    if (!entry) return null;
+    if (Date.now() - entry.checkedAt > KOBOLD_PROBE_TTL_MS) {
+        koboldEmbeddingProbeCache.delete(cleanUrl);
+        return null;
+    }
+    return entry.available;
+}
+
+function setCachedKoboldEmbeddingStatus(cleanUrl: string, available: boolean): void {
+    koboldEmbeddingProbeCache.set(cleanUrl, { available, checkedAt: Date.now() });
+}
+
+function extractValidEmbeddingVector(data: unknown): number[] | null {
+    const vec = (data as { data?: Array<{ embedding?: unknown }> } | null)?.data?.[0]?.embedding;
+    return Array.isArray(vec) && vec.length > 0 && typeof vec[0] === 'number' ? (vec as number[]) : null;
+}
+
+/**
+ * Probes whether KoboldCPP at `baseUrl` answers `/v1/embeddings` cleanly. Cached for 30s per URL.
+ */
+export async function probeKoboldEmbeddingAvailability(
+    baseUrl: string = DEFAULT_SERVICE_URLS.koboldcpp,
+    timeoutMs: number = KOBOLD_PROBE_TIMEOUT_MS
+): Promise<boolean> {
+    const cleanUrl = normalizeKoboldBaseUrl(baseUrl);
+    const cached = getCachedKoboldEmbeddingStatus(cleanUrl);
+    if (cached !== null) return cached;
+    try {
+        const response = await fetchWithTimeout(
+            `${cleanUrl}/v1/embeddings`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'default', input: 'ping' })
+            },
+            timeoutMs
+        );
+        if (!response.ok) {
+            setCachedKoboldEmbeddingStatus(cleanUrl, false);
+            return false;
+        }
+        const vec = extractValidEmbeddingVector(await response.json());
+        const available = Boolean(vec);
+        setCachedKoboldEmbeddingStatus(cleanUrl, available);
+        return available;
+    } catch {
+        setCachedKoboldEmbeddingStatus(cleanUrl, false);
+        return false;
+    }
+}
+
 function isLocalKoboldEmbeddingUrl(url: string): boolean {
     try {
         const parsed = new URL(url);
@@ -76,7 +150,9 @@ export class EmbeddingService {
     async getEmbedding(text: string, kind: EmbeddingKind = 'document'): Promise<number[] | null> {
         if (!text || !text.trim()) return null;
         if (this.provider === 'llamacpp') {
-            // Runs on the processor in the desktop app, so it takes no GPU lease.
+            // Prefer KoboldCPP embeddings when reachable; otherwise fall back to built-in llama.cpp on CPU.
+            const koboldVec = await this.tryKoboldEmbeddingForBuiltIn(text);
+            if (koboldVec) return koboldVec;
             return embedLocally(this.localModel, text, kind);
         } else if (this.provider === 'gemini') {
             return withCloudActivity(() => this.getGeminiEmbedding(text));
@@ -268,5 +344,36 @@ export class EmbeddingService {
 
         const data = (await response.json()) as { data?: Array<{ embedding?: number[] }> };
         return data.data?.[0]?.embedding ?? null;
+    }
+
+    /** Fast single-shot KoboldCPP attempt used before falling back to built-in llama.cpp. */
+    private async tryKoboldEmbeddingForBuiltIn(text: string): Promise<number[] | null> {
+        const cleanUrl = normalizeKoboldBaseUrl(this.baseUrl);
+        if (getCachedKoboldEmbeddingStatus(cleanUrl) === false) return null;
+        const doFetch = (): Promise<Response> =>
+            fetchWithTimeout(
+                `${cleanUrl}/v1/embeddings`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model: 'default', input: text })
+                },
+                KOBOLD_PROBE_TIMEOUT_MS
+            );
+        try {
+            const response = isLocalKoboldEmbeddingUrl(cleanUrl)
+                ? await withLocalGpuLease('llm', { koboldUrl: cleanUrl }, doFetch)
+                : await doFetch();
+            if (!response.ok) {
+                setCachedKoboldEmbeddingStatus(cleanUrl, false);
+                return null;
+            }
+            const vec = extractValidEmbeddingVector(await response.json());
+            setCachedKoboldEmbeddingStatus(cleanUrl, Boolean(vec));
+            return vec;
+        } catch {
+            setCachedKoboldEmbeddingStatus(cleanUrl, false);
+            return null;
+        }
     }
 }

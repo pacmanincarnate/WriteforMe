@@ -1090,7 +1090,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 ))}
                             </div>
                             {embeddingProvider === BUILT_IN_EMBEDDING_TAB.id && builtInEmbedding ? (
-                                <SettingsLocalEmbedding />
+                                <SettingsLocalEmbedding koboldUrl={koboldUrl} />
                             ) : (
                                 <>
                                     <p className="text-xs text-ink-500 mt-2">

@@ -1,13 +1,17 @@
 /**
  * @module views/settings/SettingsLocalEmbedding
- * The built-in embedding model (desktop app): a model chooser and the setup's progress. Picking
- * the provider or a model is the whole setup; the app downloads, starts and re-indexes by itself.
+ * The built-in embedding provider UI: prefers KoboldCPP's embedding endpoint when available and
+ * otherwise configures and runs the bundled CPU llama.cpp model.
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { RefreshCw } from '@/components';
 import { useLocalEmbeddingSetup } from '@/hooks';
-import type { LocalEmbeddingModel, LocalEmbeddingStatus } from '@/services/rag';
+import {
+    probeKoboldEmbeddingAvailability,
+    type LocalEmbeddingModel,
+    type LocalEmbeddingStatus
+} from '@/services/rag';
 
 const megabytes = (bytes: number): string => `${Math.round(bytes / 1e6)} MB`;
 
@@ -67,8 +71,41 @@ function Progress({ status, retry }: { status: LocalEmbeddingStatus; retry: () =
     return null;
 }
 
-export const SettingsLocalEmbedding: React.FC = () => {
-    const { modelId, status, choose, retry } = useLocalEmbeddingSetup(true);
+export interface SettingsLocalEmbeddingProps {
+    /** When passed, Built-in probes KoboldCPP first and prefers it whenever embeddings are active. */
+    koboldUrl?: string;
+}
+
+export const SettingsLocalEmbedding: React.FC<SettingsLocalEmbeddingProps> = ({ koboldUrl }) => {
+    const [koboldProbe, setKoboldProbe] = useState<'idle' | 'available' | 'unavailable'>(
+        koboldUrl ? 'idle' : 'unavailable'
+    );
+
+    useEffect(() => {
+        if (!koboldUrl) {
+            setKoboldProbe('unavailable');
+            return;
+        }
+        let cancelled = false;
+        setKoboldProbe('idle');
+        void probeKoboldEmbeddingAvailability(koboldUrl).then((ok) => {
+            if (!cancelled) setKoboldProbe(ok ? 'available' : 'unavailable');
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [koboldUrl]);
+
+    const { modelId, status, choose, retry } = useLocalEmbeddingSetup(koboldProbe === 'unavailable');
+
+    if (koboldProbe === 'available') {
+        return (
+            <p className="text-xs text-sage-700 font-medium" role="status">
+                KoboldCPP embeddings active ({koboldUrl}) — using KoboldCPP ahead of built-in llama.cpp.
+            </p>
+        );
+    }
+
     if (!status) return null;
     const listed = status.models.some((m) => m.id === modelId);
     return (
@@ -87,6 +124,11 @@ export const SettingsLocalEmbedding: React.FC = () => {
                 ))}
             </select>
             <Progress status={status} retry={retry} />
+            {koboldUrl && (
+                <p className="text-[11px] text-ink-500">
+                    KoboldCPP embeddings are used automatically ahead of llama.cpp whenever KoboldCPP is running with embeddings enabled.
+                </p>
+            )}
         </div>
     );
 };
