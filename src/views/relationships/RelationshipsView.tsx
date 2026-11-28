@@ -246,7 +246,7 @@ export function RelationshipsView({
     };
 
     return (
-        <div className="max-w-6xl mx-auto space-y-6 animate-fade-in pb-24">
+        <div className="max-w-7xl mx-auto space-y-6 animate-fade-in pb-24">
             <EditorialSubNav
                 activeView={view}
                 onSelectView={setView}

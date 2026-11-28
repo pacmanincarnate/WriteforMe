@@ -174,7 +174,7 @@ export function LoreView({
                 const files = Array.from(e.dataTransfer?.files || []);
                 if (files.length) handlePostGenLoreImport(files);
             }}
-            className={`max-w-6xl mx-auto space-y-6 animate-fade-in pb-24 transition-all rounded-2xl ${
+            className={`max-w-7xl mx-auto space-y-6 animate-fade-in pb-24 transition-all rounded-2xl ${
                 isDraggingLoreTab ? 'ring-2 ring-gold/40 bg-gold-tint/10 p-2' : ''
             }`}
         >

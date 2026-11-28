@@ -214,7 +214,7 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                         <button
                             onClick={() => setView('dashboard')}
                             className={`nav-btn ${
-                                ['dashboard', 'cast', 'relationships', 'lore'].includes(view) ? 'active' : ''
+                                ['dashboard', 'cast', 'relationships', 'lore', 'inspector'].includes(view) ? 'active' : ''
                             }`}
                             title="Overview & World Bible"
                         >

@@ -45,7 +45,7 @@ export function InspectorView({
     handleRagTest
 }: InspectorViewProps) {
     return (
-        <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+        <div className="max-w-7xl mx-auto space-y-6 animate-fade-in">
             <EditorialSubNav
                 activeView={view}
                 onSelectView={setView}
