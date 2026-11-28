@@ -355,6 +355,15 @@ export const NANO_GPT_DEFAULT_MODELS: readonly ModelDescriptor[] = [
     }
 ];
 
+/** The one name for the novel / audio drama choice, and for each side of it. */
+export const WRITING_MODE_TITLE = 'Writing mode';
+export const WRITING_MODE_LABELS = { novel: 'Novel', audio_drama: 'Audio Drama' } as const;
+
+/** The label for a story's writing mode; anything that is not audio drama is a novel. */
+export function writingModeLabel(mode: string | null | undefined): string {
+    return mode === 'audio_drama' ? WRITING_MODE_LABELS.audio_drama : WRITING_MODE_LABELS.novel;
+}
+
 export const VIEW_LABELS: Record<string, string> = {
     library: 'Bookshelf',
     setup: 'New Story',
