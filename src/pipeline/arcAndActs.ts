@@ -4,6 +4,7 @@
  */
 
 import { formatActFunctionGuideXml } from '@/config';
+import { isModelStop } from '@/services/llm';
 import {
     buildSequencePromptContext,
     createEmptyStoryMemory,
@@ -378,6 +379,8 @@ export async function generateStoryArc(
         ctx.showToast('Story Arc (Tier 1.1) generated successfully!', 'success');
         return updatedStory;
     } catch (e) {
+        // A Stop press is not a failure: leave quietly.
+        if (isModelStop(e)) throw e;
         const msg = extractErrorMessage(e);
         console.error('[generateStoryArc] Story Arc generation failed:', e);
         ctx.showToast(`Story Arc generation failed: ${msg}`, 'error');
@@ -1142,6 +1145,8 @@ BEGIN SEQUENCE CRITIQUE REVIEW
         ctx.showToast('Acts & Sequences structured successfully!', 'success');
         return finalStory;
     } catch (e) {
+        // A Stop press is not a failure: leave quietly.
+        if (isModelStop(e)) throw e;
         const msg = extractErrorMessage(e);
         console.error('Failed to generate Acts and Sequences:', e);
         ctx.showToast(`Generation failed: ${msg}`, 'error');
@@ -1303,6 +1308,8 @@ BEGIN DEVELOPING STORY SEQUENCES
         ctx.showToast('All sequences woven successfully!', 'success');
         return nextStory;
     } catch (e) {
+        // A Stop press is not a failure: leave quietly.
+        if (isModelStop(e)) throw e;
         const msg = extractErrorMessage(e);
         console.error('Sequence generation failed:', e);
         ctx.showToast(`Sequence generation failed: ${msg}`, 'error');

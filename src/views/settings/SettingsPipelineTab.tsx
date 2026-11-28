@@ -20,6 +20,8 @@ import {
 } from '@/components';
 import { AVAILABLE_ICONS } from '@/config';
 import { DEFAULT_SLOP_CONFIG, buildEffectiveSlopData } from '@/domain/slop';
+import { SettingsAutopilotLimits } from './SettingsAutopilotLimits';
+import { SettingsFeatureOptions } from './SettingsFeatureOptions';
 import type { SlopSeverity } from '@/types';
 import type { SettingsPipelineTabProps } from './types';
 
@@ -251,6 +253,10 @@ export const SettingsPipelineTab: React.FC<SettingsPipelineTabProps> = ({
                     />
                 </button>
             </div>
+
+            <SettingsFeatureOptions />
+
+            <SettingsAutopilotLimits />
 
             {/* Audio Drama Voice Director Pass (Audit-Gated) Toggle */}
             <div className="flex items-center justify-between p-4 bg-inset border border-edge-strong rounded-xl">

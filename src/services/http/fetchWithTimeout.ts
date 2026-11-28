@@ -7,6 +7,15 @@ import { TIMEOUTS_MS } from '@/config';
 
 export type FetchTimeoutOptions = RequestInit;
 
+/** The caller's own reason for aborting, when its signal (not the deadline) ended the request. */
+function callerAbortReason(signal: AbortSignal | null | undefined): Error | null {
+    if (!signal || !signal.aborted) return null;
+    if (signal.reason instanceof Error && signal.reason.name !== 'AbortError') {
+        return signal.reason;
+    }
+    return null;
+}
+
 export interface FetchIdleTimeoutHandle {
     response: Response;
     resetIdle: () => void;
@@ -31,7 +40,7 @@ export async function fetchWithIdleTimeout(
             response,
             resetIdle: () => {},
             clear: () => {},
-            mapError: (err: unknown) => err
+            mapError: (err: unknown) => callerAbortReason(options.signal) || err
         };
     }
 
@@ -95,6 +104,10 @@ export async function fetchWithIdleTimeout(
     };
 
     const mapError = (err: unknown): unknown => {
+        const callerReason = callerAbortReason(options.signal);
+        if (callerReason) {
+            return callerReason;
+        }
         if (abortReason === 'external') {
             return err;
         }
@@ -184,6 +197,8 @@ export async function fetchWithTimeout(
                     return result;
                 } catch (err) {
                     clearTimeout(id);
+                    const callerReason = callerAbortReason(options.signal);
+                    if (callerReason) throw callerReason;
                     if (
                         (err instanceof Error && err.name === 'AbortError') ||
                         controller.signal.aborted
@@ -206,6 +221,8 @@ export async function fetchWithTimeout(
         return response;
     } catch (error) {
         clearTimeout(id);
+        const callerReason = callerAbortReason(options.signal);
+        if (callerReason) throw callerReason;
         if (
             (error instanceof Error && error.name === 'AbortError') ||
             controller.signal.aborted

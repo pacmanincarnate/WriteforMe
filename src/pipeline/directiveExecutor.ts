@@ -55,6 +55,7 @@ import {
     type PipelineRuntimeContext,
     type PipelineStory
 } from './context';
+import { markRestorePoint } from './restorePoint';
 import { repairBannedEntitiesWithAI } from './continuityPipeline';
 import {
     reviewDirectiveConsistency,
@@ -75,6 +76,7 @@ export async function executeDirectivePlan(
     if (ctx.getIsPlanningDirective?.() || ctx.getIsExecutingDirective?.()) return;
     const initialStory = ctx.getStory();
     const snapshot = JSON.parse(JSON.stringify(initialStory)) as PipelineStory;
+    await markRestorePoint(ctx, 'Before applying a directive plan', snapshot);
 
     try {
         ctx.setDirectiveUndoSnapshot?.(snapshot);

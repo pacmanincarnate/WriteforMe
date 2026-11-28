@@ -6,7 +6,8 @@
 
 import type { CastMember } from '@/types';
 import { PROMPTS } from '@/prompts';
-import { isSerializationPlaceholder, safeEscapeRegex, tokenMatch } from '@/utils';
+import { isSerializationPlaceholder, tokenMatch } from '@/utils';
+import { scrubSecretFromText } from './secretScrub';
 import { isAudioDramaScriptText } from '@/domain/audio';
 import { applySurgicalEditsDetailed } from '@/domain/editing';
 import {
@@ -480,16 +481,12 @@ export function compileActiveState(
                   Number(sec.reveal_anchor?.sequence_number || 7) > currentSeqNum
           )
         : [];
+    const secretIgnoreWords = (Array.isArray(storyState.cast) ? storyState.cast : []).map((c) => String(c?.name || '')).filter(Boolean);
     const maskSecretText = (val: unknown): string => {
         let textVal = String(val || '');
         if (!textVal || unrevealedSecrets.length === 0) return textVal;
         unrevealedSecrets.forEach((sec) => {
-            if (sec.truth && sec.truth.length > 5) {
-                textVal = textVal.replace(
-                    new RegExp(safeEscapeRegex(sec.truth), 'gi'),
-                    '[Private Tension]'
-                );
-            }
+            textVal = scrubSecretFromText(textVal, sec, { placeholder: '[Private Tension]', ignoreWords: secretIgnoreWords });
         });
         return textVal;
     };

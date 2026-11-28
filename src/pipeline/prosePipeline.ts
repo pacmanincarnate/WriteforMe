@@ -63,7 +63,7 @@ import {
     stripNarrativeLensSchemaLine
 } from '@/prompts';
 import { ensureAudioDramaVoicesRegistered } from '@/services/audio';
-import { callAgenticLoop, resolveRole } from '@/services/llm';
+import { callAgenticLoop, isModelStop, resolveRole, throwIfModelStopped } from '@/services/llm';
 import { storyStore } from '@/services/storage';
 import {
     CLI_BRIDGE_DEFAULT_URLS,
@@ -80,10 +80,11 @@ import {
     escapeXml,
     extractTag,
     isSerializationPlaceholder,
-    safeEscapeRegex,
     safeJsonStringify,
     tokenMatch
 } from '@/utils';
+import { checkSceneForSecretLeaks } from './secretLeak';
+import { scrubSecretFromText } from '@/domain/continuity/secretScrub';
 import {
     asArray,
     asNumber,
@@ -97,7 +98,9 @@ import {
 import { getCharacterDetails, runArchivistForScene } from './continuityPipeline';
 import { DIRECTIVE_REVIEW_OUTPUT_FORMAT_SCHEMA } from './directiveReview';
 import { runAgentWithEscalation } from './escalation';
+import { checkSceneForTheDead } from './deadCheck';
 import { buildProseContext, type ProseContextCastMember } from './proseContext';
+import { markRestorePoint } from './restorePoint';
 import { generateScenes } from './sceneBlueprints';
 import { auditTextAgainstContract } from './series';
 import { applySurgicalEditsWithRetry, applySurgicalProsePatch } from './surgicalPatch';
@@ -353,6 +356,11 @@ export async function writeSceneProse(
           ? { ...scenesList[0] }
           : { title: 'Scene', scene_events: '', objective: '', cast_names: [] };
 
+    const proseBefore = asOptionalRecord(asRecord(storyToUse.prose)[`${seq}-${s}`]);
+    if (asString(proseBefore?.final).trim()) {
+        await markRestorePoint(ctx, `Before rewriting Scene ${seq + 1}.${s + 1}`, storyToUse);
+    }
+
     const isManualOrForceRewrite = Boolean(forceFullRewrite || scene.user_edited);
     const initialSceneObj = asString(scene.objective);
     const initialSceneSetting = asString(scene.setting);
@@ -453,14 +461,14 @@ export async function writeSceneProse(
                     sec.concealed_from_characters.some((ch) => tokenMatch(currentPov, asString(ch)))
             );
             unrevealedSecrets.forEach((sec) => {
-                const truthStr = asString(sec.truth);
-                if (truthStr.length > 5) {
-                    const rx = new RegExp(safeEscapeRegex(truthStr), 'gi');
-                    previousSceneProseText = (previousSceneProseText || '').replace(
-                        rx,
-                        '[Internal revelation redacted across POV boundary]'
-                    );
-                }
+                previousSceneProseText = scrubSecretFromText(
+                    previousSceneProseText || '',
+                    { truth: asString(sec.truth) },
+                    {
+                        placeholder: '[Internal revelation redacted across POV boundary]',
+                        ignoreWords: asArray<Record<string, unknown>>(storyToUse.cast).map((c) => asString(c.name))
+                    }
+                );
             });
         }
     }
@@ -1906,6 +1914,67 @@ Refine and elevate this scene draft according to your editorial mandates. Preser
             }
         }
 
+        // SECRET LEAK CHECK: a second reader looks for an unrevealed secret told in other words.
+        if (finalProseText) {
+            const leakCheck = await checkSceneForSecretLeaks(ctx, {
+                story: storyToUse as PipelineStory,
+                sequenceNumber: Number(sequenceData?.number || seq + 1),
+                prose: finalProseText,
+                isAudioDrama: isAudioDramaStory,
+                label: `Secret Leak Check (Sequence ${seq + 1}, Scene ${s + 1})`
+            });
+            if (leakCheck.leaks.length > 0) {
+                finalProseText = leakCheck.prose;
+                ctx.logPipelineValidation(
+                    `Secret Leak Check (Sequence ${seq + 1}, Scene ${s + 1})`,
+                    leakCheck.fixed,
+                    leakCheck.leaks.map((leak) => `"${leak.quote}"${leak.why ? `: ${leak.why}` : ''}`),
+                    null,
+                    {
+                        tierName: 'Secret Leak Judge',
+                        type: 'secret_leak',
+                        actionTaken: leakCheck.fixed
+                            ? 'Rewrote the passages that gave a secret away.'
+                            : 'Could not rewrite them; the scene is kept as written.'
+                    }
+                );
+                if (!leakCheck.fixed) {
+                    ctx.showToast(
+                        `Sequence ${seq + 1}, Scene ${s + 1} may give away a secret before its reveal. See the pipeline log.`,
+                        'warning'
+                    );
+                }
+            }
+        }
+
+        // DEAD CHARACTER CHECK: in code first; a model call only when the scene names the dead.
+        if (finalProseText) {
+            const deadLabel = `Dead Character Check (Sequence ${seq + 1}, Scene ${s + 1})`;
+            const deadCheck = await checkSceneForTheDead(ctx, {
+                story: storyToUse as never,
+                scene,
+                prose: finalProseText,
+                label: deadLabel
+            });
+            if (deadCheck.named.length > 0) {
+                finalProseText = deadCheck.prose;
+                const fixedAll = deadCheck.rewritten > 0;
+                ctx.logPipelineValidation(
+                    deadLabel,
+                    true,
+                    [`Named in ${deadCheck.flagged} paragraph(s): ${deadCheck.named.join(', ')}`],
+                    null,
+                    {
+                        tierName: 'Dead Character Check',
+                        type: 'dead_character',
+                        actionTaken: fixedAll
+                            ? `Rewrote ${deadCheck.rewritten} paragraph(s) that had the dead alive.`
+                            : 'The paragraphs agree with the record, or could not be rewritten; the scene is kept as written.'
+                    }
+                );
+            }
+        }
+
         // POST-WRITING SURGICAL BANNED-WORDS & AI-SLOP EDITOR
         const allStoryCharacters = [
             ...asArray<Record<string, unknown>>(storyToUse?.characters),
@@ -2205,6 +2274,8 @@ ${auditLines}
             finalProseText = normalizeAudioDramaScript(finalProseText);
         }
 
+        // Checks above fail open, so a scene stopped part-way must not be archived as finished.
+        throwIfModelStopped();
         ctx.setLoadingStep('Final Agent: Archiving scene updates (Tier 6.4)...');
         const proseEntry: Record<string, unknown> = {
             final: finalProseText,
@@ -2522,6 +2593,8 @@ ${auditLines}
         ctx.showToast('Full scene prose generated successfully!', 'success');
         return syncedProseStory;
     } catch (e) {
+        // A Stop press is not a failure: leave quietly.
+        if (isModelStop(e)) throw e;
         const msg = extractErrorMessage(e);
         console.error('Scene prose writing failed:', e);
         ctx.showToast(`Scene prose writing failed: ${msg}`, 'error');

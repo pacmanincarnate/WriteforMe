@@ -25,6 +25,7 @@ import {
     type PipelineRuntimeContext,
     type PipelineStory
 } from './context';
+import { markRestorePoint } from './restorePoint';
 
 export interface FailedEditRetryItem {
     index: number;
@@ -222,6 +223,7 @@ export async function handleRunManualSlopClean(
         return;
     }
 
+    await markRestorePoint(ctx, `Before cleaning Scene ${seqIdx + 1}.${sceneIdx + 1}`, story);
     ctx.setIsRunningManualSlopClean?.(true);
     try {
         const isAudioMode =

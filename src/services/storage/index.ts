@@ -9,3 +9,4 @@ export * from './storyStore';
 export * from './storyLibrary';
 export * from './storyReset';
 export * from './storyUpdates';
+export * from './restorePointStore';

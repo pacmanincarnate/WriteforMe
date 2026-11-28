@@ -4,7 +4,12 @@ export * from './useUiStore';
 export * from './useStoryStore';
 export * from './usePipelineStore';
 export * from './useAudioStore';
+export * from './useFeatureOptionsStore';
 
+import { STORAGE_KEYS } from '@/config';
+import { applyPromptOverrides, parsePromptOverrides } from '@/prompts/overrides';
+import { readStorageNullableString } from './storageHelpers';
+import { useFeatureOptionsStore } from './useFeatureOptionsStore';
 import { useSettingsStore } from './useSettingsStore';
 import { useStoryStore } from './useStoryStore';
 import { useUiStore } from './useUiStore';
@@ -17,4 +22,15 @@ export function hydrateAllStoresFromStorage(): void {
     useSettingsStore.getState().hydrateFromStorage();
     useUiStore.getState().hydrateFromStorage();
     useStoryStore.getState().hydrateFromStorage();
+    useFeatureOptionsStore.getState().hydrateFromStorage();
+    applyStoredPromptOverrides();
+}
+
+/** Prompts the user reworded in Settings replace the shipped wording before the app mounts. */
+export function applyStoredPromptOverrides(): void {
+    try {
+        applyPromptOverrides(parsePromptOverrides(readStorageNullableString(STORAGE_KEYS.promptOverridesV1)));
+    } catch (err) {
+        console.warn('[prompts] Stored prompt overrides could not be applied:', err);
+    }
 }

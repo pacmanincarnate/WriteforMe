@@ -61,6 +61,7 @@ import {
     generateSequences as orchestrateGenerateSequences,
     generateScenes as orchestrateGenerateScenes,
     handleRunManualSlopClean as orchestrateHandleRunManualSlopClean,
+    rewritePassage as orchestrateRewritePassage,
     handleCascadeSceneToProse as orchestrateHandleCascadeSceneToProse,
     runAudioDramaVoiceDirectorPass as orchestrateRunAudioDramaVoiceDirectorPass,
     writeSceneProse as orchestrateWriteSceneProse,
@@ -1253,6 +1254,8 @@ import {
 
             const handleRunManualSlopClean = (seqIdx: CtxArgs<typeof orchestrateHandleRunManualSlopClean>[0], sceneIdx: CtxArgs<typeof orchestrateHandleRunManualSlopClean>[1]) => orchestrateHandleRunManualSlopClean(getPipelineCtx(), seqIdx, sceneIdx);
 
+            const handleRewritePassage = (request: CtxArgs<typeof orchestrateRewritePassage>[0]) => orchestrateRewritePassage(getPipelineCtx(), request);
+
             const executeDirectivePlan = (planActions: CtxArgs<typeof orchestrateExecuteDirectivePlan>[0]) => orchestrateExecuteDirectivePlan(getPipelineCtx(), planActions);
 
             // ============================================================================
@@ -2355,6 +2358,7 @@ import {
                                 runAutonomousEditorialHarness={handOff(runAutonomousEditorialHarness)}
                                 setEditorialScopeSceneId={setEditorialScopeSceneId}
                                 handleRunManualSlopClean={handleRunManualSlopClean}
+                                handleRewritePassage={handleRewritePassage}
                                 handleAddStoryAllowlistItem={handleAddStoryAllowlistItem}
                                 handleRemoveStoryAllowlistItem={handleRemoveStoryAllowlistItem}
                                 openEditModal={openEditModal}

@@ -4,7 +4,7 @@
  * scene illustrations, inline serif editor, and formatted prose canvas.
  */
 
-import React from 'react';
+import React, { useRef } from 'react';
 import {
     AlertTriangle,
     Anchor,
@@ -28,6 +28,7 @@ import {
     EditButton,
     HumanStructuredValue
 } from '@/components';
+import { PassageRewriteBar } from './PassageRewriteBar';
 import { storyStore } from '@/services/storage';
 import { countWords, formatReaderProse, readingMinutes } from '@/utils';
 import type {
@@ -121,12 +122,14 @@ export const WriterManuscriptPane: React.FC<WriterManuscriptPaneProps> = ({
     deleteSceneImage,
     deleteBeatImage,
     handleRunManualSlopClean,
+    handleRewritePassage,
     handleAddStoryAllowlistItem,
     handleRemoveStoryAllowlistItem,
     openEditModal,
     openCritiqueModal,
     showToast
 }) => {
+    const inlineProseBoxRef = useRef<HTMLTextAreaElement | null>(null);
     const rawBeats = story.beats?.[writerBeatKey];
     const beatsList: WriterBeatRecord[] = Array.isArray(rawBeats)
         ? (rawBeats as WriterBeatRecord[])
@@ -1062,6 +1065,7 @@ export const WriterManuscriptPane: React.FC<WriterManuscriptPaneProps> = ({
                                                     </div>
                                                 </div>
                                                 <textarea
+                                                    ref={inlineProseBoxRef}
                                                     value={inlineProseDraft}
                                                     onChange={(e) => setInlineProseDraft(e.target.value)}
                                                     onKeyDown={(e) => {
@@ -1077,6 +1081,17 @@ export const WriterManuscriptPane: React.FC<WriterManuscriptPaneProps> = ({
                                                     placeholder="Draft or polish prose directly in publication serif..."
                                                     autoFocus
                                                 />
+                                                {handleRewritePassage && (
+                                                    <PassageRewriteBar
+                                                        seqIdx={selectedSequence}
+                                                        sceneIdx={selectedScene}
+                                                        draft={inlineProseDraft}
+                                                        setDraft={setInlineProseDraft}
+                                                        textareaRef={inlineProseBoxRef}
+                                                        onRewrite={handleRewritePassage}
+                                                        disabled={loading}
+                                                    />
+                                                )}
                                                 <div className="flex justify-between items-center text-xs text-ink-400 font-mono">
                                                     <span>{countWords(inlineProseDraft).toLocaleString()} words</span>
                                                     <span>Ctrl + Enter to save &bull; Esc to cancel</span>

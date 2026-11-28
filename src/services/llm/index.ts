@@ -10,3 +10,6 @@ export * from './agenticLoop';
 export * from './roleConfig';
 export * from './catalogs';
 export * from './koboldRuntime';
+export * from './stop';
+export * from './usageMeter';
+export * from './balance';

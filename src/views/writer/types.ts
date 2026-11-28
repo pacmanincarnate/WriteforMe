@@ -11,6 +11,7 @@ import type {
     SlopAuditReport,
     Story
 } from '@/types';
+import type { PassageRewriteRequest, PassageRewriteResult } from '@/pipeline/passageRewrite';
 
 export interface WriterTargetEpistemicDelta {
     holder: string;
@@ -268,6 +269,8 @@ export interface WriterViewProps {
     }) => void | Promise<void>;
     setEditorialScopeSceneId: (sceneId: string) => void;
     handleRunManualSlopClean: (seqIdx: number, sceneIdx: number) => void | Promise<void>;
+    /** Rewrites only the selected passage of the editor's draft; absent where no model is wired. */
+    handleRewritePassage?: (request: PassageRewriteRequest) => Promise<PassageRewriteResult>;
     handleAddStoryAllowlistItem: (term: string) => void;
     handleRemoveStoryAllowlistItem: (term: string) => void;
     openEditModal: WriterOpenEditModalFn;
@@ -346,6 +349,8 @@ export interface WriterManuscriptPaneProps {
     deleteSceneImage: (seqIdx: number, sceneIdx: number) => void;
     deleteBeatImage: (seqIdx: number, sceneIdx: number, beatIdx: number) => void;
     handleRunManualSlopClean: (seqIdx: number, sceneIdx: number) => void | Promise<void>;
+    /** Rewrites only the selected passage of the editor's draft; absent where no model is wired. */
+    handleRewritePassage?: (request: PassageRewriteRequest) => Promise<PassageRewriteResult>;
     handleAddStoryAllowlistItem: (term: string) => void;
     handleRemoveStoryAllowlistItem: (term: string) => void;
     openEditModal: WriterOpenEditModalFn;

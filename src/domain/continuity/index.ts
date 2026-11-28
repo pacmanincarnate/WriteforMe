@@ -5,3 +5,4 @@ export * from './activeState';
 export * from './worldUpdates';
 export * from './epistemicEditing';
 export * from './storyMemory';
+export * from './secretScrub';

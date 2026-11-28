@@ -21,6 +21,7 @@ import {
     type OpenAICompatibleFullResult,
     type OpenAIToolCall
 } from './types';
+import { modelStopSignal } from './stop';
 
 export interface OpenRouterModelLimits {
     maxOutputTokens: number;
@@ -1147,7 +1148,8 @@ export async function callOpenRouter(
                         'HTTP-Referer': getWindowHref(),
                         'X-Title': APP_HTTP_HEADERS.title
                     },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    signal: modelStopSignal()
                 },
                 options.timeout
             );

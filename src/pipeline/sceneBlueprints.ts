@@ -4,6 +4,8 @@
  * Cross-Sequence Boundary Continuity Auditor, and Upstream Place Name Repair.
  */
 
+import { isModelStop } from '@/services/llm';
+import { markRestorePoint } from './restorePoint';
 import {
     formatActiveActAndSequenceXml,
     inferNarrativeModeForScene,
@@ -79,6 +81,9 @@ export async function generateScenes(
               : 0;
     const storyToUse = ctx.getStory() || currentStory || {};
     const sequences = asArray<Record<string, unknown>>(storyToUse.sequences);
+    if (!isPrefetch && asArray(asRecord(storyToUse.scenes)[`${seqIdx}`]).length > 0) {
+        await markRestorePoint(ctx, `Before re-planning the scenes of Sequence ${seqIdx + 1}`, storyToUse);
+    }
 
     if (sequences.length === 0) {
         if (!isAutopilot) {
@@ -1097,6 +1102,8 @@ If ANY spatial contradiction, redundant first-meeting re-introduction, or next-s
         if (isAutopilot) return nextStory;
         return undefined;
     } catch (err) {
+        // A Stop press is not a failure: leave quietly.
+        if (isModelStop(err)) throw err;
         console.error(err);
         ctx.showToast(`Error generating scenes: ${extractErrorMessage(err)}`, 'error');
         if (isAutopilot) throw err;

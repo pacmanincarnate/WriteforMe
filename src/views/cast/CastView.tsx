@@ -21,6 +21,7 @@ import {
     sanitizeVoiceReferenceText,
     type AudioStoryLike
 } from '@/domain/audio';
+import { DeadRecordPanel } from './DeadRecordPanel';
 
 export type CastCharacterRecord = CharacterCardCharacter & {
     name: string;
@@ -242,6 +243,8 @@ export function CastView({
                     <Plus size={14} /> Add Character
                 </button>
             </div>
+
+            <DeadRecordPanel story={story} setStory={(updater) => setStory(updater)} />
 
             {/* Cast Cards Grid */}
             <div className="flex flex-col gap-6">

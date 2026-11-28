@@ -10,7 +10,7 @@
 import { useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import { DEFAULT_SERVICE_URLS, TIMEOUTS_MS } from '@/config';
-import { isLocalKoboldUrl } from '@/services/llm';
+import { isLocalKoboldUrl, isModelStop, resetUsageMeter, resumeModelCalls, stopModelCalls } from '@/services/llm';
 
 type Setter<T> = Dispatch<SetStateAction<T>>;
 
@@ -57,6 +57,9 @@ export function useAutopilotControl<TPrefetch = unknown>({
             const next = !prev;
             continuousAutopilotRef.current = next;
             if (!next) {
+                // Stop means now: drop the model call in flight rather than wait it out. While a
+                // step is still unwinding, later calls are refused until the loop lets go.
+                stopModelCalls({ hold: isAutopilotStepRunningRef.current });
                 isAutopilotStepRunningRef.current = false;
                 setLoading(false);
                 prefetchCacheRef.current.clear();
@@ -135,6 +138,8 @@ export function useAutopilotLoop({
         const runLoop = async (): Promise<void> => {
             if (!continuousAutopilot) return;
             continuousAutopilotRef.current = true;
+            // Caps count from the start of this run.
+            resetUsageMeter();
 
             if (apiProvider === 'koboldcpp' && !(await isKoboldReachable(koboldUrl))) {
                 showToast(
@@ -156,14 +161,19 @@ export function useAutopilotLoop({
                 try {
                     hasMore = await runStep();
                 } catch (err) {
-                    console.error('Continuous Autopilot error:', err);
-                    showToast(`Autopilot error: ${(err as Error).message}`, 'error');
+                    if (isModelStop(err)) {
+                        showToast('Autopilot stopped. The call in flight was cancelled.', 'info');
+                    } else {
+                        console.error('Continuous Autopilot error:', err);
+                        showToast(`Autopilot error: ${(err as Error).message}`, 'error');
+                    }
                     setContinuousAutopilot(false);
                     continuousAutopilotRef.current = false;
                     break;
                 } finally {
                     isAutopilotStepRunningRef.current = false;
                     setLoading(false);
+                    resumeModelCalls();
                 }
 
                 if (!hasMore || !continuousAutopilotRef.current || cancelled) break;

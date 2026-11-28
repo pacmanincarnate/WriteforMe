@@ -32,7 +32,14 @@ import {
     type LlmSuccessMetadata,
     type LlmThinkingConfig,
     type ProviderModelSettings,
-    type ThinkingBudgetSettings
+    type ThinkingBudgetSettings,
+    ModelStopError,
+    isModelStop,
+    modelCallsStopped,
+    modelStopSignal,
+    noteModelUsageFrom,
+    sleepUnlessStopped,
+    throwIfModelStopped
 } from '@/services/llm';
 import { beginCloudActivity } from '@/services/vram';
 import { CLI_BRIDGE_DEFAULT_URLS, isCliBridgeProvider, isLocalProvider, type CliBridgeProviderId } from '@/types';
@@ -120,8 +127,7 @@ export interface AiDispatchRequest {
     modelRoleOrSize?: string;
 }
 
-const defaultSleep = (ms: number): Promise<void> =>
-    new Promise((resolve) => setTimeout(resolve, ms));
+const defaultSleep = (ms: number): Promise<void> => sleepUnlessStopped(ms);
 
 /** Dispatches a single structured or creative LLM request with telemetry logging and resilient retries. */
 export async function dispatchAI(
@@ -349,6 +355,7 @@ export async function dispatchAI(
         ...(targetProvider === 'openrouter' ? { sessionId: openRouterSessionId } : {}),
         ...(isCliBridgeProvider(targetProvider) ? { provider: targetProvider } : {}),
         onSuccess: (metadata: LlmSuccessMetadata) => {
+            noteModelUsageFrom(metadata);
             const durationSec = ((performance.now() - startTime) / 1000).toFixed(2);
             const durationMs = Math.round(performance.now() - startTime);
             const thinkingToks = metadata.thinkingTokens ?? metadata.reasoningTokensUsed ?? 0;
@@ -418,7 +425,9 @@ export async function dispatchAI(
 
     try {
         while (attempt < maxRetries) {
+            const stopSignal = modelStopSignal();
         try {
+            throwIfModelStopped();
             let response: unknown;
             if (targetProvider === 'gemini') {
                 response = await callGemini(
@@ -536,6 +545,27 @@ export async function dispatchAI(
             return response;
         } catch (error) {
             attempt++;
+            // A Stop press is not a failure to retry or to report as one.
+            if (isModelStop(error) || stopSignal.aborted || modelCallsStopped()) {
+                const stopError = isModelStop(error) ? (error as Error) : new ModelStopError();
+                const durationMs = Math.round(performance.now() - startTime);
+                callbacks.setPromptLog?.((prev) =>
+                    prev.map((entry) =>
+                        entry.id === logId
+                            ? {
+                                  ...entry,
+                                  status: 'error',
+                                  durationSec: (durationMs / 1000).toFixed(2),
+                                  durationMs,
+                                  attempts: attempt,
+                                  validationSummary: 'Stopped by you before the model finished.',
+                                  actionTaken: 'Call cancelled. Nothing from it was kept.'
+                              }
+                            : entry
+                    )
+                );
+                throw stopError;
+            }
             const errObj = error as { name?: string; message?: string; stack?: string } | null;
             const errMsg = String(errObj?.message || error || '');
             console.error(

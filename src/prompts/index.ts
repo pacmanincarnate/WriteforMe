@@ -11,6 +11,8 @@ export { PROSE_PROMPTS } from './tiers/prose';
 export { CONTINUITY_PROMPTS } from './tiers/continuity';
 export { EDITORIAL_PROMPTS } from './tiers/editorial';
 export { SERIES_PROMPTS } from './tiers/series';
+export { SERIAL_PROMPTS } from './tiers/serial';
+export { SAFEGUARD_PROMPTS } from './tiers/safeguards';
 
 import { buildWritingSystemPrompt } from './systemPrompt';
 import { CONCEPT_PROMPTS } from './tiers/concept';

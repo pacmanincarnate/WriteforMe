@@ -9,6 +9,7 @@ import { computeStoryProgressMetrics } from '@/domain/story';
 import { safeJsonStringify } from '@/utils';
 import { audioStore } from './audioStore';
 import { ResilientIdbStore, isQuotaExceededIdbError } from './idbBase';
+import { restorePointStore } from './restorePointStore';
 import { studioCacheStore } from './studioCacheStore';
 import { probeLocalVaultAvailability } from './vaultDetector';
 
@@ -235,6 +236,9 @@ export class StoryStore extends ResilientIdbStore {
             }
         }
 
+        // Once a day, keep the story as it stood before today's first save.
+        void restorePointStore.backupIfDue(id, existingMem?.data || cleanData);
+
         const now = Date.now();
         this._memStories.set(id, { id, data: cleanData, timestamp: now });
         const [diskRes, idbRes] = await Promise.all([
@@ -413,6 +417,7 @@ export class StoryStore extends ResilientIdbStore {
         if (!id) return;
         this._memStories.delete(id);
         await Promise.all([
+            restorePointStore.clearStory(id),
             this._fetchDiskJson(`/stories/${encodeURIComponent(id)}`, { method: 'DELETE' }),
             this.runTransaction<void>(STORIES_STORE, 'readwrite', (tx, _db, resolve) => {
                 tx.objectStore(STORIES_STORE).delete(id);
@@ -424,6 +429,7 @@ export class StoryStore extends ResilientIdbStore {
     async clear(): Promise<void> {
         this._memStories.clear();
         await Promise.all([
+            restorePointStore.clear(),
             this._fetchDiskJson('/clear-all', { method: 'POST' }),
             this.runTransaction<void>(STORIES_STORE, 'readwrite', (tx, _db, resolve) => {
                 tx.objectStore(STORIES_STORE).clear();

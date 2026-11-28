@@ -14,6 +14,7 @@ import {
     type OpenAICompatibleFullResult,
     type OpenAIToolCall
 } from './types';
+import { modelStopSignal } from './stop';
 
 interface NanoGPTApiResponse {
     error?: { message?: string };
@@ -111,7 +112,8 @@ export async function callNanoGPT(
                     Authorization: `Bearer ${key}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                signal: modelStopSignal()
             },
             opts.timeout
         );

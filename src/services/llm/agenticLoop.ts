@@ -31,6 +31,7 @@ import type {
     LlmSuccessMetadata,
     OpenAICompatibleFullResult
 } from './types';
+import { noteModelUsageFrom } from './usageMeter';
 
 export const DEFAULT_PROMPT_LOG_CAP = LOG_AND_PROMPT_LIMITS.promptLogCap;
 
@@ -260,6 +261,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
         }
 
         const turnOnSuccess = (metadata: Partial<LlmSuccessMetadata> = {}): void => {
+            noteModelUsageFrom(metadata);
             if (!logPromptFn) return;
             const durationSec = ((performance.now() - startTime) / 1000).toFixed(2);
             const durationMs = Math.round(performance.now() - startTime);

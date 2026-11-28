@@ -49,6 +49,7 @@ import {
     type PipelineRuntimeContext,
     type PipelineStory
 } from './context';
+import { markRestorePoint } from './restorePoint';
 
 export interface RunEditorialHarnessOptions {
     mode?: 'full_pipeline' | 'review_only' | 'execute_plan';
@@ -493,6 +494,7 @@ export async function runAutonomousEditorialHarness(
         return null;
     }
 
+    await markRestorePoint(ctx, 'Before the editorial pass', baseStory);
     ctx.setIsRunningEditorialHarness?.(true);
     ctx.setLoading(true);
     ctx.setCurrentPipelineStep?.(21);
