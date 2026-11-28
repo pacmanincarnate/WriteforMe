@@ -5,13 +5,14 @@
  * EPUB/MP3/script exports, Audio Autopilot status bar, and Story Reset dropdown.
  */
 
-import type React from 'react';
+import React, { useState } from 'react';
 import {
     Book,
     BookCoverAudioArt,
     BookOpen,
     Download,
     FileText,
+    Globe,
     Headphones,
     Image,
     Loader2,
@@ -27,6 +28,7 @@ import type { StoryResetStageKey } from '@/domain/lifecycle';
 import { findNextUnwrittenScene, getCoverStyleIndex } from '@/domain/story';
 import { useUiStore } from '@/stores';
 import { storyStore } from '@/services/storage';
+import { GeneratedWorldModal } from './GeneratedWorldModal';
 import type { DashboardAudioSummary, DashboardStory } from './types';
 
 export interface DashboardFolioSidebarProps {
@@ -62,6 +64,8 @@ export interface DashboardFolioSidebarProps {
     handleExportEpub: () => void | Promise<void>;
     handleDownloadStoryAudio: () => void | Promise<void>;
     handleExportAudioDramaTxt: () => void | Promise<void>;
+    handleExportMarkdown: () => void;
+    handleExportPdf: () => void;
     isExportingStoryAudio: boolean;
     isExportingSequenceAudio: boolean;
     isExportingSceneAudio: boolean;
@@ -100,6 +104,8 @@ export function DashboardFolioSidebar({
     handleExportEpub,
     handleDownloadStoryAudio,
     handleExportAudioDramaTxt,
+    handleExportMarkdown,
+    handleExportPdf,
     isExportingStoryAudio,
     isExportingSequenceAudio,
     isExportingSceneAudio,
@@ -116,6 +122,7 @@ export function DashboardFolioSidebar({
 }: DashboardFolioSidebarProps) {
     const setSelectedSequence = useUiStore((s) => s.setSelectedSequence);
     const setSelectedScene = useUiStore((s) => s.setSelectedScene);
+    const [showGeneratedWorldModal, setShowGeneratedWorldModal] = useState(false);
     const nextScene = findNextUnwrittenScene(
         story as unknown as Parameters<typeof findNextUnwrittenScene>[0]
     );
@@ -277,6 +284,25 @@ export function DashboardFolioSidebar({
                     </span>
                 </button>
 
+                {story.generated_world?.draft && (
+                    <>
+                        <button
+                            type="button"
+                            onClick={() => setShowGeneratedWorldModal(true)}
+                            data-testid="view-generated-world-btn"
+                            className="w-full min-h-[44px] py-2 px-4 rounded-xl bg-surface hover:bg-lift border border-edge-strong hover:border-gold/50 text-ink-800 font-bold text-xs shadow-2xs flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+                        >
+                            <Globe size={14} className="text-gold-ink" />
+                            <span>View Generated World</span>
+                        </button>
+                        <GeneratedWorldModal
+                            isOpen={showGeneratedWorldModal}
+                            generatedWorld={story.generated_world}
+                            onClose={() => setShowGeneratedWorldModal(false)}
+                        />
+                    </>
+                )}
+
                 {nextScene && (
                     <div className="pt-4 border-t border-edge-soft space-y-3">
                         <div>
@@ -365,7 +391,7 @@ export function DashboardFolioSidebar({
                     <div className="flex flex-wrap gap-2">
                         <button
                             onClick={handleExportEpub}
-                            className="flex-1 min-w-[115px] py-2 px-3 rounded-xl bg-gold-tint hover:bg-gold/20 border border-gold-edge text-gold-ink hover:text-gold-ink-deep font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                            className="flex-1 min-w-[115px] py-2 px-3 rounded-xl bg-surface hover:bg-lift border border-edge-strong hover:border-gold/50 text-ink-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
                             title={
                                 storyAudioSummary.readyCount > 0
                                     ? `Export Formatted EPUB (${storyAudioSummary.readyCount} audio scenes bundled)`
@@ -374,6 +400,24 @@ export function DashboardFolioSidebar({
                         >
                             <Book size={13} className="text-gold-ink" />
                             <span>Export EPUB</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleExportPdf}
+                            className="flex-1 min-w-[115px] py-2 px-3 rounded-xl bg-surface hover:bg-lift border border-edge-strong hover:border-gold/50 text-ink-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                            title="Print the manuscript, or save it as a PDF from the print window"
+                        >
+                            <FileText size={13} className="text-gold-ink" />
+                            <span>Export PDF</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleExportMarkdown}
+                            className="flex-1 min-w-[115px] py-2 px-3 rounded-xl bg-surface hover:bg-lift border border-edge-strong hover:border-gold/50 text-ink-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                            title="Export the manuscript as Markdown (.md)"
+                        >
+                            <FileText size={13} className="text-gold-ink" />
+                            <span>Export Markdown</span>
                         </button>
                         <button
                             type="button"

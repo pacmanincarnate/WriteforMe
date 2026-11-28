@@ -6,7 +6,7 @@
 
 import React from 'react';
 import { VIEW_LABELS } from '@/config';
-import { AlertTriangle, Cpu, FileText, Radio, Settings, Sparkles, Workflow } from '@/components';
+import { AlertTriangle, Cpu, FileText, Radio, Sparkles, Workflow } from '@/components';
 import { SettingsAppearanceTab, SettingsDangerTab } from './SettingsAppearanceDangerTabs';
 import { SettingsAudioDramaTab } from './SettingsAudioDramaTab';
 import { SettingsModelsTab } from './SettingsModelsTab';
@@ -22,24 +22,17 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
     }
 
     return (
-        <div className="max-w-2xl mx-auto py-8 animate-fade-in pb-24">
-            <div className="flex items-center gap-3 mb-6">
-                <div className="p-2.5 rounded-xl bg-gold-tint border border-gold-edge text-gold-ink">
-                    <Settings size={22} />
-                </div>
-                <div>
-                    <h2 className="text-2xl font-bold font-serif text-ink-900 tracking-tight">
-                        {VIEW_LABELS.settings}
-                    </h2>
-                </div>
-            </div>
+        <div className="max-w-4xl mx-auto py-8 animate-fade-in pb-24">
+            <h2 className="text-2xl font-bold font-serif text-ink-900 tracking-tight mb-6">
+                {VIEW_LABELS.settings}
+            </h2>
 
             {/* Settings Navigation Tabs */}
-            <div className="grid grid-cols-2 sm:grid-cols-6 gap-1.5 p-1.5 bg-mist-100 border border-edge-strong rounded-2xl mb-6 shadow-2xs">
+            <div className="flex flex-wrap gap-1.5 p-1.5 bg-mist-100 border border-edge-strong rounded-2xl mb-6 shadow-2xs">
                 <button
                     type="button"
                     onClick={() => setSettingsTab('models')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`flex-1 whitespace-nowrap min-h-[38px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                         settingsTab === 'models'
                             ? 'bg-btn text-btn-ink shadow-2xs'
                             : 'text-ink-600 hover:text-ink-900 hover:bg-mist-200/60'
@@ -51,7 +44,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 <button
                     type="button"
                     onClick={() => setSettingsTab('pipeline')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`flex-1 whitespace-nowrap min-h-[38px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                         settingsTab === 'pipeline'
                             ? 'bg-btn text-btn-ink shadow-2xs'
                             : 'text-ink-600 hover:text-ink-900 hover:bg-mist-200/60'
@@ -63,7 +56,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 <button
                     type="button"
                     onClick={() => setSettingsTab('prompts')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`flex-1 whitespace-nowrap min-h-[38px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                         settingsTab === 'prompts'
                             ? 'bg-btn text-btn-ink shadow-2xs'
                             : 'text-ink-600 hover:text-ink-900 hover:bg-mist-200/60'
@@ -75,7 +68,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 <button
                     type="button"
                     onClick={() => setSettingsTab('audio_drama')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`flex-1 whitespace-nowrap min-h-[38px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                         settingsTab === 'audio_drama'
                             ? 'bg-btn text-btn-ink shadow-2xs'
                             : 'text-ink-600 hover:text-ink-900 hover:bg-mist-200/60'
@@ -87,7 +80,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 <button
                     type="button"
                     onClick={() => setSettingsTab('appearance')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`flex-1 whitespace-nowrap min-h-[38px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                         settingsTab === 'appearance'
                             ? 'bg-btn text-btn-ink shadow-2xs'
                             : 'text-ink-600 hover:text-ink-900 hover:bg-mist-200/60'
@@ -99,7 +92,7 @@ export const SettingsView: React.FC<SettingsViewProps> = (props) => {
                 <button
                     type="button"
                     onClick={() => setSettingsTab('danger')}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                    className={`flex-1 whitespace-nowrap min-h-[38px] py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
                         settingsTab === 'danger'
                             ? 'bg-rose-600 text-white shadow-2xs'
                             : 'text-blush-700 hover:text-blush-900 hover:bg-blush-tint/60'

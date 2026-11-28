@@ -16,6 +16,7 @@ import {
     tokenMatch
 } from '@/utils';
 import { type NormalizedSecretEntry, normalizeSecretVault } from './clues';
+import { contentDialXml } from './contentDial';
 
 export interface CharacterArcEntry {
     char_id: string;
@@ -1133,10 +1134,18 @@ export function formatLoreForPrompt(
     return parts.join('\n\n');
 }
 
-/** Wraps `story.author_note` into `<author_note>...</author_note>` if present. */
+/**
+ * Wraps `story.author_note` into `<author_note>...</author_note>` if present, followed by the
+ * story's content dial as `<content_limits>` when it has one. Both are the author's standing
+ * direction, so every prompt that carries one carries the other.
+ */
 export function getAuthorNoteXml(story: (Partial<Story> & Record<string, unknown>) | null | undefined): string {
-    if (!story || !story.author_note || !String(story.author_note).trim()) return '';
-    return `\n<author_note>\n${String(story.author_note).trim()}\n</author_note>\n`;
+    if (!story) return '';
+    const note =
+        story.author_note && String(story.author_note).trim()
+            ? `\n<author_note>\n${String(story.author_note).trim()}\n</author_note>\n`
+            : '';
+    return note + contentDialXml(story.content_dial);
 }
 
 /** Normalizes raw sequence array into a complete 8-sequence Frank Daniel structure. */

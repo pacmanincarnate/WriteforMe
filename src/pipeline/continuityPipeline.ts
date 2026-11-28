@@ -27,6 +27,7 @@ import {
     type WorldUpdatesPayload
 } from '@/domain/continuity';
 import { computeChangeRatio, SURGICAL_MAX_CHANGE_RATIO } from '@/domain/editing';
+import { characterSheetBlock } from '@/domain/imports';
 import { createStoryNameRoll } from './nameBank';
 import {
     applyCascadingNameReplacements as domainApplyCascadingNameReplacements,
@@ -1021,10 +1022,11 @@ ${charObj?.corner_role ? `<corner_role>${asString(charObj.corner_role)}</corner_
 ${charObj?.why_it_makes_sense ? `<why_it_makes_sense>${asString(charObj.why_it_makes_sense)}</why_it_makes_sense>\n` : ''}${charObj?.what_it_costs_them ? `<what_it_costs_them>${asString(charObj.what_it_costs_them)}</what_it_costs_them>\n` : ''}${charObj?.way_of_living ? `<way_of_living>${asString(charObj.way_of_living)}</way_of_living>\n` : ''}${charObj?.the_wake_up_call ? `<the_wake_up_call>${asString(charObj.the_wake_up_call)}</the_wake_up_call>\n` : ''}<core_desire>${desire}</core_desire>
 <vocal_cadence>${cadence}</vocal_cadence>
 </character_briefs>
+${characterSheetBlock(charObj)}
 <relationship_matrix>${relationshipsText}</relationship_matrix>
 ${buildGenreToneBlocks(asRecord(storyCtx.style))}`;
 
-    const prompt = `${contextBlock}\n\n<instruction>Conduct the dramatized character interview for ${charName}. Ground the character in the established world rules, factions, culture, and lore provided in <world_primer> and <relevant_lore>. Prioritize established lore names, factions, and settings over inventing new ones. Using their unique voice, write out their full responses to every interview question in present tense prose format.</instruction>\n\n<output_format_description>
+    const prompt = `${contextBlock}\n\n<instruction>Conduct the dramatized character interview for ${charName}. ${characterSheetBlock(charObj) ? 'The <character_sheet> is the author\'s own and is canon: keep every fact, trait, relationship and speech habit in it, and invent nothing that contradicts it. ' : ''}Ground the character in the established world rules, factions, culture, and lore provided in <world_primer> and <relevant_lore>. Prioritize established lore names, factions, and settings over inventing new ones. Using their unique voice, write out their full responses to every interview question in present tense prose format.</instruction>\n\n<output_format_description>
 FORMATTING DIRECTIVE: Return your response strictly as XML tags. Do not use YAML or markdown blocks.
 CRITICAL XML RULE: Enclose the entire response in <response>...</response>.
 

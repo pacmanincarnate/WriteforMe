@@ -4,6 +4,7 @@
  * token ceilings, Kobold sampler profiles, prompt-log telemetry, and transient/timeout/budget retries.
  */
 
+import { takeCachePoint } from '@/domain/prompt/cacheLayout';
 import {
     API_TIMEOUT_BOUNDS,
     CLOUD_API_URLS,
@@ -136,12 +137,15 @@ export async function dispatchAI(
     callbacks: AiDispatchCallbacks = {}
 ): Promise<unknown> {
     const {
-        prompt,
+        prompt: rawPrompt,
         systemPrompt = '',
         isJson = true,
         logName = 'AI Task',
         modelRoleOrSize = 'dev'
     } = request;
+
+    // A prompt builder may mark where its repeated start ends; the mark never reaches a model.
+    const { prompt, cacheSplitIndex } = takeCachePoint(rawPrompt);
 
     const win =
         typeof window !== 'undefined'
@@ -354,6 +358,7 @@ export async function dispatchAI(
         timeout: timeoutMs,
         ...(targetProvider === 'openrouter' ? { sessionId: openRouterSessionId } : {}),
         ...(isCliBridgeProvider(targetProvider) ? { provider: targetProvider } : {}),
+        ...(cacheSplitIndex !== null ? { cacheSplitIndex } : {}),
         onSuccess: (metadata: LlmSuccessMetadata) => {
             noteModelUsageFrom(metadata);
             const durationSec = ((performance.now() - startTime) / 1000).toFixed(2);

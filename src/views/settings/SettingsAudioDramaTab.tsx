@@ -422,12 +422,9 @@ export const SettingsAudioDramaTab: React.FC<SettingsAudioDramaTabProps> = ({
                                 </span>
                             </div>
 
-                            <div className="bg-surface/80 p-3 rounded-xl border border-edge flex flex-col justify-between">
+                            <div className="bg-surface/80 p-3 rounded-xl border border-edge">
                                 <div className="flex items-center justify-between text-xs mb-1">
                                     <span className="font-semibold text-ink-800">ASR Verification Gate</span>
-                                    <span className="font-mono text-gold-ink font-bold">
-                                        {(audioDramaSettings.asrMode || 'auto').toUpperCase()}
-                                    </span>
                                 </div>
                                 <select
                                     value={audioDramaSettings.asrMode || 'auto'}

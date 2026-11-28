@@ -17,6 +17,7 @@ backends folder. Each keeps its own license, which applies to your copy:
 | Backend | License | Source |
 | --- | --- | --- |
 | KoboldCpp | GNU AGPL-3.0 | https://github.com/LostRuins/koboldcpp |
+| llama.cpp (built-in embeddings) | MIT | https://github.com/ggml-org/llama.cpp |
 | ComfyUI (Windows portable) | GNU GPL-3.0 | https://github.com/Comfy-Org/ComfyUI |
 | audio.cpp | Apache-2.0 | https://github.com/0xShug0/audio.cpp |
 

@@ -133,6 +133,16 @@ export function LibraryView({
                         )}
                     </div>
                     <div className="lib-header-actions">
+                        <label className="lib-import-btn">
+                            <Download size={14} />
+                            <span>Import</span>
+                            <input
+                                type="file"
+                                onChange={handleImport}
+                                className="hidden"
+                                accept=".json,.epub"
+                            />
+                        </label>
                         <button onClick={() => setView('setup')} className="lib-new-btn">
                             <Plus size={15} />
                             <span>New Story</span>

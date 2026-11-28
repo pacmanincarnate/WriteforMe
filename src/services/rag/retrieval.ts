@@ -205,7 +205,7 @@ export async function retrieveLoreContext(
                 if (expanded) searchKey = `${query} ${expanded}`;
             }
 
-            const queryVector = await deps.embeddingService.getEmbedding(searchKey);
+            const queryVector = await deps.embeddingService.getEmbedding(searchKey, 'query');
             if (queryVector && queryVector.length > 0) {
                 results = await deps.vectorStore.search<Record<string, unknown>>(
                     queryVector,

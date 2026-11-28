@@ -205,7 +205,9 @@ export function buildEffectiveSlopData(
             id: p.id,
             title: p.title,
             severity: pSev,
-            note: p.note || ''
+            note: p.note || '',
+            ...(typeof p.regex === 'string' && p.regex ? { regex: p.regex } : {}),
+            ...(typeof p.flags === 'string' && p.flags ? { flags: p.flags } : {})
         };
     });
 
@@ -251,7 +253,9 @@ export function exportSlopConfigAsJson(slopConfig?: SlopConfig | null) {
             id: p.id,
             title: p.title,
             severity: p.severity,
-            note: p.note
+            note: p.note,
+            ...(p.regex ? { regex: p.regex } : {}),
+            ...(p.flags ? { flags: p.flags } : {})
         })),
         density: eff.density
     };

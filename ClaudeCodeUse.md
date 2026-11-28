@@ -6,7 +6,7 @@ Codex bridge described in `CodexUse.md`.
 
 ## Setup
 
-1. Install Node 18+ and [Claude Code](https://claude.com/claude-code).
+1. Install Node 18+ and [Claude Code](https://claude.com/claude-code) (the CLI, or the Claude desktop app, which carries its own copy).
 2. Run `claude` once in a terminal and sign in with your Claude account.
 3. Run `npm run claude-bridge` in the project folder and leave it running.
 4. In Settings, pick **Claude Code** as the Active Provider. The default bridge
@@ -48,7 +48,12 @@ policy, so requests it declines come back as an error in the pipeline log.
 
 The same settings can come from `CLAUDE_BRIDGE_PORT`, `CLAUDE_BRIDGE_CONCURRENCY`,
 `CLAUDE_BRIDGE_TIMEOUT`, `CLAUDE_BRIDGE_BIND` and `CLAUDE_BRIDGE_CLI_PATH`.
-Use `--cli-path` when `claude` is not on PATH. To use a second Claude account,
+The bridge finds Claude Code by itself: first whatever `claude` a terminal
+would run, then the usual folders of the native installer, WinGet, npm, pnpm
+and bun, then the copy the Claude desktop app keeps. Its window prints the
+location it uses, or every place it looked when it finds nothing, and it looks
+again each time Settings refreshes, so no restart is needed after installing.
+Use `--cli-path` only when it is somewhere else. To use a second Claude account,
 start the bridge with `CLAUDE_CONFIG_DIR` set to that account's folder, the
 same way you would start `claude` for it.
 

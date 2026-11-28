@@ -692,77 +692,64 @@ export const SettingsPipelineTab: React.FC<SettingsPipelineTabProps> = ({
 
             {/* AI Slop & Naming Audit Manager (2D) */}
             <div className="pt-6 border-t border-edge-strong space-y-4" data-testid="slop-settings-manager">
-                {/* Header + Import/Export/Reset */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <label className="block text-xs font-bold text-ink-700 uppercase tracking-wider font-mono">
-                                AI Slop &amp; Naming Audit
-                            </label>
-                            <span className="px-2 py-0.5 rounded-full bg-inset border border-edge text-[10px] font-mono text-ink-600">
-                                {effSlop.categories.length} categories · {effSlop.patterns.length} patterns · Em-dash:{' '}
-                                {slopConfig?.emDashMode === 'strict'
-                                    ? 'Strict 0'
-                                    : slopConfig?.emDashMode === 'off'
-                                      ? 'Off'
-                                      : `≤${slopConfig?.emDashMaxPer1k ?? 3}/1k`}
-                            </span>
-                            {importedPackName && (
-                                <span className="px-2 py-0.5 rounded-full bg-sage-tint border border-sage-edge text-[10px] font-mono text-sage-800">
-                                    Pack: {importedPackName}
-                                </span>
-                            )}
-                        </div>
-                        <p className="text-xs text-ink-500 mt-1">
-                            Hard defects always trigger surgical cleanup; Flag hits escalate when clustered (2+ in a
-                            paragraph or 3+ per scene) or in final 2 scene-closer sentences.
-                        </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 shrink-0">
-                        <label className="cursor-pointer px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-surface hover:bg-lift border border-edge-strong text-ink-800 flex items-center gap-1.5 transition-all">
-                            <Upload size={12} />
-                            <span>Import JSON</span>
-                            <input
-                                type="file"
-                                accept=".json,application/json"
-                                className="hidden"
-                                data-testid="slop-import-input"
-                                onChange={(e) => {
-                                    const f = e.target.files?.[0];
-                                    if (f) handleImportSlopJson(f);
-                                    e.target.value = '';
-                                }}
-                            />
+                {/* Header: name and file actions on one row, the explanation underneath at full width */}
+                <div className="space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                        <label className="block text-xs font-bold text-ink-700 uppercase tracking-wider font-mono">
+                            AI Slop &amp; Naming Audit
                         </label>
-                        <button
-                            type="button"
-                            onClick={handleExportSlopJson}
-                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-surface hover:bg-lift border border-edge-strong text-ink-800 flex items-center gap-1.5 transition-all cursor-pointer"
-                        >
-                            <Download size={12} />
-                            <span>Export JSON</span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                requestConfirm({
-                                    title: 'Restore Default AI Slop Configuration?',
-                                    message:
-                                        'This restores the built-in categories, sets Em-Dash policy to Density, Custom User Phrases to Flag, and clears any imported custom JSON pack.',
-                                    confirmLabel: 'Restore Defaults',
-                                    danger: false,
-                                    onConfirm: handleResetSlopConfig
-                                });
-                            }}
-                            className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-gold-ink hover:text-[#6B4F20] border border-edge hover:border-gold/40 bg-inset transition-colors cursor-pointer"
-                        >
-                            Restore Defaults
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <label className="cursor-pointer px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-surface hover:bg-lift border border-edge-strong text-ink-800 flex items-center gap-1.5 transition-all">
+                                <Upload size={12} />
+                                <span>Import JSON</span>
+                                <input
+                                    type="file"
+                                    accept=".json,application/json"
+                                    className="hidden"
+                                    data-testid="slop-import-input"
+                                    onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        if (f) handleImportSlopJson(f);
+                                        e.target.value = '';
+                                    }}
+                                />
+                            </label>
+                            <button
+                                type="button"
+                                onClick={handleExportSlopJson}
+                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold bg-surface hover:bg-lift border border-edge-strong text-ink-800 flex items-center gap-1.5 transition-all cursor-pointer"
+                            >
+                                <Download size={12} />
+                                <span>Export JSON</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    requestConfirm({
+                                        title: 'Restore Default AI Slop Configuration?',
+                                        message:
+                                            'This restores the built-in categories, sets Em-Dash policy to Density, Custom User Phrases to Flag, and clears any imported custom JSON pack.',
+                                        confirmLabel: 'Restore Defaults',
+                                        danger: false,
+                                        onConfirm: handleResetSlopConfig
+                                    });
+                                }}
+                                className="px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-gold-ink hover:text-[#6B4F20] border border-edge hover:border-gold/40 bg-inset transition-colors cursor-pointer"
+                            >
+                                Restore Defaults
+                            </button>
+                        </div>
                     </div>
+                    <p className="text-xs text-ink-500">
+                        {effSlop.categories.length} categories and {effSlop.patterns.length} patterns
+                        {importedPackName ? `, from the pack ${importedPackName}` : ''}. Hard defects always
+                        trigger surgical cleanup; Flag hits escalate when clustered (2+ in a paragraph or 3+ per
+                        scene) or in final 2 scene-closer sentences.
+                    </p>
                 </div>
 
                 {/* Core Pipeline & Em-Dash Controls */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <label className="flex items-start gap-2.5 p-3 rounded-xl bg-wash border border-edge cursor-pointer">
                         <input
                             type="checkbox"
@@ -824,42 +811,26 @@ export const SettingsPipelineTab: React.FC<SettingsPipelineTabProps> = ({
                     </label>
 
                     <div className="p-3 rounded-xl bg-wash border border-edge space-y-2">
-                        <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-bold text-ink-900">Em-Dash Policy</span>
-                            {slopConfig?.emDashMode === 'density' && (
-                                <div className="flex items-center gap-1 text-[11px] font-mono text-ink-600">
-                                    <span>Max</span>
-                                    <input
-                                        type="number"
-                                        min={1}
-                                        max={25}
-                                        value={slopConfig?.emDashMaxPer1k ?? 3}
-                                        onChange={(e) => {
-                                            const n = Math.max(1, Math.min(25, parseInt(e.target.value, 10) || 3));
-                                            setSlopConfig((prev) => ({
-                                                ...(prev || DEFAULT_SLOP_CONFIG),
-                                                emDashMaxPer1k: n
-                                            }));
-                                        }}
-                                        className="w-12 bg-surface border border-edge-strong rounded px-1.5 py-0.5 text-center text-xs font-mono text-ink-900"
-                                    />
-                                    <span>/1k</span>
-                                </div>
-                            )}
-                        </div>
-                        <div className="grid grid-cols-3 gap-1 bg-surface p-1 rounded-lg border border-edge">
+                        <div className="text-xs font-bold text-ink-900">Em-dashes</div>
+                        <div
+                            className="flex flex-wrap gap-1 bg-surface p-1 rounded-lg border border-edge"
+                            role="radiogroup"
+                            aria-label="Em-dashes"
+                        >
                             {([
-                                { id: 'off', label: 'Off' },
-                                { id: 'density', label: 'Density' },
-                                { id: 'strict', label: 'Strict 0' }
+                                { id: 'off', label: 'Any number' },
+                                { id: 'density', label: 'Limit' },
+                                { id: 'strict', label: 'None' }
                             ] as const).map((opt) => {
                                 const active = (slopConfig?.emDashMode || 'density') === opt.id;
                                 return (
                                     <button
                                         key={opt.id}
                                         type="button"
+                                        role="radio"
+                                        aria-checked={active}
                                         onClick={() => setEmDashMode(opt.id)}
-                                        className={`py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                                        className={`flex-1 whitespace-nowrap px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
                                             active ? 'bg-btn text-btn-ink shadow-2xs' : 'text-ink-600 hover:text-ink-900'
                                         }`}
                                     >
@@ -868,6 +839,26 @@ export const SettingsPipelineTab: React.FC<SettingsPipelineTabProps> = ({
                                 );
                             })}
                         </div>
+                        {(slopConfig?.emDashMode || 'density') === 'density' && (
+                            <label className="flex flex-wrap items-center gap-1.5 text-[11px] text-ink-500">
+                                <span>Up to</span>
+                                <input
+                                    type="number"
+                                    min={1}
+                                    max={25}
+                                    value={slopConfig?.emDashMaxPer1k ?? 3}
+                                    onChange={(e) => {
+                                        const n = Math.max(1, Math.min(25, parseInt(e.target.value, 10) || 3));
+                                        setSlopConfig((prev) => ({
+                                            ...(prev || DEFAULT_SLOP_CONFIG),
+                                            emDashMaxPer1k: n
+                                        }));
+                                    }}
+                                    className="w-14 bg-surface border border-edge-strong rounded px-1.5 py-0.5 text-center text-xs font-mono text-ink-900"
+                                />
+                                <span>per 1,000 words</span>
+                            </label>
+                        )}
                     </div>
                 </div>
 

@@ -5,6 +5,7 @@
  * meta-commentary filtering, and Audio Drama normalization.
  */
 
+import { takeCachePoint } from '@/domain/prompt/cacheLayout';
 import {
     CLOUD_API_URLS,
     DEFAULT_SERVICE_URLS,
@@ -94,7 +95,7 @@ export async function callAgenticLoop({
     model = '',
     apiKey = '',
     baseUrl = '',
-    prompt = '',
+    prompt: rawPrompt = '',
     systemPrompt = '',
     context = {},
     maxTurns = 5,
@@ -102,6 +103,8 @@ export async function callAgenticLoop({
     onProgress = null
 }: AgenticLoopParams): Promise<AgenticLoopResult> {
     const effectiveProvider = (provider || 'gemini').toLowerCase();
+    // The mark for the repeated start of the prompt is taken out here and passed on as a number.
+    const { prompt, cacheSplitIndex } = takeCachePoint(rawPrompt);
     let currentTurn = 1;
     let finalProseResult: string | null = null;
     let characterStateUpdates: unknown[] = [];
@@ -163,6 +166,7 @@ When done, call commit_scene_prose, or enclose your completed narrative inside <
                 : 0.75;
     const enrichedOptions: LlmCallOptions = {
         ...options,
+        ...(cacheSplitIndex !== null ? { cacheSplitIndex } : {}),
         isWritingAgent: options?.isWritingAgent !== undefined ? options.isWritingAgent : true,
         agentType: options?.agentType || 'writing',
         isAudioDrama: isAudioDramaMode,

@@ -30,6 +30,7 @@ import {
 } from '@/domain/audio';
 import { parseMarkdown } from '@/utils';
 import { EditButton } from '../common/EditButton';
+import { CharacterSheetPanel } from './CharacterSheetPanel';
 
 export interface CharacterCardCharacter extends VoiceCastMember {
     role?: string;
@@ -770,6 +771,13 @@ export function CharacterCard({
                         </span>
                         &quot;{c.voice_sample}&quot;
                     </div>
+                )}
+
+                {typeof c.details?.sheet === 'string' && c.details.sheet && (
+                    <CharacterSheetPanel
+                        sheet={c.details.sheet}
+                        onEdit={onEdit && (() => onEdit('details.sheet', 'Character Sheet', String(c.details?.sheet || '')))}
+                    />
                 )}
 
                 {c.details?.deep_profile && (

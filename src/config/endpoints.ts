@@ -50,6 +50,8 @@ export const CLOUD_API_URLS = {
     anthropicBase: 'https://api.anthropic.com',
     anthropicMessages: 'https://api.anthropic.com/v1/messages',
     anthropicKeysPage: 'https://console.anthropic.com/settings/keys',
+    openAiImages: 'https://api.openai.com/v1/images/generations',
+    openAiKeysPage: 'https://platform.openai.com/api-keys',
     githubApiRepos: 'https://api.github.com/repos'
 } as const;
 

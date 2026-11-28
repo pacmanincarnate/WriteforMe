@@ -43,7 +43,7 @@ import {
 } from '@/services/storage';
 import { EmbeddingService, VectorStore } from '@/services/rag';
 
-import { findCastIndexForChar, useActiveStory, useAppUpdates, useAutopilotControl, useAutopilotLoop, useDesktopBackends, useArchetypeOptions, useAudioFollowState, useGenerationStatus, useNarrativeLensesToggle, useRelationshipMatrix, useSettingsDisclosures, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
+import { findCastIndexForChar, useActiveStory, useAppUpdates, useAutopilotControl, useAutopilotLoop, useDesktopBackends, useLocalEmbeddingModel, useLocalEmbeddingReindex, useArchetypeOptions, useAudioFollowState, useGenerationStatus, useNarrativeLensesToggle, useRelationshipMatrix, useSettingsDisclosures, useAudioProduction, useCustomNarrativeModes, useDirectivePlanEditors, useDirectiveWorkspaceState, useEditorialHarnessState, useEpistemicEditors, useLogDetailModal, useLoreBrowser, useLoreImport, useMcpBridge, useModelCatalog, useNovelIgnoreRules, useOutlineCollapseState, useOutlineExpansion, usePipelineViewState, useRagPanelState, useReaderController, useSceneWorkspaceState, useSetupDraft, useShellModals, useSlopConfig, useStoryEditors, useEnsureStoryId, useStoryAutosave, useStoryHydration, useStoryImages, useStoryLibrary, useStoryReset, useStoryTransfer, useTtsPlayback, useVoiceManagement } from '@/hooks';
 import {
     distillLore as orchestrateDistillLore,
     ingestLore as orchestrateIngestLore,
@@ -62,6 +62,7 @@ import {
     generateScenes as orchestrateGenerateScenes,
     handleRunManualSlopClean as orchestrateHandleRunManualSlopClean,
     rewritePassage as orchestrateRewritePassage,
+    buildWorldFromPitch as orchestrateBuildWorldFromPitch,
     handleCascadeSceneToProse as orchestrateHandleCascadeSceneToProse,
     runAudioDramaVoiceDirectorPass as orchestrateRunAudioDramaVoiceDirectorPass,
     writeSceneProse as orchestrateWriteSceneProse,
@@ -192,6 +193,7 @@ import {
                 openReleaseNotes
             } = useAppUpdates({ showToast });
             useDesktopBackends({ showToast });
+            const localEmbeddingModel = useLocalEmbeddingModel();
 
             const setSelectedAct = useUiStore(s => s.setSelectedAct);
             const selectedSequence = useUiStore(s => s.selectedSequence);
@@ -606,7 +608,8 @@ import {
                 handleUpdateLoreFile,
                 handleRemoveLoreFile,
                 handleLoreImport,
-                handlePostGenLoreImport
+                handlePostGenLoreImport,
+                handleLorebookImport
             } = useLoreImport({
                 story, setStory, setWorldPrimer, showToast, setLoading, setLoadingStep,
                 ingestLoreBatch: (loreList, options) => ingestLoreBatch(handOff(loreList), options)
@@ -991,10 +994,6 @@ import {
                 }
             }, [loading]);
 
-
-
-            const fileInputRef = useRef<HTMLInputElement>(null);
-
             // RAG & Graph State
             // useRef's initial-value argument is evaluated on EVERY render - useRef(new VectorStore())
             // constructed (and discarded) a fresh instance, including an IndexedDB open, per render.
@@ -1256,6 +1255,8 @@ import {
 
             const handleRewritePassage = (request: CtxArgs<typeof orchestrateRewritePassage>[0]) => orchestrateRewritePassage(getPipelineCtx(), request);
 
+            const handleBuildWorld = (request: CtxArgs<typeof orchestrateBuildWorldFromPitch>[0]) => orchestrateBuildWorldFromPitch(getPipelineCtx(), request);
+
             const executeDirectivePlan = (planActions: CtxArgs<typeof orchestrateExecuteDirectivePlan>[0]) => orchestrateExecuteDirectivePlan(getPipelineCtx(), planActions);
 
             // ============================================================================
@@ -1344,6 +1345,7 @@ import {
             const ingestLoreBatch = (loreList: CtxArgs<typeof orchestrateIngestLoreBatch>[0], options: CtxArgs<typeof orchestrateIngestLoreBatch>[1] = {}) => orchestrateIngestLoreBatch(getPipelineCtx(), loreList, options);
 
             const rebuildRagIndex = () => orchestrateRebuildRagIndex(getPipelineCtx());
+            useLocalEmbeddingReindex(rebuildRagIndex, embeddingProvider === 'llamacpp');
 
             // Build Graph on Load/Change
             useEffect(() => {
@@ -1381,8 +1383,8 @@ import {
                 else if (embeddingProvider === 'nanogpt') key = nanoGptKey;
                 else if (embeddingProvider === 'koboldcpp' || embeddingProvider === 'codex') key = "";
 
-                embeddingService.current = new EmbeddingService(key, embeddingProvider, koboldUrl, codexUrl);
-            }, [apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl, embeddingProvider]);
+                embeddingService.current = new EmbeddingService(key, embeddingProvider, koboldUrl, codexUrl, localEmbeddingModel);
+            }, [apiKey, openRouterKey, nanoGptKey, koboldUrl, codexUrl, embeddingProvider, localEmbeddingModel]);
 
 
 
@@ -1817,12 +1819,6 @@ import {
                         enterReaderMode={enterReaderMode}
                         getSceneProseText={getSceneProseText}
                         getSceneAudioStatus={handOff(getSceneAudioStatus)}
-                        handleExportEpub={handleExportEpub}
-                        handleExportAudioDramaTxt={handleExportAudioDramaTxt}
-                        handleExportMarkdown={handleExportMarkdown}
-                        handleExportPdf={handleExportPdf}
-                        handleImport={handleImport}
-                        fileInputRef={fileInputRef}
                         hasAvailableUpdate={hasAvailableUpdate}
                         availableUpdateVersion={updateInfo?.latestVersion ?? null}
                         isCheckingUpdates={isCheckingUpdates}
@@ -2035,6 +2031,8 @@ import {
                                     handleExportEpub={handleExportEpub}
                                     handleDownloadStoryAudio={handleDownloadStoryAudio}
                                     handleExportAudioDramaTxt={handleExportAudioDramaTxt}
+                                    handleExportMarkdown={handleExportMarkdown}
+                                    handleExportPdf={handleExportPdf}
                                     isExportingStoryAudio={isExportingStoryAudio}
                                     isExportingSequenceAudio={isExportingSequenceAudio}
                                     isExportingSceneAudio={isExportingSceneAudio}
@@ -2119,6 +2117,8 @@ import {
                                     isRebuildingRag={isRebuildingRag}
                                     rebuildRagIndex={rebuildRagIndex}
                                     handlePostGenLoreImport={handlePostGenLoreImport}
+                                    handleLorebookImport={handleLorebookImport}
+                                    buildWorld={handleBuildWorld}
                                     ingestLore={ingestLore}
                                     handleDeleteLore={handleDeleteLore}
                                     openEditModal={openEditModal}

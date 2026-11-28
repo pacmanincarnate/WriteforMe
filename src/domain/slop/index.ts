@@ -31,3 +31,10 @@ export {
     removeStoryAllowlistTerm,
     type SlopAllowlistStory
 } from './configEditing';
+export {
+    detectRepeatedPhrases,
+    phraseHabitsLine,
+    recentScenePassages,
+    type PhrasePassage,
+    type RepeatedPhrase
+} from './phrases';

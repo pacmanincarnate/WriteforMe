@@ -17,6 +17,7 @@ import {
     type LoreFileItem
 } from '@/components';
 import { generateRandomArchetypes, VIEW_LABELS, type ArchetypeOption } from '@/config';
+import { WRITING_MODE_LABELS, WRITING_MODE_TITLE } from '@/config';
 import { LENGTH_CONTROL } from '@/domain/story';
 
 export interface SetupViewProps {
@@ -117,10 +118,9 @@ export function SetupView({
                 onChange={(e) => setInputTitle(e.target.value)}
             />
 
-            {/* Manuscript Format Selector: Standard Novel vs Audio Drama (Studio TTS) */}
             <div className="mb-4 text-left">
                 <label className="text-xs font-bold text-ink-400 uppercase tracking-wider font-mono mb-2 block">
-                    Manuscript Format
+                    {WRITING_MODE_TITLE}
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
@@ -143,7 +143,7 @@ export function SetupView({
                                     }
                                 />
                                 <span className="font-bold text-sm text-ink-900 font-serif">
-                                    Standard Novel
+                                    {WRITING_MODE_LABELS.novel}
                                 </span>
                             </div>
                             {inputWritingMode !== 'audio_drama' && (
@@ -176,7 +176,7 @@ export function SetupView({
                                     }
                                 />
                                 <span className="font-bold text-sm text-ink-900 font-serif">
-                                    Audio Drama
+                                    {WRITING_MODE_LABELS.audio_drama}
                                 </span>
                             </div>
                             <div className="flex items-center gap-1.5">

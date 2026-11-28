@@ -44,6 +44,14 @@
             max-width: 100%;
         }
 
+        /* Beside the sidebar the bar is exactly as tall as the sidebar's own header,
+           so the rule under both reads as one line. */
+        @media (min-width: 768px) {
+            .studio-top-header {
+                padding-top: env(safe-area-inset-top, 0px);
+            }
+        }
+
 
         /* Mobile Sidebar with safe area padding */
         .studio-sidebar {

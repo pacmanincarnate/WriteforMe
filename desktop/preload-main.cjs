@@ -23,12 +23,16 @@ contextBridge.exposeInMainWorld('ellipsisDesktopBackends', {
     isDesktop: true,
     ensureKoboldRunning: () => ipcRenderer.invoke('backends:ensureKoboldRunning'),
     ensureComfyRunning: () => ipcRenderer.invoke('backends:ensureComfyRunning'),
+    launchComfy: () => ipcRenderer.invoke('backends:launchComfy'),
     acquireGpuLease: (modality, hints) => ipcRenderer.invoke('backends:acquireGpuLease', modality, hints),
     releaseGpuLease: (leaseId) => ipcRenderer.invoke('backends:releaseGpuLease', leaseId),
     setCloudActivity: (activeOrCount) => ipcRenderer.invoke('backends:setCloudActivity', activeOrCount),
     freeAllVram: () => ipcRenderer.invoke('backends:freeAllVram'),
     getVramStatus: () => ipcRenderer.invoke('backends:getVramStatus'),
     openBackendsWindow: () => ipcRenderer.invoke('backends:openWindow'),
+    getEmbeddingStatus: (modelId) => ipcRenderer.invoke('backends:embeddingStatus', modelId),
+    ensureEmbedding: (modelId) => ipcRenderer.invoke('backends:embeddingEnsure', modelId),
+    embed: (modelId, texts, kind) => ipcRenderer.invoke('backends:embed', modelId, texts, kind),
     onEvent: (cb) => {
         if (typeof cb !== 'function') return () => {};
         const listener = (_event, payload) => cb(payload);

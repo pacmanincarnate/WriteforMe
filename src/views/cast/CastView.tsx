@@ -10,6 +10,7 @@ import {
     CharacterCard,
     EditorialSubNav,
     Plus,
+    Upload,
     Users,
     type CharacterCardCharacter,
     type EditorialSubNavProps,
@@ -21,6 +22,7 @@ import {
     sanitizeVoiceReferenceText,
     type AudioStoryLike
 } from '@/domain/audio';
+import { CAST_FILE_ACCEPT, useCastImport } from '@/hooks';
 import { DeadRecordPanel } from './DeadRecordPanel';
 
 export type CastCharacterRecord = CharacterCardCharacter & {
@@ -219,8 +221,10 @@ export function CastView({
         });
     };
 
+    const { importCastFiles } = useCastImport({ story, storyRef, setStory, showToast, uploadCharacterPortrait });
+
     return (
-        <div className="max-w-6xl mx-auto space-y-6 animate-fade-in pb-24">
+        <div className="max-w-7xl mx-auto space-y-6 animate-fade-in pb-24">
             <EditorialSubNav
                 activeView={view}
                 onSelectView={setView}
@@ -236,12 +240,33 @@ export function CastView({
                         <Users className="text-gold-ink" size={22} /> {VIEW_LABELS.cast}
                     </h2>
                 </div>
-                <button
-                    onClick={handleIntroduceCharacter}
-                    className="text-xs bg-btn hover:bg-btn-hover text-btn-ink font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
-                >
-                    <Plus size={14} /> Add Character
-                </button>
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                    <input
+                        type="file"
+                        id="characterCardFileInput"
+                        accept={CAST_FILE_ACCEPT}
+                        multiple
+                        className="hidden"
+                        onChange={(e) => {
+                            const files = Array.from(e.target.files || []);
+                            e.target.value = '';
+                            if (files.length > 0) void importCastFiles(files);
+                        }}
+                    />
+                    <button
+                        onClick={() => document.getElementById('characterCardFileInput')?.click()}
+                        className="text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
+                        title="Character sheets written as Markdown, and character cards (JSON, PNG or CHARX) from SillyTavern, Chub, Agnai, RisuAI and similar apps. Pick one file or many."
+                    >
+                        <Upload size={14} /> Import Characters
+                    </button>
+                    <button
+                        onClick={handleIntroduceCharacter}
+                        className="text-xs bg-btn hover:bg-btn-hover text-btn-ink font-bold px-4 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                    >
+                        <Plus size={14} /> Add Character
+                    </button>
+                </div>
             </div>
 
             <DeadRecordPanel story={story} setStory={(updater) => setStory(updater)} />

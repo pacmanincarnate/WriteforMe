@@ -66,6 +66,22 @@
             background: var(--btn-bg-hover);
         }
 
+        .lib-import-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 4px;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: color 160ms ease;
+        }
+
+        .lib-import-btn:hover {
+            color: var(--text-primary, var(--ink-900));
+        }
+
         .lib-new-btn:active {
             transform: scale(0.96) !important;
         }

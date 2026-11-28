@@ -13,6 +13,7 @@ const { writeWaveConfigs } = require('./audiocppConfig.cjs');
 const { downloadFile } = require('./download.cjs');
 const { httpOk } = require('./supervisor.cjs');
 const { VramCoordinator } = require('./vramCoordinator.cjs');
+const { LocalEmbedding } = require('./embedding.cjs');
 
 class Controller {
     /**
@@ -42,6 +43,8 @@ class Controller {
             controller: this,
             onEvent: onVramEvent
         });
+        // Lore search embeddings on the processor; see embedding.cjs for why it takes no VRAM lease.
+        this.embedding = new LocalEmbedding({ settings, supervisor });
     }
 
     backendDir(id) {
@@ -420,8 +423,11 @@ class Controller {
         return this._koboldStartPromise;
     }
 
-    /** Starts ComfyUI silently on demand when an image generation or refresh request is made. */
-    async ensureComfyRunning(onChange = () => {}, onStarting = () => {}) {
+    /**
+     * Starts ComfyUI silently on demand when an image generation or refresh request is made.
+     * `explicit` is the Launch button: the person asked, so the autostart switch does not apply.
+     */
+    async ensureComfyRunning(onChange = () => {}, onStarting = () => {}, { explicit = false } = {}) {
         const current = this.supervisor.status('comfyui').status;
         if (current === 'running' || current === 'external') {
             return { ready: true, started: false, status: current };
@@ -432,7 +438,7 @@ class Controller {
         if (!this.layout('comfyui')) {
             return { ready: false, reason: 'not-installed' };
         }
-        if (!this.settings.data.autostart.comfyui) {
+        if (!explicit && !this.settings.data.autostart.comfyui) {
             return { ready: false, reason: 'autostart-disabled' };
         }
         if (!this._comfyStartPromise) {

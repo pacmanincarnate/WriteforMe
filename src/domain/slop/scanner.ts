@@ -20,6 +20,7 @@ import {
     isAsciiLetter
 } from './registry';
 import { buildEffectiveSlopData, buildStoryGrandfatherSet } from './config';
+import { detectRepeatedPhrases } from './phrases';
 
 export function isAtSentenceStart(text: string, pos: number): boolean {
     let i = pos - 1;
@@ -229,7 +230,7 @@ export function scanTextForSlop(text: string, options?: ScanTextForSlopOptions):
             const item = cat.items[ii];
             if (!item) continue;
             const itemLow = item.toLowerCase();
-            const useNarrationOnly = (cat.id === 'assistant_voice' && ASSISTANT_NARRATION_ONLY_ITEMS.has(itemLow));
+            const useNarrationOnly = ((cat.id === 'assistant_voice' || cat.id === 'wiki_chatbot') && ASSISTANT_NARRATION_ONLY_ITEMS.has(itemLow));
             const scanTarget = useNarrationOnly ? narrationOnlyText : rawText;
 
             const found = findBoundaryMatches(scanTarget, item, cat.match, allowDeriv);
@@ -422,6 +423,30 @@ export function scanTextForSlop(text: string, options?: ScanTextForSlopOptions):
         }
     }
 
+    // 3g. Patterns that carry their own regex (the Wikipedia signs, or an imported pack's).
+    for (const pat of effData.patterns) {
+        if (!pat.regex || pat.severity === 'off' || (hardOnly && pat.severity !== 'hard')) continue;
+        let rx: RegExp;
+        try {
+            const flags = `g${String(pat.flags || '').replace(/[^imsu]/g, '')}`;
+            rx = new RegExp(pat.regex, flags);
+        } catch {
+            continue;
+        }
+        let found: RegExpExecArray | null;
+        let guard = 0;
+        while ((found = rx.exec(rawText)) !== null && guard++ < 200) {
+            if (found[0].length === 0) {
+                rx.lastIndex++;
+                continue;
+            }
+            const start = found.index + (found[0].length - found[0].trimStart().length);
+            const hit = makeHit(pat.severity, pat.id, pat.title, found[0].trim(), start, found.index + found[0].length, pat.note, false);
+            if (pat.severity === 'hard') hardHits.push(hit);
+            else patternHits.push(hit);
+        }
+    }
+
     // 4. Density checks
     if (!hardOnly) {
         const densMap: Record<string, SlopDensityRule> = {};
@@ -463,6 +488,20 @@ export function scanTextForSlop(text: string, options?: ScanTextForSlopOptions):
                     }
                 }
             });
+        }
+
+        const phraseRule = densMap.repeated_phrase;
+        if (phraseRule && phraseRule.severity !== 'off' && wordTokens.length > 0) {
+            const repeats = detectRepeatedPhrases([{ id: 'scene', text: rawText }], {
+                minimum: phraseRule.count || 3,
+                ignoreWords: grandfather.tokenLower
+            });
+            for (const repeat of repeats.slice(0, 8)) {
+                const first = repeat.spans[0];
+                densityHits.push(
+                    makeHit(phraseRule.severity, 'repeated_phrase', phraseRule.title, repeat.phrase, first.start, first.end, `used ${repeat.count} times`, false)
+                );
+            }
         }
 
         const puncRule = densMap.punctuation_collapse;

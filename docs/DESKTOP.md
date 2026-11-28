@@ -21,6 +21,8 @@ Stories, settings and audio live in `%APPDATA%\EllipsisProse\data` (the same dis
 `server.js` always used). Backends and models default to `%APPDATA%\EllipsisProse\backends`
 and can be moved to a bigger drive from the Backends window.
 
+Lore search can also run on a model the app sets up itself; see [BUILT_IN_EMBEDDINGS.md](BUILT_IN_EMBEDDINGS.md).
+
 ## Decisions
 
 **Electron, not Tauri** (Vanta chose this on 2026-11-26). The app already runs on Node

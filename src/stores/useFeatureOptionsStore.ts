@@ -20,20 +20,26 @@ export interface FeatureOptions {
     secretLeakCheck: boolean;
     /** When a new scene names someone the record holds dead, have those paragraphs checked and put right. */
     deadCharacterCheck: boolean;
+    /** Tell Claude where the repeated start of the scene-writing prompt ends, so it is cached. */
+    promptCacheMarks: boolean;
     /** Where Autopilot pauses by itself: 'never', 'scene', 'sequence' or 'act'. */
     autopilotPauseAt: AutopilotPauseAt;
     /** Thousands of tokens one Autopilot run may use; 0 means no cap. */
     autopilotTokenCap: number;
     /** Dollars one Autopilot run may spend, where the provider reports spending; 0 means no cap. */
     autopilotSpendCap: number;
+    /** Tell the writer which phrases the last few scenes keep reusing, so it stops. */
+    phraseHabitWatch: boolean;
 }
 
 export const DEFAULT_FEATURE_OPTIONS: FeatureOptions = {
     secretLeakCheck: true,
     deadCharacterCheck: true,
+    promptCacheMarks: true,
     autopilotPauseAt: 'never',
     autopilotTokenCap: 0,
-    autopilotSpendCap: 0
+    autopilotSpendCap: 0,
+    phraseHabitWatch: true
 };
 
 export function normalizeFeatureOptions(raw: unknown): FeatureOptions {

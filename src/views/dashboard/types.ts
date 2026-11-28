@@ -205,6 +205,7 @@ export interface DashboardStory {
         };
         [key: string]: unknown;
     };
+    generated_world?: import('@/types').Story['generated_world'];
     [key: string]: unknown;
 }
 
@@ -282,6 +283,8 @@ export interface DashboardViewProps {
     handleExportEpub: () => void | Promise<void>;
     handleDownloadStoryAudio: () => void | Promise<void>;
     handleExportAudioDramaTxt: () => void | Promise<void>;
+    handleExportMarkdown: () => void;
+    handleExportPdf: () => void;
     isExportingStoryAudio: boolean;
     isExportingSequenceAudio: boolean;
     isExportingSceneAudio: boolean;

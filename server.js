@@ -500,6 +500,93 @@ function getAudioPaths(storyId, type, seqIdx, sceneIdx = null) {
     };
 }
 
+let closesWithServer = false;
+/** A program started from here closes with this server, however the server is closed. */
+function closeWithServer(dispose) {
+    process.on('exit', dispose);
+    if (closesWithServer) return;
+    closesWithServer = true;
+    for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+        process.on(signal, () => process.exit(0));
+    }
+}
+
+let comfyLauncher;
+/** The ComfyUI launcher, or null where its helper files are not shipped (the desktop app has its own). */
+function getComfyLauncher() {
+    if (comfyLauncher !== undefined) return comfyLauncher;
+    try {
+        const { ComfyLauncher } = require('./comfy-launcher.js');
+        const launcher = new ComfyLauncher({ dataDir: DATA_DIR, rootDir: ROOT });
+        closeWithServer(() => launcher.dispose());
+        comfyLauncher = launcher;
+    } catch (_) {
+        comfyLauncher = null;
+    }
+    return comfyLauncher;
+}
+
+/** GET /api/comfyui/status and POST /api/comfyui/launch, for the person at this machine only. */
+async function handleComfyRequest(req, res, parsedUrl) {
+    const method = (req.method || 'GET').toUpperCase();
+    if (method === 'OPTIONS') {
+        setCorsHeaders(res);
+        res.writeHead(204);
+        res.end();
+        return;
+    }
+    const { isLocalRequest } = require('./comfy-launcher.js');
+    const launcher = isLocalRequest(req) ? getComfyLauncher() : null;
+    if (!launcher) {
+        sendJson(res, 200, { available: false });
+        return;
+    }
+    if (method === 'GET' && parsedUrl.pathname === '/api/comfyui/status') {
+        sendJson(res, 200, launcher.status());
+        return;
+    }
+    if (method === 'POST' && parsedUrl.pathname === '/api/comfyui/launch') {
+        const body = await readJsonBody(req);
+        sendJson(res, 200, { available: true, ...(await launcher.launch(body || {})) });
+        return;
+    }
+    sendJson(res, 404, { error: 'Not Found' });
+}
+
+let embeddingLauncher;
+/** The built-in embedding model, or null where its helper files are not shipped. */
+function getEmbeddingLauncher() {
+    if (embeddingLauncher !== undefined) return embeddingLauncher;
+    try {
+        const { createEmbeddingLauncher } = require('./embedding-launcher.js');
+        const launcher = createEmbeddingLauncher({ dataDir: DATA_DIR });
+        closeWithServer(() => launcher.dispose());
+        embeddingLauncher = launcher;
+    } catch (_) {
+        embeddingLauncher = null;
+    }
+    return embeddingLauncher;
+}
+
+/** POST /api/embedding/{status,ensure,embed}, for the person at this machine only. */
+async function handleEmbeddingRequest(req, res, parsedUrl) {
+    const method = (req.method || 'GET').toUpperCase();
+    if (method === 'OPTIONS') {
+        setCorsHeaders(res);
+        res.writeHead(204);
+        res.end();
+        return;
+    }
+    const { isLocalRequest } = require('./comfy-launcher.js');
+    const launcher = isLocalRequest(req) ? getEmbeddingLauncher() : null;
+    const action = parsedUrl.pathname.slice('/api/embedding/'.length);
+    if (!launcher || method !== 'POST' || !launcher.actions.includes(action)) {
+        sendJson(res, 200, { ok: false, available: false, error: 'The built-in embedding model is not available here.' });
+        return;
+    }
+    sendJson(res, 200, await launcher.call(action, (await readJsonBody(req)) || {}));
+}
+
 async function handleApiRequest(req, res, parsedUrl) {
     const method = (req.method || 'GET').toUpperCase();
     if (method === 'OPTIONS') {
@@ -843,6 +930,22 @@ const server = http.createServer((req, res) => {
     } catch (_) {
         res.writeHead(400, { 'Content-Type': 'text/plain' });
         res.end('Bad Request');
+        return;
+    }
+
+    if (parsedUrl.pathname.startsWith('/api/comfyui/')) {
+        handleComfyRequest(req, res, parsedUrl).catch((err) => {
+            if (!res.headersSent) sendJson(res, 200, { available: false, error: err?.message || 'ComfyUI launcher failed' });
+            else try { res.end(); } catch (_) {}
+        });
+        return;
+    }
+
+    if (parsedUrl.pathname.startsWith('/api/embedding/')) {
+        handleEmbeddingRequest(req, res, parsedUrl).catch((err) => {
+            if (!res.headersSent) sendJson(res, 200, { ok: false, error: err?.message || 'The built-in embedding model failed' });
+            else try { res.end(); } catch (_) {}
+        });
         return;
     }
 

@@ -20,6 +20,8 @@ import {
 } from '@/components';
 import { VIEW_LABELS } from '@/config';
 
+import { WorldBuilderPanel, type WorldBuilderPanelProps } from './WorldBuilderPanel';
+
 export interface LoreItemRecord extends LoreEntryItem {
     id?: string;
     related_to?: string[];
@@ -44,6 +46,8 @@ export interface LoreOpenFormOptions {
     onSubmit?: (data: Record<string, string>) => void;
 }
 
+const LOREBOOK_ACCEPT = '.json,.lorebook,.png,.charx';
+
 export interface LoreViewProps {
     view: string;
     setView: (viewId: string) => void;
@@ -67,6 +71,10 @@ export interface LoreViewProps {
     isRebuildingRag: boolean;
     rebuildRagIndex: () => void | Promise<void>;
     handlePostGenLoreImport: (files: File[]) => void | Promise<void>;
+    /** Brings in a lorebook from another app. The button is hidden when this is not given. */
+    handleLorebookImport?: (file: File) => void | Promise<void>;
+    /** Builds a world from a pitch into lore proposals. The panel is hidden when this is not given. */
+    buildWorld?: WorldBuilderPanelProps['buildWorld'];
     ingestLore: (item: LoreItemRecord) => Promise<LoreItemRecord | null | undefined>;
     handleDeleteLore: (index: number) => void | Promise<void>;
     openEditModal: (title: string, currentVal: string, onSave: (val: string) => void) => void;
@@ -97,6 +105,8 @@ export function LoreView({
     isRebuildingRag,
     rebuildRagIndex,
     handlePostGenLoreImport,
+    handleLorebookImport,
+    buildWorld,
     ingestLore,
     handleDeleteLore,
     openEditModal,
@@ -174,7 +184,7 @@ export function LoreView({
                 const files = Array.from(e.dataTransfer?.files || []);
                 if (files.length) handlePostGenLoreImport(files);
             }}
-            className={`max-w-6xl mx-auto space-y-6 animate-fade-in pb-24 transition-all rounded-2xl ${
+            className={`max-w-7xl mx-auto space-y-6 animate-fade-in pb-24 transition-all rounded-2xl ${
                 isDraggingLoreTab ? 'ring-2 ring-gold/40 bg-gold-tint/10 p-2' : ''
             }`}
         >
@@ -234,6 +244,29 @@ export function LoreView({
                     >
                         <Upload size={14} /> Import Document
                     </button>
+                    {handleLorebookImport && (
+                        <>
+                            <input
+                                type="file"
+                                id="lorebookFileInput"
+                                accept={LOREBOOK_ACCEPT}
+                                className="hidden"
+                                onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    e.target.value = '';
+                                    if (file) void handleLorebookImport(file);
+                                }}
+                            />
+                            <button
+                                onClick={() => document.getElementById('lorebookFileInput')?.click()}
+                                disabled={ragStatus === 'indexing'}
+                                className="text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+                                title="Bring in a lorebook from SillyTavern, NovelAI, Agnai or RisuAI, or the one inside a character card. Each entry becomes a lore item."
+                            >
+                                <Upload size={14} /> Import Lorebook
+                            </button>
+                        </>
+                    )}
                     <button
                         onClick={handleAddFactClick}
                         disabled={ragStatus === 'indexing'}
@@ -259,6 +292,8 @@ export function LoreView({
                     </button>
                 </div>
             </div>
+
+            {buildWorld && <WorldBuilderPanel buildWorld={buildWorld} showToast={showToast} />}
 
             {!story.lore || story.lore.length === 0 ? (
                 <div className="text-center py-14 border border-dashed border-edge-strong rounded-2xl bg-surface p-8 space-y-4 shadow-sm">

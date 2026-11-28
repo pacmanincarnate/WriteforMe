@@ -247,6 +247,33 @@ export const DEFAULT_GEMINI_IMAGE_MODELS: readonly ImageStylePreset[] = [
     }
 ];
 
+/** OpenAI's GPT Image models, newest first. OpenAI has no browser-readable image catalog, so this list is kept by hand. */
+export const OPENAI_IMAGE_MODELS: readonly ImageStylePreset[] = [
+    {
+        id: 'gpt-image-2.6-flare',
+        name: 'GPT Image 2.6 Flare',
+        description: 'Fast everyday image generation'
+    },
+    {
+        id: 'gpt-image-2.6-sunburst',
+        name: 'GPT Image 2.6 Sunburst',
+        description: 'Highest fidelity, slower'
+    },
+    {
+        id: 'gpt-image-2.5-flare',
+        name: 'GPT Image 2.5 Flare',
+        description: 'Fast everyday image generation'
+    },
+    {
+        id: 'gpt-image-2.5-sunburst',
+        name: 'GPT Image 2.5 Sunburst',
+        description: 'Highest fidelity, slower'
+    },
+    { id: 'gpt-image-2', name: 'GPT Image 2', description: 'Widely available default' },
+    { id: 'gpt-image-1.5', name: 'GPT Image 1.5', description: 'Previous generation' },
+    { id: 'gpt-image-1-mini', name: 'GPT Image 1 Mini', description: 'Cheapest' }
+];
+
 export const DEFAULT_OPENROUTER_IMAGE_MODELS: readonly ImageStylePreset[] = [
     {
         id: 'black-forest-labs/flux.2-pro',
@@ -354,6 +381,15 @@ export const NANO_GPT_DEFAULT_MODELS: readonly ModelDescriptor[] = [
         capabilities: { reasoning: true, json: true }
     }
 ];
+
+/** The one name for the novel / audio drama choice, and for each side of it. */
+export const WRITING_MODE_TITLE = 'Writing mode';
+export const WRITING_MODE_LABELS = { novel: 'Novel', audio_drama: 'Audio Drama' } as const;
+
+/** The label for a story's writing mode; anything that is not audio drama is a novel. */
+export function writingModeLabel(mode: string | null | undefined): string {
+    return mode === 'audio_drama' ? WRITING_MODE_LABELS.audio_drama : WRITING_MODE_LABELS.novel;
+}
 
 export const VIEW_LABELS: Record<string, string> = {
     library: 'Bookshelf',

@@ -3,6 +3,7 @@
  * 4-tier cache-friendly XML context compiler for the Writing Agent prose & audio drama prompt.
  */
 
+import { CACHE_POINT } from '@/domain/prompt/cacheLayout';
 import {
     formatActiveActAndSequenceXml,
     formatModalityHand,
@@ -33,6 +34,9 @@ import {
 import type { Act, CastMember, Relationship, SceneBlueprint, Sequence, Story } from '@/types';
 import { isSerializationPlaceholder } from '@/utils';
 import { scrubSecretFromText } from '@/domain/continuity/secretScrub';
+import { characterSheetBlock } from '@/domain/imports';
+import { phraseHabitsLine, recentScenePassages } from '@/domain/slop';
+import { getFeatureOptions } from '@/stores/useFeatureOptionsStore';
 
 export interface ProseContextCastMember extends Partial<CastMember>, Record<string, unknown> {
     name?: string;
@@ -235,6 +239,7 @@ export function buildProseContext({
                         ignoreWords: castNameWords
                     });
                 if (cloned.details.deep_profile) cloned.details.deep_profile = scrub(cloned.details.deep_profile);
+                if (typeof cloned.details.sheet === 'string') cloned.details.sheet = scrub(cloned.details.sheet);
                 if (cloned.interview_psychology) cloned.interview_psychology = scrub(cloned.interview_psychology);
                 if (cloned.deep_profile) cloned.deep_profile = scrub(cloned.deep_profile);
             }
@@ -287,6 +292,15 @@ export function buildProseContext({
         }
     });
     const isSolo = presentChars.length <= 1;
+
+    // Wording the last few scenes keep reusing; cast and place names are not habits.
+    let phraseHabitsBlock = '';
+    if (getFeatureOptions().phraseHabitWatch) {
+        const habits = phraseHabitsLine(recentScenePassages(storyToUse.prose, seq, s), {
+            ignoreWords: (Array.isArray(storyToUse.cast) ? storyToUse.cast : []).map((c) => String(c?.name || ''))
+        });
+        if (habits) phraseHabitsBlock = `\n<phrase_habits>\n${habits}\n</phrase_habits>`;
+    }
 
     let dialogueTargetBlock: string;
     if (storyToUse.writing_mode === 'audio_drama') {
@@ -490,13 +504,18 @@ ${rawInterview}
             })
             .filter(Boolean)
             .join('\n\n');
-        return canonicalInterviews
+        const sheets = sanitizedActiveCast.map((ch) => characterSheetBlock(ch)).filter(Boolean).join('');
+        return `${sheets}${canonicalInterviews
             ? `<canonical_character_interview_voice>
 [CANONICAL VOICE MANDATE: The following excerpts represent each character's authentic voice, speech rhythm, emotional defense mechanisms, and vocabulary. In dialogue and POV narration, you MUST honor the vocal cadence, idioms, and emotional defense style established in their own words below.]
 ${canonicalInterviews}
 </canonical_character_interview_voice>\n`
-            : '';
+            : ''}`;
     })();
+
+    // Everything above this mark is the same for every call that writes this scene (its later
+    // turns and its rewrites); what follows changes with each call. See domain/prompt/cacheLayout.
+    const cachePoint = getFeatureOptions().promptCacheMarks ? CACHE_POINT : '';
 
     const serialSceneCount = Array.isArray(storyToUse.scenes?.[`${seq}`]) ? storyToUse.scenes[`${seq}`].length : s + 1;
 
@@ -556,13 +575,9 @@ ${genreRulesBlock}
 
 ${strictAntiPatternsBlock}
 
-${buildGenreToneStyleBlocks(storyToUse.style, { includeTechnicalSpecs: true })}${getAuthorNoteXml({ author_note: storyToUse.author_note })}
+${buildGenreToneStyleBlocks(storyToUse.style, { includeTechnicalSpecs: true })}${getAuthorNoteXml({ author_note: storyToUse.author_note, content_dial: storyToUse.content_dial })}
 
-${staticWorldPrimerBlock}<story_so_far>
-${storyToUse.story_so_far || 'The story is just beginning (no prose has been written yet).'}
-</story_so_far>
-
-${formatLongformSceneDirectives(storyToUse as unknown as Partial<Story>, currentSeqNum, 'prose', storyToUse.sequences?.length || 8, { index: s, count: serialSceneCount })}${canonicalInterviewsBlock}<active_characters_profiles>
+${staticWorldPrimerBlock}${canonicalInterviewsBlock}<active_characters_profiles>
 [EMOTIONAL TEMPERATURE: Write these characters as human beings who feel deeply. Their traits are not clinical diagnoses, but the messy result of lived experiences. Allow for genuine emotional warmth and irrational human complexity.]
 ${sanitizedActiveCast
     .filter(Boolean)
@@ -611,6 +626,11 @@ ${cornerXml ? `${cornerXml}\n` : ''}  <psychological_wound>${flaw}</psychologica
     .join('\n')}
 </active_characters_profiles>
 
+<story_so_far>
+${storyToUse.story_so_far || 'The story is just beginning (no prose has been written yet).'}
+</story_so_far>
+
+${formatLongformSceneDirectives(storyToUse as unknown as Partial<Story>, currentSeqNum, 'prose', storyToUse.sequences?.length || 8, { index: s, count: serialSceneCount })}
 <relationship_friction_matrix>
 ${buildRelationshipFrictionBlock(
     sanitizedActiveCast as unknown as CastMember[],
@@ -663,8 +683,8 @@ ${atmosphericOverviewBlock}
 ${modalityHandBlock}
 ${activeActAndSequenceBlock}${activeLensBlock}
 ${upcomingBoundaryBlock}
-${dialogueTargetBlock}
-${
+${dialogueTargetBlock}${phraseHabitsBlock}
+${cachePoint}${
     !forceFullRewrite && existingProseText
         ? `
 <current_scene_prior_draft_context>

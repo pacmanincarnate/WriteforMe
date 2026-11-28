@@ -16,9 +16,13 @@ import {
     DEFAULT_SERVICE_URLS,
     DEFAULT_TOKEN_LIMITS
 } from '@/config';
+import { useLocalEmbeddingAvailable } from '@/hooks';
 import { getKoboldLoadedModelName } from '@/services/llm';
 import { CLI_BRIDGE_DEFAULT_URLS, isCliBridgeProvider } from '@/types';
+import { SettingsLocalEmbedding } from './SettingsLocalEmbedding';
 import type { SettingsModelsTabProps } from './types';
+import { ComfyConnection } from './ComfyConnection';
+import { OpenAiImageModel } from './OpenAiImageModel';
 
 function readKoboldGlobalModel(): string | undefined {
     return getKoboldLoadedModelName() || undefined;
@@ -38,6 +42,9 @@ const PROVIDER_TABS = [
 const EMBEDDING_PROVIDER_TABS = PROVIDER_TABS.filter(
     (p) => p.id !== 'claude' && p.id !== 'anthropic'
 );
+
+/** The desktop app's own llama.cpp model; offered only where the app can run it. */
+const BUILT_IN_EMBEDDING_TAB = { id: 'llamacpp', label: 'Built-in' } as const;
 
 const OVERRIDE_PROVIDER_TABS = [
     { id: '', label: 'Inherit (Primary)' },
@@ -168,6 +175,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
     setComfyTimeoutSec,
     setSettingsTab
 }) => {
+    const builtInEmbedding = useLocalEmbeddingAvailable();
     const revConfig = getEffectiveModelConfig('review');
     const effRevProv = reviewProvider || devProvider || 'gemini';
     const isRevInherited = !reviewModel && !reviewProvider;
@@ -251,7 +259,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
 
                 {/* Provider Switcher */}
                 <div>
-                    <div className="grid grid-cols-2 sm:grid-cols-7 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                    <div className="flex flex-wrap gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                         {PROVIDER_TABS.map((p) => (
                             <button
                                 key={p.id}
@@ -275,7 +283,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                         setDevModel(anthropicModel);
                                     }
                                 }}
-                                className={`py-2 px-2 min-h-[38px] flex items-center justify-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                className={`py-2 px-3 min-h-[38px] flex-1 whitespace-nowrap flex items-center justify-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                     devProvider === p.id
                                         ? 'bg-btn text-btn-ink shadow-2xs'
                                         : 'text-ink-600 hover:text-ink-900'
@@ -773,9 +781,6 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             <span className="text-xs font-bold text-ink-900 uppercase tracking-wider font-mono">
                                 Advanced: Multi-Model Pipeline Routing
                             </span>
-                            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-semibold">
-                                Optional
-                            </span>
                         </div>
                         <p className="text-xs text-ink-500 mt-1">
                             Assign specialized models for Review, Prose, and RAG Embeddings. By default, all stages
@@ -800,9 +805,6 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                         <span className="text-xs font-bold text-ink-900 uppercase tracking-wider font-mono">
                                             Review Model
                                         </span>
-                                        <span className="text-xs uppercase font-mono px-2.5 py-0.5 rounded-full bg-gold-tint border border-gold-edge text-gold-ink font-semibold">
-                                            Review &amp; Continuity
-                                        </span>
                                     </div>
                                     <p className="text-[11px] text-ink-500 mt-0.5">
                                         Evaluates structure &amp; beats, runs surgical editors (banned words), and
@@ -825,10 +827,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             </div>
 
                             <div>
-                                <label className="block text-xs font-bold text-ink-500 uppercase tracking-wider mb-1.5 font-mono">
-                                    Provider
-                                </label>
-                                <div className="grid grid-cols-2 sm:grid-cols-8 gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                                <div className="flex flex-wrap gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                                     {OVERRIDE_PROVIDER_TABS.map((p) => (
                                         <button
                                             key={p.id}
@@ -850,7 +849,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                                     setReviewModel('');
                                                 }
                                             }}
-                                            className={`py-2 px-1.5 min-h-[38px] flex items-center justify-center rounded-lg text-xs font-bold transition-all text-center truncate cursor-pointer ${
+                                            className={`py-2 min-h-[38px] flex items-center justify-center rounded-lg text-xs font-bold transition-all text-center whitespace-nowrap flex-1 px-3 cursor-pointer ${
                                                 reviewProvider === p.id
                                                     ? 'bg-btn text-btn-ink shadow-2xs'
                                                     : 'text-ink-600 hover:text-ink-900'
@@ -865,9 +864,6 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             {isRevInherited ? (
                                 <div className="flex items-center justify-between px-3.5 py-2.5 bg-mist-100/80 border border-edge-soft rounded-xl text-xs">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs font-mono uppercase px-2 py-0.5 rounded bg-mist-200 text-ink-600 font-bold">
-                                            Fallback Active
-                                        </span>
                                         <span className="text-ink-600">
                                             Inheriting Primary:{' '}
                                             <strong className="font-mono text-ink-800">{revConfig.model}</strong> (
@@ -878,9 +874,6 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             ) : (
                                 <div className="flex items-center justify-between px-3.5 py-2 bg-gold-tint/40 border border-gold-edge/50 rounded-xl text-xs">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs font-mono uppercase px-2 py-0.5 rounded bg-gold-tint border border-gold-edge text-gold-ink font-bold">
-                                            Custom Override
-                                        </span>
                                         <span className="text-ink-700">
                                             Dedicated review model:{' '}
                                             <strong className="font-mono text-ink-800">{revConfig.model}</strong> (
@@ -946,9 +939,6 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                         <span className="text-xs font-bold text-ink-900 uppercase tracking-wider font-mono">
                                             Prose Model
                                         </span>
-                                        <span className="text-xs uppercase font-mono px-2.5 py-0.5 rounded-full bg-ember-tint border border-ember-edge text-ember-800 font-semibold">
-                                            Prose Generation
-                                        </span>
                                     </div>
                                     <p className="text-[11px] text-ink-500 mt-0.5">
                                         Generates novel manuscript prose scene by scene directly from choreographed
@@ -971,10 +961,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             </div>
 
                             <div>
-                                <label className="block text-xs font-bold text-ink-500 uppercase tracking-wider mb-1.5 font-mono">
-                                    Provider
-                                </label>
-                                <div className="grid grid-cols-2 sm:grid-cols-8 gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                                <div className="flex flex-wrap gap-1 bg-mist-100 p-1 rounded-xl border border-edge-strong">
                                     {OVERRIDE_PROVIDER_TABS.map((p) => (
                                         <button
                                             key={p.id}
@@ -996,7 +983,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                                     setProseModel('');
                                                 }
                                             }}
-                                            className={`py-2 px-1.5 min-h-[38px] flex items-center justify-center rounded-lg text-xs font-bold transition-all text-center truncate cursor-pointer ${
+                                            className={`py-2 min-h-[38px] flex items-center justify-center rounded-lg text-xs font-bold transition-all text-center whitespace-nowrap flex-1 px-3 cursor-pointer ${
                                                 proseProvider === p.id
                                                     ? 'bg-btn text-btn-ink shadow-2xs'
                                                     : 'text-ink-600 hover:text-ink-900'
@@ -1011,9 +998,6 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             {isPrsInherited ? (
                                 <div className="flex items-center justify-between px-3.5 py-2.5 bg-mist-100/80 border border-edge-soft rounded-xl text-xs">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs font-mono uppercase px-2 py-0.5 rounded bg-mist-200 text-ink-600 font-bold">
-                                            Fallback Active
-                                        </span>
                                         <span className="text-ink-600">
                                             Inheriting Primary:{' '}
                                             <strong className="font-mono text-ink-800">{prsConfig.model}</strong> (
@@ -1024,9 +1008,6 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             ) : (
                                 <div className="flex items-center justify-between px-3.5 py-2 bg-gold-tint/40 border border-gold-edge/50 rounded-xl text-xs">
                                     <div className="flex items-center gap-2">
-                                        <span className="text-xs font-mono uppercase px-2 py-0.5 rounded bg-gold-tint border border-gold-edge text-gold-ink font-bold">
-                                            Custom Override
-                                        </span>
                                         <span className="text-ink-700">
                                             Dedicated prose model:{' '}
                                             <strong className="font-mono text-ink-800">{prsConfig.model}</strong> (
@@ -1089,13 +1070,16 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                             <label className="block text-xs font-bold text-ink-700 uppercase tracking-wider font-mono">
                                 Embedding Provider (RAG)
                             </label>
-                            <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
-                                {EMBEDDING_PROVIDER_TABS.map((p) => (
+                            <div className="flex flex-wrap gap-1.5 bg-mist-100 p-1 rounded-xl border border-edge-strong">
+                                {[
+                                    ...(builtInEmbedding ? [BUILT_IN_EMBEDDING_TAB] : []),
+                                    ...EMBEDDING_PROVIDER_TABS
+                                ].map((p) => (
                                     <button
                                         key={p.id}
                                         type="button"
                                         onClick={() => setEmbeddingProvider(p.id)}
-                                        className={`py-2 px-2 min-h-[38px] flex items-center justify-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                        className={`py-2 px-3 min-h-[38px] flex-1 whitespace-nowrap flex items-center justify-center rounded-lg text-xs font-bold transition-all cursor-pointer ${
                                             embeddingProvider === p.id
                                                 ? 'bg-btn text-btn-ink shadow-2xs'
                                                 : 'text-ink-600 hover:text-ink-900'
@@ -1105,13 +1089,19 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                     </button>
                                 ))}
                             </div>
-                            <p className="text-xs text-ink-500 mt-2">
-                                After switching providers, use &quot;Rebuild RAG index&quot; in World Lore.
-                            </p>
-                            <p className="text-xs text-ink-500 mt-1">
-                                The lore index is rebuilt only when the story&apos;s lore or the embedding provider
-                                changes.
-                            </p>
+                            {embeddingProvider === BUILT_IN_EMBEDDING_TAB.id && builtInEmbedding ? (
+                                <SettingsLocalEmbedding koboldUrl={koboldUrl} />
+                            ) : (
+                                <>
+                                    <p className="text-xs text-ink-500 mt-2">
+                                        After switching providers, use &quot;Rebuild RAG index&quot; in World Lore.
+                                    </p>
+                                    <p className="text-xs text-ink-500 mt-1">
+                                        The lore index is rebuilt only when the story&apos;s lore or the embedding provider
+                                        changes.
+                                    </p>
+                                </>
+                            )}
                         </div>
                     </div>
                 )}
@@ -1166,7 +1156,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                        <label className="block text-xs font-bold text-ink-700 mb-1 font-mono">
+                        <label className="flex items-center min-h-[36px] text-xs font-bold text-ink-700 mb-1 font-mono">
                             Image API Provider
                         </label>
                         <div className="relative">
@@ -1184,12 +1174,15 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                             openRouterImageModelsList[0]?.id ||
                                                 DEFAULT_IMAGE_MODELS.openrouter
                                         );
+                                    } else if (prov === 'openai') {
+                                        setImageModel(DEFAULT_IMAGE_MODELS.openai);
                                     }
                                 }}
                                 className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none appearance-none transition-colors cursor-pointer"
                             >
                                 <option value="gemini">Gemini (Nano Banana / Native Image)</option>
                                 <option value="openrouter">OpenRouter (SDXL/Flux/etc.)</option>
+                                <option value="openai">OpenAI (GPT Image)</option>
                                 <option value="comfyui">ComfyUI (local, Krea 2)</option>
                             </select>
                             <ChevronDown
@@ -1201,7 +1194,7 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
 
                     {imageProvider !== 'comfyui' && (
                         <div>
-                            <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center justify-between min-h-[36px] mb-1">
                                 <label className="block text-xs font-bold text-ink-700 font-mono">Image Model</label>
                                 {(imageProvider === 'gemini' || imageProvider === 'openrouter') && (
                                     <button
@@ -1263,6 +1256,8 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                         />
                                     )}
                                 </div>
+                            ) : imageProvider === 'openai' ? (
+                                <OpenAiImageModel imageModel={imageModel} setImageModel={setImageModel} />
                             ) : (
                                 <div className="space-y-2">
                                     <div className="relative">
@@ -1341,14 +1336,18 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                 {imageProvider !== 'comfyui' && (
                     <div>
                         <label className="block text-xs font-bold text-ink-700 mb-1 font-mono">
-                            Dedicated Image API Key (Optional)
+                            {imageProvider === 'openai' ? 'OpenAI API Key' : 'Dedicated Image API Key (Optional)'}
                         </label>
                         <input
                             type="password"
                             value={imageApiKey}
                             onChange={(e) => setImageApiKey(e.target.value)}
                             className="w-full bg-inset border border-edge-strong rounded-xl px-3.5 py-2 text-xs text-ink-800 focus:border-gold focus:ring-1 focus:ring-gold/30 outline-none transition-colors"
-                            placeholder="If blank, uses text provider key (Gemini/OpenRouter)"
+                            placeholder={
+                                imageProvider === 'openai'
+                                    ? 'sk-...'
+                                    : 'If blank, uses text provider key (Gemini/OpenRouter)'
+                            }
                         />
                     </div>
                 )}
@@ -1371,20 +1370,11 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 placeholder={DEFAULT_SERVICE_URLS.comfyui}
                             />
                         </div>
-                        <div className="flex justify-between items-center gap-4">
-                            <p role="status" className="text-xs text-ink-500 break-words">
-                                {comfyStatus.online
-                                    ? `Online. ComfyUI ${comfyStatus.version} on ${comfyStatus.device}`
-                                    : comfyStatus.error || 'Press Refresh to connect to ComfyUI.'}
-                            </p>
-                            <button
-                                type="button"
-                                onClick={() => void refreshComfyInfo({ startIfNeeded: true })}
-                                className="text-xs text-gold-ink hover:text-ink-900 font-medium flex items-center gap-1 transition-colors"
-                            >
-                                Refresh
-                            </button>
-                        </div>
+                        <ComfyConnection
+                            comfyUrl={comfyUrl}
+                            comfyStatus={comfyStatus}
+                            refreshComfyInfo={refreshComfyInfo}
+                        />
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {comfySelectFields.map((field) => (
                                 <div key={field.id}>
@@ -1438,10 +1428,6 @@ export const SettingsModelsTab: React.FC<SettingsModelsTabProps> = ({
                                 </div>
                             ))}
                         </div>
-                        <p className="text-xs text-ink-500">
-                            Start ComfyUI with --enable-cors-header (loopback listen is fine). Uses Krea 2 Turbo:
-                            diffusion model + Qwen3-VL text encoder + Qwen VAE.
-                        </p>
                     </div>
                 )}
                 <p className="text-xs text-ink-400 mt-2">

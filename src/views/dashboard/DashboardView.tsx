@@ -6,6 +6,7 @@
  * and Canonical Continuity Ledger.
  */
 
+import { ContentDialPanel } from './ContentDialPanel';
 import {
     CollapsibleProse,
     FoldedSection,
@@ -24,6 +25,7 @@ import {
     Workflow,
     type EditorialSubNavProps
 } from '@/components';
+import { WRITING_MODE_LABELS, WRITING_MODE_TITLE, writingModeLabel } from '@/config';
 import {
     STORY_SO_FAR_BLOATED_WORD_THRESHOLD,
     ensureStoryMemory
@@ -77,6 +79,8 @@ export function DashboardView({
     handleExportEpub,
     handleDownloadStoryAudio,
     handleExportAudioDramaTxt,
+    handleExportMarkdown,
+    handleExportPdf,
     isExportingStoryAudio,
     isExportingSequenceAudio,
     isExportingSceneAudio,
@@ -164,6 +168,8 @@ export function DashboardView({
                     handleExportEpub={handleExportEpub}
                     handleDownloadStoryAudio={handleDownloadStoryAudio}
                     handleExportAudioDramaTxt={handleExportAudioDramaTxt}
+                    handleExportMarkdown={handleExportMarkdown}
+                    handleExportPdf={handleExportPdf}
                     isExportingStoryAudio={isExportingStoryAudio}
                     isExportingSequenceAudio={isExportingSequenceAudio}
                     isExportingSceneAudio={isExportingSceneAudio}
@@ -478,6 +484,8 @@ export function DashboardView({
                             />
                         </div>
 
+                        <ContentDialPanel story={story} setStory={(updater) => setStory(updater)} />
+
                         {/* Status Quo */}
                         {story.status_quo && (
                             <div className="pt-4 border-t border-edge-soft space-y-2">
@@ -511,13 +519,13 @@ export function DashboardView({
                     </div>
 
                     <FoldedSection
-                        title="Writing mode"
-                        summary={story.writing_mode === 'audio_drama' ? 'Audio drama' : 'Prose'}
+                        title={WRITING_MODE_TITLE}
+                        summary={writingModeLabel(story.writing_mode)}
                     >
                         <div
                             className="grid grid-cols-2 p-1 bg-inset rounded-xl border border-edge gap-1"
                             role="radiogroup"
-                            aria-label="Writing Mode"
+                            aria-label={WRITING_MODE_TITLE}
                         >
                             <button
                                 type="button"
@@ -544,7 +552,7 @@ export function DashboardView({
                                         }
                                         return updated;
                                     });
-                                    showToast('Writing mode switched to Novel', 'info');
+                                    showToast(`${WRITING_MODE_TITLE} switched to ${WRITING_MODE_LABELS.novel}`, 'info');
                                 }}
                                 className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                                     story.writing_mode !== 'audio_drama'
@@ -560,7 +568,7 @@ export function DashboardView({
                                             : 'text-ink-400'
                                     }
                                 />
-                                <span>Novel</span>
+                                <span>{WRITING_MODE_LABELS.novel}</span>
                             </button>
                             <button
                                 type="button"
@@ -590,7 +598,10 @@ export function DashboardView({
                                         }
                                         return updated;
                                     });
-                                    showToast('Writing mode switched to Audio Drama', 'info');
+                                    showToast(
+                                        `${WRITING_MODE_TITLE} switched to ${WRITING_MODE_LABELS.audio_drama}`,
+                                        'info'
+                                    );
                                 }}
                                 className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
                                     story.writing_mode === 'audio_drama'
@@ -606,14 +617,9 @@ export function DashboardView({
                                             : 'text-ink-400'
                                     }
                                 />
-                                <span>Audio Drama</span>
+                                <span>{WRITING_MODE_LABELS.audio_drama}</span>
                             </button>
                         </div>
-                        <p className="text-xs text-ink-500 italic font-serif">
-                            {story.writing_mode === 'audio_drama'
-                                ? 'Generates multi-voice audio drama-style scripts for audio generation.'
-                                : 'Generates standard narrative prose with rich scene description, narrative pacing, and dialogue tags.'}
-                        </p>
                     </FoldedSection>
 
                     {/* Macro Story Arc & Thematic Thesis Card (Tier 1.1) */}

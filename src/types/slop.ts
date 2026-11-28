@@ -18,6 +18,10 @@ export interface SlopPattern {
     title: string;
     severity: SlopSeverity;
     note?: string;
+    /** A pattern with a regex is matched as written; one without is built into the scanner by id. */
+    regex?: string;
+    /** Regex flags besides `g`, for example "i". */
+    flags?: string;
 }
 
 export interface SlopDensityRule {

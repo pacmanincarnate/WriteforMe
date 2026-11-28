@@ -7,12 +7,10 @@
 import React from 'react';
 import {
     Activity,
-    Book,
     BookOpen,
     ChevronDown,
     ChevronLeft,
     ChevronRight,
-    FileText,
     Headphones,
     History,
     Layers,
@@ -21,7 +19,6 @@ import {
     RefreshCw,
     Settings,
     Sparkles,
-    Upload,
     Workflow,
     X
 } from '@/components/icons';
@@ -65,13 +62,6 @@ export interface StudioSidebarProps {
     enterReaderMode: (seqIdx?: number, sceneIdx?: number) => void;
     getSceneProseText: (story: Story, seqIdx: number, sceneIdx: number) => string;
     getSceneAudioStatus: (seqIdx: number, sceneIdx: number) => SidebarSceneAudioStatus;
-    handleExportEpub: () => void | Promise<void>;
-    handleExportAudioDramaTxt: () => void | Promise<void>;
-    /** The manuscript as Markdown, and through the print window as a PDF. Each button is hidden when not given. */
-    handleExportMarkdown?: () => void;
-    handleExportPdf?: () => void;
-    handleImport: (e: React.ChangeEvent<HTMLInputElement>) => void | Promise<void>;
-    fileInputRef: React.RefObject<HTMLInputElement>;
     hasAvailableUpdate?: boolean;
     availableUpdateVersion?: string | null;
     isCheckingUpdates?: boolean;
@@ -104,12 +94,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
     enterReaderMode,
     getSceneProseText,
     getSceneAudioStatus,
-    handleExportEpub,
-    handleExportAudioDramaTxt,
-    handleExportMarkdown,
-    handleExportPdf,
-    handleImport,
-    fileInputRef,
     hasAvailableUpdate = false,
     availableUpdateVersion = null,
     isCheckingUpdates = false,
@@ -151,7 +135,7 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                 } ${view === 'reader' ? 'hidden md:hidden' : ''} shadow-sm`}
             >
                 {/* Studio Logo Header */}
-                <div className="sidebar-header p-4 flex justify-between items-center border-b border-edge bg-surface/70 backdrop-blur-sm">
+                <div className="sidebar-header relative h-[3.75rem] px-3.5 flex justify-between items-center border-b border-edge bg-surface/70 backdrop-blur-sm">
                     <div className="sidebar-brand flex items-center gap-2.5">
                         <div className="w-9 h-9 rounded-xl overflow-hidden border border-gold-edge shadow-sm flex-shrink-0 bg-btn flex items-center justify-center">
                             <img src="ELPIcon2.jpg" alt="EllipsisProse Icon" className="w-full h-full object-cover" />
@@ -180,7 +164,7 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                     <button
                         type="button"
                         onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-                        className="hidden md:flex shrink-0 items-center justify-center text-ink-400 hover:text-ink-800 p-1.5 rounded-lg hover:bg-wash transition-colors"
+                        className="sidebar-toggle hidden md:flex shrink-0 items-center justify-center text-ink-400 hover:text-ink-800 p-1.5 rounded-lg hover:bg-wash transition-colors"
                         title={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                         aria-label={isSidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
                         aria-expanded={!isSidebarCollapsed}
@@ -200,8 +184,8 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                 <div
                     className="sidebar-nav flex-1 overflow-y-auto p-3 space-y-4"
                     onClick={(e) => {
-                        // On a phone the sidebar is a drawer over the page: picking a place closes it.
-                        if ((e.target as HTMLElement).closest('.nav-btn')) setIsSidebarOpen(false);
+                        // On a phone the sidebar is a drawer over the page: picking a place or toggling an autopilot closes it.
+                        if ((e.target as HTMLElement).closest('.nav-btn, .nav-action-btn')) setIsSidebarOpen(false);
                     }}
                 >
                     {/* SPACE 1: STUDIO WORKSPACE */}
@@ -230,7 +214,7 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                         <button
                             onClick={() => setView('dashboard')}
                             className={`nav-btn ${
-                                ['dashboard', 'cast', 'relationships', 'lore'].includes(view) ? 'active' : ''
+                                ['dashboard', 'cast', 'relationships', 'lore', 'inspector'].includes(view) ? 'active' : ''
                             }`}
                             title="Overview & World Bible"
                         >
@@ -252,78 +236,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                                 {(loading || continuousAutopilot || isAudioAutopilotRunning) && (
                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse ml-1" />
                                 )}
-                            </span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handleAutopilot({ fromSetup: view === 'setup' })}
-                            className={`nav-btn ${continuousAutopilot ? 'active text-gold-ink bg-gold-tint font-bold' : ''}`}
-                            title={
-                                continuousAutopilot
-                                    ? 'Stop Autonomous Novel Generation'
-                                    : 'Start Continuous Novel Autopilot'
-                            }
-                        >
-                            <div className="relative flex items-center">
-                                <Play
-                                    size={15}
-                                    className={continuousAutopilot ? 'text-gold-ink fill-current animate-pulse' : ''}
-                                />
-                                {continuousAutopilot && (
-                                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-ping" />
-                                )}
-                            </div>
-                            <span className="nav-label flex items-center justify-between flex-1">
-                                <span>Autopilot</span>
-                                {continuousAutopilot && (
-                                    <span className="text-[10px] font-mono font-bold bg-gold-tint text-gold-ink px-1.5 py-0.5 rounded-full border border-gold-edge">
-                                        ON
-                                    </span>
-                                )}
-                            </span>
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleToggleAudioAutopilot}
-                            className={`nav-btn ${
-                                isAudioAutopilotRunning ? 'active text-gold-ink bg-gold-tint font-bold' : ''
-                            }`}
-                            title={
-                                isAudioAutopilotRunning
-                                    ? 'Stop Audio Autopilot'
-                                    : 'Generate scene audio autonomously for offline listening & export'
-                            }
-                        >
-                            <div className="relative flex items-center">
-                                <Headphones
-                                    size={15}
-                                    className={isAudioAutopilotRunning ? 'text-gold-ink animate-pulse' : ''}
-                                />
-                                {isAudioAutopilotRunning && (
-                                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-ping" />
-                                )}
-                            </div>
-                            <span className="nav-label flex items-center justify-between flex-1 gap-1.5">
-                                <span className="truncate">Audio Autopilot</span>
-                                {isAudioAutopilotRunning ? (
-                                    <span className="text-[10px] font-mono font-bold bg-gold-tint text-gold-ink px-1.5 py-0.5 rounded-full border border-gold-edge shrink-0">
-                                        ON · {storyAudioSummary.readyCount}/{storyAudioSummary.totalDrafted}
-                                    </span>
-                                ) : isAudioAutopilotQueued ? (
-                                    <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-700 px-1.5 py-0.5 rounded-full border border-amber-500/30 shrink-0">
-                                        QUEUED
-                                    </span>
-                                ) : storyAudioSummary.totalDrafted > 0 ? (
-                                    <span
-                                        className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-full border shrink-0 ${
-                                            storyAudioSummary.readyCount === storyAudioSummary.totalDrafted
-                                                ? 'bg-sage-tint text-sage-800 border-sage-edge'
-                                                : 'bg-wash text-ink-500 border-edge'
-                                        }`}
-                                    >
-                                        {storyAudioSummary.readyCount}/{storyAudioSummary.totalDrafted}
-                                    </span>
-                                ) : null}
                             </span>
                         </button>
                         <button
@@ -356,6 +268,88 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                             title="Reading & Listening Room"
                         >
                             <BookOpen size={15} /> <span className="nav-label">Reading Room</span>
+                        </button>
+                    </div>
+
+                    {/* AUTONOMOUS ACTION CONTROLS */}
+                    <div className="pt-2 border-t border-edge/70 space-y-1.5">
+                        <button
+                            type="button"
+                            onClick={() => handleAutopilot({ fromSetup: view === 'setup' })}
+                            className={`nav-action-btn ${continuousAutopilot ? 'active' : ''}`}
+                            title={
+                                continuousAutopilot
+                                    ? 'Stop Autonomous Novel Generation'
+                                    : 'Start Continuous Novel Autopilot'
+                            }
+                        >
+                            <div className="relative flex items-center shrink-0">
+                                <Play
+                                    size={15}
+                                    className={continuousAutopilot ? 'text-gold-ink fill-current animate-pulse' : 'text-gold-ink'}
+                                />
+                                {continuousAutopilot && (
+                                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-ping" />
+                                )}
+                            </div>
+                            <span className="nav-label flex items-center justify-between flex-1">
+                                <span>Autopilot</span>
+                                <span
+                                    className={`text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-full border shrink-0 ${
+                                        continuousAutopilot
+                                            ? 'bg-gold-tint text-gold-ink border-gold-edge'
+                                            : 'bg-wash text-ink-500 border-edge'
+                                    }`}
+                                >
+                                    {continuousAutopilot ? 'ON' : 'OFF'}
+                                </span>
+                            </span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleToggleAudioAutopilot}
+                            className={`nav-action-btn ${isAudioAutopilotRunning ? 'active' : ''}`}
+                            title={
+                                isAudioAutopilotRunning
+                                    ? 'Stop Audio Autopilot'
+                                    : 'Generate scene audio autonomously for offline listening & export'
+                            }
+                        >
+                            <div className="relative flex items-center shrink-0">
+                                <Headphones
+                                    size={15}
+                                    className={isAudioAutopilotRunning ? 'text-gold-ink animate-pulse' : 'text-gold-ink'}
+                                />
+                                {isAudioAutopilotRunning && (
+                                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-gold animate-ping" />
+                                )}
+                            </div>
+                            <span className="nav-label flex items-center justify-between flex-1 gap-1.5">
+                                <span className="truncate">Audio Autopilot</span>
+                                {isAudioAutopilotRunning ? (
+                                    <span className="text-[10px] font-mono font-bold bg-gold-tint text-gold-ink px-1.5 py-0.5 rounded-full border border-gold-edge shrink-0">
+                                        ON · {storyAudioSummary.readyCount}/{storyAudioSummary.totalDrafted}
+                                    </span>
+                                ) : isAudioAutopilotQueued ? (
+                                    <span className="text-[10px] font-mono font-bold bg-amber-500/10 text-amber-700 px-1.5 py-0.5 rounded-full border border-amber-500/30 shrink-0">
+                                        QUEUED
+                                    </span>
+                                ) : storyAudioSummary.totalDrafted > 0 ? (
+                                    <span
+                                        className={`text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded-full border shrink-0 ${
+                                            storyAudioSummary.readyCount === storyAudioSummary.totalDrafted
+                                                ? 'bg-sage-tint text-sage-800 border-sage-edge'
+                                                : 'bg-wash text-ink-500 border-edge'
+                                        }`}
+                                    >
+                                        {storyAudioSummary.readyCount}/{storyAudioSummary.totalDrafted}
+                                    </span>
+                                ) : (
+                                    <span className="text-[10px] font-mono font-bold bg-wash text-ink-500 px-1.5 py-0.5 rounded-full border border-edge shrink-0">
+                                        OFF
+                                    </span>
+                                )}
+                            </span>
                         </button>
                     </div>
 
@@ -605,62 +599,6 @@ export const StudioSidebar: React.FC<StudioSidebarProps> = ({
                             </button>
                         )}
                     </div>
-                </div>
-
-                {/* Bottom Quick Storage Controls */}
-                <div className="sidebar-storage p-3 border-t border-edge bg-surface/70 flex gap-1.5 flex-wrap">
-                    <button
-                        onClick={handleExportEpub}
-                        className="flex-1 bg-gold-tint hover:bg-gold-tint border border-gold-edge text-gold-ink hover:text-gold-ink-deep py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                        title={
-                            storyAudioSummary.readyCount > 0
-                                ? `Export EPUB (${storyAudioSummary.readyCount} audio scenes bundled)`
-                                : 'Export Formatted EPUB'
-                        }
-                    >
-                        <Book size={13} /> <span className="nav-label">Export</span>
-                    </button>
-                    {story?.writing_mode === 'audio_drama' && (
-                        <button
-                            onClick={handleExportAudioDramaTxt}
-                            className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                            title="Export Full Audio Drama Script (.txt)"
-                        >
-                            <FileText size={13} /> <span className="nav-label">TXT</span>
-                        </button>
-                    )}
-                    {handleExportMarkdown && (
-                        <button
-                            onClick={handleExportMarkdown}
-                            className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                            title="Export the manuscript as Markdown (.md)"
-                        >
-                            <FileText size={13} /> <span className="nav-label">MD</span>
-                        </button>
-                    )}
-                    {handleExportPdf && (
-                        <button
-                            onClick={handleExportPdf}
-                            className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                            title="Print the manuscript, or save it as a PDF from the print window"
-                        >
-                            <FileText size={13} /> <span className="nav-label">PDF</span>
-                        </button>
-                    )}
-                    <button
-                        onClick={() => fileInputRef.current?.click()}
-                        className="flex-1 bg-surface hover:bg-wash border border-edge-strong text-ink-700 hover:text-ink-900 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-2xs min-h-[38px]"
-                        title="Import .json or .epub"
-                    >
-                        <Upload size={13} /> <span className="nav-label">Import</span>
-                    </button>
-                    <input
-                        type="file"
-                        ref={fileInputRef}
-                        onChange={handleImport}
-                        className="hidden"
-                        accept=".json,.epub"
-                    />
                 </div>
             </div>
         </>

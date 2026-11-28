@@ -25,6 +25,8 @@ export const RETRY_LIMITS = {
 export const UI_DELAYS_MS = {
     searchDebounce: 300,
     textareaDebounce: 350,
+    /** How long typing must pause before a cover redraws its title. */
+    coverTitleSettle: 600,
     sceneTransition: 420,
     scrollRetry: 60
 } as const;

@@ -19,3 +19,4 @@ export * from './autopilot';
 export * from './series';
 export * from './sequel';
 export * from './passageRewrite';
+export * from './worldBuilder';
