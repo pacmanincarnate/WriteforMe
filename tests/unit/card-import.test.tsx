@@ -346,7 +346,7 @@ describe('in the app', () => {
                 )
             );
         render();
-        expect(host.textContent).toContain('Import Card');
+        expect(host.textContent).toContain('Import Characters');
 
         const pick = async (file: File): Promise<void> => {
             const input = host.querySelector<HTMLInputElement>('#characterCardFileInput')!;

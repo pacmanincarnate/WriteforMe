@@ -1,11 +1,11 @@
-# Import character cards and lorebooks
+# Import characters and lorebooks
 
-Characters and world notes made for chat apps can be brought into a story instead of being typed
-again. Everything is read in the browser. No model is called and nothing is sent anywhere.
+Characters you already wrote as Markdown files, and characters and world notes made for chat
+apps, can be brought into a story instead of being typed again. Everything is read in the browser. No model is called and nothing is sent anywhere.
 
 ## Character cards
 
-On the **Cast** page, press **Import Card** and pick a file.
+On the **Cast** page, press **Import Characters** and pick a file, or several.
 
 | File | What is read |
 | --- | --- |
@@ -30,6 +30,56 @@ instructions, the creator's notes and app extensions. The message shown after th
 ones the card had.
 
 A card whose name is already in the cast is refused, so a second import cannot make a double.
+
+## Character sheets in Markdown
+
+**Import Characters** also takes `.md`, `.markdown` and `.txt` files, any number at once. Each
+`# Heading` starts a character, so one file can hold one character or a whole cast.
+
+Sheets are written by hand and laid out differently by every author, so the reader is loose:
+
+| Layout | Example |
+| --- | --- |
+| Bold label | `**Hair:** brown`, `**Hair** - brown`, `- **Hair:** brown` |
+| Plain label | `Hair: brown`, `- Hair: brown` (in a sheet with no bold labels) |
+| Heading and prose | `## Backstory` followed by paragraphs |
+| Table | `\| Hair \| brown \|` |
+| Front matter | `name: Sera Quill` between `---` lines at the top |
+
+Lines after a label belong to it until the next label or heading.
+
+A label is placed by the words in it, not by an exact name: "Hair Colour", "Eye color" and
+"Physical Description" are all appearance; "Backstory", "Bio" and "Summary" are history.
+
+| Goes to | Labels with words like |
+| --- | --- |
+| Name | name, full name; else the heading; else the file name |
+| Other names (used to match dialogue to the speaker) | AKA, alias, nickname, goes by |
+| Role | role, occupation, job, type |
+| Appearance (used for portraits and scene pictures) | gender, species, age, height, build, hair, eyes, marks, clothing |
+| Flaw and desire | flaw, weakness, vulnerability; desire, want (up to 400 characters, longer text stays in the profile) |
+| Goals | goals, motivation, ambition |
+| History | summary, history, background, backstory, bio |
+| Deep profile | everything, grouped: description, appearance, personality, goals, how they talk and move, history, relationships, secrets, notes |
+
+A label nothing recognises takes the place of the heading it sits under; with no such heading it
+is kept under **Notes** in the deep profile. Nothing in the file is dropped.
+
+The character comes in as **supporting**, like one from a card. Set the Four-Corner slot on the
+card afterwards.
+
+**Relationships.** Lines under a relationships heading (or labelled family, friends, rival,
+partner, trust and so on) name other people. For each name that is in the cast, by full name, part
+of a name or another name, an entry is added on the **Relationships** page, from this character to
+that one, with the label and any note in brackets as its text. A relationship that already has
+text is not changed. The lines are kept on the character, so importing someone they name later
+links the two then. A name two cast members share links to neither.
+
+**Secrets.** A sheet's secrets go into the deep profile, not the Secret Vault. A vault secret is
+hidden from the Writer until its reveal, which is a plot decision the sheet does not make.
+
+A character whose name is already in the cast is left out, and the message says so. Files over
+2 MB are refused.
 
 ## Lorebooks
 
@@ -64,7 +114,7 @@ stored compressed (rare) is reported as having no card.
 
 ## Where the code is
 
-- `src/domain/imports/cards.ts` and `lorebooks.ts`: the readers, with no browser or app code.
+- `src/domain/imports/cards.ts`, `sheets.ts` and `lorebooks.ts`: the readers, with no browser or app code.
 - `src/services/documents/cardFiles.ts`: opens the picked file (JSON, PNG, CHARX).
-- `src/views/cast/CastView.tsx` and `src/hooks/useLoreImport.ts`: the two buttons.
-- `tests/unit/card-import.test.tsx`
+- `src/hooks/useCastImport.ts` and `src/hooks/useLoreImport.ts`: the two buttons.
+- `tests/unit/card-import.test.tsx`, `tests/unit/sheet-import.test.tsx`

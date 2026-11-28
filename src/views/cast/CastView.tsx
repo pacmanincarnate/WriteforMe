@@ -22,8 +22,7 @@ import {
     sanitizeVoiceReferenceText,
     type AudioStoryLike
 } from '@/domain/audio';
-import { cardToCastMember } from '@/domain/imports';
-import { openCardFile } from '@/services/documents';
+import { CAST_FILE_ACCEPT, useCastImport } from '@/hooks';
 import { DeadRecordPanel } from './DeadRecordPanel';
 
 export type CastCharacterRecord = CharacterCardCharacter & {
@@ -222,32 +221,7 @@ export function CastView({
         });
     };
 
-    /** A character card from another app becomes a supporting cast member, with its picture. */
-    const handleImportCard = async (file: File): Promise<void> => {
-        try {
-            const { card, picture } = await openCardFile(file);
-            const name = card.character.name;
-            const taken = (storyRef.current?.cast || story.cast || []).some(
-                (c) => (c.name || '').trim().toLowerCase() === name.toLowerCase()
-            );
-            if (taken) {
-                showToast(`The cast already has a character named "${name}". Rename or remove them first.`, 'warn');
-                return;
-            }
-            const newChar: CastCharacterRecord = cardToCastMember(card, `char_${Date.now()}`);
-            setStory((prev) => ({ ...prev, cast: [...(prev.cast || []), newChar] }));
-            const notes = [
-                card.unused.length > 0 ? `Not brought over: ${card.unused.join(', ')}.` : '',
-                card.book
-                    ? `The card carries a lorebook of ${card.book.entries.length} ${card.book.entries.length === 1 ? 'entry' : 'entries'}: use Import Lorebook in the Lore tab with the same file to add it.`
-                    : ''
-            ].filter(Boolean);
-            showToast(`Imported "${name}" from a ${card.format} as a supporting character. ${notes.join(' ')}`.trim(), 'success');
-            if (picture) uploadCharacterPortrait(newChar, picture);
-        } catch (err) {
-            showToast(`Card import failed: ${err instanceof Error ? err.message : String(err)}`, 'error');
-        }
-    };
+    const { importCastFiles } = useCastImport({ story, storyRef, setStory, showToast, uploadCharacterPortrait });
 
     return (
         <div className="max-w-7xl mx-auto space-y-6 animate-fade-in pb-24">
@@ -270,20 +244,21 @@ export function CastView({
                     <input
                         type="file"
                         id="characterCardFileInput"
-                        accept=".json,.png,.charx"
+                        accept={CAST_FILE_ACCEPT}
+                        multiple
                         className="hidden"
                         onChange={(e) => {
-                            const file = e.target.files?.[0];
+                            const files = Array.from(e.target.files || []);
                             e.target.value = '';
-                            if (file) void handleImportCard(file);
+                            if (files.length > 0) void importCastFiles(files);
                         }}
                     />
                     <button
                         onClick={() => document.getElementById('characterCardFileInput')?.click()}
                         className="text-xs bg-surface hover:bg-lift border border-edge-strong text-ink-700 font-bold px-3.5 py-2.5 rounded-xl flex items-center gap-1.5 transition-all shadow-2xs cursor-pointer"
-                        title="Bring in a character card (V1, V2 or V3 as JSON or PNG, or a CHARX file) from SillyTavern, Chub, Agnai, RisuAI and similar apps"
+                        title="Character sheets written as Markdown, and character cards (JSON, PNG or CHARX) from SillyTavern, Chub, Agnai, RisuAI and similar apps. Pick one file or many."
                     >
-                        <Upload size={14} /> Import Card
+                        <Upload size={14} /> Import Characters
                     </button>
                     <button
                         onClick={handleIntroduceCharacter}
