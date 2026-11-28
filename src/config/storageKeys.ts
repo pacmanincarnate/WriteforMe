@@ -67,7 +67,11 @@ export const STORAGE_KEYS = {
     geminiImageModelsCache: 'ellipsisprose_gemini_image_models_cache',
     geminiModel: 'ellipsisprose_gemini_model',
     geminiProseModel: 'ellipsisprose_gemini_prose_model',
+    /** Legacy single image key; read once by `loadImageApiKeys`, then removed. */
     imageApiKey: 'ellipsisprose_image_api_key',
+    imageApiKeyGemini: 'ellipsisprose_image_api_key_gemini',
+    imageApiKeyOpenAi: 'ellipsisprose_image_api_key_openai',
+    imageApiKeyOpenRouter: 'ellipsisprose_image_api_key_openrouter',
     imageModel: 'ellipsisprose_image_model',
     imageProvider: 'ellipsisprose_image_provider',
     inspectorMode: 'ellipsisprose_inspector_mode',

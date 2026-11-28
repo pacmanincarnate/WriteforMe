@@ -20,7 +20,9 @@ export const DISK_SETTINGS_API_KEY_NAMES = new Set<string>([
     STORAGE_KEYS.openRouterKey,
     STORAGE_KEYS.nanoGptKey,
     STORAGE_KEYS.anthropicKey,
-    STORAGE_KEYS.imageApiKey
+    STORAGE_KEYS.imageApiKeyGemini,
+    STORAGE_KEYS.imageApiKeyOpenRouter,
+    STORAGE_KEYS.imageApiKeyOpenAi
 ]);
 
 export function isPersistableSettingsKey(key: unknown): key is string {
