@@ -24,7 +24,8 @@ import {
     Sun,
     Type
 } from '@/components/icons';
-import { formatReaderProse, readingMinutes } from '@/utils';
+import { createAudioDramaSpeakerPalette, formatReaderProse, readingMinutes } from '@/utils';
+import { DEFAULT_AUDIO_BAR_CLEARANCE } from './measureReaderPages';
 import { loadOpenDyslexic } from './openDyslexic';
 import { ReaderAppearanceDrawer } from './ReaderAppearanceDrawer';
 import { ReaderAudioPlayer } from './ReaderAudioPlayer';
@@ -162,14 +163,32 @@ export function ReaderView({
         [storyChapters]
     );
 
+    const isAudioDramaStory = story?.writing_mode === 'audio_drama';
+    const dramaSpeakerPalette = useMemo(
+        () =>
+            createAudioDramaSpeakerPalette(
+                Array.isArray(story?.cast)
+                    ? story.cast.map((c) => (typeof c?.name === 'string' ? c.name : ''))
+                    : []
+            ),
+        [story?.cast]
+    );
+
     const displayChapter =
         readerSettings.readingMode === 'scroll' && storyChapters[visibleScrollChapter]
             ? storyChapters[visibleScrollChapter]
             : activeChapter;
 
     const [scrollProgressPct, setScrollProgressPct] = useState(0);
+    const [audioClearancePx, setAudioClearancePx] = useState<number | null>(null);
     const lastScrollTopRef = useRef(0);
     const scrollSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const audioBottomClearance = ttsIsMiniPlayerVisible
+        ? audioClearancePx !== null
+            ? `${audioClearancePx}px`
+            : DEFAULT_AUDIO_BAR_CLEARANCE
+        : undefined;
 
     const playbackSpeed = readerSettings.ttsSpeed || 1.0;
     const lastCueCursorRef = useRef<CueCursorState>({
@@ -662,6 +681,8 @@ export function ReaderView({
         readerSettings.readingMode,
         readerContainerWidth,
         readerTotalPages,
+        ttsIsMiniPlayerVisible,
+        audioClearancePx,
         readerColumnsContainerRef,
         readerScrollContainerRef
     ]);
@@ -968,11 +989,13 @@ export function ReaderView({
 
             {/* MAIN READING SURFACE */}
             <div
-                className={`flex-1 relative w-full h-full overflow-hidden ${
+                data-reader-surface="true"
+                className={`flex-1 min-h-0 relative w-full h-full overflow-hidden ${
                     readerSettings.readingMode === 'paginated'
                         ? 'flex flex-col justify-center items-center'
-                        : 'block min-h-0'
+                        : 'block'
                 }`}
+                style={audioBottomClearance ? { paddingBottom: audioBottomClearance } : undefined}
             >
                 {readerSettings.readingMode === 'paginated' && (
                     <>
@@ -1029,11 +1052,12 @@ export function ReaderView({
 
                 {readerSettings.readingMode === 'paginated' ? (
                     <div
-                        className={`w-full ${widthClass} mx-auto h-full flex flex-col justify-center overflow-hidden relative z-15`}
+                        className={`w-full ${widthClass} mx-auto h-full min-h-0 flex flex-col justify-center overflow-hidden relative z-15`}
                         style={{
                             paddingTop: 'max(4.25rem, calc(env(safe-area-inset-top, 0px) + 3rem))',
-                            paddingBottom:
-                                'max(3.75rem, calc(env(safe-area-inset-bottom, 0px) + 2.5rem))',
+                            paddingBottom: ttsIsMiniPlayerVisible
+                                ? '0.25rem'
+                                : 'max(3.75rem, calc(env(safe-area-inset-bottom, 0px) + 2.5rem))',
                             paddingLeft:
                                 'max(1.25rem, calc(env(safe-area-inset-left, 0px) + 0.75rem))',
                             paddingRight:
@@ -1162,7 +1186,11 @@ export function ReaderView({
                                                 <div
                                                     className="reader-text"
                                                     dangerouslySetInnerHTML={{
-                                                        __html: formatReaderProse(sc.proseText)
+                                                        __html: formatReaderProse(sc.proseText, {
+                                                            isAudioDrama:
+                                                                isAudioDramaStory || undefined,
+                                                            speakerPalette: dramaSpeakerPalette
+                                                        })
                                                     }}
                                                 />
                                             </div>
@@ -1233,8 +1261,9 @@ export function ReaderView({
                             WebkitOverflowScrolling: 'touch',
                             touchAction: 'pan-y',
                             paddingTop: 'max(5rem, calc(env(safe-area-inset-top, 0px) + 3.5rem))',
-                            paddingBottom:
-                                'max(5rem, calc(env(safe-area-inset-bottom, 0px) + 3.5rem))',
+                            paddingBottom: ttsIsMiniPlayerVisible
+                                ? '1.5rem'
+                                : 'max(5rem, calc(env(safe-area-inset-bottom, 0px) + 3.5rem))',
                             paddingLeft:
                                 'max(1.25rem, calc(env(safe-area-inset-left, 0px) + 0.75rem))',
                             paddingRight:
@@ -1319,7 +1348,16 @@ export function ReaderView({
                                                     <div
                                                         className="reader-text"
                                                         dangerouslySetInnerHTML={{
-                                                            __html: formatReaderProse(sc.proseText)
+                                                            __html: formatReaderProse(
+                                                                sc.proseText,
+                                                                {
+                                                                    isAudioDrama:
+                                                                        isAudioDramaStory ||
+                                                                        undefined,
+                                                                    speakerPalette:
+                                                                        dramaSpeakerPalette
+                                                                }
+                                                            )
                                                         }}
                                                     />
                                                 </div>
@@ -1400,6 +1438,7 @@ export function ReaderView({
                     ttsAudioRef={ttsAudioRef}
                     isAuditioningVoice={isAuditioningVoice}
                     stopAllAudioPlayback={stopAllAudioPlayback}
+                    onClearanceChange={setAudioClearancePx}
                 />
             )}
 

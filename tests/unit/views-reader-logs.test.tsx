@@ -5,8 +5,10 @@ import React, { act, createRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { logStore, recoverOrphanedLogs } from '@/services/storage';
 import {
+    DEFAULT_AUDIO_BAR_CLEARANCE,
     formatPlaybackTime,
     LogsView,
+    measureFloatingBarClearance,
     measureReaderPages,
     ReaderView,
     type LogsViewEntry,
@@ -345,6 +347,261 @@ describe('views/reader, views/logs, and recoverOrphanedLogs', () => {
             sepiaBtn?.click();
         });
         expect(updateReaderSetting).toHaveBeenCalledWith('readerTheme', 'sepia');
+        expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('calculates floating audio bar clearance and caps at 55% of viewport height', () => {
+        expect(measureFloatingBarClearance(null, 900)).toBeNull();
+
+        const barEl = document.createElement('div');
+        expect(measureFloatingBarClearance(barEl, 0)).toBeNull();
+
+        // jsdom default rect has height 0 -> unmeasured
+        expect(measureFloatingBarClearance(barEl, 900)).toBeNull();
+
+        // Out-of-bounds rect (below viewport or larger than viewport)
+        vi.spyOn(barEl, 'getBoundingClientRect').mockReturnValue({
+            top: 910,
+            bottom: 980,
+            height: 70,
+            left: 0,
+            right: 500,
+            width: 500,
+            x: 0,
+            y: 910,
+            toJSON: () => ({})
+        });
+        expect(measureFloatingBarClearance(barEl, 900)).toBeNull();
+
+        // Normal desktop bar: top 760 on 900px viewport => 140 occupied + 12 gap = 152
+        vi.spyOn(barEl, 'getBoundingClientRect').mockReturnValue({
+            top: 760,
+            bottom: 838,
+            height: 78,
+            left: 400,
+            right: 976,
+            width: 576,
+            x: 400,
+            y: 760,
+            toJSON: () => ({})
+        });
+        expect(measureFloatingBarClearance(barEl, 900)).toBe(152);
+        expect(measureFloatingBarClearance(barEl, 900, 20)).toBe(160);
+
+        // Short landscape viewport (360px): occupied 220 + 12 = 232, capped at floor(360 * 0.55) = 198
+        vi.spyOn(barEl, 'getBoundingClientRect').mockReturnValue({
+            top: 140,
+            bottom: 290,
+            height: 150,
+            left: 50,
+            right: 450,
+            width: 400,
+            x: 50,
+            y: 140,
+            toJSON: () => ({})
+        });
+        expect(measureFloatingBarClearance(barEl, 360)).toBe(198);
+    });
+
+    it('reserves bottom clearance on the reading surface when the audio mini-player is visible and freezes it while settings popover is open', () => {
+        // 1. Mini-player hidden in paginated mode -> no bottom clearance on surface, default inner padding
+        renderIntoRoot(
+            <ReaderView
+                {...buildReaderProps({
+                    ttsIsMiniPlayerVisible: false
+                })}
+            />
+        );
+        const surfaceHidden = container.querySelector('[data-reader-surface="true"]') as HTMLElement;
+        expect(surfaceHidden).not.toBeNull();
+        expect(surfaceHidden.style.paddingBottom).toBe('');
+        const paginatedInnerHidden = surfaceHidden.querySelector('.z-15') as HTMLElement;
+        expect(paginatedInnerHidden.style.paddingBottom).toContain('3.75rem');
+
+        // 2. Mini-player visible in paginated mode (jsdom zero-height rect -> fallback clearance)
+        renderIntoRoot(
+            <ReaderView
+                {...buildReaderProps({
+                    ttsIsMiniPlayerVisible: true,
+                    ttsStatus: 'playing'
+                })}
+            />
+        );
+        const surfacePaginated = container.querySelector('[data-reader-surface="true"]') as HTMLElement;
+        expect(surfacePaginated.style.paddingBottom).toBe(DEFAULT_AUDIO_BAR_CLEARANCE);
+        const paginatedInnerVisible = surfacePaginated.querySelector('.z-15') as HTMLElement;
+        expect(paginatedInnerVisible.style.paddingBottom).toBe('0.25rem');
+
+        // 3. Mini-player visible in scroll mode -> fallback clearance + reduced inner paddingBottom
+        const scrollProps = buildReaderProps({
+            ttsIsMiniPlayerVisible: true,
+            ttsStatus: 'playing'
+        });
+        scrollProps.readerSettings = {
+            ...scrollProps.readerSettings,
+            readingMode: 'scroll'
+        };
+        renderIntoRoot(<ReaderView {...scrollProps} />);
+        const surfaceScroll = container.querySelector('[data-reader-surface="true"]') as HTMLElement;
+        expect(surfaceScroll.style.paddingBottom).toBe(DEFAULT_AUDIO_BAR_CLEARANCE);
+        const scrollContainer = surfaceScroll.querySelector('.overflow-y-auto') as HTMLElement;
+        expect(scrollContainer.style.paddingBottom).toBe('1.5rem');
+
+        // 4. Mocked real bar rect on window.innerHeight = 900 -> exact pixel clearance & frozen when popover opens
+        // Unmount mini-player first so ReaderAudioPlayer mounts fresh after the getBoundingClientRect mock is installed.
+        renderIntoRoot(
+            <ReaderView
+                {...buildReaderProps({
+                    ttsIsMiniPlayerVisible: false
+                })}
+            />
+        );
+        Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true });
+        let barHeight = 78;
+        let barTop = 760;
+        const rectSpy = vi
+            .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+            .mockImplementation(function (this: HTMLElement) {
+                if (this.classList?.contains('reader-tts-floating-bar')) {
+                    return {
+                        top: barTop,
+                        bottom: barTop + barHeight,
+                        height: barHeight,
+                        left: 400,
+                        right: 976,
+                        width: 576,
+                        x: 400,
+                        y: barTop,
+                        toJSON: () => ({})
+                    } as DOMRect;
+                }
+                return {
+                    top: 0,
+                    bottom: 0,
+                    height: 0,
+                    left: 0,
+                    right: 0,
+                    width: 0,
+                    x: 0,
+                    y: 0,
+                    toJSON: () => ({})
+                } as DOMRect;
+            });
+
+        renderIntoRoot(
+            <ReaderView
+                {...buildReaderProps({
+                    ttsIsMiniPlayerVisible: true,
+                    ttsStatus: 'playing'
+                })}
+            />
+        );
+        const surfaceMeasured = container.querySelector('[data-reader-surface="true"]') as HTMLElement;
+        expect(surfaceMeasured.style.paddingBottom).toBe('152px');
+
+        // Simulate opening "Jump & Fast-Forward" popover growing bar upward
+        barTop = 420;
+        barHeight = 418;
+        const popoverToggle = container.querySelector(
+            'button[title="Jump to scene & audio controls"]'
+        ) as HTMLButtonElement | null;
+        expect(popoverToggle).not.toBeNull();
+        act(() => {
+            popoverToggle?.click();
+        });
+        expect(surfaceMeasured.style.paddingBottom).toBe('152px');
+
+        rectSpy.mockRestore();
+        expect(consoleErrorSpy).not.toHaveBeenCalled();
+    });
+
+    it('renders color-coded speaker names and bracketed cues for audio_drama stories in paginated and scroll modes', () => {
+        const dramaChapter = {
+            chapterIndex: 0,
+            chapterNumber: 1,
+            seqIdx: 0,
+            title: 'Dockside Frequency',
+            summary: 'Priya and Tomas confront the forged log.',
+            hasAnyProse: true,
+            totalWords: 80,
+            totalReadingTime: 1,
+            scenes: [
+                {
+                    sceneKey: '0-0',
+                    seqIdx: 0,
+                    sceneIdx: 0,
+                    hasProse: true,
+                    proseText:
+                        'Narrator: Rain hissed against the skylight.\n\nPriya: [quietly] Look at the ledger.\n\nTomas: [shaky breath] I had no choice.',
+                    title: 'Vault',
+                    wordCount: 40,
+                    scene: { title: 'Vault' }
+                },
+                {
+                    sceneKey: '0-1',
+                    seqIdx: 0,
+                    sceneIdx: 1,
+                    hasProse: true,
+                    proseText: 'Tomas: [low, tired] We burn the copy.',
+                    title: 'Pier',
+                    wordCount: 40,
+                    scene: { title: 'Pier' }
+                }
+            ]
+        };
+
+        const baseDramaProps = buildReaderProps({
+            story: {
+                id: 'story-drama-1',
+                title: 'Signal & Salt',
+                writing_mode: 'audio_drama',
+                cast: [{ name: 'Priya' }, { name: 'Tomas' }]
+            },
+            storyChapters: [dramaChapter],
+            currentChapter: dramaChapter,
+            flatStoryScenes: dramaChapter.scenes,
+            currentReaderSceneItem: dramaChapter.scenes[0]
+        });
+
+        // Paginated mode
+        renderIntoRoot(<ReaderView {...baseDramaProps} />);
+        const pagSpeakers = Array.from(container.querySelectorAll('.drama-speaker-name'));
+        expect(pagSpeakers.map((el) => el.textContent)).toEqual([
+            'Narrator:',
+            'Priya:',
+            'Tomas:',
+            'Tomas:'
+        ]);
+        expect(pagSpeakers[0].classList.contains('drama-speaker-narrator')).toBe(true);
+        expect(pagSpeakers[1].className).not.toBe(pagSpeakers[2].className);
+        expect(pagSpeakers[2].className).toBe(pagSpeakers[3].className);
+
+        const pagCues = Array.from(container.querySelectorAll('.drama-bracket-cue'));
+        expect(pagCues.map((el) => el.textContent)).toEqual([
+            '[quietly]',
+            '[shaky breath]',
+            '[low, tired]'
+        ]);
+
+        // Scroll mode
+        renderIntoRoot(
+            <ReaderView
+                {...baseDramaProps}
+                readerSettings={{
+                    ...baseDramaProps.readerSettings,
+                    readingMode: 'scroll'
+                }}
+            />
+        );
+        const scrollSpeakers = Array.from(container.querySelectorAll('.drama-speaker-name'));
+        expect(scrollSpeakers.map((el) => el.textContent)).toEqual([
+            'Narrator:',
+            'Priya:',
+            'Tomas:',
+            'Tomas:'
+        ]);
+        expect(scrollSpeakers[2].className).toBe(scrollSpeakers[3].className);
+        expect(container.querySelectorAll('.drama-bracket-cue')).toHaveLength(3);
         expect(consoleErrorSpy).not.toHaveBeenCalled();
     });
 });
