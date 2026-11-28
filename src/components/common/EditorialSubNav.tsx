@@ -202,11 +202,6 @@ export function EditorialSubNav({
                     );
                 })}
             </div>
-            {!isFolioGroup && (
-                <div className="hidden lg:flex items-center gap-2 text-xs text-ink-400 font-serif italic pr-2 shrink-0">
-                    Novel Structure &amp; Editorial Desk
-                </div>
-            )}
         </nav>
     );
 }

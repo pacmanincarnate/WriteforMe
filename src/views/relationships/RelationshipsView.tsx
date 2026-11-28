@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { STORAGE_KEYS, VIEW_LABELS } from '@/config';
+import { exportRelationshipMermaid } from '@/services/export';
 import {
     Activity,
     EditorialSubNav,
@@ -302,6 +303,22 @@ export function RelationshipsView({
                                 <Layers size={15} className="text-gold-ink" /> Directional{' '}
                                 {matrixView === 'grid' ? 'Grid' : 'List'}
                             </h3>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const diagram = exportRelationshipMermaid(story);
+                                    showToast(
+                                        diagram
+                                            ? 'Saved the relationship web as a Mermaid diagram (.mmd).'
+                                            : 'No relationships to draw yet.',
+                                        diagram ? 'success' : 'info'
+                                    );
+                                }}
+                                className="text-xs px-2.5 py-1.5 rounded-lg border border-edge-strong text-ink-700 hover:bg-wash cursor-pointer"
+                                title="Save the relationship web as a Mermaid flowchart, to paste into notes or a wiki"
+                            >
+                                Export Mermaid
+                            </button>
                             <div
                                 className="inline-flex gap-1 p-1 rounded-lg border border-edge-strong bg-surface"
                                 role="group"

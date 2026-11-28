@@ -26,7 +26,8 @@ const READER_FONTS = [
     { id: 'Newsreader', label: 'Newsreader' },
     { id: 'Playfair Display', label: 'Playfair' },
     { id: 'Inter', label: 'Inter Sans' },
-    { id: 'Plus Jakarta Sans', label: 'Jakarta Sans' }
+    { id: 'Plus Jakarta Sans', label: 'Jakarta Sans' },
+    { id: 'OpenDyslexic', label: 'OpenDyslexic' }
 ] as const;
 
 export function ReaderAppearanceDrawer({

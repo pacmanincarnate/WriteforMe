@@ -52,7 +52,7 @@ export const LoreCard = React.memo(function LoreCard({
     const isLong = detailText.length > 240;
 
     return (
-        <div className="bg-surface rounded-2xl border border-edge p-5 transition-all hover:border-gold-edge shadow-sm space-y-3">
+        <div className="min-w-0 bg-surface rounded-2xl border border-edge p-5 transition-all hover:border-gold-edge shadow-sm space-y-3">
             <div className="flex flex-col md:flex-row justify-between items-start gap-3">
                 <h3 className="font-bold text-base font-serif text-ink-900 flex items-start gap-2 min-w-0 max-w-full">
                     <span className="min-w-0 whitespace-normal break-words">{lore.topic}</span>
@@ -62,14 +62,14 @@ export const LoreCard = React.memo(function LoreCard({
                         onSave={() => onEditTopic?.(lore.topic)}
                     />
                 </h3>
-                <div className="flex items-start gap-2 self-start md:self-auto shrink-0">
-                    <div className="flex flex-col gap-1 text-xs bg-inset p-2 rounded-xl border border-edge-strong min-w-[200px]">
+                <div className="flex items-start gap-2 self-stretch md:self-auto min-w-0 md:shrink-0">
+                    <div className="flex flex-col gap-1 text-xs bg-inset p-2 rounded-xl border border-edge-strong flex-1 min-w-0 md:min-w-[200px]">
                         <div className="flex items-center justify-between gap-2 border-b border-edge-strong pb-1 mb-0.5">
                             <span className="text-ink-400 font-mono font-bold uppercase text-[11px]">
                                 Valid Act
                             </span>
                             <select
-                                className="bg-transparent text-ink-800 text-xs outline-none text-right cursor-pointer font-medium"
+                                className="min-w-0 max-w-full bg-transparent text-ink-800 text-xs outline-none text-right cursor-pointer font-medium"
                                 value={lore.valid_from_act || 1}
                                 onChange={(e) => onUpdateAct?.(index, parseInt(e.target.value, 10))}
                             >
@@ -85,7 +85,7 @@ export const LoreCard = React.memo(function LoreCard({
                                 Valid Scene
                             </span>
                             <select
-                                className="bg-transparent text-ink-800 text-xs outline-none text-right cursor-pointer font-medium"
+                                className="min-w-0 max-w-full bg-transparent text-ink-800 text-xs outline-none text-right cursor-pointer font-medium"
                                 value={lore.valid_from_scene || 1}
                                 onChange={(e) => onUpdateScene?.(index, parseInt(e.target.value, 10))}
                             >

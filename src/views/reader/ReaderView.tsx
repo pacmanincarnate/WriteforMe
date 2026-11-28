@@ -25,6 +25,7 @@ import {
     Type
 } from '@/components/icons';
 import { formatReaderProse, readingMinutes } from '@/utils';
+import { loadOpenDyslexic } from './openDyslexic';
 import { ReaderAppearanceDrawer } from './ReaderAppearanceDrawer';
 import { ReaderAudioPlayer } from './ReaderAudioPlayer';
 import { ReaderTocDrawer } from './ReaderTocDrawer';
@@ -340,21 +341,28 @@ export function ReaderView({
                 ? 'max-w-full px-4 md:px-12'
                 : 'max-w-2xl';
 
+    // OpenDyslexic ships with the app but is only loaded once someone picks it.
+    useEffect(() => {
+        if (readerSettings.fontFamily === 'OpenDyslexic') void loadOpenDyslexic();
+    }, [readerSettings.fontFamily]);
+
     const textStyle: React.CSSProperties = {
         fontFamily:
-            readerSettings.fontFamily === 'Inter'
-                ? "'Inter', sans-serif"
-                : readerSettings.fontFamily === 'Plus Jakarta Sans'
-                  ? "'Plus Jakarta Sans', sans-serif"
-                  : readerSettings.fontFamily === 'JetBrains Mono'
-                    ? "'JetBrains Mono', monospace"
-                    : readerSettings.fontFamily === 'Cormorant Garamond'
-                      ? "'Cormorant Garamond', serif"
-                      : readerSettings.fontFamily === 'Newsreader'
-                        ? "'Newsreader', serif"
-                        : readerSettings.fontFamily === 'Playfair Display'
-                          ? "'Playfair Display', serif"
-                          : "'Merriweather', Georgia, serif",
+            readerSettings.fontFamily === 'OpenDyslexic'
+                ? "'OpenDyslexic', 'Comic Sans MS', sans-serif"
+                : readerSettings.fontFamily === 'Inter'
+                  ? "'Inter', sans-serif"
+                  : readerSettings.fontFamily === 'Plus Jakarta Sans'
+                    ? "'Plus Jakarta Sans', sans-serif"
+                    : readerSettings.fontFamily === 'JetBrains Mono'
+                      ? "'JetBrains Mono', monospace"
+                      : readerSettings.fontFamily === 'Cormorant Garamond'
+                        ? "'Cormorant Garamond', serif"
+                        : readerSettings.fontFamily === 'Newsreader'
+                          ? "'Newsreader', serif"
+                          : readerSettings.fontFamily === 'Playfair Display'
+                            ? "'Playfair Display', serif"
+                            : "'Merriweather', Georgia, serif",
         fontSize: `${readerSettings.fontSize}px`,
         lineHeight: readerSettings.lineHeight,
         textAlign: readerSettings.textAlign === 'justify' ? 'justify' : 'left',

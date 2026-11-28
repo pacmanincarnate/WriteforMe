@@ -5,6 +5,7 @@
  */
 
 import React, { useState } from 'react';
+import { VIEW_LABELS } from '@/config';
 import {
     AlertOctagon,
     AlertTriangle,
@@ -150,7 +151,7 @@ export function LogsView({
             <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
                 <div className="flex flex-wrap items-center gap-2.5">
                     <h2 className="text-2xl sm:text-3xl font-serif font-bold text-ink-900 flex items-center gap-2.5">
-                        <History className="text-gold-ink" /> Pipeline &amp; Prompt Log
+                        <History className="text-gold-ink" /> {VIEW_LABELS.logs}
                     </h2>
                     <span className="text-xs font-mono font-bold text-ink-500 bg-mist-100 px-3 py-1 rounded-full border border-edge-strong">
                         {promptLog.length} entries

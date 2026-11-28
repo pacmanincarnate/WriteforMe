@@ -21,7 +21,7 @@ import {
     PenTool,
     Sparkles,
     Users,
-    Zap
+    Feather
 } from '@/components';
 import type { ExtendedCastArtifact, PipelineNextUp, PipelineNovelModeProps } from './types';
 
@@ -268,7 +268,7 @@ export const PipelineNovelMode: React.FC<PipelineNovelModeProps> = ({
                             </>
                         ) : (
                             <>
-                                <Zap size={13} className="text-amber-300" />
+                                <Feather size={13} className="text-amber-300" />
                                 <span>
                                     {novelProgress.overallPct > 0 && novelProgress.overallPct < 100
                                         ? 'Resume Autopilot'

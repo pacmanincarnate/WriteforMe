@@ -13,3 +13,4 @@ export * from './customNarrativeModes';
 export * from './logDetail';
 export * from './outlineExpansion';
 export * from './restorePoints';
+export * from './relationshipGraph';

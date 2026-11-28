@@ -305,7 +305,7 @@ describe('Phase 5G: SettingsView across all 5 tabs', () => {
         renderIntoRoot(<SettingsHarness />);
 
         // Tab 1: Model Options
-        expect(container.textContent).toContain('Studio & LLM Settings');
+        expect(container.textContent).toContain('Settings');
         expect(container.textContent).toContain('1. Choose AI Provider');
         act(() => {
             findButton('Advanced: Multi-Model Pipeline Routing').click();

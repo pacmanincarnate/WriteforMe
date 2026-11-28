@@ -10,6 +10,8 @@ import {
     exportAudioDramaTxt,
     exportStoryEpub,
     exportStoryJson,
+    exportStoryMarkdown,
+    printStory,
     parseStoryImportFile,
     persistImportedStory,
     summarizeImportedStory
@@ -53,6 +55,8 @@ export interface UseStoryTransferResult {
     handleExport: () => void;
     handleExportAudioDramaTxt: () => void;
     handleExportEpub: () => Promise<void>;
+    handleExportMarkdown: () => void;
+    handleExportPdf: () => void;
     handleImport: (event: ChangeEvent<HTMLInputElement>) => Promise<void>;
 }
 
@@ -97,6 +101,26 @@ export function useStoryTransfer<TStory extends TransferStory = TransferStory>({
         } catch (err) {
             console.error('Audio drama export error:', err);
             showToast('Export failed: ' + errorMessage(err), 'error');
+        }
+    };
+
+    const handleExportMarkdown = (): void => {
+        try {
+            const result = exportStoryMarkdown(story as Parameters<typeof exportStoryMarkdown>[0]);
+            if (result.sceneCount === 0) showToast('No written scenes to export yet.', 'info');
+            else showToast(`Exported ${result.sceneCount} scenes as Markdown.`, 'success');
+        } catch (err) {
+            showToast('Export failed: ' + errorMessage(err), 'error');
+        }
+    };
+
+    const handleExportPdf = (): void => {
+        try {
+            const result = printStory(story as Parameters<typeof printStory>[0]);
+            if (result.sceneCount === 0) showToast('No written scenes to print yet.', 'info');
+            else showToast('Choose "Save as PDF" in the print window to make the PDF.', 'info');
+        } catch (err) {
+            showToast('Print failed: ' + errorMessage(err), 'error');
         }
     };
 
@@ -183,5 +207,5 @@ export function useStoryTransfer<TStory extends TransferStory = TransferStory>({
         }
     };
 
-    return { handleExport, handleExportAudioDramaTxt, handleExportEpub, handleImport };
+    return { handleExport, handleExportAudioDramaTxt, handleExportEpub, handleExportMarkdown, handleExportPdf, handleImport };
 }

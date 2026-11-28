@@ -1,13 +1,12 @@
 /**
  * @module components/layout/StudioHeader
  * Sticky top header with mobile menu trigger, Bookshelf/Story/View breadcrumbs,
- * LiveCreationIsland, Reader Mode trigger, Autopilot toggle, and Theme Switcher.
+ * LiveCreationIsland, Autopilot toggle, and Theme Switcher.
  */
 
 import React from 'react';
 import { LiveCreationIsland, type LiveCreationIslandProps } from '@/components/common';
-import { BookOpen, ChevronRight, Loader2, Menu, Moon, Sun, Zap } from '@/components/icons';
-import { VIEW_LABELS } from '@/config';
+import { ChevronRight, Feather, Loader2, Menu, Moon, Sun } from '@/components/icons';
 import type { Story } from '@/types';
 
 export interface StudioHeaderProps {
@@ -18,7 +17,6 @@ export interface StudioHeaderProps {
     toggleTheme: () => void;
     setIsSidebarOpen: (open: boolean) => void;
     refreshLibrary: () => void | Promise<void>;
-    enterReaderMode: (seqIdx?: number, sceneIdx?: number) => void;
     loading: boolean;
     loadingStep: string;
     continuousAutopilot: boolean;
@@ -41,7 +39,6 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
     toggleTheme,
     setIsSidebarOpen,
     refreshLibrary,
-    enterReaderMode,
     loading,
     loadingStep,
     continuousAutopilot,
@@ -88,25 +85,17 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                                 setView('library');
                                 refreshLibrary();
                             }}
-                            className="hover:text-gold-ink cursor-pointer font-medium transition-colors whitespace-nowrap"
+                            className="hidden sm:inline hover:text-gold-ink cursor-pointer font-medium transition-colors whitespace-nowrap"
                         >
                             Bookshelf
                         </span>
-                        <ChevronRight size={12} className="text-ink-300 shrink-0" />
+                        <ChevronRight size={12} className="hidden sm:block text-ink-300 shrink-0" />
                         <span
                             onClick={() => setView('dashboard')}
                             className="font-serif font-bold text-ink-900 hover:text-gold-ink cursor-pointer max-w-[140px] sm:max-w-[240px] truncate transition-colors whitespace-nowrap"
                         >
                             {story.title || 'Untitled Novel'}
                         </span>
-                        {view !== 'writer' && (
-                            <>
-                                <ChevronRight size={12} className="text-ink-300 shrink-0" />
-                                <span className="font-mono text-xs text-gold-ink bg-gold-tint border border-gold-edge px-2.5 py-0.5 rounded-full uppercase tracking-wider shrink-0 font-semibold whitespace-nowrap">
-                                    {VIEW_LABELS[view] || view.replace('_', ' ')}
-                                </span>
-                            </>
-                        )}
                     </div>
 
                     <LiveCreationIsland
@@ -134,17 +123,8 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                     )}
                 </div>
 
-                {/* Header Actions: Reader Mode, Autopilot & Theme Switcher */}
+                {/* Header Actions: Autopilot & Theme Switcher */}
                 <div className="flex items-center gap-2 shrink-0 ml-auto pl-2 pr-1">
-                    <button
-                        onClick={() => enterReaderMode()}
-                        className="px-3 py-1.5 rounded-full font-bold text-xs flex items-center gap-1.5 shadow-2xs transition-all active:scale-95 border shrink-0 bg-gold-tint hover:bg-gold-tint border-gold-edge text-gold-ink cursor-pointer"
-                        title="Enter Ebook Reading Mode"
-                    >
-                        <BookOpen size={13} />
-                        <span className="whitespace-nowrap">Reader</span>
-                    </button>
-
                     <button
                         onClick={() => {
                             if (!continuousAutopilot && view === 'setup') {
@@ -167,7 +147,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                             </>
                         ) : (
                             <>
-                                <Zap size={13} className="text-ember-600" />
+                                <Feather size={13} className="text-ember-600" />
                                 <span className="whitespace-nowrap">Autopilot</span>
                             </>
                         )}

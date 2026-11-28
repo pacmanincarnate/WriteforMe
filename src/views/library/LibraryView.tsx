@@ -5,6 +5,7 @@
  */
 
 import type React from 'react';
+import { VIEW_LABELS } from '@/config';
 import {
     Activity,
     BookCoverAudioArt,
@@ -123,7 +124,7 @@ export function LibraryView({
             <header className="lib-header">
                 <div className="lib-header-top">
                     <div>
-                        <h1 className="lib-title font-serif">Library</h1>
+                        <h1 className="lib-title font-serif">{VIEW_LABELS.library}</h1>
                         {libraryStories.length > 0 && (
                             <p className="lib-count">
                                 {libraryStories.length}{' '}
@@ -132,15 +133,6 @@ export function LibraryView({
                         )}
                     </div>
                     <div className="lib-header-actions">
-                        <label className="lib-import-link">
-                            Import
-                            <input
-                                type="file"
-                                onChange={handleImport}
-                                className="hidden"
-                                accept=".json,.epub"
-                            />
-                        </label>
                         <button onClick={() => setView('setup')} className="lib-new-btn">
                             <Plus size={15} />
                             <span>New Story</span>

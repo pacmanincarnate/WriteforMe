@@ -91,8 +91,7 @@ export function calculateStoryStats(story: StoryStatsInput | null | undefined): 
                 totalScenes++;
                 const beatKey = `${sq}-${scIdx}`;
                 const rawProse = story.prose?.[beatKey];
-                const proseObj =
-                    rawProse && typeof rawProse === 'object' ? rawProse : null;
+                const proseObj = rawProse && typeof rawProse === 'object' ? rawProse : null;
                 if (proseObj) {
                     if (proseObj.final) {
                         completedScenes++;
@@ -149,4 +148,42 @@ export function calculateStoryStats(story: StoryStatsInput | null | undefined): 
         sequencesStatus,
         castAvatars
     };
+}
+
+export interface NextScene {
+    sequenceIndex: number;
+    sceneIndex: number;
+    /** Reader-facing number, e.g. `6.1` for the first scene of the sixth sequence. */
+    label: string;
+    title: string;
+}
+
+/** The first planned scene, in reading order, that has no draft or final prose yet. */
+export function findNextUnwrittenScene(
+    story: StoryStatsInput | null | undefined
+): NextScene | null {
+    if (!story?.scenes) return null;
+    const sequenceIndexes = Object.keys(story.scenes)
+        .map(Number)
+        .filter(Number.isInteger)
+        .sort((a, b) => a - b);
+
+    for (const sequenceIndex of sequenceIndexes) {
+        const sceneList = story.scenes[`${sequenceIndex}`];
+        if (!Array.isArray(sceneList)) continue;
+        for (let sceneIndex = 0; sceneIndex < sceneList.length; sceneIndex++) {
+            const prose = story.prose?.[`${sequenceIndex}-${sceneIndex}`];
+            const isWritten =
+                Boolean(prose) && typeof prose === 'object' && Boolean(prose.final || prose.draft);
+            if (!isWritten) {
+                return {
+                    sequenceIndex,
+                    sceneIndex,
+                    label: `${sequenceIndex + 1}.${sceneIndex + 1}`,
+                    title: sceneList[sceneIndex]?.title || ''
+                };
+            }
+        }
+    }
+    return null;
 }

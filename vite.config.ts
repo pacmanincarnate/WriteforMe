@@ -30,7 +30,7 @@ const APP_BUILD_ID: string = resolveBuildId();
  * a new type (say .svg or .wasm), add it here; scripts/check-precache.mjs fails the build until
  * every built file is covered. See the header of src/sw.ts.
  */
-const PRECACHE_GLOBS = ['**/*.{html,js,mjs,css,json,webmanifest,png,jpg,jpeg,ico,gif,webp}'];
+const PRECACHE_GLOBS = ['**/*.{html,js,mjs,css,json,webmanifest,png,jpg,jpeg,ico,gif,webp,woff2}'];
 
 export default defineConfig({
     base: process.env.VITE_BASE || './',

@@ -24,7 +24,8 @@ import {
     type StylizedBlankCoverProps
 } from '@/components';
 import type { StoryResetStageKey } from '@/domain/lifecycle';
-import { getCoverStyleIndex } from '@/domain/story';
+import { findNextUnwrittenScene, getCoverStyleIndex } from '@/domain/story';
+import { useUiStore } from '@/stores';
 import { storyStore } from '@/services/storage';
 import type { DashboardAudioSummary, DashboardStory } from './types';
 
@@ -113,11 +114,17 @@ export function DashboardFolioSidebar({
     totalWords,
     readingTimeDisplay
 }: DashboardFolioSidebarProps) {
+    const setSelectedSequence = useUiStore((s) => s.setSelectedSequence);
+    const setSelectedScene = useUiStore((s) => s.setSelectedScene);
+    const nextScene = findNextUnwrittenScene(
+        story as unknown as Parameters<typeof findNextUnwrittenScene>[0]
+    );
+
     return (
-        <div className="w-full lg:w-[360px] xl:w-[400px] shrink-0 space-y-6 lg:sticky lg:top-24">
+        <div className="contents lg:block lg:w-[360px] xl:w-[400px] shrink-0 lg:space-y-6 lg:sticky lg:top-24">
             {/* Tactile Book Cover Frame */}
-            <div className="bg-surface p-5 rounded-2xl border border-edge shadow-sm">
-                <div className="book-cover-frame mx-auto max-w-[280px]">
+            <div className="-order-5 lg:order-none bg-surface p-4 pb-1 sm:p-5 rounded-2xl border border-edge shadow-sm">
+                <div className="book-cover-frame mx-auto max-w-[168px] sm:max-w-[220px] lg:max-w-[280px]">
                     {/* Spine crease & shading overlays */}
                     <div className="book-spine-shadow" />
                     <div className="book-spine-crease" />
@@ -175,12 +182,10 @@ export function DashboardFolioSidebar({
                                         : getCoverStyleIndex(story.id || story.title);
                                 const nextStyle = (currentStyle + 1) % 8;
                                 setStory((prev) => ({ ...prev, coverStyle: nextStyle }));
-                                storyStore.saveStory(
-                                    story.id,
-                                    { ...story, coverStyle: nextStyle } as unknown as Parameters<
-                                        typeof storyStore.saveStory
-                                    >[1]
-                                );
+                                storyStore.saveStory(story.id, {
+                                    ...story,
+                                    coverStyle: nextStyle
+                                } as unknown as Parameters<typeof storyStore.saveStory>[1]);
                                 showToast('Cover typography updated', 'info');
                             }}
                         />
@@ -203,11 +208,11 @@ export function DashboardFolioSidebar({
                 />
 
                 {/* Action Controls for Cover */}
-                <div className="flex gap-2 mt-4">
+                <div className="flex justify-center gap-5 mt-3">
                     <button
                         onClick={generateCoverImage}
                         disabled={loadingCover}
-                        className="flex-1 bg-surface hover:bg-lift border border-edge-strong text-ink-800 py-2 px-3 rounded-xl text-xs flex justify-center items-center gap-1.5 transition-all font-semibold shadow-2xs hover:border-gold/50"
+                        className="min-h-[44px] lg:min-h-0 text-ink-500 hover:text-ink-900 px-1 text-xs flex items-center gap-1.5 transition-colors font-semibold disabled:opacity-50"
                     >
                         {loadingCover ? (
                             <>
@@ -216,97 +221,84 @@ export function DashboardFolioSidebar({
                             </>
                         ) : (
                             <>
-                                <Image size={13} className="text-gold-ink" /> Generate AI
+                                <Image size={13} /> Generate cover
                             </>
                         )}
                     </button>
                     <button
                         onClick={() => coverUploadInputRef.current?.click()}
                         disabled={loadingCover}
-                        className="flex-1 bg-surface hover:bg-lift border border-edge-strong text-ink-800 py-2 px-3 rounded-xl text-xs flex justify-center items-center gap-1.5 transition-all font-semibold shadow-2xs"
+                        className="min-h-[44px] lg:min-h-0 text-ink-500 hover:text-ink-900 px-1 text-xs flex items-center gap-1.5 transition-colors font-semibold disabled:opacity-50"
                     >
-                        <Upload size={13} className="text-ink-500" /> Upload
+                        <Upload size={13} /> Upload cover
                     </button>
                 </div>
             </div>
 
-            {/* Folio Analytics Card */}
-            <div className="bg-surface p-5 rounded-2xl border border-edge shadow-sm space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-edge-soft">
-                    <span className="text-xs font-bold text-ink-500 uppercase tracking-wider font-mono">
-                        Manuscript Telemetry
-                    </span>
-                    <span className="text-xs font-bold text-gold-ink font-mono">
-                        {progressPercent}% Drafted
-                    </span>
+            {/* Progress card: on a phone it sits right under the title once scenes exist */}
+            <div
+                className={`${allScenesCount > 0 ? '-order-2' : ''} lg:order-none bg-surface p-5 rounded-2xl border border-edge shadow-sm space-y-4`}
+            >
+                <div className="text-sm text-ink-600">
+                    <strong className="text-ink-900">{progressPercent}%</strong> written ·{' '}
+                    {draftedScenesCount} of {allScenesCount} scenes
                 </div>
 
-                {/* Progress Bar */}
-                <div className="space-y-1">
-                    <div className="w-full bg-mist-100 h-2 rounded-full overflow-hidden">
-                        <div
-                            className="h-full bg-gold rounded-full transition-all duration-500"
-                            style={{ width: `${progressPercent}%` }}
-                        />
-                    </div>
-                    <div className="flex justify-between text-xs text-ink-500 pt-0.5">
-                        <span>
-                            {draftedScenesCount} of {allScenesCount} Scenes
-                        </span>
-                        <span>
-                            {story.acts?.length || 0} Acts / {story.sequences?.length || 0} Seqs
-                        </span>
-                    </div>
+                <div className="w-full bg-mist-100 h-2 rounded-full overflow-hidden">
+                    <div
+                        className="h-full bg-gold rounded-full transition-all duration-500"
+                        style={{ width: `${progressPercent}%` }}
+                    />
                 </div>
 
-                {/* Key Metrics Grid */}
-                <div className="grid grid-cols-2 gap-3 pt-2">
-                    <div className="bg-inset p-3 rounded-xl border border-edge-soft">
-                        <span className="text-xs font-bold text-ink-500 uppercase font-mono block mb-1">
-                            Prose Words
-                        </span>
-                        <span className="text-lg font-bold font-serif text-ink-900">
-                            {totalWords.toLocaleString()}
-                        </span>
-                    </div>
-                    <div className="bg-inset p-3 rounded-xl border border-edge-soft">
-                        <span className="text-xs font-bold text-ink-500 uppercase font-mono block mb-1">
-                            Reading Time
-                        </span>
-                        <span className="text-lg font-bold font-serif text-ink-900">
-                            ~{readingTimeDisplay}
-                        </span>
-                    </div>
-                    <div className="bg-inset p-3 rounded-xl border border-edge-soft">
-                        <span className="text-xs font-bold text-ink-500 uppercase font-mono block mb-1">
-                            Cast Size
-                        </span>
-                        <span className="text-lg font-bold font-serif text-ink-900">
-                            {story.cast?.length || 0}
-                        </span>
-                    </div>
-                    <div className="bg-inset p-3 rounded-xl border border-edge-soft">
-                        <span className="text-xs font-bold text-ink-500 uppercase font-mono block mb-1">
-                            Plot Threads
-                        </span>
-                        <span className="text-lg font-bold font-serif text-ink-900">
-                            {story.threads?.length || 0}
-                        </span>
-                    </div>
+                <div className="flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-ink-600">
+                    <span>
+                        <strong className="text-ink-900">{totalWords.toLocaleString()}</strong>{' '}
+                        words
+                    </span>
+                    <span>
+                        <strong className="text-ink-900">{readingTimeDisplay}</strong> to read
+                    </span>
+                    <span>
+                        <strong className="text-ink-900">{story.cast?.length || 0}</strong> cast
+                    </span>
                 </div>
 
                 {/* Enter Reading Mode Button */}
                 <button
                     onClick={() => enterReaderMode()}
-                    className="w-full mt-3 py-2.5 px-4 rounded-xl bg-btn hover:bg-btn-hover text-btn-ink font-bold text-xs shadow-sm flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
+                    className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-btn hover:bg-btn-hover text-btn-ink font-bold text-sm shadow-sm flex items-center justify-center gap-2 transition-all active:scale-95 cursor-pointer"
                 >
                     <BookOpen size={14} className="text-btn-accent" />
                     <span>
                         {readingProgress.sequenceIndex !== undefined
-                            ? 'Resume Reading'
-                            : 'Start Reading Mode'}
+                            ? 'Resume reading'
+                            : 'Start reading'}
                     </span>
                 </button>
+
+                {nextScene && (
+                    <div className="pt-4 border-t border-edge-soft space-y-3">
+                        <div>
+                            <span className="block text-[13px] text-ink-500">Next</span>
+                            <span className="block text-base leading-snug font-bold font-serif text-ink-900">
+                                Scene {nextScene.label}
+                                {nextScene.title ? ` · ${nextScene.title}` : ''}
+                            </span>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setSelectedSequence(nextScene.sequenceIndex);
+                                setSelectedScene(nextScene.sceneIndex);
+                                setView('writer');
+                            }}
+                            className="w-full min-h-[44px] py-2.5 px-4 rounded-xl bg-surface hover:bg-lift border border-edge-strong text-ink-800 font-bold text-xs shadow-2xs flex items-center justify-center transition-all active:scale-95 cursor-pointer"
+                        >
+                            Continue writing
+                        </button>
+                    </div>
+                )}
 
                 {/* 1-Click Autonomous Editorial Harness Action */}
                 <div className="pt-2 border-t border-edge-soft space-y-2">
@@ -493,14 +485,14 @@ export function DashboardFolioSidebar({
                 </div>
 
                 {/* Stage-Level Story Reset Dropdown */}
-                <div className="pt-2 border-t border-edge-soft">
+                <div className="pt-2 border-t border-edge-soft flex justify-start">
                     <StoryResetDropdown
                         story={story}
                         onResetStage={handleResetStoryStage}
                         availableSceneAudioMap={availableSceneAudioMap}
                         disabled={loading}
                         align="left"
-                        fullWidth={true}
+                        fullWidth={false}
                         dropUp={true}
                     />
                 </div>
